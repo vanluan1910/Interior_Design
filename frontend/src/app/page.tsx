@@ -8,11 +8,9 @@ import LivingSpaces from '@/components/LivingSpaces';
 import FeaturedProducts from '@/components/FeaturedProducts';
 import CraftsmanshipStory from '@/components/CraftsmanshipStory';
 import MaterialExperience from '@/components/MaterialExperience';
-import Testimonials from '@/components/Testimonials';
 import ShowroomSection from '@/components/ShowroomSection';
 import Footer from '@/components/Footer';
 import QuickViewModal from '@/components/QuickViewModal';
-import BookingModal from '@/components/BookingModal';
 import SampleBoxModal from '@/components/SampleBoxModal';
 import { productsData } from '@/data/products';
 import { Product, CartItem } from '@/types';
@@ -27,7 +25,6 @@ export default function HomePage() {
 
   // Modal States
   const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null);
-  const [bookingModalOpen, setBookingModalOpen] = useState(false);
   const [sampleModalOpen, setSampleModalOpen] = useState(false);
 
   // Global Cart & Wishlist from localStorage
@@ -73,13 +70,13 @@ export default function HomePage() {
       <Header
         cartCount={cartCount}
         wishlistCount={wishlistCount}
-        onOpenBooking={() => setBookingModalOpen(true)}
+        onOpenBooking={() => {}}
       />
 
       {/* Main Content Sections */}
-      <main className="w-full">
+      <main className="w-full animate-slide-in-bottom">
         {/* Hero Banner */}
-        <Hero onOpenBooking={() => setBookingModalOpen(true)} />
+        <Hero onOpenBooking={() => {}} />
 
         {/* Brand Commitments */}
         <Commitments />
@@ -99,16 +96,13 @@ export default function HomePage() {
         />
 
         {/* Craftsmanship & Workshop Story */}
-        <CraftsmanshipStory onOpenBooking={() => setBookingModalOpen(true)} />
+        <CraftsmanshipStory onOpenBooking={() => {}} />
 
         {/* Interactive Material Experience & Free Samples */}
         <MaterialExperience onOpenSampleModal={() => setSampleModalOpen(true)} />
 
-        {/* Testimonials & Reviews */}
-        <Testimonials />
-
         {/* Showrooms & Consultation */}
-        <ShowroomSection onOpenBooking={() => setBookingModalOpen(true)} />
+        <ShowroomSection onOpenBooking={() => {}} />
       </main>
 
       {/* Footer */}
@@ -119,11 +113,6 @@ export default function HomePage() {
         product={quickViewProduct}
         onClose={() => setQuickViewProduct(null)}
         onAddToCart={handleAddToCart}
-      />
-
-      <BookingModal
-        isOpen={bookingModalOpen}
-        onClose={() => setBookingModalOpen(false)}
       />
 
       <SampleBoxModal

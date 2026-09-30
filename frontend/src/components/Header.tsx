@@ -1,8 +1,11 @@
 'use client';
 
-import React, { useState, Suspense } from 'react';
+import React, { useState, useRef, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
+import { App, Modal } from 'antd';
+import { useAuth } from '@/context/AuthContext';
+import ProfileModal from '@/components/ProfileModal';
 
 interface HeaderProps {
   cartCount: number;
@@ -17,37 +20,63 @@ function HeaderContent({
   onOpenCart,
   onOpenBooking,
 }: HeaderProps) {
+  const { message } = App.useApp();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const spaceParam = searchParams.get('space');
+  const { user, isLoggedIn, isAdmin, logout, loginAsAdmin, loginAsCustomer } = useAuth();
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const profileRef = useRef<HTMLDivElement>(null);
+
+  // Close profile dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
+        setIsProfileOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  const handleLogout = () => {
+    logout();
+    setIsProfileOpen(false);
+    message.success('Đã đăng xuất thành công!');
+    router.push('/login');
+  };
 
   // Determine active navigation item
   const isHomeActive = pathname === '/' && !spaceParam;
   const isLivingActive =
-    (pathname === '/san-pham' && spaceParam === 'living') || pathname === '/phong-khach';
+    (pathname === '/products' && spaceParam === 'living') || pathname === '/living-room';
   const isDiningActive =
-    (pathname === '/san-pham' && spaceParam === 'dining') || pathname === '/phong-an';
+    (pathname === '/products' && spaceParam === 'dining') || pathname === '/dining-room';
   const isBedroomActive =
-    (pathname === '/san-pham' && spaceParam === 'bedroom') || pathname === '/phong-ngu';
+    (pathname === '/products' && spaceParam === 'bedroom') || pathname === '/bedroom';
   const isOfficeActive =
-    (pathname === '/san-pham' && spaceParam === 'office') || pathname === '/phong-lam-viec';
+    (pathname === '/products' && spaceParam === 'office') || pathname === '/office';
   const isCollectionActive =
-    ((pathname === '/san-pham' || pathname === '/danh-muc') && (!spaceParam || spaceParam === 'all')) ||
-    pathname.startsWith('/bo-suu-tap');
+    ((pathname === '/products' || pathname === '/categories') && (!spaceParam || spaceParam === 'all')) ||
+    pathname.startsWith('/collections');
 
   const handleSearch = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && searchQuery.trim()) {
-      router.push(`/san-pham?q=${encodeURIComponent(searchQuery.trim())}`);
+      router.push(`/products?q=${encodeURIComponent(searchQuery.trim())}`);
     }
   };
 
   const executeSearch = () => {
     if (searchQuery.trim()) {
-      router.push(`/san-pham?q=${encodeURIComponent(searchQuery.trim())}`);
+      router.push(`/products?q=${encodeURIComponent(searchQuery.trim())}`);
     }
   };
 
@@ -59,64 +88,64 @@ function HeaderContent({
     },
     {
       title: 'Phòng khách',
-      href: '/san-pham?space=living',
+      href: '/products?space=living',
       isActive: isLivingActive,
       submenu: [
-        { label: 'Bàn trà – Bàn nước', href: '/san-pham?space=living&category=table' },
-        { label: 'Kệ tivi', href: '/san-pham?space=living&category=cabinet' },
-        { label: 'Kệ trang trí', href: '/san-pham?space=living&category=cabinet' },
-        { label: 'Sofa Gỗ Mây', href: '/san-pham?space=living&category=sofa' },
-        { label: 'Tủ giày', href: '/san-pham?space=living&category=cabinet' },
-        { label: 'Tủ góc', href: '/san-pham?space=living&category=cabinet' },
-        { label: 'Tủ ly', href: '/san-pham?space=living&category=cabinet' },
-        { label: 'Sofa Đệm Êm', href: '/san-pham?space=living&category=sofa' },
-        { label: 'Ghế thư giãn & Đôn', href: '/san-pham?space=living&category=chair' },
+        { label: 'Bàn trà – Bàn nước', href: '/products?space=living&category=table' },
+        { label: 'Kệ tivi', href: '/products?space=living&category=cabinet' },
+        { label: 'Kệ trang trí', href: '/products?space=living&category=cabinet' },
+        { label: 'Sofa Gỗ Mây', href: '/products?space=living&category=sofa' },
+        { label: 'Tủ giày', href: '/products?space=living&category=cabinet' },
+        { label: 'Tủ góc', href: '/products?space=living&category=cabinet' },
+        { label: 'Tủ ly', href: '/products?space=living&category=cabinet' },
+        { label: 'Sofa Đệm Êm', href: '/products?space=living&category=sofa' },
+        { label: 'Ghế thư giãn & Đôn', href: '/products?space=living&category=chair' },
       ],
     },
     {
       title: 'Phòng ăn',
-      href: '/san-pham?space=dining',
+      href: '/products?space=dining',
       isActive: isDiningActive,
       submenu: [
-        { label: 'Bàn ăn tự nhiên', href: '/san-pham?space=dining&category=dining' },
-        { label: 'Ghế ăn cao cấp', href: '/san-pham?space=dining&category=chair' },
-        { label: 'Tủ rượu & Đảo bếp', href: '/san-pham?space=dining&category=island' },
-        { label: 'Tủ buffet & Kệ bát', href: '/san-pham?space=dining&category=cabinet' },
+        { label: 'Bàn ăn tự nhiên', href: '/products?space=dining&category=dining' },
+        { label: 'Ghế ăn cao cấp', href: '/products?space=dining&category=chair' },
+        { label: 'Tủ rượu & Đảo bếp', href: '/products?space=dining&category=island' },
+        { label: 'Tủ buffet & Kệ bát', href: '/products?space=dining&category=cabinet' },
       ],
     },
     {
       title: 'Phòng ngủ',
-      href: '/san-pham?space=bedroom',
+      href: '/products?space=bedroom',
       isActive: isBedroomActive,
       submenu: [
-        { label: 'Giường ngủ tự nhiên', href: '/san-pham?space=bedroom&category=bed' },
-        { label: 'Táp đầu giường', href: '/san-pham?space=bedroom&category=tab' },
-        { label: 'Tủ quần áo', href: '/san-pham?space=bedroom&category=wardrobe' },
-        { label: 'Bàn trang điểm', href: '/san-pham?space=bedroom&category=dresser' },
-        { label: 'Tủ ngăn kéo', href: '/san-pham?space=bedroom&category=cabinet' },
+        { label: 'Giường ngủ tự nhiên', href: '/products?space=bedroom&category=bed' },
+        { label: 'Táp đầu giường', href: '/products?space=bedroom&category=tab' },
+        { label: 'Tủ quần áo', href: '/products?space=bedroom&category=wardrobe' },
+        { label: 'Bàn trang điểm', href: '/products?space=bedroom&category=dresser' },
+        { label: 'Tủ ngăn kéo', href: '/products?space=bedroom&category=cabinet' },
       ],
     },
     {
       title: 'Phòng làm việc',
-      href: '/san-pham?space=office',
+      href: '/products?space=office',
       isActive: isOfficeActive,
       submenu: [
-        { label: 'Bàn làm việc tự nhiên', href: '/san-pham?space=office&category=desk' },
-        { label: 'Kệ sách & Tủ tài liệu', href: '/san-pham?space=office&category=cabinet' },
-        { label: 'Ghế làm việc cao cấp', href: '/san-pham?space=office&category=chair' },
-        { label: 'Tủ hồ sơ & Ngăn kéo', href: '/san-pham?space=office&category=cabinet' },
+        { label: 'Bàn làm việc tự nhiên', href: '/products?space=office&category=desk' },
+        { label: 'Kệ sách & Tủ tài liệu', href: '/products?space=office&category=cabinet' },
+        { label: 'Ghế làm việc cao cấp', href: '/products?space=office&category=chair' },
+        { label: 'Tủ hồ sơ & Ngăn kéo', href: '/products?space=office&category=cabinet' },
       ],
     },
     {
       title: 'Sản phẩm khác',
-      href: '/san-pham',
+      href: '/products',
       isActive: isCollectionActive,
       submenu: [
-        { label: 'BST Gỗ Óc Chó Bắc Mỹ', href: '/san-pham?material=walnut' },
-        { label: 'BST Gỗ Sồi Trắng Mỹ', href: '/san-pham?material=oak' },
-        { label: 'BST Gỗ Tần Bì Bắc Âu', href: '/san-pham?material=ash' },
-        { label: 'BST Khung Gỗ Bọc Da Ý', href: '/san-pham?material=leather' },
-        { label: 'Tất cả sản phẩm', href: '/san-pham' },
+        { label: 'BST Gỗ Óc Chó Bắc Mỹ', href: '/products?material=walnut' },
+        { label: 'BST Gỗ Sồi Trắng Mỹ', href: '/products?material=oak' },
+        { label: 'BST Gỗ Tần Bì Bắc Âu', href: '/products?material=ash' },
+        { label: 'BST Khung Gỗ Bọc Da Ý', href: '/products?material=leather' },
+        { label: 'Tất cả sản phẩm', href: '/products' },
       ],
     },
   ];
@@ -161,18 +190,18 @@ function HeaderContent({
                 )}
               </Link>
 
-              {/* Dropdown Menu Panel with caret pointer */}
+              {/* Dropdown Menu Panel with smooth slide-in animation */}
               {item.submenu && (
-                <div className="absolute top-[68px] left-1/2 -translate-x-1/2 w-56 bg-white border border-[#eae1dd] shadow-[0_12px_32px_rgba(0,0,0,0.12)] py-2.5 z-50 invisible opacity-0 translate-y-1 group-hover:visible group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200">
+                <div className="absolute top-[68px] left-1/2 -translate-x-1/2 w-60 bg-white border border-[#eae1dd] shadow-[0_16px_36px_rgba(0,0,0,0.12)] py-2.5 z-50 invisible opacity-0 -translate-y-3 pointer-events-none group-hover:pointer-events-auto group-hover:visible group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300 ease-out">
                   {/* Top arrow pointer */}
                   <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-t border-l border-[#eae1dd] rotate-45" />
 
                   <div className="relative z-10 flex flex-col">
-                    {item.submenu.map((sub) => (
+                    {item.submenu.map((sub, idx) => (
                       <Link
                         key={sub.label}
                         href={sub.href}
-                        className="px-5 py-2 text-[13px] text-[#1f1b19] font-medium hover:font-bold hover:text-[#5d371f] hover:bg-[#fbf2ee] transition-colors whitespace-nowrap block text-left"
+                        className="px-5 py-2.5 text-[13px] text-[#1f1b19] font-medium hover:font-bold hover:text-[#5d371f] hover:bg-[#fbf2ee] transition-all duration-200 whitespace-nowrap block text-left hover:translate-x-1"
                       >
                         {sub.label}
                       </Link>
@@ -207,7 +236,7 @@ function HeaderContent({
 
           {/* Cart Button */}
           <Link
-            href="/gio-hang"
+            href="/cart"
             aria-label="Giỏ hàng"
             onClick={(e) => {
               if (onOpenCart) {
@@ -222,13 +251,137 @@ function HeaderContent({
             </span>
           </Link>
 
-          {/* User Profile Avatar */}
-          <div className="flex items-center pl-0.5 shrink-0">
-            <img
-              alt="Profile"
-              className="w-8 h-8 rounded-none object-cover ring-1 ring-[#d5c3ba] hover:ring-[#5d371f] transition-all cursor-pointer"
-              src="https://lh3.googleusercontent.com/aida-public/AB6AXuCat_S6E8qhOpd0scj-6rD4LfY-vo8Z8BklqUwqxMQ7KmIIIgjWnFYxUX5fCgoVlCAAL_D8yl8U9ygJ0mEVG7YKDvo7gJ6zFOVjaKRNG_Cg0c2N5V8m5uiyP19HNH0NrH3dQdUC9VFMfNIe6EMKef3NZFvNCfCOWMVw2Q1X0zJcbXJvCdsvo8d1fnvyZGmzP2qJA0aHtNnpovE1Pk7M0kbgrh3_ATbB9f5cnwRYJTPAtz9HlOwVQrbq"
-            />
+          {/* User Profile Avatar with Dropdown */}
+          <div className="relative flex items-center pl-0.5 shrink-0" ref={profileRef}>
+            {isLoggedIn && user ? (
+              <button
+                type="button"
+                onClick={() => setIsProfileOpen(!isProfileOpen)}
+                className="relative focus:outline-none cursor-pointer flex items-center group"
+                aria-label="Tài khoản cá nhân"
+              >
+                <img
+                  alt={user.name}
+                  className="w-8 h-8 rounded-none object-cover ring-1 ring-[#d5c3ba] group-hover:ring-[#5d371f] transition-all"
+                  src={user.avatar}
+                />
+                {isAdmin && (
+                  <span
+                    className="absolute -top-1 -right-1 w-3 h-3 bg-[#5d371f] border border-white flex items-center justify-center text-[7px] text-[#ffdbb5] font-bold"
+                    title="Quản trị viên (Admin)"
+                  >
+                    ★
+                  </span>
+                )}
+              </button>
+            ) : (
+              <Link
+                href="/login"
+                className="px-2.5 py-1 text-xs font-semibold text-[#5d371f] bg-[#fbf2ee] hover:bg-[#5d371f] hover:text-white border border-[#eae1dd] transition-colors cursor-pointer flex items-center gap-1"
+              >
+                <span className="material-symbols-outlined text-[16px]">account_circle</span>
+                <span>Đăng nhập</span>
+              </Link>
+            )}
+
+            {/* Profile Dropdown Menu */}
+            {isProfileOpen && isLoggedIn && user && (
+              <div className="absolute right-0 top-full mt-2.5 w-64 sm:w-72 bg-[#fff8f5] border border-[#eae1dd] shadow-xl z-50 animate-in fade-in-0 zoom-in-95 duration-150 flex flex-col">
+                {/* Dropdown Header */}
+                <div className="p-4 bg-[#241c18] text-white flex items-center gap-3">
+                  <img
+                    src={user.avatar}
+                    alt={user.name}
+                    className="w-10 h-10 object-cover ring-1 ring-[#d5c3ba] shrink-0"
+                  />
+                  <div className="flex flex-col min-w-0 flex-1 text-left">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-bold text-xs text-[#fff8f5] truncate">
+                        {user.name}
+                      </span>
+                      {isAdmin ? (
+                        <span className="bg-[#5d371f] text-[#ffdbb5] text-[9px] font-bold px-1.5 py-0.2 border border-[#5d371f] shrink-0">
+                          Admin
+                        </span>
+                      ) : (
+                        <span className="bg-[#3f4332] text-white text-[9px] font-bold px-1.5 py-0.2 shrink-0">
+                          VIP
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[11px] text-[#d5c3ba] font-data-mono truncate mt-0.5">
+                      {user.email}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Dropdown Items */}
+                <div className="py-2 flex flex-col text-xs text-[#1f1b19]">
+                  {/* Item 1: Thông tin cá nhân */}
+                  <Link
+                    href="/profile"
+                    onClick={() => setIsProfileOpen(false)}
+                    className="w-full px-4 py-2.5 flex items-center gap-3 hover:bg-[#f5ece8] transition-colors text-left font-medium cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-[18px] text-[#5d371f]">
+                      person
+                    </span>
+                    <div className="flex flex-col">
+                      <span className="font-bold text-[#1f1b19]">Thông tin cá nhân</span>
+                      <span className="text-[10px] text-[#83746c]">Xem &amp; cập nhật hồ sơ</span>
+                    </div>
+                  </Link>
+
+                  {/* Item 2: Trang quản trị (If Admin) */}
+                  {isAdmin && (
+                    <Link
+                      href="/admin"
+                      onClick={() => setIsProfileOpen(false)}
+                      className="w-full px-4 py-2.5 flex items-center gap-3 bg-[#fbf2ee] hover:bg-[#f5ece8] border-y border-[#eae1dd]/60 transition-colors text-left font-medium cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[18px] text-[#5d371f]">
+                        admin_panel_settings
+                      </span>
+                      <div className="flex flex-col">
+                        <span className="font-bold text-[#5d371f] flex items-center gap-1">
+                          Trang quản trị <span className="text-[9px] bg-[#5d371f] text-white px-1 font-data-mono">ADMIN</span>
+                        </span>
+                        <span className="text-[10px] text-[#83746c]">Quản lý đơn hàng, KTS &amp; sản phẩm</span>
+                      </div>
+                    </Link>
+                  )}
+
+                  {/* Item 3: Đơn hàng & Giỏ hàng */}
+                  <Link
+                    href="/cart"
+                    onClick={() => setIsProfileOpen(false)}
+                    className="w-full px-4 py-2.5 flex items-center gap-3 hover:bg-[#f5ece8] transition-colors text-left font-medium cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-[18px] text-[#5d371f]">
+                      shopping_bag
+                    </span>
+                    <div className="flex flex-col">
+                      <span className="font-bold text-[#1f1b19]">Giỏ hàng &amp; Đơn hàng</span>
+                      <span className="text-[10px] text-[#83746c]">Kiểm tra tác phẩm tuyển chọn</span>
+                    </div>
+                  </Link>
+
+                  {/* Item 4: Đăng xuất */}
+                  <div className="pt-1.5 mt-1 border-t border-[#eae1dd]">
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="w-full px-4 py-2 flex items-center gap-3 hover:bg-red-50 text-red-700 transition-colors text-left font-semibold cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[18px] text-red-600">
+                        logout
+                      </span>
+                      <span>Đăng xuất</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Mobile hamburger menu */}
@@ -262,7 +415,7 @@ function HeaderContent({
           {/* Phòng khách mobile */}
           <div className="flex flex-col border-b border-[#eae1dd]/40 pb-2">
             <Link
-              href="/san-pham?space=living"
+              href="/products?space=living"
               onClick={() => setMobileMenuOpen(false)}
               className={`py-2 text-sm transition-colors font-bold flex items-center justify-between ${
                 isLivingActive ? 'text-[#5d371f] pl-3 bg-[#f5ece8]/70 border-l-4 border-l-[#5d371f]' : 'text-[#51443d] pl-2'
@@ -272,12 +425,12 @@ function HeaderContent({
             </Link>
             <div className="grid grid-cols-2 gap-1.5 pl-4 pt-1">
               {[
-                { label: 'Bàn trà – Bàn nước', href: '/san-pham?space=living&category=table' },
-                { label: 'Kệ tivi', href: '/san-pham?space=living&category=cabinet' },
-                { label: 'Kệ trang trí', href: '/san-pham?space=living&category=cabinet' },
-                { label: 'Sofa Gỗ Mây', href: '/san-pham?space=living&category=sofa' },
-                { label: 'Tủ giày', href: '/san-pham?space=living&category=cabinet' },
-                { label: 'Sofa Đệm Êm', href: '/san-pham?space=living&category=sofa' },
+                { label: 'Bàn trà – Bàn nước', href: '/products?space=living&category=table' },
+                { label: 'Kệ tivi', href: '/products?space=living&category=cabinet' },
+                { label: 'Kệ trang trí', href: '/products?space=living&category=cabinet' },
+                { label: 'Sofa Gỗ Mây', href: '/products?space=living&category=sofa' },
+                { label: 'Tủ giày', href: '/products?space=living&category=cabinet' },
+                { label: 'Sofa Đệm Êm', href: '/products?space=living&category=sofa' },
               ].map((sub) => (
                 <Link
                   key={sub.label}
@@ -294,7 +447,7 @@ function HeaderContent({
           {/* Phòng ăn mobile */}
           <div className="flex flex-col border-b border-[#eae1dd]/40 pb-2">
             <Link
-              href="/san-pham?space=dining"
+              href="/products?space=dining"
               onClick={() => setMobileMenuOpen(false)}
               className={`py-2 text-sm transition-colors font-bold flex items-center justify-between ${
                 isDiningActive ? 'text-[#5d371f] pl-3 bg-[#f5ece8]/70 border-l-4 border-l-[#5d371f]' : 'text-[#51443d] pl-2'
@@ -304,10 +457,10 @@ function HeaderContent({
             </Link>
             <div className="grid grid-cols-2 gap-1.5 pl-4 pt-1">
               {[
-                { label: 'Bàn ăn tự nhiên', href: '/san-pham?space=dining&category=dining' },
-                { label: 'Ghế ăn cao cấp', href: '/san-pham?space=dining&category=chair' },
-                { label: 'Tủ rượu & Đảo bếp', href: '/san-pham?space=dining&category=island' },
-                { label: 'Tủ buffet', href: '/san-pham?space=dining&category=cabinet' },
+                { label: 'Bàn ăn tự nhiên', href: '/products?space=dining&category=dining' },
+                { label: 'Ghế ăn cao cấp', href: '/products?space=dining&category=chair' },
+                { label: 'Tủ rượu & Đảo bếp', href: '/products?space=dining&category=island' },
+                { label: 'Tủ buffet', href: '/products?space=dining&category=cabinet' },
               ].map((sub) => (
                 <Link
                   key={sub.label}
@@ -324,7 +477,7 @@ function HeaderContent({
           {/* Phòng ngủ mobile */}
           <div className="flex flex-col border-b border-[#eae1dd]/40 pb-2">
             <Link
-              href="/san-pham?space=bedroom"
+              href="/products?space=bedroom"
               onClick={() => setMobileMenuOpen(false)}
               className={`py-2 text-sm transition-colors font-bold flex items-center justify-between ${
                 isBedroomActive ? 'text-[#5d371f] pl-3 bg-[#f5ece8]/70 border-l-4 border-l-[#5d371f]' : 'text-[#51443d] pl-2'
@@ -334,10 +487,10 @@ function HeaderContent({
             </Link>
             <div className="grid grid-cols-2 gap-1.5 pl-4 pt-1">
               {[
-                { label: 'Giường ngủ tự nhiên', href: '/san-pham?space=bedroom&category=bed' },
-                { label: 'Táp đầu giường', href: '/san-pham?space=bedroom&category=tab' },
-                { label: 'Tủ quần áo', href: '/san-pham?space=bedroom&category=wardrobe' },
-                { label: 'Bàn trang điểm', href: '/san-pham?space=bedroom&category=dresser' },
+                { label: 'Giường ngủ tự nhiên', href: '/products?space=bedroom&category=bed' },
+                { label: 'Táp đầu giường', href: '/products?space=bedroom&category=tab' },
+                { label: 'Tủ quần áo', href: '/products?space=bedroom&category=wardrobe' },
+                { label: 'Bàn trang điểm', href: '/products?space=bedroom&category=dresser' },
               ].map((sub) => (
                 <Link
                   key={sub.label}
@@ -354,7 +507,7 @@ function HeaderContent({
           {/* Phòng làm việc mobile */}
           <div className="flex flex-col border-b border-[#eae1dd]/40 pb-2">
             <Link
-              href="/san-pham?space=office"
+              href="/products?space=office"
               onClick={() => setMobileMenuOpen(false)}
               className={`py-2 text-sm transition-colors font-bold flex items-center justify-between ${
                 isOfficeActive ? 'text-[#5d371f] pl-3 bg-[#f5ece8]/70 border-l-4 border-l-[#5d371f]' : 'text-[#51443d] pl-2'
@@ -364,10 +517,10 @@ function HeaderContent({
             </Link>
             <div className="grid grid-cols-2 gap-1.5 pl-4 pt-1">
               {[
-                { label: 'Bàn làm việc tự nhiên', href: '/san-pham?space=office&category=desk' },
-                { label: 'Kệ sách & Tủ tài liệu', href: '/san-pham?space=office&category=cabinet' },
-                { label: 'Ghế làm việc cao cấp', href: '/san-pham?space=office&category=chair' },
-                { label: 'Tủ hồ sơ & Ngăn kéo', href: '/san-pham?space=office&category=cabinet' },
+                { label: 'Bàn làm việc tự nhiên', href: '/products?space=office&category=desk' },
+                { label: 'Kệ sách & Tủ tài liệu', href: '/products?space=office&category=cabinet' },
+                { label: 'Ghế làm việc cao cấp', href: '/products?space=office&category=chair' },
+                { label: 'Tủ hồ sơ & Ngăn kéo', href: '/products?space=office&category=cabinet' },
               ].map((sub) => (
                 <Link
                   key={sub.label}
@@ -384,7 +537,7 @@ function HeaderContent({
           {/* Sản phẩm khác mobile */}
           <div className="flex flex-col border-b border-[#eae1dd]/40 pb-2">
             <Link
-              href="/san-pham"
+              href="/products"
               onClick={() => setMobileMenuOpen(false)}
               className={`py-2 text-sm transition-colors font-bold flex items-center justify-between ${
                 isCollectionActive ? 'text-[#5d371f] pl-3 bg-[#f5ece8]/70 border-l-4 border-l-[#5d371f]' : 'text-[#51443d] pl-2'
@@ -394,11 +547,11 @@ function HeaderContent({
             </Link>
             <div className="grid grid-cols-2 gap-1.5 pl-4 pt-1">
               {[
-                { label: 'Gỗ óc chó Bắc Mỹ', href: '/san-pham?material=walnut' },
-                { label: 'Gỗ sồi trắng Mỹ', href: '/san-pham?material=oak' },
-                { label: 'Gỗ tần bì tự nhiên', href: '/san-pham?material=ash' },
-                { label: 'Khung gỗ da bò Ý', href: '/san-pham?material=leather' },
-                { label: 'Tất cả sản phẩm', href: '/san-pham' },
+                { label: 'Gỗ óc chó Bắc Mỹ', href: '/products?material=walnut' },
+                { label: 'Gỗ sồi trắng Mỹ', href: '/products?material=oak' },
+                { label: 'Gỗ tần bì tự nhiên', href: '/products?material=ash' },
+                { label: 'Khung gỗ da bò Ý', href: '/products?material=leather' },
+                { label: 'Tất cả sản phẩm', href: '/products' },
               ].map((sub) => (
                 <Link
                   key={sub.label}
@@ -413,6 +566,68 @@ function HeaderContent({
           </div>
         </div>
       )}
+
+      {/* Profile Modal */}
+      <ProfileModal
+        open={isProfileModalOpen}
+        onClose={() => setIsProfileModalOpen(false)}
+        onGoToAdmin={() => router.push('/admin')}
+      />
+
+      {/* Quick Login Modal (When logged out) */}
+      <Modal
+        open={isLoginModalOpen}
+        onCancel={() => setIsLoginModalOpen(false)}
+        footer={null}
+        width={420}
+        centered
+        styles={{
+          body: {
+            padding: '24px',
+            backgroundColor: '#fff8f5',
+          },
+        }}
+      >
+        <div className="flex flex-col items-center text-center gap-4">
+          <div className="w-12 h-12 bg-[#241c18] text-[#fff8f5] flex items-center justify-center">
+            <span className="material-symbols-outlined text-[24px]">lock</span>
+          </div>
+          <div>
+            <h3 className="font-serif text-xl font-bold text-[#1f1b19]">
+              Đăng Nhập Tài Khoản D2 LUXURY
+            </h3>
+            <p className="text-xs text-[#83746c] mt-1">
+              Chọn vai trò đăng nhập để trải nghiệm hệ thống
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-2.5 w-full text-xs">
+            <button
+              type="button"
+              onClick={() => {
+                loginAsAdmin();
+                setIsLoginModalOpen(false);
+                message.success('Đã đăng nhập với tư cách Quản trị viên (Admin)!');
+              }}
+              className="w-full py-3 px-4 bg-[#5d371f] text-white font-bold hover:bg-[#784e34] transition-colors flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+            >
+              <span>★ Đăng nhập Quản trị viên (Admin)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                loginAsCustomer();
+                setIsLoginModalOpen(false);
+                message.success('Đã đăng nhập với tư cách Khách hàng VIP!');
+              }}
+              className="w-full py-3 px-4 bg-white border border-[#eae1dd] text-[#1f1b19] font-bold hover:bg-[#f5ece8] transition-colors flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <span>Đăng nhập Khách hàng VIP</span>
+            </button>
+          </div>
+        </div>
+      </Modal>
     </header>
   );
 }

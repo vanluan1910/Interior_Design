@@ -261,7 +261,7 @@ export default function WishlistDrawer({ isOpen, onClose }: WishlistDrawerProps)
               Hãy thả tim những tuyệt tác nội thất gỗ tự nhiên bạn yêu thích để dễ dàng xem lại và so sánh.
             </p>
             <Link
-              href="/san-pham"
+              href="/products"
               onClick={onClose}
               className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#5d371f] text-white text-xs font-semibold hover:bg-[#784e34] transition-colors"
             >
@@ -277,7 +277,7 @@ export default function WishlistDrawer({ isOpen, onClose }: WishlistDrawerProps)
             >
               {/* Product Thumbnail */}
               <Link
-                href={`/san-pham/${item.id}`}
+                href={`/products/${item.id}`}
                 onClick={onClose}
                 className="w-24 h-24 bg-[#f5ece8] border border-[#eae1dd] shrink-0 overflow-hidden relative block"
               >
@@ -298,7 +298,7 @@ export default function WishlistDrawer({ isOpen, onClose }: WishlistDrawerProps)
                 <div>
                   <div className="flex items-start justify-between gap-2">
                     <Link
-                      href={`/san-pham/${item.id}`}
+                      href={`/products/${item.id}`}
                       onClick={onClose}
                       className="font-serif text-sm font-bold text-[#1f1b19] hover:text-[#5d371f] transition-colors truncate block"
                     >
@@ -350,7 +350,7 @@ export default function WishlistDrawer({ isOpen, onClose }: WishlistDrawerProps)
       {favoritedProducts.length > 0 && (
         <div className="p-4 bg-white border-t border-[#eae1dd] flex flex-col gap-2">
           <Link
-            href="/gio-hang"
+            href="/cart"
             onClick={onClose}
             className="w-full bg-[#5d371f] text-white py-2.5 px-4 text-center font-semibold text-xs hover:bg-[#784e34] transition-colors flex items-center justify-center gap-2"
           >
@@ -358,7 +358,7 @@ export default function WishlistDrawer({ isOpen, onClose }: WishlistDrawerProps)
             <ArrowRightOutlined />
           </Link>
           <Link
-            href="/san-pham"
+            href="/products"
             onClick={onClose}
             className="w-full py-2 text-center text-xs text-[#5d371f] hover:text-[#784e34] transition-colors font-medium"
           >

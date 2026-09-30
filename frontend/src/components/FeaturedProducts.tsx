@@ -118,7 +118,7 @@ export default function FeaturedProducts({
                   {/* Quick View & Add to Cart Overlay */}
                   <div className="absolute inset-x-3 bottom-3 flex gap-2 opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300">
                     <Link
-                      href={`/san-pham/${p.id}`}
+                      href={`/products/${p.id}`}
                       style={{ backgroundColor: '#ffffff' }}
                       className="flex-1 py-2.5 rounded-none bg-white text-[#1f1b19] font-bold text-xs shadow-lg flex items-center justify-center gap-2 transition-all border border-[#d5c3ba] hover:!bg-[#5d371f] hover:!text-white hover:!border-[#5d371f] cursor-pointer"
                     >
@@ -154,7 +154,7 @@ export default function FeaturedProducts({
                       </div>
                     </div>
                     <h3 className="font-title-md text-[15px] text-[#1f1b19] font-semibold mt-1 group-hover:text-[#5d371f] transition-colors line-clamp-1">
-                      <Link href={`/san-pham/${p.id}`} className="hover:underline">
+                      <Link href={`/products/${p.id}`} className="hover:underline">
                         {p.name}
                       </Link>
                     </h3>

@@ -28,6 +28,7 @@ export const metadata: Metadata = {
 };
 
 import { CartProvider } from "@/context/CartContext";
+import { AuthProvider } from "@/context/AuthContext";
 
 export default function RootLayout({
   children,
@@ -101,9 +102,11 @@ export default function RootLayout({
             }}
           >
             <App>
-              <CartProvider>
-                {children}
-              </CartProvider>
+              <AuthProvider>
+                <CartProvider>
+                  {children}
+                </CartProvider>
+              </AuthProvider>
             </App>
           </ConfigProvider>
         </AntdRegistry>
