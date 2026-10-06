@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { Drawer, message } from 'antd';
+import { Drawer, App } from 'antd';
 import {
   CloseOutlined,
   HeartFilled,
@@ -130,6 +130,7 @@ interface WishlistDrawerProps {
 }
 
 export default function WishlistDrawer({ isOpen, onClose }: WishlistDrawerProps) {
+  const { message } = App.useApp();
   const { wishlistIds, toggleWishlist, addToCart } = useCart();
 
   // Resolve all favorited items
@@ -208,9 +209,13 @@ export default function WishlistDrawer({ isOpen, onClose }: WishlistDrawerProps)
       open={isOpen}
       onClose={onClose}
       placement="right"
-      width={460}
+      destroyOnHidden
       closable={false}
       styles={{
+        wrapper: {
+          width: 460,
+          maxWidth: '100vw',
+        },
         body: {
           padding: 0,
           backgroundColor: '#fff8f5',

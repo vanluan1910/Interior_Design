@@ -3,7 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { App, Modal, Tooltip, message } from 'antd';
+import { App, Modal, Tooltip } from 'antd';
 import {
   RightOutlined,
   DeleteOutlined,
@@ -28,7 +28,7 @@ import { VIETNAM_PROVINCES } from '@/data/vietnamAddresses';
 
 function CheckoutContent() {
   const router = useRouter();
-  const { modal } = App.useApp();
+  const { message, modal } = App.useApp();
   const { cartItems, cartCount, updateQuantity, removeFromCart, clearCart } = useCart();
 
   // Filter items in cart

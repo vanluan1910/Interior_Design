@@ -1,6 +1,0 @@
-{
-  "version": 3,
-  "sources": [],
-  "sections": [
-    {"offset": {"line": 4, "column": 0}, "map": {"version":3,"sources":["file:///D:/Interior%20design/frontend/src/app/template.tsx"],"sourcesContent":["'use client';\n\nimport React from 'react';\n\nexport default function Template({ children }: { children: React.ReactNode }) {\n  return (\n    <div className=\"animate-page-slide-in w-full\">\n      {children}\n    </div>\n  );\n}\n"],"names":["Template","children","className"],"mappings":";;;;;AAAA;;AAIe,SAASA,SAAS,EAAEC,QAAQ,EAAiC;IAC1E,qBACE,6LAAC;QAAIC,WAAU;kBACZD;;;;;;AAGP;KANwBD"}}]
-}

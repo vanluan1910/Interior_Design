@@ -3,7 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { App, message, Modal } from 'antd';
+import { App, Modal } from 'antd';
 import {
   UserOutlined,
   MailOutlined,

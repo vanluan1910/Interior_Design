@@ -316,7 +316,7 @@ function HeaderContent({
                 </div>
 
                 {/* Dropdown Items */}
-                <div className="py-2 flex flex-col text-xs text-[#1f1b19]">
+                <div className="py-1.5 flex flex-col text-xs text-[#1f1b19]">
                   {/* Item 1: Thông tin cá nhân */}
                   <Link
                     href="/profile"
@@ -326,10 +326,7 @@ function HeaderContent({
                     <span className="material-symbols-outlined text-[18px] text-[#5d371f]">
                       person
                     </span>
-                    <div className="flex flex-col">
-                      <span className="font-bold text-[#1f1b19]">Thông tin cá nhân</span>
-                      <span className="text-[10px] text-[#83746c]">Xem &amp; cập nhật hồ sơ</span>
-                    </div>
+                    <span className="font-medium text-[#1f1b19]">Thông tin cá nhân</span>
                   </Link>
 
                   {/* Item 2: Trang quản trị (If Admin) */}
@@ -337,17 +334,14 @@ function HeaderContent({
                     <Link
                       href="/admin"
                       onClick={() => setIsProfileOpen(false)}
-                      className="w-full px-4 py-2.5 flex items-center gap-3 bg-[#fbf2ee] hover:bg-[#f5ece8] border-y border-[#eae1dd]/60 transition-colors text-left font-medium cursor-pointer"
+                      className="w-full px-4 py-2.5 flex items-center gap-3 hover:bg-[#f5ece8] transition-colors text-left font-medium cursor-pointer"
                     >
                       <span className="material-symbols-outlined text-[18px] text-[#5d371f]">
                         admin_panel_settings
                       </span>
-                      <div className="flex flex-col">
-                        <span className="font-bold text-[#5d371f] flex items-center gap-1">
-                          Trang quản trị <span className="text-[9px] bg-[#5d371f] text-white px-1 font-data-mono">ADMIN</span>
-                        </span>
-                        <span className="text-[10px] text-[#83746c]">Quản lý đơn hàng, KTS &amp; sản phẩm</span>
-                      </div>
+                      <span className="font-medium text-[#5d371f] flex items-center gap-1.5">
+                        Trang quản trị <span className="text-[9px] bg-[#5d371f] text-white px-1.5 py-0.5 rounded font-data-mono font-bold">ADMIN</span>
+                      </span>
                     </Link>
                   )}
 
@@ -360,10 +354,7 @@ function HeaderContent({
                     <span className="material-symbols-outlined text-[18px] text-[#5d371f]">
                       shopping_bag
                     </span>
-                    <div className="flex flex-col">
-                      <span className="font-bold text-[#1f1b19]">Giỏ hàng &amp; Đơn hàng</span>
-                      <span className="text-[10px] text-[#83746c]">Kiểm tra tác phẩm tuyển chọn</span>
-                    </div>
+                    <span className="font-medium text-[#1f1b19]">Giỏ hàng &amp; Đơn hàng</span>
                   </Link>
 
                   {/* Item 4: Đăng xuất */}
@@ -371,7 +362,7 @@ function HeaderContent({
                     <button
                       type="button"
                       onClick={handleLogout}
-                      className="w-full px-4 py-2 flex items-center gap-3 hover:bg-red-50 text-red-700 transition-colors text-left font-semibold cursor-pointer"
+                      className="w-full px-4 py-2 flex items-center gap-3 hover:bg-red-50 text-red-700 transition-colors text-left font-medium cursor-pointer"
                     >
                       <span className="material-symbols-outlined text-[18px] text-red-600">
                         logout

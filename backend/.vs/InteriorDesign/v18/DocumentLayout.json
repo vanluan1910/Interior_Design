@@ -1,0 +1,37 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "D:\\Interior design\\backend\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{1235C557-77EB-4083-9894-28B497BC7039}|src\\InteriorDesign.Application\\InteriorDesign.Application.csproj|d:\\interior design\\backend\\src\\interiordesign.application\\common\\behaviors\\loggingbehavior.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{1235C557-77EB-4083-9894-28B497BC7039}|src\\InteriorDesign.Application\\InteriorDesign.Application.csproj|solutionrelative:src\\interiordesign.application\\common\\behaviors\\loggingbehavior.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 0,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "LoggingBehavior.cs",
+              "DocumentMoniker": "D:\\Interior design\\backend\\src\\InteriorDesign.Application\\Common\\Behaviors\\LoggingBehavior.cs",
+              "RelativeDocumentMoniker": "src\\InteriorDesign.Application\\Common\\Behaviors\\LoggingBehavior.cs",
+              "ToolTip": "D:\\Interior design\\backend\\src\\InteriorDesign.Application\\Common\\Behaviors\\LoggingBehavior.cs",
+              "RelativeToolTip": "src\\InteriorDesign.Application\\Common\\Behaviors\\LoggingBehavior.cs",
+              "ViewState": "AgIAAAQAAAAAAAAAAAAkwBAAAABIAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-09-30T04:50:21.763Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

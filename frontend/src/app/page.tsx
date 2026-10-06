@@ -14,11 +14,12 @@ import QuickViewModal from '@/components/QuickViewModal';
 import SampleBoxModal from '@/components/SampleBoxModal';
 import { productsData } from '@/data/products';
 import { Product, CartItem } from '@/types';
-import { message } from 'antd';
+import { App } from 'antd';
 
 import { useCart } from '@/context/CartContext';
 
 export default function HomePage() {
+  const { message } = App.useApp();
   // Products & Categories
   const [products] = useState<Product[]>(productsData);
   const [activeCategory, setActiveCategory] = useState<string>('all');

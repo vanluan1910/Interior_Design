@@ -45,7 +45,6 @@ const AUTH_STORAGE_KEY = 'd2_luxury_auth_user_v1';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(DEFAULT_ADMIN_USER);
-  const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
     try {
@@ -60,12 +59,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } catch {
       setUser(DEFAULT_ADMIN_USER);
-    } finally {
-      setIsLoaded(true);
     }
   }, []);
 
-  const login = (identifier: string, password?: string): boolean => {
+  const login = (identifier: string, _password?: string): boolean => {
     const trimmed = identifier.trim().toLowerCase();
     // If admin credentials or matches admin email/phone
     if (

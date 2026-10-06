@@ -4,11 +4,10 @@
   "private": true,
   "description": "D2 LUXURY Furniture & Interior Design Monorepo",
   "scripts": {
-    "dev": "concurrently -n \"FRONTEND,BACKEND\" -c \"cyan.bold,magenta.bold\" \"npm run dev --prefix frontend\" \"npm run dev --prefix backend\"",
+    "dev": "npm run dev --prefix frontend",
     "dev:frontend": "npm run dev --prefix frontend",
-    "dev:backend": "npm run dev --prefix backend",
+    "dev:backend": "dotnet run --project backend/src/InteriorDesign.Api/InteriorDesign.Api.csproj",
     "build:frontend": "npm run build --prefix frontend",
-    "build:backend": "npm run build --prefix backend",
     "build": "npm run build:frontend"
   },
   "keywords": [
