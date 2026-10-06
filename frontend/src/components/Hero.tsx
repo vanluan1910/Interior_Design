@@ -13,18 +13,19 @@ export default function Hero({ onOpenBooking }: HeroProps) {
       {/* Background Image Layer */}
       <div className="absolute inset-0 z-0">
         <div
-          className="w-full h-full bg-cover bg-center transition-transform duration-1000 scale-100 hover:scale-102"
+          className="w-full h-full bg-cover bg-center md:bg-[center_right] transition-transform duration-1000 scale-100 hover:scale-102"
           style={{
-            backgroundImage: `url('https://lh3.googleusercontent.com/aida-public/AB6AXuALlrNZtbqv-y1XhO9CD31HRVnqQvO7e3PSKkrhTf-ibycrWi6XLmCxx4KZ3PJQs7EgdGN5lsrKzy3xT5H2OUX9sb2mntSjHmf6qnZalPWFVx4-hoGVbPiYRR-8AxKwXG76jl6XQbZA8zzgJ_3C2QTn1S4pF2h4ofyFdQ1p8EbwGSWtz3nFFAuqD1cbKvpcgdX2lxB5KdzeBkKcT0wq6G1hbF_7NizOijkItQ5G-Jx70M9OEMa2BIRn')`,
+            backgroundImage: `url('/hero-bg.jpg')`,
           }}
         />
-        <div className="absolute inset-0 bg-gradient-to-r from-[#fbf2ee] via-[#fbf2ee]/85 to-transparent"></div>
-        <div className="absolute inset-0 bg-gradient-to-t from-[#fff8f5] via-transparent to-[#fbf2ee]/40"></div>
+        {/* Soft elegant gradient overlays for high legibility */}
+        <div className="absolute inset-0 bg-gradient-to-r from-[#fff8f5]/95 via-[#fff8f5]/75 to-[#fff8f5]/20 md:to-transparent"></div>
+        <div className="absolute inset-0 bg-gradient-to-t from-[#fff8f5] via-transparent to-[#fff8f5]/30"></div>
       </div>
 
       {/* Hero Content */}
       <div className="relative z-10 w-full max-w-[1720px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-16 pt-32 pb-20 md:pt-44 md:pb-32 flex flex-col justify-center min-h-[880px]">
-        <div className="max-w-3xl flex flex-col gap-4 animate-fade-in-up">
+        <div className="max-w-3xl flex flex-col gap-4 animate-slide-in-left">
           {/* Badge */}
           <div className="inline-flex items-center gap-2 self-start px-3.5 py-1.5 rounded-none bg-white/85 backdrop-blur-md shadow-sm border border-[#d5c3ba]/50 animate-float">
             <span className="w-2 h-2 rounded-none bg-[#5d371f] animate-pulse"></span>
@@ -58,13 +59,13 @@ export default function Hero({ onOpenBooking }: HeroProps) {
               </span>
             </Link>
 
-            <button
-              onClick={onOpenBooking}
+            <Link
+              href="#showrooms"
               className="inline-flex items-center justify-center gap-2 px-7 py-3.5 rounded-none bg-white/90 text-[#5d371f] font-title-md text-title-md hover:bg-[#eae1dd] shadow-sm backdrop-blur border border-[#d5c3ba]/60 transition-all cursor-pointer hover-lift"
             >
-              <span className="material-symbols-outlined text-[20px]">calendar_today</span>
-              <span>Đặt lịch tư vấn Showroom</span>
-            </button>
+              <span className="material-symbols-outlined text-[20px]">storefront</span>
+              <span>Trải nghiệm Showroom</span>
+            </Link>
           </div>
 
           {/* Metrics & Trust Badges */}

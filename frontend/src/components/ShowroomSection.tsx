@@ -66,18 +66,18 @@ export default function ShowroomSection({ onOpenBooking }: ShowroomSectionProps)
 
             {/* CTA Buttons */}
             <div className="flex flex-wrap items-center gap-4 pt-2">
-              <button
-                onClick={onOpenBooking}
-                className="px-6 py-3 rounded-none bg-[#5d371f] text-white font-title-md text-sm sm:text-base hover:bg-[#784e34] shadow-md hover:shadow-lg transition-all cursor-pointer"
+              <a
+                href="tel:19008922"
+                className="px-6 py-3 rounded-none bg-[#5d371f] text-white font-title-md text-sm sm:text-base hover:bg-[#784e34] shadow-md hover:shadow-lg transition-all cursor-pointer inline-flex items-center gap-2"
               >
-                Đặt lịch tiếp đón riêng (Ưu tiên)
-              </button>
+                <span className="material-symbols-outlined text-[20px]">phone_in_talk</span>
+                <span>Liên hệ tư vấn tiếp đón</span>
+              </a>
               <a
                 className="font-title-md text-sm sm:text-base text-[#5d371f] hover:underline flex items-center gap-1 font-semibold"
                 href="tel:19008922"
               >
-                <span className="material-symbols-outlined text-[20px]">call</span>
-                <span>1900 8922</span>
+                <span>Hotline: 1900 8922</span>
               </a>
             </div>
           </div>

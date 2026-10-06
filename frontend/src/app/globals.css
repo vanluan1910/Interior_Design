@@ -92,7 +92,7 @@
   font-size: 56px;
   line-height: 68px;
   letter-spacing: -0.02em;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .text-display-xl-mobile {
@@ -106,35 +106,35 @@
   font-size: 36px;
   line-height: 44px;
   letter-spacing: -0.01em;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .font-headline-md {
   font-family: var(--font-be-vietnam-pro), 'Be Vietnam Pro', sans-serif;
   font-size: 26px;
   line-height: 34px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .font-headline-sm {
   font-family: var(--font-be-vietnam-pro), 'Be Vietnam Pro', sans-serif;
   font-size: 20px;
   line-height: 28px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .font-title-lg {
   font-family: var(--font-be-vietnam-pro), 'Be Vietnam Pro', sans-serif;
   font-size: 18px;
   line-height: 26px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .font-title-md {
   font-family: var(--font-be-vietnam-pro), 'Be Vietnam Pro', sans-serif;
   font-size: 16px;
   line-height: 24px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .font-body-lg {
@@ -160,7 +160,7 @@
   font-size: 12px;
   line-height: 16px;
   letter-spacing: 0.04em;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .font-label-sm {
@@ -168,7 +168,7 @@
   font-size: 11px;
   line-height: 14px;
   letter-spacing: 0.06em;
-  font-weight: 500;
+  font-weight: 400;
 }
 
 .font-data-mono {
@@ -300,6 +300,81 @@ h1, h2, h3, h4, h5, h6, p, span, a, button, input, select, textarea, label {
 }
 
 /* Animation Utilities */
+@keyframes slideInFromBottom {
+  0% {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInFromLeft {
+  0% {
+    opacity: 0;
+    transform: translateX(-35px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInFromRight {
+  0% {
+    opacity: 0;
+    transform: translateX(35px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInFromTop {
+  0% {
+    opacity: 0;
+    transform: translateY(-25px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-in-bottom {
+  animation: slideInFromBottom 0.65s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-slide-in-left {
+  animation: slideInFromLeft 0.65s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-slide-in-right {
+  animation: slideInFromRight 0.65s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-slide-in-top {
+  animation: slideInFromTop 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes pageSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateX(50px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-page-slide-in {
+  animation: pageSlideIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 .animate-fade-in {
   animation: fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
@@ -386,3 +461,351 @@ h1, h2, h3, h4, h5, h6, p, span, a, button, input, select, textarea, label {
   animation: fadeIn 0.4s ease-out forwards;
 }
 
+/* ================= GLOBAL ADMIN UNDERLINE COMPONENT STYLES ================= */
+body .admin-underline-mode .ant-input,
+body .admin-underline-mode .ant-input-outlined,
+body .admin-underline-mode .ant-input-affix-wrapper,
+body .admin-underline-mode .ant-input-affix-wrapper-outlined,
+body .admin-underline-mode .ant-select .ant-select-selector,
+body .admin-underline-mode .ant-select-outlined .ant-select-selector,
+body .admin-underline-mode .ant-select-single:not(.ant-select-customize-input) .ant-select-selector,
+body .admin-underline-mode .ant-select-multiple .ant-select-selector,
+body .admin-underline-mode .ant-select-selector,
+body .admin-underline-mode .ant-input-number,
+body .admin-underline-mode .ant-input-number-outlined,
+body .admin-underline-mode .ant-picker,
+body .admin-underline-mode .ant-picker-outlined,
+body .admin-underline-mode .ant-tree-select .ant-select-selector,
+body .admin-underline-mode .ant-cascader .ant-select-selector,
+body .ant-drawer .ant-input,
+body .ant-drawer .ant-input-outlined,
+body .ant-drawer .ant-input-affix-wrapper,
+body .ant-drawer .ant-input-affix-wrapper-outlined,
+body .ant-drawer .ant-select .ant-select-selector,
+body .ant-drawer .ant-select-outlined .ant-select-selector,
+body .ant-drawer .ant-select-single:not(.ant-select-customize-input) .ant-select-selector,
+body .ant-drawer .ant-select-multiple .ant-select-selector,
+body .ant-drawer .ant-select-selector,
+body .ant-drawer .ant-input-number,
+body .ant-drawer .ant-input-number-outlined,
+body .ant-drawer .ant-picker,
+body .ant-drawer .ant-picker-outlined,
+body .ant-drawer .ant-tree-select .ant-select-selector,
+body .ant-drawer .ant-cascader .ant-select-selector,
+body .ant-modal .ant-input,
+body .ant-modal .ant-input-outlined,
+body .ant-modal .ant-input-affix-wrapper,
+body .ant-modal .ant-input-affix-wrapper-outlined,
+body .ant-modal .ant-select .ant-select-selector,
+body .ant-modal .ant-select-outlined .ant-select-selector,
+body .ant-modal .ant-select-single:not(.ant-select-customize-input) .ant-select-selector,
+body .ant-modal .ant-select-multiple .ant-select-selector,
+body .ant-modal .ant-select-selector,
+body .ant-modal .ant-input-number,
+body .ant-modal .ant-input-number-outlined,
+body .ant-modal .ant-picker,
+body .ant-modal .ant-picker-outlined,
+body .ant-modal .ant-tree-select .ant-select-selector,
+body .ant-modal .ant-cascader .ant-select-selector {
+  border: 0 !important;
+  border-top: 0 !important;
+  border-left: 0 !important;
+  border-right: 0 !important;
+  border-bottom: 1.5px solid #cbd5e1 !important;
+  border-radius: 0px !important;
+  background-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
+  outline-offset: 0 !important;
+  transition: border-bottom-color 0.2s ease, border-bottom-width 0.2s ease !important;
+}
+
+body .ant-drawer .ant-select,
+body .ant-drawer .ant-select *,
+body .ant-modal .ant-select,
+body .ant-modal .ant-select *,
+body .admin-underline-mode .ant-select,
+body .admin-underline-mode .ant-select * {
+  outline: none !important;
+}
+
+/* Hover State */
+body .admin-underline-mode .ant-input:hover,
+body .admin-underline-mode .ant-input-outlined:hover,
+body .admin-underline-mode .ant-input-affix-wrapper:hover,
+body .admin-underline-mode .ant-input-affix-wrapper-outlined:hover,
+body .admin-underline-mode .ant-select:hover .ant-select-selector,
+body .admin-underline-mode .ant-select-outlined:hover .ant-select-selector,
+body .admin-underline-mode .ant-select-selector:hover,
+body .admin-underline-mode .ant-input-number:hover,
+body .admin-underline-mode .ant-input-number-outlined:hover,
+body .admin-underline-mode .ant-picker:hover,
+body .admin-underline-mode .ant-picker-outlined:hover,
+body .ant-drawer .ant-input:hover,
+body .ant-drawer .ant-input-outlined:hover,
+body .ant-drawer .ant-input-affix-wrapper:hover,
+body .ant-drawer .ant-input-affix-wrapper-outlined:hover,
+body .ant-drawer .ant-select:hover .ant-select-selector,
+body .ant-drawer .ant-select-outlined:hover .ant-select-selector,
+body .ant-drawer .ant-select-selector:hover,
+body .ant-drawer .ant-input-number:hover,
+body .ant-drawer .ant-picker:hover,
+body .ant-modal .ant-input:hover,
+body .ant-modal .ant-input-outlined:hover,
+body .ant-modal .ant-input-affix-wrapper:hover,
+body .ant-modal .ant-input-affix-wrapper-outlined:hover,
+body .ant-modal .ant-select:hover .ant-select-selector,
+body .ant-modal .ant-select-outlined:hover .ant-select-selector,
+body .ant-modal .ant-select-selector:hover,
+body .ant-modal .ant-input-number:hover,
+body .ant-modal .ant-picker:hover {
+  border-top: 0 !important;
+  border-left: 0 !important;
+  border-right: 0 !important;
+  border-bottom: 1.5px solid #784e34 !important;
+}
+
+/* Focus / Active State */
+body .admin-underline-mode .ant-input:focus,
+body .admin-underline-mode .ant-input-focused,
+body .admin-underline-mode .ant-input-affix-wrapper-focused,
+body .admin-underline-mode .ant-select-focused .ant-select-selector,
+body .admin-underline-mode .ant-select-open .ant-select-selector,
+body .admin-underline-mode .ant-input-number-focused,
+body .admin-underline-mode .ant-picker-focused,
+body .ant-drawer .ant-input:focus,
+body .ant-drawer .ant-input-focused,
+body .ant-drawer .ant-input-affix-wrapper-focused,
+body .ant-drawer .ant-select-focused .ant-select-selector,
+body .ant-drawer .ant-select-open .ant-select-selector,
+body .ant-drawer .ant-input-number-focused,
+body .ant-drawer .ant-picker-focused,
+body .ant-modal .ant-input:focus,
+body .ant-modal .ant-input-focused,
+body .ant-modal .ant-input-affix-wrapper-focused,
+body .ant-modal .ant-select-focused .ant-select-selector,
+body .ant-modal .ant-select-open .ant-select-selector,
+body .ant-modal .ant-input-number-focused,
+body .ant-modal .ant-picker-focused {
+  border-top: 0 !important;
+  border-left: 0 !important;
+  border-right: 0 !important;
+  border-bottom: 2px solid #784e34 !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+/* Inner input inside Affix Wrapper (e.g. search inputs or suffix buttons) */
+body .admin-underline-mode .ant-input-affix-wrapper > input.ant-input,
+body .admin-underline-mode .ant-input-affix-wrapper-outlined > input.ant-input,
+body .ant-drawer .ant-input-affix-wrapper > input.ant-input,
+body .ant-drawer .ant-input-affix-wrapper-outlined > input.ant-input,
+body .ant-modal .ant-input-affix-wrapper > input.ant-input,
+body .ant-modal .ant-input-affix-wrapper-outlined > input.ant-input,
+body input.ant-select-selection-search-input,
+body .ant-select-selection-search > input,
+body .ant-select-selection-search input,
+body .ant-select-selection-search,
+body .ant-select input,
+body .ant-drawer .ant-select input,
+body .ant-modal .ant-select input,
+body .admin-underline-mode .ant-select input {
+  border: 0 !important;
+  border-bottom: 0 !important;
+  border-width: 0 !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  outline: none !important;
+}
+
+/* Inner input in InputNumber */
+.admin-underline-mode .ant-input-number .ant-input-number-input,
+.ant-drawer .ant-input-number .ant-input-number-input,
+.ant-modal .ant-input-number .ant-input-number-input {
+  border: 0 !important;
+  border-bottom: 0 !important;
+  box-shadow: none !important;
+  background-color: transparent !important;
+}
+
+/* Hide split borders on InputNumber step handlers */
+.admin-underline-mode .ant-input-number-handler-wrap,
+.ant-drawer .ant-input-number-handler-wrap,
+.ant-modal .ant-input-number-handler-wrap {
+  border-left: 0 !important;
+  background: transparent !important;
+}
+
+.admin-underline-mode .ant-input-number-handler,
+.ant-drawer .ant-input-number-handler,
+.ant-modal .ant-input-number-handler {
+  border-top: 0 !important;
+  border-bottom: 0 !important;
+}
+
+/* TextArea underline handling */
+.admin-underline-mode .ant-input-textarea textarea,
+.admin-underline-mode textarea.ant-input,
+.ant-drawer .ant-input-textarea textarea,
+.ant-drawer textarea.ant-input,
+.ant-modal .ant-input-textarea textarea,
+.ant-modal textarea.ant-input {
+  border: 0 !important;
+  border-top: 0 !important;
+  border-left: 0 !important;
+  border-right: 0 !important;
+  border-bottom: 1.5px solid #cbd5e1 !important;
+  border-radius: 0 !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+
+.admin-underline-mode .ant-input-textarea textarea:focus,
+.admin-underline-mode textarea.ant-input:focus,
+.ant-drawer .ant-input-textarea textarea:focus,
+.ant-drawer textarea.ant-input:focus,
+.ant-modal .ant-input-textarea textarea:focus,
+.ant-modal textarea.ant-input:focus {
+  border-bottom: 2px solid #784e34 !important;
+}
+
+/* Fix prefix inside underline inputs */
+.admin-underline-mode .ant-input-prefix,
+.ant-drawer .ant-input-prefix,
+.ant-modal .ant-input-prefix {
+  margin-inline-end: 8px !important;
+}
+
+/* Clean Select selection text */
+.admin-underline-mode .ant-select-single .ant-select-selector,
+.ant-drawer .ant-select-single .ant-select-selector,
+.ant-modal .ant-select-single .ant-select-selector {
+  padding-left: 2px !important;
+  padding-right: 2px !important;
+}
+
+/* Category Status Select Custom Borderless Clean Styling */
+.category-status-select .ant-select-selector {
+  background-color: transparent !important;
+  border-radius: 6px !important;
+  padding: 0 !important;
+  border: none !important;
+  box-shadow: none !important;
+  transition: all 0.2s ease !important;
+}
+
+.category-status-select:hover .ant-select-selector {
+  background-color: transparent !important;
+  border: none !important;
+}
+
+.category-status-select.ant-select-focused .ant-select-selector,
+.category-status-select.ant-select-open .ant-select-selector {
+  background-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.category-status-select-popup {
+  background-color: #ffffff !important;
+  border-radius: 10px !important;
+  padding: 4px !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.08) !important;
+  border: 1px solid #e2e8f0 !important;
+  min-width: 170px !important;
+}
+
+.category-status-select-popup .ant-select-item {
+  border-radius: 6px !important;
+  padding: 8px 12px !important;
+  margin-bottom: 2px !important;
+  font-weight: 500 !important;
+  transition: all 0.15s ease !important;
+}
+
+.category-status-select-popup .ant-select-item-option-selected {
+  background-color: #f0fdf4 !important;
+  color: #166534 !important;
+  font-weight: 600 !important;
+}
+
+.category-status-select-popup .ant-select-item-option-active:not(.ant-select-item-option-selected) {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+}
+
+/* Ensure Table Headers Always Stay on 1 Single Line */
+.ant-table-thead > tr > th {
+  white-space: nowrap !important;
+}
+
+/* Ensure Table Cell Buttons / Dropdown Triggers have 0 border, 0 outline */
+.ant-table-cell button.ant-dropdown-trigger,
+.ant-table-cell button:focus,
+.ant-table-cell button:focus-visible {
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* Active Expanded Row in Admin Orders Table */
+.admin-order-row-active {
+  background-color: #784e34 !important;
+}
+.admin-order-row-active td {
+  background-color: #784e34 !important;
+  color: #ffffff !important;
+}
+.admin-order-row-active td span,
+.admin-order-row-active td div {
+  color: #ffffff !important;
+}
+.admin-order-row-active .ant-tag {
+  background-color: rgba(255, 255, 255, 0.2) !important;
+  color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.35) !important;
+}
+
+/* ================= ADMIN INTERFACE CLEAN LIGHT TYPOGRAPHY ================= */
+.admin-underline-mode {
+  font-weight: 400 !important;
+}
+
+.admin-underline-mode .ant-table-thead > tr > th,
+.admin-underline-mode .ant-table-thead th {
+  font-weight: 500 !important;
+  color: #475569 !important;
+  font-size: 12px !important;
+}
+
+.admin-underline-mode .ant-table-tbody > tr > td {
+  font-weight: 400 !important;
+  color: #334155 !important;
+}
+
+.admin-underline-mode .ant-table-cell {
+  font-weight: 400 !important;
+}
+
+.admin-underline-mode .ant-segmented-item-label {
+  font-weight: 400 !important;
+}
+
+.admin-underline-mode .ant-segmented-item-selected .ant-segmented-item-label {
+  font-weight: 500 !important;
+}
+
+.admin-underline-mode .ant-btn {
+  font-weight: 400 !important;
+}
+
+/* ================= PRINT ISOLATION RULES ================= */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+}

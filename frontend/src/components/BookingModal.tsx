@@ -103,7 +103,6 @@ export default function BookingModal({ isOpen, onClose }: BookingModalProps) {
                 <Input
                   size="large"
                   placeholder="Ví dụ: Nguyễn Văn An"
-                  className="rounded-none border-[#d5c3ba]"
                 />
               </Form.Item>
 
@@ -118,7 +117,6 @@ export default function BookingModal({ isOpen, onClose }: BookingModalProps) {
                 <Input
                   size="large"
                   placeholder="090 123 4567"
-                  className="rounded-none border-[#d5c3ba]"
                 />
               </Form.Item>
 
@@ -129,7 +127,6 @@ export default function BookingModal({ isOpen, onClose }: BookingModalProps) {
                 >
                   <Select
                     size="large"
-                    className="rounded-none"
                     options={[
                       { value: 'hanoi', label: 'Hà Nội (48 Tràng Tiền)' },
                       { value: 'saigon', label: 'TP. HCM (126 Nguyễn Thị Minh Khai)' },
@@ -144,7 +141,7 @@ export default function BookingModal({ isOpen, onClose }: BookingModalProps) {
                 >
                   <DatePicker
                     size="large"
-                    className="w-full rounded-none border-[#d5c3ba]"
+                    className="w-full"
                     format="DD/MM/YYYY"
                   />
                 </Form.Item>

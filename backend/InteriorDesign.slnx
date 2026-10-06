@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/InteriorDesign.Api/InteriorDesign.Api.csproj" />
+    <Project Path="src/InteriorDesign.Application/InteriorDesign.Application.csproj" />
+    <Project Path="src/InteriorDesign.Domain/InteriorDesign.Domain.csproj" />
+    <Project Path="src/InteriorDesign.Infrastructure/InteriorDesign.Infrastructure.csproj" />
+    <Project Path="src/InteriorDesign.Integration/InteriorDesign.Integration.csproj" />
+    <Project Path="src/InteriorDesign.Shared/InteriorDesign.Shared.csproj" />
+  </Folder>
+</Solution>

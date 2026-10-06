@@ -28,6 +28,7 @@ export const metadata: Metadata = {
 };
 
 import { CartProvider } from "@/context/CartContext";
+import { AuthProvider } from "@/context/AuthContext";
 
 export default function RootLayout({
   children,
@@ -54,7 +55,7 @@ export default function RootLayout({
                 colorSuccess: "#3f4332",
                 colorWarning: "#c5a880",
                 colorError: "#ba1a1a",
-                borderRadius: 0,
+                fontSize: 14,
                 fontFamily: "var(--font-be-vietnam-pro), 'Be Vietnam Pro', sans-serif",
                 colorBgBase: "#fff8f5",
                 colorTextBase: "#1f1b19",
@@ -64,6 +65,24 @@ export default function RootLayout({
                   colorPrimary: "#5d371f",
                   algorithm: true,
                   borderRadius: 0,
+                },
+                Card: {
+                  headerFontSize: 16,
+                },
+                Table: {
+                  headerBg: "#f8fafc",
+                  headerColor: "rgba(15, 23, 42, 0.9)",
+                  fontSize: 13.5,
+                  borderColor: "#e2e8f0",
+                },
+                Menu: {
+                  fontSize: 14,
+                },
+                Tabs: {
+                  itemActiveColor: "#5d371f",
+                  itemHoverColor: "#784e34",
+                  itemSelectedColor: "#5d371f",
+                  inkBarColor: "#5d371f",
                 },
                 Modal: {
                   borderRadiusLG: 0,
@@ -101,9 +120,11 @@ export default function RootLayout({
             }}
           >
             <App>
-              <CartProvider>
-                {children}
-              </CartProvider>
+              <AuthProvider>
+                <CartProvider>
+                  {children}
+                </CartProvider>
+              </AuthProvider>
             </App>
           </ConfigProvider>
         </AntdRegistry>

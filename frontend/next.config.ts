@@ -13,6 +13,55 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  async redirects() {
+    return [
+      {
+        source: "/san-pham",
+        destination: "/products",
+        permanent: true,
+      },
+      {
+        source: "/san-pham/:id",
+        destination: "/products/:id",
+        permanent: true,
+      },
+      {
+        source: "/gio-hang",
+        destination: "/cart",
+        permanent: true,
+      },
+      {
+        source: "/dang-nhap",
+        destination: "/login",
+        permanent: true,
+      },
+      {
+        source: "/dang-ky",
+        destination: "/register",
+        permanent: true,
+      },
+      {
+        source: "/thanh-toan",
+        destination: "/checkout",
+        permanent: true,
+      },
+      {
+        source: "/thong-tin-ca-nhan",
+        destination: "/profile",
+        permanent: true,
+      },
+      {
+        source: "/phong-khach",
+        destination: "/living-room",
+        permanent: true,
+      },
+      {
+        source: "/danh-muc",
+        destination: "/categories",
+        permanent: true,
+      },
+    ];
+  },
 };
 
 export default nextConfig;

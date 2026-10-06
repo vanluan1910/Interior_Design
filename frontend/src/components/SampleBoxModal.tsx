@@ -114,7 +114,6 @@ export default function SampleBoxModal({ isOpen, onClose }: SampleBoxModalProps)
                 <Input
                   size="large"
                   placeholder="Nguyễn Văn A"
-                  className="rounded-none border-[#d5c3ba]"
                 />
               </Form.Item>
 
@@ -129,7 +128,6 @@ export default function SampleBoxModal({ isOpen, onClose }: SampleBoxModalProps)
                 <Input
                   size="large"
                   placeholder="091 234 5678"
-                  className="rounded-none border-[#d5c3ba]"
                 />
               </Form.Item>
 
@@ -141,7 +139,6 @@ export default function SampleBoxModal({ isOpen, onClose }: SampleBoxModalProps)
                 <Input.TextArea
                   rows={2}
                   placeholder="Số nhà, tên đường, Phường/Xã, Quận/Huyện, Tỉnh/Thành phố"
-                  className="rounded-none border-[#d5c3ba]"
                 />
               </Form.Item>
 
