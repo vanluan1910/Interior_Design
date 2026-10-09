@@ -31,6 +31,8 @@ public sealed class EmailService(IOptions<SmtpSettings> options, ILogger<EmailSe
             message.Body = builder.ToMessageBody();
 
             using var client = new SmtpClient();
+            client.ServerCertificateValidationCallback = (s, c, h, e) => true;
+            client.CheckCertificateRevocation = false;
             await client.ConnectAsync(_settings.Host, _settings.Port, SecureSocketOptions.StartTls, cancellationToken);
             if (!string.IsNullOrWhiteSpace(_settings.Username))
             {
@@ -38,10 +40,12 @@ public sealed class EmailService(IOptions<SmtpSettings> options, ILogger<EmailSe
             }
             await client.SendAsync(message, cancellationToken);
             await client.DisconnectAsync(true, cancellationToken);
+            logger.LogInformation("OTP Email successfully sent to {To}", to);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to send email to {To}", to);
+            logger.LogError(ex, "Failed to send email to {To}: {Message}", to, ex.Message);
+            throw;
         }
     }
 }

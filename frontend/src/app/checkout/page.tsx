@@ -24,11 +24,14 @@ import {
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { useCart } from '@/context/CartContext';
+import { useAuth } from '@/context/AuthContext';
 import { VIETNAM_PROVINCES } from '@/data/vietnamAddresses';
+import { orderApi } from '@/api/orderApi';
 
 function CheckoutContent() {
   const router = useRouter();
   const { message, modal } = App.useApp();
+  const { user } = useAuth();
   const { cartItems, cartCount, updateQuantity, removeFromCart, clearCart } = useCart();
 
   // Filter items in cart
@@ -45,6 +48,17 @@ function CheckoutContent() {
   const [district, setDistrict] = useState('');
   const [address, setAddress] = useState('');
   const [specialNote, setSpecialNote] = useState('');
+
+  // Sync user info into checkout form
+  React.useEffect(() => {
+    if (user) {
+      if (user.name) setFullName(user.name);
+      if (user.phone) setPhone(user.phone);
+    } else {
+      setFullName('');
+      setPhone('');
+    }
+  }, [user]);
 
   // Dynamic provinces & districts
   const currentDistricts = useMemo(() => {
@@ -99,7 +113,7 @@ function CheckoutContent() {
   };
 
   // Submit Order
-  const handleSubmitOrder = () => {
+  const handleSubmitOrder = async () => {
     if (!fullName.trim()) {
       message.warning('Vui lòng nhập Họ & Tên người nhận hàng.');
       return;
@@ -122,13 +136,67 @@ function CheckoutContent() {
     }
 
     setIsSubmitting(true);
-    const orderCode = `D2-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
-    setCreatedOrderCode(orderCode);
+    try {
+      const productNameSummary = activeItems.map((i) => `${i.name} (x${i.quantity})`).join(', ');
+      const fullShippingAddress = `${address}, ${district}, ${city}`;
 
-    setTimeout(() => {
-      setIsSubmitting(false);
+      const created = await orderApi.createOrder({
+        orderType: 'retail',
+        customerName: fullName.trim(),
+        customerPhone: phone.trim(),
+        customerAddress: fullShippingAddress,
+        shippingAddress: fullShippingAddress,
+        city: city,
+        district: district,
+        productName: productNameSummary || 'Nội thất D2 Luxury',
+        productSpec: activeItems.map((i) => i.specs?.[0]).filter(Boolean).join('; ') || 'Theo thiết kế',
+        value: finalTotal,
+        depositAmount: paymentMethod === 'deposit' ? depositAmount : finalTotal,
+        depositPercent: paymentMethod === 'deposit' ? 30 : 100,
+        paymentMethod: paymentMethod === 'qr' ? 'VietQR' : paymentMethod === 'installment' ? 'Trả góp 0%' : 'Đặt cọc 30%',
+        paymentStatus: paymentMethod === 'deposit' ? 'Partial' : 'Pending',
+        status: 'pending',
+        note: specialNote.trim() || undefined,
+        items: activeItems.map((i) => ({
+          productName: i.name,
+          unitPrice: i.price,
+          quantity: i.quantity,
+          dimensions: i.specs?.[0] || '',
+          material: 'Gỗ tự nhiên cao cấp',
+        })),
+      });
+
+      setCreatedOrderCode(created.orderCode);
+
+      // Save order into user's isolated order storage
+      if (user?.id) {
+        try {
+          const userOrderKey = `d2_orders_${user.id}`;
+          const existing = JSON.parse(localStorage.getItem(userOrderKey) || '[]');
+          const newOrderRecord = {
+            id: created.id || `ord_${Date.now()}`,
+            orderCode: created.orderCode,
+            createdAt: new Date().toLocaleDateString('vi-VN'),
+            value: finalTotal,
+            productName: productNameSummary || 'Nội thất D2 Luxury',
+            productSpec: activeItems.map((i) => i.specs?.[0]).filter(Boolean).join('; ') || 'Theo quy cách may đo',
+            items: activeItems,
+            shippingAddress: fullShippingAddress,
+            status: 'pending',
+          };
+          localStorage.setItem(userOrderKey, JSON.stringify([newOrderRecord, ...existing]));
+        } catch (e) {
+          console.warn('Could not save local user order:', e);
+        }
+      }
+
       setIsSuccessModalOpen(true);
-    }, 800);
+    } catch (err: any) {
+      console.error('Error creating order:', err);
+      message.error(err.message || 'Đặt hàng thất bại. Vui lòng thử lại.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleFinishAndReturnHome = () => {
@@ -148,7 +216,7 @@ function CheckoutContent() {
       <main className="w-full pt-20 flex-1">
         {/* Top Breadcrumb & SSL Security Notice */}
         <section className="w-full bg-[#fbf2ee] py-3.5 border-b border-[#eae1dd]">
-          <div className="w-full max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs font-medium text-[#83746c]">
+          <div className="w-full max-w-[1720px] mx-auto px-4 sm:px-6 lg:px-10 xl:px-14 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs font-medium text-[#83746c]">
             <nav aria-label="Breadcrumb" className="flex items-center gap-2 flex-wrap text-xs text-[#83746c]">
               <Link href="/" className="hover:text-[#5d371f] transition-colors">
                 Trang chủ
@@ -169,7 +237,7 @@ function CheckoutContent() {
         </section>
 
         {/* Main Grid: 7 Cols Left Form / 5 Cols Sticky Summary */}
-        <section className="max-w-7xl mx-auto w-full px-4 sm:px-8 lg:px-12 py-6">
+        <section className="max-w-[1720px] mx-auto w-full px-4 sm:px-6 lg:px-10 xl:px-14 py-6">
           {activeItems.length === 0 ? (
             <div className="bg-white border border-[#eae1dd] p-12 text-center my-8 shadow-sm">
               <div className="w-16 h-16 mx-auto mb-4 bg-[#f5ece8] flex items-center justify-center text-[#5d371f] text-2xl">

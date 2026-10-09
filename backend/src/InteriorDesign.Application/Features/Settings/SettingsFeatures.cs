@@ -14,17 +14,17 @@ public static class SettingMapper
 {
     public static StoreSettingDto ToDto(StoreSetting s) => new(
         s.Id,
-        s.StoreName,
-        s.Hotline,
-        s.Email,
-        s.Address,
-        s.LogoUrl,
-        s.HeroBannerUrl,
-        s.BankName,
-        s.BankAccountName,
-        s.BankAccountNumber,
-        s.VietQrCodeUrl,
-        s.SocialLinksJson,
+        s.StoreName ?? "",
+        s.Hotline ?? "",
+        s.Email ?? "",
+        s.Address ?? "",
+        s.LogoUrl ?? "",
+        s.HeroBannerUrl ?? "",
+        s.BankName ?? "",
+        s.BankAccountName ?? "",
+        s.BankAccountNumber ?? "",
+        s.VietQrCodeUrl ?? "",
+        s.SocialLinksJson ?? "{}",
         s.UpdatedAt
     );
 }

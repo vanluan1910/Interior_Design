@@ -30,10 +30,11 @@ export interface StoredPrintTemplate {
 const DEFAULT_TEMPLATES_FALLBACK: Record<string, Partial<StoredPrintTemplate>> = {
   invoice: {
     key: 'invoice',
-    tab: 'Hóa đơn bán hàng',
+    tab: 'Đơn hàng (Hóa đơn)',
+    select: 'Mẫu Hóa đơn bán hàng (Màn hình Đơn hàng)',
     title: 'HÓA ĐƠN BÁN HÀNG & DỊCH VỤ NỘI THẤT',
     codePrefix: 'HD',
-    paperSize: 'k80',
+    paperSize: 'a4',
     showLogo: true,
     showQr: true,
     showCustomer: true,
@@ -43,7 +44,8 @@ const DEFAULT_TEMPLATES_FALLBACK: Record<string, Partial<StoredPrintTemplate>> =
   },
   order: {
     key: 'order',
-    tab: 'Phiếu đặt hàng / Cọc',
+    tab: 'Đặt hàng may đo',
+    select: 'Mẫu Phiếu đặt hàng / Cọc may đo (Màn hình Đơn hàng)',
     title: 'PHIẾU ĐẶT HÀNG & TẠM ỨNG MAY ĐO',
     codePrefix: 'DH',
     paperSize: 'a4',
@@ -54,9 +56,52 @@ const DEFAULT_TEMPLATES_FALLBACK: Record<string, Partial<StoredPrintTemplate>> =
     headerNote: 'Xưởng Sản Xuất & Gia Công Nội Thất Mộc Gia Atelier',
     footerNote: 'Tiến độ sản xuất từ 15-20 ngày làm việc kể từ ngày duyệt bản vẽ 3D kỹ thuật.',
   },
+  purchase: {
+    key: 'purchase',
+    tab: 'Nhập kho',
+    select: 'Mẫu Phiếu nhập kho (Màn hình Kho & Xưởng)',
+    title: 'PHIẾU NHẬP KHO VẬT TƯ & HÀNG HÓA',
+    codePrefix: 'PNK',
+    paperSize: 'a4',
+    showLogo: true,
+    showQr: false,
+    showCustomer: false,
+    showSignature: true,
+    headerNote: 'Kho Tổng Vật Tư & Nguyên Liệu Gỗ Tự Nhiên',
+    footerNote: 'Thủ kho và người giao hàng chịu trách nhiệm về số lượng và quy cách quy chuẩn thực nhập.',
+  },
+  stocktake: {
+    key: 'stocktake',
+    tab: 'Kiểm kho',
+    select: 'Mẫu Biên bản kiểm kê kho (Màn hình Kho & Xưởng)',
+    title: 'PHIẾU KIỂM KÊ TỒN KHO HÀNG HÓA',
+    codePrefix: 'KK',
+    paperSize: 'a4',
+    showLogo: true,
+    showQr: false,
+    showCustomer: false,
+    showSignature: true,
+    headerNote: 'Phân hệ Quản lý Kho Vật tư & Xưởng Sản Xuất',
+    footerNote: 'Biên bản kiểm kê có giá trị làm căn cứ đối soát sổ sách kho và xử lý tồn kho.',
+  },
+  return: {
+    key: 'return',
+    tab: 'Xuất trả NCC',
+    select: 'Mẫu Phiếu xuất trả hàng & Bảo hành NCC (Màn hình Kho & Xưởng)',
+    title: 'PHIẾU XUẤT TRẢ HÀNG & BẢO HÀNH NCC',
+    codePrefix: 'TH',
+    paperSize: 'a5',
+    showLogo: true,
+    showQr: false,
+    showCustomer: true,
+    showSignature: true,
+    headerNote: 'Trung Tâm Dịch Vụ Khách Hàng D2 LUXURY',
+    footerNote: 'Cam kết xử lý và phản hồi tình trạng sản phẩm trong vòng 48h làm việc.',
+  },
   delivery: {
     key: 'delivery',
-    tab: 'Phiếu giao hàng / Lắp đặt',
+    tab: 'Bàn giao & Lắp đặt',
+    select: 'Mẫu Biên bản bàn giao lắp đặt công trình (Màn hình Đơn hàng)',
     title: 'BIÊN BẢN BÀN GIAO & LẮP ĐẶT NỘI THẤT',
     codePrefix: 'BG',
     paperSize: 'a4',
@@ -67,35 +112,10 @@ const DEFAULT_TEMPLATES_FALLBACK: Record<string, Partial<StoredPrintTemplate>> =
     headerNote: 'Đội Thi Công & Lắp Đặt Hoàn Thiện Công Trình',
     footerNote: 'Quý khách vui lòng kiểm tra kỹ hiện trạng sản phẩm, phụ kiện trước khi ký nhận bàn giao.',
   },
-  return: {
-    key: 'return',
-    tab: 'Phiếu trả hàng / Bảo hành',
-    title: 'PHIẾU XUẤT TRẢ HÀNG & BẢO HÀNH NHÀ CUNG CẤP',
-    codePrefix: 'TH',
-    paperSize: 'a4',
-    showLogo: true,
-    showQr: false,
-    showCustomer: true,
-    showSignature: true,
-    headerNote: 'Trung Tâm Dịch Vụ & Kho Vật Tư D2 LUXURY',
-    footerNote: 'Mặt hàng hoàn trả theo biên bản kiểm định KCS và thỏa thuận bảo hành với Nhà cung cấp.',
-  },
-  purchase: {
-    key: 'purchase',
-    tab: 'Phiếu nhập kho vật tư',
-    title: 'PHIẾU NHẬP KHO HÀNG HÓA & VẬT TƯ GỖ',
-    codePrefix: 'PNK',
-    paperSize: 'a4',
-    showLogo: true,
-    showQr: false,
-    showCustomer: false,
-    showSignature: true,
-    headerNote: 'Kho Tổng Vật Tư & Nguyên Liệu Gỗ Tự Nhiên Mộc Gia Atelier',
-    footerNote: 'Thủ kho và người giao hàng chịu trách nhiệm về số lượng và quy cách quy chuẩn thực nhập.',
-  },
   receipt: {
     key: 'receipt',
-    tab: 'Phiếu thu tiền',
+    tab: 'Phiếu thu',
+    select: 'Mẫu Phiếu thu tiền tạm ứng / thanh toán',
     title: 'PHIẾU THU TIỀN TẠM ỨNG DỰ ÁN',
     codePrefix: 'PT',
     paperSize: 'a5',
@@ -109,6 +129,7 @@ const DEFAULT_TEMPLATES_FALLBACK: Record<string, Partial<StoredPrintTemplate>> =
   payment: {
     key: 'payment',
     tab: 'Phiếu chi',
+    select: 'Mẫu Phiếu chi thanh toán NCC / xưởng',
     title: 'PHIẾU CHI TIỀN THANH TOÁN VẬT TƯ',
     codePrefix: 'PC',
     paperSize: 'a5',
@@ -120,6 +141,116 @@ const DEFAULT_TEMPLATES_FALLBACK: Record<string, Partial<StoredPrintTemplate>> =
     footerNote: 'Đề nghị người nhận tiền kiểm đếm đủ trước khi rời khỏi quầy thủ quỹ.',
   },
 };
+
+/**
+ * Helper to get active company information from localStorage
+ */
+export function getStoredCompanyInfo() {
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = localStorage.getItem('d2_admin_company_info');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          brandName: parsed.brandName || parsed.BrandName || 'D2 LUXURY',
+          businessSector: parsed.businessSector || parsed.BusinessSector || 'NỘI THẤT GỖ TỰ NHIÊN',
+          companyName: parsed.companyName || parsed.CompanyName || 'CÔNG TY CỔ PHẦN NỘI THẤT D2 LUXURY',
+          address: parsed.address || parsed.Address || 'Showroom 01, KĐT Vinhomes Riverside, Long Biên, Hà Nội',
+          hotline: parsed.hotline || parsed.Hotline || parsed.phone || '0986.739.587 - 0985.166.393',
+          taxCode: parsed.taxCode || parsed.TaxCode || '0109887766',
+          email: parsed.email || parsed.Email || 'contact@d2luxury.vn',
+          logoUrl: parsed.logoUrl || parsed.LogoUrl || '/logo.png',
+        };
+      }
+    } catch {}
+  }
+  return {
+    brandName: 'D2 LUXURY',
+    businessSector: 'NỘI THẤT GỖ TỰ NHIÊN',
+    companyName: 'CÔNG TY CỔ PHẦN NỘI THẤT D2 LUXURY',
+    address: 'Showroom 01, KĐT Vinhomes Riverside, Long Biên, Hà Nội',
+    hotline: '0986.739.587 - 0985.166.393',
+    taxCode: '0109887766',
+    email: 'contact@d2luxury.vn',
+    logoUrl: '/logo.png',
+  };
+}
+
+/**
+ * Helper to get active payment/bank account info from localStorage
+ */
+export function getStoredBankPayment() {
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = localStorage.getItem('d2_admin_payment_settings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          bankName: parsed.bankName || parsed.BankName || 'MBBank',
+          bankBranch: parsed.bankBranch || parsed.BankBranch || 'Hà Nội',
+          accountNumber: parsed.accountNumber || parsed.AccountNumber || '0986739587',
+          accountHolder: parsed.accountHolder || parsed.AccountHolder || 'CTCP NOI THAT D2 LUXURY',
+        };
+      }
+    } catch {}
+  }
+  return {
+    bankName: 'MBBank',
+    bankBranch: 'Hà Nội',
+    accountNumber: '0986739587',
+    accountHolder: 'CTCP NOI THAT D2 LUXURY',
+  };
+}
+
+/**
+ * Converts numbers to readable Vietnamese words (e.g. 87500000 -> Tám mươi bảy triệu năm trăm nghìn đồng chẵn)
+ */
+export function formatMoneyToVietnameseWords(amount: number): string {
+  if (!amount || isNaN(amount) || amount <= 0) return 'Không đồng';
+  const digits = ['không', 'một', 'hai', 'ba', 'bốn', 'năm', 'sáu', 'bảy', 'tám', 'chín'];
+  const units = ['', 'nghìn', 'triệu', 'tỷ', 'nghìn tỷ', 'triệu tỷ'];
+
+  const readGroup = (n: number): string => {
+    let str = '';
+    const h = Math.floor(n / 100);
+    const t = Math.floor((n % 100) / 10);
+    const o = n % 10;
+    if (h > 0) {
+      str += `${digits[h]} trăm `;
+      if (t === 0 && o > 0) str += 'lẻ ';
+    }
+    if (t > 0) {
+      if (t === 1) str += 'mười ';
+      else str += `${digits[t]} mươi `;
+    }
+    if (o > 0) {
+      if (t > 1 && o === 1) str += 'mốt ';
+      else if (t > 0 && o === 5) str += 'lăm ';
+      else str += `${digits[o]} `;
+    }
+    return str.trim();
+  };
+
+  let num = Math.floor(amount);
+  const groups: number[] = [];
+  while (num > 0) {
+    groups.push(num % 1000);
+    num = Math.floor(num / 1000);
+  }
+
+  const parts: string[] = [];
+  for (let i = groups.length - 1; i >= 0; i--) {
+    const g = groups[i];
+    if (g > 0) {
+      const read = readGroup(g);
+      const unit = units[i];
+      parts.push(`${read} ${unit}`.trim());
+    }
+  }
+
+  const result = parts.join(' ').replace(/\s+/g, ' ').trim();
+  return result ? `${result.charAt(0).toUpperCase() + result.slice(1)} đồng chẵn` : 'Không đồng';
+}
 
 /**
  * Get active template configuration from localStorage or default fallback
@@ -219,37 +350,63 @@ export function printIsolatedHtml({
         .justify-center { justify-content: center; }
         .items-center { align-items: center; }
         .gap-1 { gap: 0.25rem; }
+        .gap-1\.5 { gap: 0.375rem; }
         .gap-2 { gap: 0.5rem; }
+        .gap-3 { gap: 0.75rem; }
         .gap-4 { gap: 1rem; }
         .py-1 { padding-top: 0.25rem; padding-bottom: 0.25rem; }
+        .py-1\.5 { padding-top: 0.375rem; padding-bottom: 0.375rem; }
         .py-2 { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+        .py-2\.5 { padding-top: 0.625rem; padding-bottom: 0.625rem; }
         .py-3 { padding-top: 0.75rem; padding-bottom: 0.75rem; }
+        .px-2 { padding-left: 0.5rem; padding-right: 0.5rem; }
         .px-3 { padding-left: 0.75rem; padding-right: 0.75rem; }
+        .p-1\.5 { padding: 0.375rem; }
         .p-2 { padding: 0.5rem; }
+        .p-2\.5 { padding: 0.625rem; }
         .p-3 { padding: 0.75rem; }
         .p-4 { padding: 1rem; }
+        .my-1 { margin-top: 0.25rem; margin-bottom: 0.25rem; }
         .my-2 { margin-top: 0.5rem; margin-bottom: 0.5rem; }
         .my-3 { margin-top: 0.75rem; margin-bottom: 0.75rem; }
+        .mt-0\.5 { margin-top: 0.125rem; }
         .mt-1 { margin-top: 0.25rem; }
         .mt-2 { margin-top: 0.5rem; }
         .mt-3 { margin-top: 0.75rem; }
         .mt-4 { margin-top: 1rem; }
         .mt-6 { margin-top: 1.5rem; }
+        .mb-1 { margin-bottom: 0.25rem; }
         .mb-2 { margin-bottom: 0.5rem; }
         .mb-3 { margin-bottom: 0.75rem; }
         .mb-4 { margin-bottom: 1rem; }
+        .pb-2 { padding-bottom: 0.5rem; }
+        .pb-3 { padding-bottom: 0.75rem; }
+        .pt-1 { padding-top: 0.25rem; }
+        .pt-2 { padding-top: 0.5rem; }
+        .pt-3 { padding-top: 0.75rem; }
+        .pt-4 { padding-top: 1rem; }
         .h-8 { height: 2rem; }
         .h-12 { height: 3rem; }
         .h-16 { height: 4rem; }
         .h-20 { height: 5rem; }
+        .w-8 { width: 2rem; }
+        .w-10 { width: 2.5rem; }
+        .w-12 { width: 3rem; }
+        .w-16 { width: 4rem; }
         .w-20 { width: 5rem; }
         .w-24 { width: 6rem; }
+        .w-28 { width: 7rem; }
+        .w-32 { width: 8rem; }
+        .w-36 { width: 9rem; }
+        .w-full { width: 100%; }
         .rounded-md { border-radius: 0.375rem; }
         .rounded-lg { border-radius: 0.5rem; }
+        .rounded-xl { border-radius: 0.75rem; }
+        .bg-white { background-color: #ffffff; }
         .bg-slate-50 { background-color: #f8fafc; }
         .bg-slate-100 { background-color: #f1f5f9; }
         .bg-rose-50 { background-color: #fff1f2; }
-        .bg-amber-50 { background-color: #fffbeb; }
+        .bg-emerald-50 { background-color: #ecfdf5; }
         .text-slate-900 { color: #0f172a; }
         .text-slate-800 { color: #1e293b; }
         .text-slate-700 { color: #334155; }
@@ -258,13 +415,22 @@ export function printIsolatedHtml({
         .text-slate-400 { color: #94a3b8; }
         .text-rose-600 { color: #e11d48; }
         .text-rose-700 { color: #be123c; }
+        .text-rose-800 { color: #9f1239; }
         .text-emerald-700 { color: #047857; }
-        .text-amber-800 { color: #92400e; }
+        .text-emerald-800 { color: #065f46; }
         .text-[#784e34] { color: #784e34; }
         .text-[#5d371f] { color: #5d371f; }
+        .border-slate-100 { border-color: #f1f5f9; }
         .border-slate-200 { border-color: #e2e8f0; }
         .border-slate-300 { border-color: #cbd5e1; }
         .border-slate-900 { border-color: #0f172a; }
+        .divide-y > * + * { border-top-width: 1px; }
+        .divide-slate-200 > * + * { border-color: #e2e8f0; }
+        .divide-dashed > * + * { border-style: dashed; }
+        .space-y-0\.5 > * + * { margin-top: 0.125rem; }
+        .space-y-1 > * + * { margin-top: 0.25rem; }
+        .space-y-2 > * + * { margin-top: 0.5rem; }
+        .col-span-2 { grid-column: span 2 / span 2; }
       </style>
     </head>
     <body>
@@ -320,14 +486,31 @@ export function printElementById(elementId: string, options?: PrintSlipOptions) 
 }
 
 /**
- * 1. IN HÓA ĐƠN BÁN HÀNG / HỢP ĐỒNG MAY ĐO (Templates: 'invoice' hoặc 'order')
+ * 1. IN HÓA ĐƠN BÁN HÀNG / HỢP ĐỒNG MAY ĐO / BÀN GIAO (Templates: 'invoice', 'order', 'delivery')
+ * Synchronized with settings configured in PrintTemplatesSettings
  */
 export function printOrderInvoice(order: any, options?: { templateType?: 'invoice' | 'order' | 'delivery' }) {
-  const templateKey = options?.templateType || (order.orderType === 'custom' ? 'order' : 'invoice');
-  const tpl = getSavedPrintTemplate(templateKey);
+  const code = (order?.orderCode || '').toUpperCase();
+  let templateKey: 'invoice' | 'order' | 'delivery' = 'invoice';
 
-  const paperSize = tpl.paperSize || (templateKey === 'order' ? 'a4' : 'k80');
-  const title = tpl.title || 'HÓA ĐƠN BÁN HÀNG & DỊCH VỤ NỘI THẤT';
+  if (options?.templateType) {
+    templateKey = options.templateType;
+  } else if (code.startsWith('HD') || order?.orderType === 'retail' || order?.orderType === 'ready') {
+    templateKey = 'invoice';
+  } else if (code.startsWith('DH') || order?.orderType === 'custom' || order?.orderType === 'package') {
+    templateKey = 'order';
+  } else if (code.startsWith('BG')) {
+    templateKey = 'delivery';
+  } else {
+    templateKey = order?.orderType === 'custom' ? 'order' : 'invoice';
+  }
+
+  const tpl = getSavedPrintTemplate(templateKey);
+  const company = getStoredCompanyInfo();
+  const bank = getStoredBankPayment();
+
+  const paperSize = tpl.paperSize || (templateKey === 'order' || templateKey === 'delivery' ? 'a4' : 'k80');
+  const title = tpl.title || (templateKey === 'order' ? 'PHIẾU ĐẶT HÀNG & TẠM ỨNG MAY ĐO' : templateKey === 'delivery' ? 'BIÊN BẢN BÀN GIAO & LẮP ĐẶT NỘI THẤT' : 'HÓA ĐƠN BÁN HÀNG & DỊCH VỤ NỘI THẤT');
   const headerNote = tpl.headerNote || 'Hệ thống Showroom Nội Thất Cao Cấp D2 LUXURY';
   const footerNote = tpl.footerNote || 'Cảm ơn Quý khách! Sản phẩm gỗ tự nhiên được bảo hành chính hãng 05 năm.';
   const showLogo = tpl.showLogo ?? true;
@@ -336,101 +519,149 @@ export function printOrderInvoice(order: any, options?: { templateType?: 'invoic
   const showSign = tpl.showSignature ?? true;
 
   const isThermal = paperSize === 'k80' || paperSize === 'k57';
-  const remainingValue = (order.value || 0) - (order.depositAmount || 0);
+  const remainingValue = Math.max(0, (order.value || 0) - (order.depositAmount || 0));
+  const totalInWords = formatMoneyToVietnameseWords(order.value || 0);
+
+  // QR Code URL using VietQR API with fallback
+  const qrAmount = remainingValue > 0 ? remainingValue : (order.value || 0);
+  const qrUrl = `https://api.vietqr.io/image/970422-${bank.accountNumber}-n2LwzB0.jpg?accountName=${encodeURIComponent(
+    bank.accountHolder
+  )}&amount=${qrAmount}&addInfo=${encodeURIComponent(order.orderCode || 'DH')}`;
 
   const htmlContent = `
-    <!-- Header Brand -->
-    <div class="text-center pb-2 border-b ${isThermal ? 'border-dashed' : ''} border-slate-300">
+    <!-- Header: Store Identity -->
+    <div class="text-center pb-3 border-b ${isThermal ? 'border-dashed' : ''} border-slate-300">
       ${showLogo ? `
-        <div class="font-bold text-slate-900 ${isThermal ? 'text-sm' : 'text-base'} uppercase tracking-wide">
-          NỘI THẤT CAO CẤP D2 LUXURY
+        <div class="flex items-center justify-center gap-2 mb-1">
+          <img src="${company.logoUrl || '/logo.png'}" alt="Logo" class="h-8 w-auto object-contain" />
+          <div class="text-left">
+            <div class="font-bold text-sm text-[#5d371f] uppercase">${company.brandName || 'D2 LUXURY'}</div>
+            <div class="text-[9px] text-[#83746c] tracking-wider mt-0.5">${company.businessSector || 'NỘI THẤT GỖ TỰ NHIÊN'}</div>
+          </div>
         </div>
       ` : ''}
-      <div class="text-[11px] text-slate-600 mt-0.5">${headerNote}</div>
-      <div class="text-[11px] text-slate-600">Hotline: 098.888.6666 • Showroom &amp; Xưởng: Tòa V3 The Vesta, Phú Lãm, Hà Đông</div>
-      <div class="font-bold text-slate-900 ${isThermal ? 'text-sm mt-2' : 'text-base mt-3'} uppercase">
+      <div class="font-bold text-slate-900 text-xs">${company.companyName || 'CÔNG TY CỔ PHẦN NỘI THẤT D2 LUXURY'}</div>
+      <div class="text-slate-600 text-[10px]">Đ/c: ${company.address || 'Showroom 01, KĐT Vinhomes Riverside, Long Biên, Hà Nội'}</div>
+      <div class="text-slate-600 text-[10px]">Hotline: ${company.hotline || '0986.739.587'} ${company.taxCode ? `| MST: ${company.taxCode}` : ''}</div>
+      ${headerNote ? `<div class="text-[10px] text-[#784e34] font-medium pt-0.5">${headerNote}</div>` : ''}
+    </div>
+
+    <!-- Document Title & Meta -->
+    <div class="text-center py-3 space-y-0.5">
+      <h1 class="font-bold ${isThermal ? 'text-sm' : 'text-base'} text-slate-900 uppercase tracking-wide m-0">
         ${title}
+      </h1>
+      <div class="font-mono text-xs font-semibold text-slate-700">
+        Số: <strong class="text-[#784e34]">${order.orderCode || `${tpl.codePrefix || 'HD'}-2026-0889`}</strong>
       </div>
-      <div class="text-xs text-slate-500 mt-0.5">
-        Mã số: <strong class="font-mono text-[#784e34]">${order.orderCode}</strong> &nbsp;|&nbsp; Ngày: <strong>${order.orderDate}</strong>
+      <div class="text-[10px] text-slate-500 italic">
+        Ngày ${order.orderDate || new Date().toLocaleDateString('vi-VN')}
       </div>
     </div>
 
-    <!-- Customer & Delivery Info -->
+    <!-- Customer & Project Info -->
     ${showCustomer ? `
-      <div class="py-2.5 ${isThermal ? 'space-y-1 text-xs' : 'grid grid-cols-2 gap-2 text-xs'} border-b ${isThermal ? 'border-dashed' : ''} border-slate-300">
-        <div><span class="text-slate-500">Khách hàng:</span> <strong class="text-slate-900">${order.customerName}</strong></div>
-        <div><span class="text-slate-500">Điện thoại:</span> <strong class="font-mono text-slate-900">${order.customerPhone}</strong></div>
-        <div class="${isThermal ? '' : 'col-span-2'}"><span class="text-slate-500">Địa chỉ công trình:</span> <span>${order.customerAddress || 'Showroom giao nhận'}</span></div>
-        ${order.woodType ? `<div><span class="text-slate-500">Chất liệu gỗ:</span> <strong class="text-[#784e34] capitalize">Gỗ ${order.woodType}</strong></div>` : ''}
-        <div><span class="text-slate-500">Hạn bàn giao:</span> <strong class="font-mono text-rose-600">${order.deadlineDate}</strong></div>
+      <div class="py-2.5 px-3 bg-slate-50/80 rounded-md border border-slate-200 text-[11px] space-y-1 mb-3">
+        <div class="flex justify-between">
+          <span><strong class="text-slate-800">Khách hàng:</strong> ${order.customerName || 'Khách vãng lai'}</span>
+          <span class="font-mono font-semibold text-slate-700">${order.customerPhone || '---'}</span>
+        </div>
+        <div>
+          <strong class="text-slate-800">Địa chỉ công trình:</strong> ${order.customerAddress || 'Showroom giao nhận'}
+        </div>
+        <div class="flex justify-between text-slate-600 text-[10px]">
+          <span><strong>Chất liệu gỗ:</strong> ${order.woodType ? `Gỗ ${order.woodType}` : 'Gỗ tự nhiên cao cấp'}</span>
+          <span><strong>Hạn bàn giao:</strong> <span class="font-mono text-rose-600 font-semibold">${order.deadlineDate || 'Theo hợp đồng'}</span></span>
+        </div>
+        ${order.showroom || order.branch ? `
+          <div class="text-[10px] text-slate-500">
+            <strong>Cơ sở phụ trách:</strong> ${order.showroom || order.branch}
+          </div>
+        ` : ''}
       </div>
     ` : ''}
 
-    <!-- Product Items Table -->
-    <table class="w-full my-2 text-xs border border-slate-300">
-      <thead>
-        <tr class="bg-slate-100 text-slate-800 font-bold">
-          <th class="text-left border border-slate-300 p-1.5">Sản phẩm / Quy cách</th>
-          <th class="text-center border border-slate-300 p-1.5 w-12">SL</th>
-          <th class="text-right border border-slate-300 p-1.5 ${isThermal ? 'w-24' : 'w-32'}">Thành tiền</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td class="border border-slate-300 p-1.5 text-slate-900">
-            <div class="font-semibold">${order.productName}</div>
-            <div class="text-[11px] text-slate-500 mt-0.5">${order.productSpec || 'Gia công theo thiết kế 3D'}</div>
-          </td>
-          <td class="text-center border border-slate-300 p-1.5 font-mono">1</td>
-          <td class="text-right border border-slate-300 p-1.5 font-mono font-semibold text-slate-900">
-            ${(order.value || 0).toLocaleString('vi-VN')} đ
-          </td>
-        </tr>
-      </tbody>
-    </table>
+    <!-- Items Table -->
+    <div class="my-3 border-t border-b border-slate-900 py-1">
+      <table class="w-full text-left text-[11px] border-collapse">
+        <thead>
+          <tr class="border-b border-slate-300 font-bold text-slate-900">
+            <th class="py-1 text-center w-8">#</th>
+            <th class="py-1">Sản phẩm &amp; Quy cách</th>
+            <th class="py-1 text-center w-12">ĐVT</th>
+            <th class="py-1 text-center w-10">SL</th>
+            <th class="py-1 text-right w-24">Đơn giá</th>
+            <th class="py-1 text-right w-24">Thành tiền</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-dashed divide-slate-200">
+          <tr>
+            <td class="py-1.5 text-center font-mono">1</td>
+            <td class="py-1.5">
+              <div class="font-semibold text-slate-900">${order.productName || 'Sản phẩm nội thất'}</div>
+              <div class="text-[9px] text-slate-500">${order.productSpec || (order.woodType ? `Chất liệu gỗ ${order.woodType}, may đo hoàn thiện` : 'Gia công theo thiết kế 3D')}</div>
+            </td>
+            <td class="py-1.5 text-center text-slate-600">Bộ</td>
+            <td class="py-1.5 text-center font-semibold">1</td>
+            <td class="py-1.5 text-right font-mono">${(order.value || 0).toLocaleString('vi-VN')}</td>
+            <td class="py-1.5 text-right font-mono font-bold text-slate-900">${(order.value || 0).toLocaleString('vi-VN')}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
 
-    <!-- Financial Summary -->
-    <div class="py-2 space-y-1 text-xs border-b ${isThermal ? 'border-dashed' : ''} border-slate-300">
-      <div class="flex justify-between">
-        <span class="text-slate-600">Tổng giá trị đơn hàng:</span>
-        <strong class="font-mono text-slate-900 text-sm">${(order.value || 0).toLocaleString('vi-VN')} đ</strong>
+    <!-- Totals Calculation -->
+    <div class="space-y-1 text-right text-[11px] pt-1 border-b ${isThermal ? 'border-dashed' : ''} border-slate-300 pb-2">
+      <div class="flex justify-between text-slate-700">
+        <span>Tổng giá trị đơn hàng:</span>
+        <span class="font-mono font-semibold">${(order.value || 0).toLocaleString('vi-VN')} đ</span>
       </div>
       <div class="flex justify-between text-emerald-700">
         <span>Đã đặt cọc (${order.depositPercent || 0}%):</span>
-        <strong class="font-mono">${(order.depositAmount || 0).toLocaleString('vi-VN')} đ</strong>
+        <span class="font-mono font-bold">${(order.depositAmount || 0).toLocaleString('vi-VN')} đ</span>
       </div>
-      <div class="flex justify-between text-rose-600 font-bold">
-        <span>Còn lại cần thanh toán khi giao:</span>
-        <span class="font-mono">${remainingValue.toLocaleString('vi-VN')} đ</span>
+      <div class="flex justify-between items-center text-xs font-bold text-slate-900 pt-1.5 border-t border-slate-900">
+        <span class="uppercase">Còn lại thanh toán khi giao:</span>
+        <span class="text-sm font-mono font-bold text-[#784e34]">${remainingValue.toLocaleString('vi-VN')} đ</span>
+      </div>
+      <div class="text-left text-[10px] italic text-slate-600 pt-0.5">
+        (Bằng chữ: ${totalInWords})
       </div>
     </div>
 
-    <!-- VietQR & Footer Note -->
+    <!-- VietQR & Banking -->
     ${showQr ? `
-      <div class="py-2.5 flex items-center justify-between gap-3 text-xs border-b ${isThermal ? 'border-dashed' : ''} border-slate-300 bg-slate-50 p-2 rounded-lg my-2">
-        <div class="space-y-0.5 text-[11px]">
-          <div class="font-bold text-slate-800">Quét mã VietQR chuyển khoản nhanh:</div>
-          <div>Ngân hàng: <strong>MBBank (Hà Nội)</strong></div>
-          <div>Số TK: <strong class="font-mono text-emerald-700 font-bold">0988886666</strong></div>
-          <div>Nội dung: <strong class="font-mono text-[#784e34]">${order.orderCode}</strong></div>
+      <div class="mt-3 p-2.5 bg-slate-50 rounded-lg border border-dashed border-slate-300 flex items-center justify-between gap-3">
+        <div class="text-left text-[10px] space-y-0.5">
+          <div class="font-bold text-slate-900">Quét mã VietQR chuyển khoản nhanh:</div>
+          <div>Ngân hàng: <strong>${bank.bankName} (${bank.bankBranch})</strong></div>
+          <div>Số tài khoản: <strong class="font-mono font-bold text-[#784e34]">${bank.accountNumber}</strong></div>
+          <div>Chủ TK: <strong>${bank.accountHolder}</strong></div>
+          <div class="text-[9px] text-slate-500">Nội dung: <strong class="font-mono">${order.orderCode || 'DH'}</strong></div>
         </div>
-        <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=2|99|0988886666|CTCP%20NOI%20THAT%20D2|${order.orderCode}|0|0|${remainingValue > 0 ? remainingValue : order.value}" alt="VietQR" class="w-16 h-16 border border-slate-300 rounded p-0.5 bg-white" />
+        <div class="flex flex-col items-center shrink-0">
+          <img
+            src="${qrUrl}"
+            alt="VietQR"
+            class="w-16 h-16 rounded border border-slate-200 object-contain bg-white p-0.5"
+          />
+        </div>
       </div>
     ` : ''}
 
-    <div class="text-[11px] text-slate-600 my-2 italic text-center">
+    <!-- Footer Note -->
+    <div class="text-[10px] text-slate-500 italic text-center my-2">
       * ${footerNote}
     </div>
 
     <!-- Signatures -->
     ${showSign ? `
-      <div class="grid ${isThermal ? 'grid-cols-2' : 'grid-cols-3'} gap-2 text-center text-xs mt-4 pt-3 border-t border-slate-300">
+      <div class="grid ${isThermal ? 'grid-cols-2' : 'grid-cols-3'} gap-2 text-center text-xs mt-3 pt-3 border-t border-slate-200">
         <div>
           <div class="font-bold text-slate-800 uppercase">Khách hàng</div>
           <div class="text-[10px] text-slate-400 italic">(Ký, ghi rõ họ tên)</div>
           <div class="h-12"></div>
-          <div class="font-semibold text-slate-700">${order.customerName}</div>
+          <div class="font-semibold text-slate-700">${order.customerName || 'Quý khách'}</div>
         </div>
         <div>
           <div class="font-bold text-slate-800 uppercase">Người lập phiếu</div>
@@ -443,7 +674,7 @@ export function printOrderInvoice(order: any, options?: { templateType?: 'invoic
             <div class="font-bold text-slate-800 uppercase">Đại diện Showroom</div>
             <div class="text-[10px] text-slate-400 italic">(Ký, đóng dấu)</div>
             <div class="h-12"></div>
-            <div class="font-semibold text-slate-700">D2 LUXURY</div>
+            <div class="font-semibold text-slate-700">${company.brandName || 'D2 LUXURY'}</div>
           </div>
         ` : ''}
       </div>
@@ -462,34 +693,34 @@ export function printOrderInvoice(order: any, options?: { templateType?: 'invoic
  */
 export function printGoodsReceiptSlip(slip: any) {
   const tpl = getSavedPrintTemplate('purchase');
+  const company = getStoredCompanyInfo();
   const paperSize = tpl.paperSize || 'a4';
-  const title = tpl.title || 'PHIẾU NHẬP KHO HÀNG HÓA & VẬT TƯ GỖ';
-  const headerNote = tpl.headerNote || 'Kho Tổng Vật Tư & Nguyên Liệu Gỗ Tự Nhiên Mộc Gia Atelier';
+  const title = tpl.title || 'PHIẾU NHẬP KHO VẬT TƯ GỖ & PHỤ KIỆN';
+  const headerNote = tpl.headerNote || 'Kho Tổng Vật Tư & Nguyên Liệu Gỗ Tự Nhiên';
   const footerNote = tpl.footerNote || 'Thủ kho và người giao hàng chịu trách nhiệm về số lượng và quy cách quy chuẩn thực nhập.';
   const showLogo = tpl.showLogo ?? true;
   const showSign = tpl.showSignature ?? true;
 
   const htmlContent = `
     <!-- Header -->
-    <div class="text-center mb-4 pb-3 border-b border-slate-300">
+    <div class="text-center mb-3 pb-3 border-b border-slate-300">
       ${showLogo ? `
-        <div class="font-bold text-slate-900 text-sm uppercase">CÔNG TY CỔ PHẦN NỘI THẤT MỘC GIA ATELIER</div>
+        <div class="font-bold text-slate-900 text-sm uppercase">${company.companyName}</div>
       ` : ''}
       <div class="text-xs text-slate-500">${headerNote}</div>
-      <h1 class="text-xl font-bold text-slate-900 uppercase mt-2 tracking-wide">${title}</h1>
-      <div class="text-xs text-slate-500 italic">(Goods Receipt Note / Stock Inward Slip)</div>
-      <div class="flex items-center justify-center gap-4 text-xs mt-2 text-slate-700">
-        <span>Mã phiếu: <strong class="font-mono text-[#784e34]">${slip.code}</strong></span>
+      <h1 class="text-lg font-bold text-slate-900 uppercase mt-2 tracking-wide">${title}</h1>
+      <div class="flex items-center justify-center gap-4 text-xs mt-1 text-slate-700">
+        <span>Mã phiếu: <strong class="font-mono text-[#784e34]">${slip.code || 'PNK'}</strong></span>
         <span>•</span>
         <span>Ngày nhập: <strong>${slip.importDate || new Date().toLocaleDateString('vi-VN')}</strong></span>
       </div>
     </div>
 
     <!-- Metadata Grid -->
-    <div class="grid grid-cols-2 gap-3 text-xs mb-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
-      <div><span class="text-slate-500">Nhà cung cấp đối tác:</span> <strong class="text-slate-900">${slip.supplier || 'Nhà Cung Cấp Gỗ An Cường'}</strong></div>
-      <div><span class="text-slate-500">Kho tiếp nhận:</span> <strong class="text-[#784e34]">${slip.warehouseName || 'Tổng Kho Bình Chánh'}</strong></div>
-      <div><span class="text-slate-500">Cán bộ KCS / Nhận hàng:</span> <strong class="text-slate-800">${slip.inspector || 'Nguyễn Văn Nam (KCS)'}</strong></div>
+    <div class="grid grid-cols-2 gap-2 text-xs mb-3 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+      <div><span class="text-slate-500">Nhà cung cấp:</span> <strong class="text-slate-900">${slip.supplier || 'Đối tác NCC'}</strong></div>
+      <div><span class="text-slate-500">Kho tiếp nhận:</span> <strong class="text-[#784e34]">${slip.warehouseName || 'Tổng Kho'}</strong></div>
+      <div><span class="text-slate-500">Cán bộ KCS:</span> <strong class="text-slate-800">${slip.inspector || 'Cán bộ KCS'}</strong></div>
       <div><span class="text-slate-500">Hình thức thanh toán:</span> <span class="font-semibold text-slate-800">${slip.paymentMethod || 'Chuyển khoản'}</span></div>
     </div>
 
@@ -497,19 +728,19 @@ export function printGoodsReceiptSlip(slip: any) {
     <table class="w-full border-collapse border border-slate-300 text-xs mb-3">
       <thead>
         <tr class="bg-slate-100 text-slate-800 font-bold">
-          <th class="border border-slate-300 p-2 text-center w-12">STT</th>
-          <th class="border border-slate-300 p-2 text-left">Tên hàng hóa / Vật tư nhập</th>
-          <th class="border border-slate-300 p-2 text-left">Quy cách kỹ thuật</th>
-          <th class="border border-slate-300 p-2 text-center w-20">ĐVT</th>
-          <th class="border border-slate-300 p-2 text-center w-24">Số lượng</th>
-          <th class="border border-slate-300 p-2 text-right w-36">Tổng thành tiền</th>
+          <th class="border border-slate-300 p-1.5 text-center w-10">STT</th>
+          <th class="border border-slate-300 p-1.5 text-left">Tên hàng hóa / Vật tư</th>
+          <th class="border border-slate-300 p-1.5 text-left">Quy cách kỹ thuật</th>
+          <th class="border border-slate-300 p-1.5 text-center w-16">ĐVT</th>
+          <th class="border border-slate-300 p-1.5 text-center w-16">SL</th>
+          <th class="border border-slate-300 p-1.5 text-right w-28">Tổng tiền</th>
         </tr>
       </thead>
       <tbody>
         <tr>
           <td class="border border-slate-300 p-2 text-center font-mono font-semibold">01</td>
-          <td class="border border-slate-300 p-2 font-bold text-slate-900">${slip.itemName || 'Gỗ Óc Chó Nhập Khẩu Bắc Mỹ'}</td>
-          <td class="border border-slate-300 p-2 text-slate-600 font-mono text-[11px]">${slip.spec || 'Dày 50mm x Rộng 250mm x Dài 2800mm'}</td>
+          <td class="border border-slate-300 p-2 font-bold text-slate-900">${slip.itemName || 'Vật tư gỗ'}</td>
+          <td class="border border-slate-300 p-2 text-slate-600 font-mono text-[11px]">${slip.spec || 'Quy cách tiêu chuẩn'}</td>
           <td class="border border-slate-300 p-2 text-center">${slip.unit || 'm3'}</td>
           <td class="border border-slate-300 p-2 text-center font-mono font-bold text-slate-900">${slip.quantity || 1}</td>
           <td class="border border-slate-300 p-2 text-right font-mono font-bold text-[#784e34]">
@@ -519,7 +750,7 @@ export function printGoodsReceiptSlip(slip: any) {
       </tbody>
       <tfoot>
         <tr class="bg-slate-50 font-bold">
-          <td colspan="5" class="border border-slate-300 p-2 text-right text-slate-800">Tổng giá trị nhập kho (đã nghiệm thu):</td>
+          <td colspan="5" class="border border-slate-300 p-2 text-right text-slate-800">Tổng giá trị nhập kho:</td>
           <td class="border border-slate-300 p-2 text-right font-mono text-sm text-[#784e34]">
             ${(slip.totalValue || 0).toLocaleString('vi-VN')} đ
           </td>
@@ -527,35 +758,35 @@ export function printGoodsReceiptSlip(slip: any) {
       </tfoot>
     </table>
 
-    <div class="text-[11px] text-slate-500 italic mb-4">
+    <div class="text-[10px] text-slate-500 italic mb-3">
       * ${footerNote}
     </div>
 
     <!-- Signatures -->
     ${showSign ? `
-      <div class="grid grid-cols-4 gap-2 text-center text-xs mt-6 pt-4 border-t border-slate-200">
+      <div class="grid grid-cols-4 gap-2 text-center text-xs mt-4 pt-3 border-t border-slate-200">
         <div>
           <div class="font-bold text-slate-800 uppercase">Người lập phiếu</div>
-          <div class="text-[11px] text-slate-400 italic">(Ký, ghi rõ họ tên)</div>
-          <div class="h-16"></div>
-          <div class="font-semibold text-slate-700">Trần Minh Quân</div>
+          <div class="text-[10px] text-slate-400 italic">(Ký, ghi rõ họ tên)</div>
+          <div class="h-12"></div>
+          <div class="font-semibold text-slate-700">Người lập</div>
         </div>
         <div>
           <div class="font-bold text-slate-800 uppercase">Thủ kho nhập</div>
-          <div class="text-[11px] text-slate-400 italic">(Ký, ghi rõ họ tên)</div>
-          <div class="h-16"></div>
-          <div class="font-semibold text-slate-700">Phạm Văn Tuấn</div>
+          <div class="text-[10px] text-slate-400 italic">(Ký, ghi rõ họ tên)</div>
+          <div class="h-12"></div>
+          <div class="font-semibold text-slate-700">Thủ kho</div>
         </div>
         <div>
           <div class="font-bold text-slate-800 uppercase">Kỹ thuật KCS</div>
-          <div class="text-[11px] text-slate-400 italic">(Ký, ghi rõ họ tên)</div>
-          <div class="h-16"></div>
-          <div class="font-semibold text-slate-700">${slip.inspector || 'Nguyễn Văn Nam'}</div>
+          <div class="text-[10px] text-slate-400 italic">(Ký, ghi rõ họ tên)</div>
+          <div class="h-12"></div>
+          <div class="font-semibold text-slate-700">${slip.inspector || 'KCS'}</div>
         </div>
         <div>
           <div class="font-bold text-slate-800 uppercase">Đại diện Giao hàng</div>
-          <div class="text-[11px] text-slate-400 italic">(Ký, ghi rõ họ tên)</div>
-          <div class="h-16"></div>
+          <div class="text-[10px] text-slate-400 italic">(Ký, ghi rõ họ tên)</div>
+          <div class="h-12"></div>
           <div class="font-semibold text-slate-700">${slip.supplier || 'Đối tác NCC'}</div>
         </div>
       </div>
@@ -574,109 +805,90 @@ export function printGoodsReceiptSlip(slip: any) {
  */
 export function printGoodsReturnSlip(slip: any) {
   const tpl = getSavedPrintTemplate('return');
-  const paperSize = tpl.paperSize || 'a4';
-  const title = tpl.title || 'PHIẾU XUẤT TRẢ HÀNG & BẢO HÀNH NHÀ CUNG CẤP';
-  const headerNote = tpl.headerNote || 'Trung Tâm Dịch Vụ & Kho Vật Tư D2 LUXURY';
-  const footerNote = tpl.footerNote || 'Mặt hàng hoàn trả theo biên bản kiểm định KCS và thỏa thuận bảo hành với Nhà cung cấp.';
+  const company = getStoredCompanyInfo();
+  const paperSize = tpl.paperSize || 'a5';
+  const title = tpl.title || 'PHIẾU TIẾP NHẬN BẢO HÀNH & ĐỔI TRẢ';
+  const headerNote = tpl.headerNote || 'Trung Tâm Dịch Vụ Khách Hàng D2 LUXURY';
+  const footerNote = tpl.footerNote || 'Cam kết xử lý và phản hồi tình trạng sản phẩm trong vòng 48h làm việc.';
   const showLogo = tpl.showLogo ?? true;
   const showSign = tpl.showSignature ?? true;
 
   const htmlContent = `
-    <!-- Header -->
-    <div class="text-center mb-4 pb-3 border-b border-slate-300">
+    <div class="text-center mb-3 pb-3 border-b border-slate-300">
       ${showLogo ? `
-        <div class="font-bold text-slate-900 text-sm uppercase">CÔNG TY CỔ PHẦN NỘI THẤT MỘC GIA ATELIER</div>
+        <div class="font-bold text-slate-900 text-sm uppercase">${company.companyName}</div>
       ` : ''}
       <div class="text-xs text-slate-500">${headerNote}</div>
-      <h1 class="text-xl font-bold text-slate-900 uppercase mt-2 tracking-wide">${title}</h1>
-      <div class="text-xs text-slate-500 italic">(Goods Return Note / Purchase Return Voucher)</div>
-      <div class="flex items-center justify-center gap-4 text-xs mt-2 text-slate-700">
-        <span>Mã phiếu: <strong class="font-mono text-rose-700 font-bold">${slip.code}</strong></span>
+      <h1 class="text-lg font-bold text-slate-900 uppercase mt-2 tracking-wide">${title}</h1>
+      <div class="flex items-center justify-center gap-4 text-xs mt-1 text-slate-700">
+        <span>Mã phiếu: <strong class="font-mono text-rose-700 font-bold">${slip.code || 'TH'}</strong></span>
         <span>•</span>
         <span>Ngày lập: <strong>${slip.returnDate || new Date().toLocaleDateString('vi-VN')}</strong></span>
       </div>
     </div>
 
-    <!-- Metadata Grid -->
-    <div class="grid grid-cols-2 gap-3 text-xs mb-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
-      <div><span class="text-slate-500">Nhà cung cấp nhận hoàn trả:</span> <strong class="text-slate-900">${slip.supplierName || 'NCC Đối tác'}</strong></div>
-      <div><span class="text-slate-500">Phiếu nhập gốc liên kết:</span> <strong class="font-mono text-[#784e34]">${slip.sourcePurchaseEntryCode || '---'}</strong></div>
-      <div><span class="text-slate-500">Kho xuất trả:</span> <strong class="text-[#784e34]">${slip.warehouseName || 'Tổng Kho Bình Chánh'}</strong></div>
-      <div><span class="text-slate-500">Người lập phiếu:</span> <span class="font-semibold text-slate-800">${slip.staffName || 'Nguyễn Văn Nam (KCS)'}</span></div>
-      <div><span class="text-slate-500">Phương án giải quyết:</span> <strong class="text-slate-900">${slip.solution || slip.statusLabel || 'Hoàn tiền / Đổi bù'}</strong></div>
-      <div><span class="text-slate-500">Hình thức hoàn tiền:</span> <span class="font-semibold text-slate-800">${slip.paymentMethod || 'Chuyển khoản'}</span></div>
-      <div class="col-span-2"><span class="text-slate-500">Lý do hoàn trả:</span> <span class="font-semibold text-rose-800 italic">${slip.reason || 'Sai quy cách hợp đồng / Không đạt KCS'}</span></div>
+    <div class="grid grid-cols-2 gap-2 text-xs mb-3 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+      <div><span class="text-slate-500">Đối tác:</span> <strong class="text-slate-900">${slip.supplierName || slip.supplier || 'NCC Đối tác'}</strong></div>
+      <div><span class="text-slate-500">Mã gốc liên kết:</span> <strong class="font-mono text-[#784e34]">${slip.sourcePurchaseEntryCode || '---'}</strong></div>
+      <div><span class="text-slate-500">Kho xuất trả:</span> <strong class="text-[#784e34]">${slip.warehouseName || 'Tổng Kho'}</strong></div>
+      <div><span class="text-slate-500">Người lập:</span> <span class="font-semibold text-slate-800">${slip.staffName || 'Nhân viên'}</span></div>
+      <div class="col-span-2"><span class="text-slate-500">Lý do:</span> <span class="font-semibold text-rose-800 italic">${slip.reason || 'Sai quy cách / Bảo hành đổi mới'}</span></div>
     </div>
 
-    <!-- Items Table -->
     <table class="w-full border-collapse border border-slate-300 text-xs mb-3">
       <thead>
         <tr class="bg-slate-100 text-slate-800 font-bold">
-          <th class="border border-slate-300 p-2 text-center w-12">STT</th>
-          <th class="border border-slate-300 p-2 text-left">Tên mặt hàng &amp; Quy cách hoàn trả</th>
-          <th class="border border-slate-300 p-2 text-center w-20">ĐVT</th>
-          <th class="border border-slate-300 p-2 text-right w-24">Số lượng</th>
-          <th class="border border-slate-300 p-2 text-right w-32">Giá trả lại</th>
-          <th class="border border-slate-300 p-2 text-right w-36">Tổng thành tiền</th>
+          <th class="border border-slate-300 p-1.5 text-center w-10">STT</th>
+          <th class="border border-slate-300 p-1.5 text-left">Mặt hàng &amp; Quy cách</th>
+          <th class="border border-slate-300 p-1.5 text-center w-16">ĐVT</th>
+          <th class="border border-slate-300 p-1.5 text-right w-16">Số lượng</th>
+          <th class="border border-slate-300 p-1.5 text-right w-28">Tổng tiền</th>
         </tr>
       </thead>
       <tbody>
         <tr>
-          <td class="border border-slate-300 p-2.5 text-center font-mono font-semibold">01</td>
-          <td class="border border-slate-300 p-2.5 font-semibold text-slate-900">
-            <div>${slip.itemName || 'Gỗ nguyên liệu'}</div>
-            ${slip.spec ? `<div class="text-[11px] text-slate-500 font-mono mt-0.5">${slip.spec}</div>` : ''}
-          </td>
-          <td class="border border-slate-300 p-2.5 text-center">${slip.unit || 'm3'}</td>
-          <td class="border border-slate-300 p-2.5 text-right font-mono font-bold text-slate-900">${slip.quantity || 1}</td>
-          <td class="border border-slate-300 p-2.5 text-right font-mono text-slate-700">
-            ${(slip.returnPrice || slip.purchasePrice || 0).toLocaleString('vi-VN')} đ
-          </td>
-          <td class="border border-slate-300 p-2.5 text-right font-mono font-bold text-rose-700">
-            ${(slip.totalGoods || 0).toLocaleString('vi-VN')} đ
+          <td class="border border-slate-300 p-2 text-center font-mono">01</td>
+          <td class="border border-slate-300 p-2 font-semibold text-slate-900">${slip.itemName || 'Sản phẩm hoàn trả'}</td>
+          <td class="border border-slate-300 p-2 text-center">${slip.unit || 'm3'}</td>
+          <td class="border border-slate-300 p-2 text-right font-mono font-bold">${slip.quantity || 1}</td>
+          <td class="border border-slate-300 p-2 text-right font-mono font-bold text-rose-700">
+            ${(slip.totalGoods || slip.supplierRefund || 0).toLocaleString('vi-VN')} đ
           </td>
         </tr>
       </tbody>
       <tfoot>
         <tr class="bg-rose-50/50 font-bold">
-          <td colspan="5" class="border border-slate-300 p-2.5 text-right text-rose-800">NCC cần hoàn trả / cấn trừ:</td>
-          <td class="border border-slate-300 p-2.5 text-right font-mono text-sm text-rose-700">
+          <td colspan="4" class="border border-slate-300 p-2 text-right text-rose-800">Giá trị cấn trừ / hoàn tiền:</td>
+          <td class="border border-slate-300 p-2 text-right font-mono text-sm text-rose-700">
             ${(slip.supplierRefund || slip.totalGoods || 0).toLocaleString('vi-VN')} đ
           </td>
         </tr>
       </tfoot>
     </table>
 
-    <div class="text-[11px] text-slate-500 italic mb-4">
+    <div class="text-[10px] text-slate-500 italic mb-3">
       * ${footerNote}
     </div>
 
-    <!-- Signatures -->
     ${showSign ? `
-      <div class="grid grid-cols-4 gap-2 text-center text-xs mt-6 pt-4 border-t border-slate-200">
+      <div class="grid grid-cols-3 gap-2 text-center text-xs mt-4 pt-3 border-t border-slate-200">
         <div>
           <div class="font-bold text-slate-800 uppercase">Người lập phiếu</div>
-          <div class="text-[11px] text-slate-400 italic">(Ký, ghi rõ họ tên)</div>
-          <div class="h-16"></div>
-          <div class="font-semibold text-slate-700">${slip.staffName || 'Nguyễn Văn Nam'}</div>
+          <div class="text-[10px] text-slate-400 italic">(Ký, ghi rõ họ tên)</div>
+          <div class="h-12"></div>
+          <div class="font-semibold text-slate-700">${slip.staffName || 'Nhân viên'}</div>
         </div>
         <div>
           <div class="font-bold text-slate-800 uppercase">Thủ kho xuất</div>
-          <div class="text-[11px] text-slate-400 italic">(Ký, ghi rõ họ tên)</div>
-          <div class="h-16"></div>
-          <div class="font-semibold text-slate-700">Phạm Văn Tuấn</div>
+          <div class="text-[10px] text-slate-400 italic">(Ký, ghi rõ họ tên)</div>
+          <div class="h-12"></div>
+          <div class="font-semibold text-slate-700">Thủ kho</div>
         </div>
         <div>
-          <div class="font-bold text-slate-800 uppercase">KCS / Kiểm định</div>
-          <div class="text-[11px] text-slate-400 italic">(Ký, ghi rõ họ tên)</div>
-          <div class="h-16"></div>
-          <div class="font-semibold text-slate-700">Nguyễn Đình Bảo</div>
-        </div>
-        <div>
-          <div class="font-bold text-slate-800 uppercase">Đại diện NCC</div>
-          <div class="text-[11px] text-slate-400 italic">(Ký, đóng dấu)</div>
-          <div class="h-16"></div>
-          <div class="font-semibold text-slate-700">${slip.supplierName || 'Đối tác NCC'}</div>
+          <div class="font-bold text-slate-800 uppercase">Đại diện tiếp nhận</div>
+          <div class="text-[10px] text-slate-400 italic">(Ký, đóng dấu)</div>
+          <div class="h-12"></div>
+          <div class="font-semibold text-slate-700">${slip.supplierName || 'Đối tác'}</div>
         </div>
       </div>
     ` : ''}
@@ -690,7 +902,7 @@ export function printGoodsReturnSlip(slip: any) {
 }
 
 /**
- * 4. IN PHIẾU KIỂM KÊ KHO (Template: 'stocktake' - Phiếu kiểm kê A4)
+ * 4. IN PHIẾU KIỂM KÊ KHO
  */
 export function printStocktakeSlip(data: {
   code: string;
@@ -710,26 +922,27 @@ export function printStocktakeSlip(data: {
     reason?: string;
   }>;
 }) {
+  const company = getStoredCompanyInfo();
   const totalDiffValue = data.lines.reduce((acc, curr) => acc + (curr.diffValue || 0), 0);
 
   const rowsHtml = data.lines
     .map(
       (line, idx) => `
     <tr>
-      <td class="border border-slate-300 p-2 text-center font-mono">${String(idx + 1).padStart(2, '0')}</td>
-      <td class="border border-slate-300 p-2 font-mono text-[#784e34]">${line.itemCode}</td>
-      <td class="border border-slate-300 p-2 font-semibold text-slate-900">${line.itemName}</td>
-      <td class="border border-slate-300 p-2 text-center">${line.unit}</td>
-      <td class="border border-slate-300 p-2 text-right font-mono">${line.systemQty}</td>
-      <td class="border border-slate-300 p-2 text-right font-mono font-bold text-slate-900">${line.actualQty}</td>
-      <td class="border border-slate-300 p-2 text-right font-mono font-bold ${line.diffQty > 0 ? 'text-emerald-700' : line.diffQty < 0 ? 'text-rose-600' : 'text-slate-600'}">
+      <td class="border border-slate-300 p-1.5 text-center font-mono">${String(idx + 1).padStart(2, '0')}</td>
+      <td class="border border-slate-300 p-1.5 font-mono text-[#784e34]">${line.itemCode}</td>
+      <td class="border border-slate-300 p-1.5 font-semibold text-slate-900">${line.itemName}</td>
+      <td class="border border-slate-300 p-1.5 text-center">${line.unit}</td>
+      <td class="border border-slate-300 p-1.5 text-right font-mono">${line.systemQty}</td>
+      <td class="border border-slate-300 p-1.5 text-right font-mono font-bold text-slate-900">${line.actualQty}</td>
+      <td class="border border-slate-300 p-1.5 text-right font-mono font-bold ${line.diffQty > 0 ? 'text-emerald-700' : line.diffQty < 0 ? 'text-rose-600' : 'text-slate-600'}">
         ${line.diffQty > 0 ? `+${line.diffQty}` : line.diffQty}
       </td>
-      <td class="border border-slate-300 p-2 text-right font-mono text-slate-700">${(line.unitPrice || 0).toLocaleString('vi-VN')} đ</td>
-      <td class="border border-slate-300 p-2 text-right font-mono font-semibold ${(line.diffValue || 0) < 0 ? 'text-rose-600' : 'text-slate-900'}">
+      <td class="border border-slate-300 p-1.5 text-right font-mono text-slate-700">${(line.unitPrice || 0).toLocaleString('vi-VN')} đ</td>
+      <td class="border border-slate-300 p-1.5 text-right font-mono font-semibold ${(line.diffValue || 0) < 0 ? 'text-rose-600' : 'text-slate-900'}">
         ${(line.diffValue || 0).toLocaleString('vi-VN')} đ
       </td>
-      <td class="border border-slate-300 p-2 text-slate-600 italic text-[11px]">${line.reason || 'Khớp số liệu'}</td>
+      <td class="border border-slate-300 p-1.5 text-slate-600 italic text-[10px]">${line.reason || 'Khớp số liệu'}</td>
     </tr>
   `
     )
@@ -737,38 +950,37 @@ export function printStocktakeSlip(data: {
 
   const htmlContent = `
     <div class="text-center pb-3 mb-3 border-b border-slate-300">
-      <div class="font-bold text-slate-900 text-sm uppercase">CÔNG TY CỔ PHẦN NỘI THẤT MỘC GIA ATELIER</div>
-      <div class="text-xs text-slate-500">Phân hệ Quản lý Kho Vật tư &amp; Thành phẩm</div>
-      <h1 class="text-xl font-bold text-slate-900 uppercase mt-2 tracking-wide">
+      <div class="font-bold text-slate-900 text-sm uppercase">${company.companyName}</div>
+      <div class="text-xs text-slate-500">Phân hệ Quản lý Kho Vật tư &amp; Xưởng Sản Xuất</div>
+      <h1 class="text-lg font-bold text-slate-900 uppercase mt-2 tracking-wide">
         PHIẾU KIỂM KÊ TỒN KHO HÀNG HÓA
       </h1>
-      <div class="text-xs text-slate-500 italic">(Stocktake &amp; Physical Inventory Audit Sheet)</div>
-      <div class="flex items-center justify-center gap-4 text-xs mt-2 text-slate-700">
-        <span>Mã phiếu kiểm: <strong class="font-mono text-[#784e34]">${data.code}</strong></span>
+      <div class="flex items-center justify-center gap-4 text-xs mt-1 text-slate-700">
+        <span>Mã phiếu: <strong class="font-mono text-[#784e34]">${data.code}</strong></span>
         <span>•</span>
-        <span>Ngày kiểm kê: <strong>${data.date}</strong></span>
+        <span>Ngày kiểm: <strong>${data.date}</strong></span>
       </div>
     </div>
 
-    <div class="grid grid-cols-2 gap-3 text-xs mb-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
-      <div><span class="text-slate-500">Kho thực hiện kiểm kê:</span> <strong class="text-slate-900">${data.warehouseName}</strong></div>
-      <div><span class="text-slate-500">Cán bộ trưởng ban kiểm kê:</span> <strong class="text-slate-900">${data.staffName}</strong></div>
-      <div class="col-span-2"><span class="text-slate-500">Mục đích / Ghi chú kiểm:</span> <span>${data.note || 'Kiểm kê định kỳ tháng đối chiếu sổ cái và thực tế hàng tồn.'}</span></div>
+    <div class="grid grid-cols-2 gap-2 text-xs mb-3 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+      <div><span class="text-slate-500">Kho kiểm kê:</span> <strong class="text-slate-900">${data.warehouseName}</strong></div>
+      <div><span class="text-slate-500">Trưởng ban kiểm kê:</span> <strong class="text-slate-900">${data.staffName}</strong></div>
+      <div class="col-span-2"><span class="text-slate-500">Ghi chú:</span> <span>${data.note || 'Kiểm kê định kỳ đối soát sổ sách và thực tế.'}</span></div>
     </div>
 
     <table class="w-full border-collapse border border-slate-300 text-xs mb-3">
       <thead>
         <tr class="bg-slate-100 text-slate-800 font-bold">
-          <th class="border border-slate-300 p-2 text-center w-10">STT</th>
-          <th class="border border-slate-300 p-2 text-left w-24">Mã hàng</th>
-          <th class="border border-slate-300 p-2 text-left">Tên hàng hóa / Vật tư</th>
-          <th class="border border-slate-300 p-2 text-center w-14">ĐVT</th>
-          <th class="border border-slate-300 p-2 text-right w-16">Tồn sổ</th>
-          <th class="border border-slate-300 p-2 text-right w-16">Thực tế</th>
-          <th class="border border-slate-300 p-2 text-right w-16">Chênh lệch</th>
-          <th class="border border-slate-300 p-2 text-right w-24">Đơn giá</th>
-          <th class="border border-slate-300 p-2 text-right w-28">Giá trị lệch</th>
-          <th class="border border-slate-300 p-2 text-left w-32">Ghi chú</th>
+          <th class="border border-slate-300 p-1.5 text-center w-8">STT</th>
+          <th class="border border-slate-300 p-1.5 text-left w-20">Mã</th>
+          <th class="border border-slate-300 p-1.5 text-left">Tên hàng</th>
+          <th class="border border-slate-300 p-1.5 text-center w-12">ĐVT</th>
+          <th class="border border-slate-300 p-1.5 text-right w-14">Tồn sổ</th>
+          <th class="border border-slate-300 p-1.5 text-right w-14">Thực tế</th>
+          <th class="border border-slate-300 p-1.5 text-right w-14">Chênh</th>
+          <th class="border border-slate-300 p-1.5 text-right w-20">Đơn giá</th>
+          <th class="border border-slate-300 p-1.5 text-right w-24">Giá trị lệch</th>
+          <th class="border border-slate-300 p-1.5 text-left w-24">Ghi chú</th>
         </tr>
       </thead>
       <tbody>
@@ -776,45 +988,45 @@ export function printStocktakeSlip(data: {
       </tbody>
       <tfoot>
         <tr class="bg-slate-100 font-bold">
-          <td colspan="8" class="border border-slate-300 p-2 text-right text-slate-900">
-            Tổng giá trị chênh lệch kiểm kê:
+          <td colspan="8" class="border border-slate-300 p-1.5 text-right text-slate-900">
+            Tổng giá trị chênh lệch:
           </td>
-          <td class="border border-slate-300 p-2 text-right font-mono ${totalDiffValue < 0 ? 'text-rose-600' : 'text-slate-900'}">
+          <td class="border border-slate-300 p-1.5 text-right font-mono ${totalDiffValue < 0 ? 'text-rose-600' : 'text-slate-900'}">
             ${totalDiffValue.toLocaleString('vi-VN')} đ
           </td>
-          <td class="border border-slate-300 p-2"></td>
+          <td class="border border-slate-300 p-1.5"></td>
         </tr>
       </tfoot>
     </table>
 
-    <div class="text-[11px] text-slate-500 italic mb-4">
-      * Biên bản kiểm kê có giá trị làm căn cứ điều chỉnh sổ sách tồn kho kế toán và xử lý trách nhiệm bồi hoàn (nếu có).
+    <div class="text-[10px] text-slate-500 italic mb-3">
+      * Biên bản kiểm kê có giá trị làm căn cứ đối soát sổ sách kho và xử lý tồn kho.
     </div>
 
-    <div class="grid grid-cols-4 gap-2 text-center text-xs mt-6 pt-4 border-t border-slate-200">
+    <div class="grid grid-cols-4 gap-2 text-center text-xs mt-4 pt-3 border-t border-slate-200">
       <div>
-        <div class="font-bold text-slate-800 uppercase">Trưởng ban kiểm kê</div>
-        <div class="text-[11px] text-slate-400 italic">(Ký, ghi rõ họ tên)</div>
-        <div class="h-16"></div>
+        <div class="font-bold text-slate-800 uppercase">Trưởng ban kiểm</div>
+        <div class="text-[10px] text-slate-400 italic">(Ký, ghi rõ họ tên)</div>
+        <div class="h-12"></div>
         <div class="font-semibold text-slate-700">${data.staffName}</div>
       </div>
       <div>
         <div class="font-bold text-slate-800 uppercase">Thủ kho</div>
-        <div class="text-[11px] text-slate-400 italic">(Ký, ghi rõ họ tên)</div>
-        <div class="h-16"></div>
-        <div class="font-semibold text-slate-700">Phạm Văn Tuấn</div>
+        <div class="text-[10px] text-slate-400 italic">(Ký, ghi rõ họ tên)</div>
+        <div class="h-12"></div>
+        <div class="font-semibold text-slate-700">Thủ kho</div>
       </div>
       <div>
         <div class="font-bold text-slate-800 uppercase">Kế toán kho</div>
-        <div class="text-[11px] text-slate-400 italic">(Ký, ghi rõ họ tên)</div>
-        <div class="h-16"></div>
-        <div class="font-semibold text-slate-700">Nguyễn Thu Trang</div>
+        <div class="text-[10px] text-slate-400 italic">(Ký, ghi rõ họ tên)</div>
+        <div class="h-12"></div>
+        <div class="font-semibold text-slate-700">Kế toán</div>
       </div>
       <div>
-        <div class="font-bold text-slate-800 uppercase">Ban Giám Đốc Duyệt</div>
-        <div class="text-[11px] text-slate-400 italic">(Ký, đóng dấu)</div>
-        <div class="h-16"></div>
-        <div class="font-semibold text-slate-700">D2 LUXURY</div>
+        <div class="font-bold text-slate-800 uppercase">Ban Giám Đốc</div>
+        <div class="text-[10px] text-slate-400 italic">(Ký, đóng dấu)</div>
+        <div class="h-12"></div>
+        <div class="font-semibold text-slate-700">${company.brandName || 'D2 LUXURY'}</div>
       </div>
     </div>
   `;
@@ -822,6 +1034,135 @@ export function printStocktakeSlip(data: {
   printIsolatedHtml({
     title: `Phiếu kiểm kê kho - ${data.code}`,
     paperSize: 'a4',
+    htmlContent,
+  });
+}
+
+/**
+ * 5. IN PHIẾU THU / CHI TIỀN (Template: 'receipt' hoặc 'payment')
+ */
+export function printCustomerReceipt(receipt: {
+  code: string;
+  type: 'receipt' | 'payment';
+  date: string;
+  payerOrReceiver: string;
+  phone?: string;
+  address?: string;
+  reason: string;
+  amount: number;
+  paymentMethod: string;
+  orderCode?: string;
+}) {
+  const templateKey = receipt.type === 'payment' ? 'payment' : 'receipt';
+  const tpl = getSavedPrintTemplate(templateKey);
+  const company = getStoredCompanyInfo();
+  const bank = getStoredBankPayment();
+
+  const paperSize = tpl.paperSize || 'a5';
+  const title = tpl.title || (receipt.type === 'payment' ? 'PHIẾU CHI TIỀN THANH TOÁN' : 'PHIẾU THU TIỀN TẠM ỨNG DỰ ÁN');
+  const headerNote = tpl.headerNote || 'Phòng Kế Toán - Tài Chính D2 LUXURY';
+  const footerNote = tpl.footerNote || 'Phiếu xác nhận thanh toán khi có đủ chữ ký của thủ quỹ và người giao nhận tiền.';
+  const showLogo = tpl.showLogo ?? true;
+  const showQr = tpl.showQr ?? true;
+  const showSign = tpl.showSignature ?? true;
+
+  const isThermal = paperSize === 'k80' || paperSize === 'k57';
+  const amountWords = formatMoneyToVietnameseWords(receipt.amount || 0);
+
+  const qrUrl = `https://api.vietqr.io/image/970422-${bank.accountNumber}-n2LwzB0.jpg?accountName=${encodeURIComponent(
+    bank.accountHolder
+  )}&amount=${receipt.amount || 0}&addInfo=${encodeURIComponent(receipt.code || 'PT')}`;
+
+  const htmlContent = `
+    <div class="text-center pb-2.5 border-b ${isThermal ? 'border-dashed' : ''} border-slate-300">
+      ${showLogo ? `
+        <div class="font-bold text-slate-900 text-xs uppercase">${company.companyName}</div>
+      ` : ''}
+      <div class="text-[10px] text-slate-500">${headerNote}</div>
+      <h1 class="text-base font-bold text-slate-900 uppercase mt-1 tracking-wide">${title}</h1>
+      <div class="text-xs text-slate-600 mt-0.5">
+        Mã số: <strong class="font-mono text-[#784e34]">${receipt.code}</strong> &nbsp;|&nbsp; Ngày: <strong>${receipt.date}</strong>
+      </div>
+    </div>
+
+    <div class="py-2.5 space-y-1.5 text-xs border-b ${isThermal ? 'border-dashed' : ''} border-slate-300">
+      <div class="flex justify-between">
+        <span class="text-slate-600">${receipt.type === 'payment' ? 'Người nhận tiền:' : 'Người nộp tiền:'}</span>
+        <strong class="text-slate-900">${receipt.payerOrReceiver}</strong>
+      </div>
+      ${receipt.phone ? `
+        <div class="flex justify-between">
+          <span class="text-slate-600">Số điện thoại:</span>
+          <span class="font-mono font-semibold text-slate-800">${receipt.phone}</span>
+        </div>
+      ` : ''}
+      ${receipt.address ? `
+        <div class="flex justify-between">
+          <span class="text-slate-600">Địa chỉ:</span>
+          <span class="text-slate-800">${receipt.address}</span>
+        </div>
+      ` : ''}
+      <div class="flex justify-between">
+        <span class="text-slate-600">Lý do thu/chi:</span>
+        <span class="font-medium text-slate-900">${receipt.reason}</span>
+      </div>
+      ${receipt.orderCode ? `
+        <div class="flex justify-between">
+          <span class="text-slate-600">Đơn hàng liên quan:</span>
+          <span class="font-mono font-bold text-[#784e34]">${receipt.orderCode}</span>
+        </div>
+      ` : ''}
+      <div class="flex justify-between items-center pt-1 border-t border-slate-200">
+        <span class="font-bold text-slate-900">Số tiền:</span>
+        <strong class="font-mono text-base text-[#784e34]">${(receipt.amount || 0).toLocaleString('vi-VN')} đ</strong>
+      </div>
+      <div class="text-[10px] italic text-slate-600">
+        (Bằng chữ: ${amountWords})
+      </div>
+    </div>
+
+    ${showQr && receipt.type === 'receipt' ? `
+      <div class="mt-2.5 p-2 bg-slate-50 rounded border border-dashed border-slate-300 flex items-center justify-between gap-2">
+        <div class="text-left text-[10px] space-y-0.5">
+          <div class="font-bold text-slate-800">VietQR xác nhận thanh toán:</div>
+          <div>Ngân hàng: <strong>${bank.bankName}</strong></div>
+          <div>Số TK: <strong class="font-mono text-[#784e34]">${bank.accountNumber}</strong></div>
+        </div>
+        <img src="${qrUrl}" alt="VietQR" class="w-14 h-14 border rounded p-0.5 bg-white" />
+      </div>
+    ` : ''}
+
+    <div class="text-[10px] text-slate-500 italic text-center my-2">
+      * ${footerNote}
+    </div>
+
+    ${showSign ? `
+      <div class="grid grid-cols-3 gap-2 text-center text-xs mt-3 pt-2.5 border-t border-slate-200">
+        <div>
+          <div class="font-bold text-slate-800 uppercase">${receipt.type === 'payment' ? 'Người nhận' : 'Người nộp'}</div>
+          <div class="text-[10px] text-slate-400 italic">(Ký, họ tên)</div>
+          <div class="h-10"></div>
+          <div class="font-semibold text-slate-700">${receipt.payerOrReceiver}</div>
+        </div>
+        <div>
+          <div class="font-bold text-slate-800 uppercase">Thủ quỹ</div>
+          <div class="text-[10px] text-slate-400 italic">(Ký, họ tên)</div>
+          <div class="h-10"></div>
+          <div class="font-semibold text-slate-700">Thủ quỹ</div>
+        </div>
+        <div>
+          <div class="font-bold text-slate-800 uppercase">Kế toán trưởng</div>
+          <div class="text-[10px] text-slate-400 italic">(Ký, họ tên)</div>
+          <div class="h-10"></div>
+          <div class="font-semibold text-slate-700">Kế toán</div>
+        </div>
+      </div>
+    ` : ''}
+  `;
+
+  printIsolatedHtml({
+    title: `${title} - ${receipt.code}`,
+    paperSize,
     htmlContent,
   });
 }

@@ -1,11 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
-import {
-  ADMIN_STORAGE_KEYS,
-  getStoredAdminData,
-  setStoredAdminData,
-} from '@/utils/adminStorage';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   App,
   Table,
@@ -126,10 +121,16 @@ import {
   AdminDetailDrawer,
   AdminFormDrawer,
   AdminSearchInput,
+  PosEntryLayout,
+  PosEntryHeader,
+  PosEntryItemsCard,
+  PosEntrySidebar,
 } from '@/components/admin';
 import {
   AdminWarehouse,
   StockImportSlip,
+  StockImportSlipItem,
+  StockImportPaymentHistory,
   SupplierReturnSlip,
   AuditSlip,
   StockAuditItem,
@@ -151,6 +152,11 @@ import {
 } from '@/data/admin/mockData';
 import { exportToExcel } from '@/utils/exportExcel';
 import { SuppliersTab } from './SuppliersTab';
+import {
+  StockImportCreate,
+  SupplierReturnCreate,
+  StocktakeCreate,
+} from './workshop';
 import { isMatchBranch } from '@/utils/branchHelper';
 import {
   printElementById,
@@ -158,55 +164,67 @@ import {
   printGoodsReceiptSlip,
   printGoodsReturnSlip,
 } from '@/utils/printHelper';
-
-const VIETNAM_PROVINCES = [
-  'Hà Nội',
-  'TP. Hồ Chí Minh',
-  'Đà Nẵng',
-  'Hải Phòng',
-  'Cần Thơ',
-  'Bình Dương',
-  'Đồng Nai',
-  'Bà Rịa - Vũng Tàu',
-  'Quảng Ninh',
-  'Bắc Ninh',
-  'Hải Dương',
-  'Hưng Yên',
-  'Thái Nguyên',
-  'Nam Định',
-  'Ninh Bình',
-  'Thanh Hóa',
-  'Nghệ An',
-  'Huế',
-  'Quảng Nam',
-  'Khánh Hòa',
-  'Lâm Đồng',
-  'Bình Định',
-  'Kiên Giang',
-  'An Giang',
-  'Tiền Giang',
-];
+import { warehouseApi } from '@/api/warehouseApi';
+import { locationApi, LocationItem, ProvinceItem } from '@/api/locationApi';
+import { stockImportApi } from '@/api/stockImportApi';
+import { supplierReturnApi } from '@/api/supplierReturnApi';
+import { stockAuditApi } from '@/api/stockAuditApi';
+import { productApi } from '@/api/productApi';
+import {
+  ADMIN_STORAGE_KEYS,
+  getStoredAdminData,
+  setStoredAdminData,
+} from '@/utils/adminStorage';
 
 const { Option } = Select;
 const { TextArea } = Input;
 const { Title, Text } = Typography;
 
+const formatInputMoney = (value: number | string | undefined | null) => {
+  if (value === undefined || value === null || value === '') return '';
+  const clean = String(value).replace(/\./g, '').replace(/,/g, '');
+  return clean.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+};
+
+const parseInputMoney = (value: string | undefined | null) => {
+  if (!value) return '' as unknown as number;
+  return String(value).replace(/\./g, '').replace(/,/g, '') as unknown as number;
+};
+
+const COMMON_UOM_OPTIONS = [
+  { value: 'Bộ', label: 'Bộ' },
+  { value: 'Chiếc', label: 'Chiếc' },
+  { value: 'Cái', label: 'Cái' },
+  { value: 'Sản phẩm', label: 'Sản phẩm' },
+  { value: 'm²', label: 'm²' },
+  { value: 'md', label: 'md' },
+  { value: 'm³', label: 'm³' },
+  { value: 'Hộp', label: 'Hộp' },
+  { value: 'Thùng', label: 'Thùng' },
+  { value: 'Set', label: 'Set' },
+  { value: 'Combo', label: 'Combo' },
+];
+
 export interface WorkshopTabProps {
   catalogList?: FeaturedCatalogProduct[];
+  setCatalogList?: React.Dispatch<React.SetStateAction<FeaturedCatalogProduct[]>>;
   suppliersList?: AdminSupplier[];
   setSuppliersList?: React.Dispatch<React.SetStateAction<AdminSupplier[]>>;
   branchesList?: AdminBranch[];
   selectedGlobalBranch?: string;
   initialSubTab?: 'warehouses' | 'imports' | 'returns' | 'stocktake' | 'suppliers';
+  onNavigateToProduct?: (productCodeOrName: string) => void;
 }
 
 export function WorkshopTab({
   catalogList = FEATURED_CATALOG,
+  setCatalogList,
   suppliersList = INITIAL_SUPPLIERS,
   setSuppliersList,
   branchesList = INITIAL_BRANCHES,
   selectedGlobalBranch = 'all',
   initialSubTab = 'warehouses',
+  onNavigateToProduct,
 }: WorkshopTabProps) {
   const { message } = App.useApp();
   const { user } = useAuth();
@@ -214,8 +232,26 @@ export function WorkshopTab({
   // Sub-Tab Switcher State
   const [warehouseSubTab, setWarehouseSubTab] = useState<'warehouses' | 'imports' | 'returns' | 'stocktake' | 'suppliers'>(initialSubTab);
 
+  useEffect(() => {
+    if (initialSubTab) {
+      setWarehouseSubTab(initialSubTab);
+    }
+  }, [initialSubTab]);
+
+  const handleSubTabChange = (val: 'warehouses' | 'imports' | 'returns' | 'stocktake' | 'suppliers') => {
+    setWarehouseSubTab(val);
+    setStocktakeViewMode('list');
+    setImportViewMode('list');
+    setReturnViewMode('list');
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('subTab', val);
+      window.history.replaceState({}, '', url.toString());
+    }
+  };
+
   // Warehouses State
-  const [warehousesList, setWarehousesList] = useState<AdminWarehouse[]>(INITIAL_WAREHOUSES);
+  const [warehousesList, setWarehousesList] = useState<AdminWarehouse[]>([]);
   const [selectedWarehouseKeys, setSelectedWarehouseKeys] = useState<React.Key[]>([]);
   const [warehouseSearchQuery, setWarehouseSearchQuery] = useState('');
   const [warehouseBranchFilter, setWarehouseBranchFilter] = useState('all');
@@ -223,14 +259,247 @@ export function WorkshopTab({
   const [showWarehouseModal, setShowWarehouseModal] = useState(false);
   const [editingWarehouse, setEditingWarehouse] = useState<AdminWarehouse | null>(null);
   const [warehouseForm] = Form.useForm();
+  const selectedWarehouseProvince = Form.useWatch('province', warehouseForm);
+  const selectedWarehouseDistrict = Form.useWatch('district', warehouseForm);
+
+  const [provincesList, setProvincesList] = useState<ProvinceItem[]>([]);
+  const [districtOptions, setDistrictOptions] = useState<LocationItem[]>([]);
+  const [wardOptions, setWardOptions] = useState<LocationItem[]>([]);
+  const [loadingDistricts, setLoadingDistricts] = useState(false);
+  const [loadingWards, setLoadingWards] = useState(false);
+
+  useEffect(() => {
+    locationApi.getProvinces().then((data) => {
+      setProvincesList(data);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!selectedWarehouseProvince) {
+      setDistrictOptions([]);
+      setWardOptions([]);
+      return;
+    }
+    setLoadingDistricts(true);
+    locationApi.getDistrictsByProvince(selectedWarehouseProvince)
+      .then((districts) => {
+        setDistrictOptions(districts);
+      })
+      .finally(() => {
+        setLoadingDistricts(false);
+      });
+  }, [selectedWarehouseProvince]);
+
+  useEffect(() => {
+    if (!selectedWarehouseDistrict || !selectedWarehouseProvince) {
+      setWardOptions([]);
+      return;
+    }
+    setLoadingWards(true);
+    locationApi.getWardsByDistrict(selectedWarehouseDistrict, selectedWarehouseProvince)
+      .then((wards) => {
+        setWardOptions(wards);
+      })
+      .finally(() => {
+        setLoadingWards(false);
+      });
+  }, [selectedWarehouseDistrict, selectedWarehouseProvince]);
 
   const selectedWarehouseRecord = warehousesList.find((w) => selectedWarehouseKeys.includes(w.id));
 
-  const handleDeleteSelectedWarehouses = () => {
+  const loadWarehousesFromApi = async () => {
+    try {
+      const data = await warehouseApi.getWarehouses();
+      const list = data || [];
+      setWarehousesList(list);
+      setStoredAdminData(ADMIN_STORAGE_KEYS.WAREHOUSES, list);
+    } catch (err: any) {
+      console.warn('Could not load warehouses from API:', err);
+    }
+  };
+
+  const refreshCatalogProducts = async () => {
+    try {
+      const prods = await productApi.getProducts();
+      if (prods && Array.isArray(prods) && prods.length > 0) {
+        setDbProducts(prods);
+        if (setCatalogList) {
+          setCatalogList(prods);
+        }
+      }
+    } catch (e) {
+      console.warn('Could not refresh catalog products:', e);
+    }
+  };
+
+  const loadImportsFromApi = async () => {
+    try {
+      const data = await stockImportApi.getStockImports();
+      if (data && Array.isArray(data)) {
+        const mapped: StockImportSlip[] = data.map((d) => {
+          let parsedItems: StockImportSlipItem[] = [];
+          if (d.itemsJson) {
+            try {
+              parsedItems = JSON.parse(d.itemsJson);
+            } catch {
+              parsedItems = [];
+            }
+          }
+          if (parsedItems.length === 0 && d.itemName) {
+            parsedItems = [
+              {
+                id: `line_${d.id}`,
+                code: d.code || 'SP0001',
+                name: d.itemName,
+                unit: d.unit || 'bộ',
+                batch: '---',
+                expiryDate: '---',
+                quantity: d.quantity || 1,
+                unitPrice: d.unitPrice || 0,
+                discount: d.discount || 0,
+                importPrice: d.unitPrice || 0,
+                total: d.totalValue || ((d.quantity || 1) * (d.unitPrice || 0)),
+              },
+            ];
+          }
+          return {
+            id: d.id,
+            code: d.code,
+            supplier: d.supplier,
+            supplierId: d.supplierId,
+            warehouseName: d.warehouseName,
+            warehouseId: d.warehouseId,
+            itemName: d.itemName,
+            spec: d.spec || '',
+            quantity: d.quantity,
+            unitPrice: d.unitPrice,
+            unit: d.unit || 'bộ',
+            mc: d.mc || 'Đạt chuẩn',
+            discount: d.discount,
+            totalValue: d.totalValue,
+            paidAmount: d.paidAmount,
+            debtAmount: d.remainingDebt,
+            paymentMethod: 'Chuyển khoản',
+            note: d.note,
+            importDate: d.importDate,
+            inspector: d.inspector || 'KCS',
+            status: (d.status === 'draft' || d.status === 'inspecting' || d.status === 'completed' ? d.status : 'completed') as any,
+            statusLabel: d.statusLabel || (d.status === 'draft' ? 'Lưu tạm' : 'Đã nhập kho'),
+            items: parsedItems,
+          };
+        });
+        setImportsList(mapped);
+        setStoredAdminData(ADMIN_STORAGE_KEYS.STOCK_IMPORTS, mapped);
+      }
+    } catch (err: any) {
+      console.warn('Could not load imports from API:', err);
+    }
+  };
+
+  const loadReturnsFromApi = async () => {
+    try {
+      const data = await supplierReturnApi.getSupplierReturns();
+      if (data && Array.isArray(data)) {
+        const mapped: SupplierReturnSlip[] = data.map((d) => ({
+          id: d.id,
+          code: d.code,
+          sourcePurchaseEntryCode: d.sourceImportCode,
+          supplierName: d.supplierName,
+          warehouseName: d.warehouseName || '',
+          itemName: d.itemName,
+          spec: d.spec || '',
+          quantity: d.quantity,
+          unit: d.unit || 'bộ',
+          purchasePrice: d.purchasePrice,
+          returnPrice: d.returnPrice,
+          totalGoods: d.totalGoods || d.supplierRefund || 0,
+          totalValue: d.totalGoods || d.supplierRefund || 0,
+          invoiceDiscount: d.discount || 0,
+          supplierRefund: d.supplierRefund || 0,
+          paidAmount: d.paidAmount !== undefined ? d.paidAmount : (d.supplierRefund || 0),
+          paymentMethod: d.paymentMethod || 'Chuyển khoản',
+          returnDate: d.returnDate,
+          staffName: d.staffName || '',
+          reason: d.reason || '',
+          solution: d.solution || '',
+          status: (d.status === 'draft' || d.status === 'completed' ? d.status : 'completed') as any,
+          statusLabel: d.status === 'draft' ? 'Phiếu tạm' : 'Đã trả hàng',
+          note: d.note,
+        }));
+        setSupplierReturnsList(mapped);
+        setStoredAdminData(ADMIN_STORAGE_KEYS.SUPPLIER_RETURNS, mapped);
+      }
+    } catch (err: any) {
+      console.warn('Could not load returns from API:', err);
+    }
+  };
+
+  const loadAuditsFromApi = async () => {
+    try {
+      const data = await stockAuditApi.getStockAudits();
+      if (data && Array.isArray(data)) {
+        const mapped: AuditSlip[] = data.map((d) => {
+          let items: StockAuditItem[] = [];
+          if (d.itemsJson) {
+            try {
+              items = JSON.parse(d.itemsJson);
+            } catch {}
+          }
+          return {
+            id: d.id,
+            code: d.code,
+            title: d.title,
+            createdAt: d.auditDate || (d.createdAt ? new Date(d.createdAt).toLocaleDateString('vi-VN') : ''),
+            creator: d.creator,
+            scope: 'all',
+            scopeLabel: d.scopeLabel,
+            status: (d.status === 'completed' || d.status === 'draft' ? d.status : 'auditing') as any,
+            statusLabel: d.statusLabel || (d.status === 'completed' ? 'Đã hoàn tất 100%' : 'Đang kiểm đếm'),
+            note: d.note || '',
+            items,
+          };
+        });
+        setAuditSlips(mapped);
+        setStoredAdminData(ADMIN_STORAGE_KEYS.STOCK_AUDITS, mapped);
+      }
+    } catch (err: any) {
+      console.warn('Could not load audits from API:', err);
+    }
+  };
+
+  useEffect(() => {
+    // 1. Instantly read cached state after client hydration
+    const storedWh = getStoredAdminData(ADMIN_STORAGE_KEYS.WAREHOUSES, []);
+    if (storedWh && storedWh.length > 0) setWarehousesList(storedWh);
+
+    const storedImp = getStoredAdminData(ADMIN_STORAGE_KEYS.STOCK_IMPORTS, []);
+    if (storedImp && storedImp.length > 0) setImportsList(storedImp);
+
+    const storedRet = getStoredAdminData(ADMIN_STORAGE_KEYS.SUPPLIER_RETURNS, []);
+    if (storedRet && storedRet.length > 0) setSupplierReturnsList(storedRet);
+
+    const storedAud = getStoredAdminData(ADMIN_STORAGE_KEYS.STOCK_AUDITS, []);
+    if (storedAud && storedAud.length > 0) setAuditSlips(storedAud);
+
+    // 2. Fetch fresh updates from backend API
+    loadWarehousesFromApi();
+    loadImportsFromApi();
+    loadReturnsFromApi();
+    loadAuditsFromApi();
+  }, []);
+
+  const handleDeleteSelectedWarehouses = async () => {
     if (!selectedWarehouseKeys.length) return;
-    setWarehousesList(warehousesList.filter((w) => !selectedWarehouseKeys.includes(w.id)));
-    message.success(`Đã xóa ${selectedWarehouseKeys.length} kho đã chọn!`);
-    setSelectedWarehouseKeys([]);
+    try {
+      await Promise.all(
+        selectedWarehouseKeys.map((k) => warehouseApi.deleteWarehouse(String(k)))
+      );
+      setWarehousesList((prev) => prev.filter((w) => !selectedWarehouseKeys.includes(w.id)));
+      message.success(`Đã xóa ${selectedWarehouseKeys.length} kho đã chọn!`);
+      setSelectedWarehouseKeys([]);
+    } catch (e: any) {
+      message.error(e?.message || 'Xóa kho hàng thất bại.');
+    }
   };
 
   const handleCopySelectedWarehouse = () => {
@@ -245,27 +514,68 @@ export function WorkshopTab({
     }
   };
 
-  // Load and sync warehouses with LocalStorage
-  useEffect(() => {
-    setWarehousesList(getStoredAdminData(ADMIN_STORAGE_KEYS.WAREHOUSES, INITIAL_WAREHOUSES));
-  }, []);
-
-  useEffect(() => {
-    setStoredAdminData(ADMIN_STORAGE_KEYS.WAREHOUSES, warehousesList);
-  }, [warehousesList]);
-
   // Imports State
-  const [importsList, setImportsList] = useState<StockImportSlip[]>(INITIAL_STOCK_IMPORTS);
+  const [importsList, setImportsList] = useState<StockImportSlip[]>([]);
+  const [selectedImportKeys, setSelectedImportKeys] = useState<React.Key[]>([]);
   const [importSearchQuery, setImportSearchQuery] = useState('');
   const [importStatusFilter, setImportStatusFilter] = useState('all');
+  const [importWarehouseFilter, setImportWarehouseFilter] = useState('all');
   const [importDateRange, setImportDateRange] = useState<[any, any] | null>(null);
   const [selectedImportDetail, setSelectedImportDetail] = useState<StockImportSlip | null>(null);
   const [showImportDetailDrawer, setShowImportDetailDrawer] = useState(false);
-  const [importDetailTab, setImportDetailTab] = useState<'items' | 'info'>('items');
+  const [importDetailTab, setImportDetailTab] = useState<'items' | 'info' | 'payments'>('items');
   const [expandedImportRowKeys, setExpandedImportRowKeys] = useState<string[]>([]);
-  const [importPanelTabs, setImportPanelTabs] = useState<Record<string, 'items' | 'info'>>({});
-  const [importRowTabs, setImportRowTabs] = useState<Record<string, 'items' | 'info'>>({});
+  const [importPanelTabs, setImportPanelTabs] = useState<Record<string, 'items' | 'info' | 'payments'>>({});
+  const [importRowTabs, setImportRowTabs] = useState<Record<string, 'items' | 'info' | 'payments'>>({});
   const [selectedImportSlipForPrint, setSelectedImportSlipForPrint] = useState<StockImportSlip | null>(null);
+
+  const selectedImportRecord = importsList.find((i) => selectedImportKeys.includes(i.id));
+
+  const handleDeleteSelectedImports = async () => {
+    if (!selectedImportKeys.length) return;
+    const keysToDelete = [...selectedImportKeys];
+    try {
+      await Promise.all(
+        keysToDelete.map((k) => {
+          const keyStr = String(k);
+          if (keyStr.includes('-')) {
+            return stockImportApi.deleteStockImport(keyStr).catch(() => {});
+          }
+          return Promise.resolve(true);
+        })
+      );
+      setImportsList((prev) => {
+        const nextList = prev.filter((i) => !keysToDelete.includes(i.id));
+        setStoredAdminData(ADMIN_STORAGE_KEYS.STOCK_IMPORTS, nextList);
+        return nextList;
+      });
+      setExpandedImportRowKeys((prev) => prev.filter((k) => !keysToDelete.includes(k)));
+      message.success(`Đã xóa ${keysToDelete.length} phiếu nhập đã chọn!`);
+      setSelectedImportKeys([]);
+      await loadImportsFromApi();
+    } catch (e: any) {
+      message.error(e?.message || 'Xóa phiếu nhập thất bại.');
+    }
+  };
+
+  const handleCopySelectedImport = () => {
+    if (!selectedImportRecord) return;
+    const nextNum = (importsList.length + 91).toString().padStart(3, '0');
+    const cloned: StockImportSlip = {
+      ...selectedImportRecord,
+      id: `imp_${Date.now()}`,
+      code: `#PN-2026-${nextNum}`,
+      importDate: new Date().toLocaleDateString('vi-VN') + ' ' + new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+    };
+    setImportsList((prev) => [cloned, ...prev]);
+    message.success(`Đã nhân bản phiếu nhập "${selectedImportRecord.code}"!`);
+  };
+
+  const handleEditSelectedImport = () => {
+    if (!selectedImportRecord) return;
+    setExpandedImportRowKeys([selectedImportRecord.id]);
+    setImportRowTabs((prev) => ({ ...prev, [selectedImportRecord.id]: 'items' }));
+  };
 
   // Import Entry State
   const [importViewMode, setImportViewMode] = useState<'list' | 'create'>('list');
@@ -280,6 +590,7 @@ export function WorkshopTab({
     discount?: number;
     total: number;
   }>>([]);
+  const [dbProducts, setDbProducts] = useState<FeaturedCatalogProduct[]>([]);
   const [importSearchProduct, setImportSearchProduct] = useState('');
   const [showImportProductPopover, setShowImportProductPopover] = useState(false);
   const [importCode, setImportCode] = useState('');
@@ -292,15 +603,167 @@ export function WorkshopTab({
   const [importPaidAmount, setImportPaidAmount] = useState<number | undefined>(undefined);
   const [importPaymentMethod, setImportPaymentMethod] = useState('Chuyển khoản');
   const [importNote, setImportNote] = useState('');
+  const importSearchInputRef = React.useRef<any>(null);
+
+  const normalizeSearchText = (str?: string) => {
+    if (!str) return '';
+    return str
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd')
+      .replace(/Đ/g, 'd')
+      .trim();
+  };
+
+  const allAvailableProducts = useMemo(() => {
+    const map = new Map<string, FeaturedCatalogProduct>();
+    (catalogList || []).forEach((p) => {
+      const key = p.code || p.id;
+      if (key) map.set(key, p);
+    });
+    dbProducts.forEach((p) => {
+      const key = p.code || p.id;
+      if (key) map.set(key, p);
+    });
+    return Array.from(map.values());
+  }, [catalogList, dbProducts]);
+
+  const filteredImportProducts = useMemo(() => {
+    const rawQuery = importSearchProduct.trim().toLowerCase();
+    const query = normalizeSearchText(importSearchProduct);
+    if (!query) {
+      return [];
+    }
+    const queryWords = query.split(/\s+/).filter(Boolean);
+
+    const matches = allAvailableProducts.filter((p) => {
+      const nameRaw = (p.name || '').toLowerCase();
+      const codeRaw = (p.code || '').toLowerCase();
+      const collRaw = (p.collection || '').toLowerCase();
+      const catRaw = (p.categoryName || '').toLowerCase();
+
+      const nameNorm = normalizeSearchText(p.name);
+      const codeNorm = normalizeSearchText(p.code);
+      const collNorm = normalizeSearchText(p.collection);
+      const catNorm = normalizeSearchText(p.categoryName);
+
+      // Direct match on code
+      if (codeRaw.includes(rawQuery) || codeNorm.includes(query)) return true;
+
+      // Direct match on name
+      if (nameRaw.includes(rawQuery) || nameNorm.includes(query)) return true;
+
+      // All words present in name
+      if (queryWords.every((w) => nameNorm.includes(w))) return true;
+
+      // All words present in (name + category + collection)
+      const combined = `${nameNorm} ${catNorm} ${collNorm}`;
+      return queryWords.every((w) => combined.includes(w));
+    });
+
+    // Sort by relevance (Exact name start > Exact name contains > Code match > Others)
+    return matches.sort((a, b) => {
+      const aNameNorm = normalizeSearchText(a.name);
+      const bNameNorm = normalizeSearchText(b.name);
+      const aCodeNorm = normalizeSearchText(a.code);
+      const bCodeNorm = normalizeSearchText(b.code);
+
+      const aExactName = aNameNorm.startsWith(query) ? 3 : aNameNorm.includes(query) ? 2 : 0;
+      const bExactName = bNameNorm.startsWith(query) ? 3 : bNameNorm.includes(query) ? 2 : 0;
+      if (aExactName !== bExactName) return bExactName - aExactName;
+
+      const aExactCode = aCodeNorm.startsWith(query) ? 3 : aCodeNorm.includes(query) ? 2 : 0;
+      const bExactCode = bCodeNorm.startsWith(query) ? 3 : bCodeNorm.includes(query) ? 2 : 0;
+      if (aExactCode !== bExactCode) return bExactCode - aExactCode;
+
+      return a.name.localeCompare(b.name);
+    });
+  }, [allAvailableProducts, importSearchProduct]);
+
+  // Real-time backend search when typing in product search box
+  useEffect(() => {
+    const term = importSearchProduct.trim();
+    if (!term) return;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await productApi.getProducts({ search: term, pageSize: 100 });
+        if (res && res.length > 0) {
+          setDbProducts((prev) => {
+            const map = new Map<string, FeaturedCatalogProduct>();
+            prev.forEach((p) => map.set(p.code || p.id, p));
+            res.forEach((p) => map.set(p.code || p.id, p));
+            return Array.from(map.values());
+          });
+        }
+      } catch (e) {
+        // ignore
+      }
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [importSearchProduct]);
+
+  useEffect(() => {
+    refreshCatalogProducts();
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F3') {
+        e.preventDefault();
+        importSearchInputRef.current?.focus();
+        setShowImportProductPopover(true);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Returns State
-  const [supplierReturnsList, setSupplierReturnsList] = useState<SupplierReturnSlip[]>(INITIAL_SUPPLIER_RETURNS);
+  const [supplierReturnsList, setSupplierReturnsList] = useState<SupplierReturnSlip[]>([]);
+  const [selectedReturnKeys, setSelectedReturnKeys] = useState<React.Key[]>([]);
   const [returnSearchQuery, setReturnSearchQuery] = useState('');
   const [returnStatusFilter, setReturnStatusFilter] = useState('all');
+  const [returnWarehouseFilter, setReturnWarehouseFilter] = useState('all');
   const [returnDateRange, setReturnDateRange] = useState<[any, any] | null>(null);
   const [selectedReturnSlipForPrint, setSelectedReturnSlipForPrint] = useState<SupplierReturnSlip | null>(null);
   const [expandedReturnRowKeys, setExpandedReturnRowKeys] = useState<string[]>([]);
   const [returnRowTabs, setReturnRowTabs] = useState<Record<string, 'items' | 'info'>>({});
+
+  const selectedReturnRecord = supplierReturnsList.find((r) => selectedReturnKeys.includes(r.id));
+
+  const handleDeleteSelectedReturns = async () => {
+    if (!selectedReturnKeys.length) return;
+    try {
+      await Promise.all(
+        selectedReturnKeys.map((k) => supplierReturnApi.deleteSupplierReturn(String(k)).catch(() => {}))
+      );
+      setSupplierReturnsList((prev) => prev.filter((r) => !selectedReturnKeys.includes(r.id)));
+      message.success(`Đã xóa ${selectedReturnKeys.length} phiếu trả hàng đã chọn!`);
+      setSelectedReturnKeys([]);
+    } catch (e: any) {
+      message.error(e?.message || 'Xóa phiếu trả hàng thất bại.');
+    }
+  };
+
+  const handleCopySelectedReturn = () => {
+    if (!selectedReturnRecord) return;
+    const nextNum = (supplierReturnsList.length + 1).toString().padStart(2, '0');
+    const cloned: SupplierReturnSlip = {
+      ...selectedReturnRecord,
+      id: `ret_${Date.now()}`,
+      code: `#TH-2026-${nextNum}`,
+      returnDate: new Date().toLocaleDateString('vi-VN') + ' ' + new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+    };
+    setSupplierReturnsList((prev) => [cloned, ...prev]);
+    message.success(`Đã nhân bản phiếu trả hàng "${selectedReturnRecord.code}"!`);
+  };
+
+  const handleEditSelectedReturn = () => {
+    if (!selectedReturnRecord) return;
+    setExpandedReturnRowKeys([selectedReturnRecord.id]);
+    setReturnRowTabs((prev) => ({ ...prev, [selectedReturnRecord.id]: 'items' }));
+  };
 
   // Return Entry State
   const [returnViewMode, setReturnViewMode] = useState<'list' | 'create'>('list');
@@ -333,6 +796,7 @@ export function WorkshopTab({
 
   // Stocktake State
   const [stocktakeViewMode, setStocktakeViewMode] = useState<'list' | 'create' | 'edit'>('list');
+  const [selectedAuditKeys, setSelectedAuditKeys] = useState<React.Key[]>([]);
   const [stocktakeTabFilter, setStocktakeTabFilter] = useState<'all' | 'matched' | 'diff' | 'increase' | 'decrease'>('all');
   const [stocktakeEntryLines, setStocktakeEntryLines] = useState<StockAuditItem[]>([]);
   const [stocktakeSearchProduct, setStocktakeSearchProduct] = useState('');
@@ -344,12 +808,16 @@ export function WorkshopTab({
   const [stocktakeWarehouseName, setStocktakeWarehouseName] = useState('Kho Phôi Gỗ Nguyên Khối FAS');
   const [stocktakeStaffName, setStocktakeStaffName] = useState('');
   const [stocktakeNote, setStocktakeNote] = useState('');
-  const [auditSlips, setAuditSlips] = useState<AuditSlip[]>(INITIAL_AUDIT_SLIPS);
+  const [auditSlips, setAuditSlips] = useState<AuditSlip[]>([]);
+  const [expandedAuditRowKeys, setExpandedAuditRowKeys] = useState<string[]>([]);
+  const [auditRowTabs, setAuditRowTabs] = useState<Record<string, 'items' | 'info'>>({});
   const [activeSlipId, setActiveSlipId] = useState<string>('slip_1');
   const [editingSlipId, setEditingSlipId] = useState<string | null>(null);
   const [stockSearchQuery, setStockSearchQuery] = useState('');
   const [auditSearchQuery, setAuditSearchQuery] = useState('');
   const [auditDateRange, setAuditDateRange] = useState<[any, any] | null>(null);
+  const [auditStatusFilter, setAuditStatusFilter] = useState('all');
+  const [auditWarehouseFilter, setAuditWarehouseFilter] = useState('all');
   const [stockTypeFilter, setStockTypeFilter] = useState('all');
   const [stockDiffFilter, setStockDiffFilter] = useState('all');
   const [selectedAuditSlip, setSelectedAuditSlip] = useState<AuditSlip | null>(null);
@@ -358,6 +826,56 @@ export function WorkshopTab({
   const [createSlipForm] = Form.useForm();
   const [showAddItemModal, setShowAddItemModal] = useState(false);
   const [addItemForm] = Form.useForm();
+
+  const selectedAuditRecord = auditSlips.find((a) => selectedAuditKeys.includes(a.id));
+
+  const handleDeleteSelectedAudits = async () => {
+    if (!selectedAuditKeys.length) return;
+    try {
+      await Promise.all(
+        selectedAuditKeys.map((k) => stockAuditApi.deleteStockAudit(String(k)).catch(() => {}))
+      );
+      setAuditSlips((prev) => prev.filter((s) => !selectedAuditKeys.includes(s.id)));
+      message.success(`Đã xóa ${selectedAuditKeys.length} phiếu kiểm kho đã chọn!`);
+      setSelectedAuditKeys([]);
+    } catch (e: any) {
+      message.error(e?.message || 'Xóa phiếu kiểm kho thất bại.');
+    }
+  };
+
+  const handleCopySelectedAudit = () => {
+    if (!selectedAuditRecord) return;
+    const nextNum = (auditSlips.length + 1).toString().padStart(2, '0');
+    const cloned: AuditSlip = {
+      ...selectedAuditRecord,
+      id: `slip_${Date.now()}`,
+      code: `#KK-2026-${nextNum}`,
+      title: `${selectedAuditRecord.title} (Bản sao)`,
+      createdAt: new Date().toLocaleDateString('vi-VN'),
+    };
+    setAuditSlips((prev) => [cloned, ...prev]);
+    message.success(`Đã nhân bản phiếu kiểm kho "${selectedAuditRecord.code}"!`);
+  };
+
+  const handleEditSelectedAudit = () => {
+    if (selectedAuditRecord) {
+      handleOpenEditStocktake(selectedAuditRecord);
+    }
+  };
+
+  const handleRefreshAudits = async () => {
+    try {
+      await loadAuditsFromApi();
+      setAuditSearchQuery('');
+      setAuditStatusFilter('all');
+      setAuditWarehouseFilter('all');
+      setAuditDateRange(null);
+      setSelectedAuditKeys([]);
+      message.success('Đã làm mới danh sách phiếu kiểm!');
+    } catch (err: any) {
+      message.error('Làm mới thất bại.');
+    }
+  };
 
   // Active slip derived
   const activeSlip = useMemo(() => {
@@ -375,12 +893,54 @@ export function WorkshopTab({
   const [showSupplierDrawer, setShowSupplierDrawer] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<AdminSupplier | null>(null);
 
-  const isMatchGlobalBranch = (targetNameOrBranch?: string) => {
+  const isMatchGlobalBranch = useCallback((targetNameOrBranch?: string) => {
     return isMatchBranch(targetNameOrBranch, selectedGlobalBranch, warehousesList);
-  };
+  }, [selectedGlobalBranch, warehousesList]);
+
+  const availableBranchWarehouses = useMemo(() => {
+    if (!selectedGlobalBranch || selectedGlobalBranch === 'all') {
+      return warehousesList;
+    }
+    const matched = warehousesList.filter((w) => isMatchGlobalBranch(w.branch) || isMatchGlobalBranch(w.name));
+    return matched.length > 0 ? matched : warehousesList;
+  }, [warehousesList, selectedGlobalBranch, isMatchGlobalBranch]);
+
+  const availableBranchSuppliers = useMemo(() => {
+    if (!selectedGlobalBranch || selectedGlobalBranch === 'all') {
+      return suppliersList;
+    }
+    const matched = suppliersList.filter((s) => isMatchGlobalBranch(s.branch || s.address || s.name));
+    return matched.length > 0 ? matched : suppliersList;
+  }, [suppliersList, selectedGlobalBranch, isMatchGlobalBranch]);
+
+  useEffect(() => {
+    if (warehousesList.length > 0) {
+      const matched = selectedGlobalBranch !== 'all'
+        ? warehousesList.filter((w) => isMatchGlobalBranch(w.branch) || isMatchGlobalBranch(w.name))
+        : warehousesList;
+      const targetWh = matched[0]?.name || warehousesList[0]?.name;
+      if (targetWh) {
+        setImportWarehouse((prev) => {
+          if (!prev) return targetWh;
+          const currentMatches = matched.some((w) => w.name === prev);
+          return currentMatches ? prev : targetWh;
+        });
+        setReturnWarehouse((prev) => {
+          if (!prev) return targetWh;
+          const currentMatches = matched.some((w) => w.name === prev);
+          return currentMatches ? prev : targetWh;
+        });
+        setStocktakeWarehouseName((prev) => {
+          if (!prev) return targetWh;
+          const currentMatches = matched.some((w) => w.name === prev);
+          return currentMatches ? prev : targetWh;
+        });
+      }
+    }
+  }, [selectedGlobalBranch, warehousesList, isMatchGlobalBranch]);
 
   const allAuditableStock: StockAuditItem[] = useMemo(() => {
-    const catalogItems: StockAuditItem[] = (catalogList || []).map((prod, idx) => {
+    const catalogItems: StockAuditItem[] = allAvailableProducts.map((prod, idx) => {
       const parsedStock = parseInt(prod.stockNote?.replace(/\D/g, '') || '5', 10) || 5;
       return {
         id: 'prod_' + prod.code,
@@ -399,10 +959,7 @@ export function WorkshopTab({
       };
     });
 
-    const existingCodes = new Set(catalogItems.map((i) => i.code));
-    const additionalInitials = INITIAL_AUDIT_ITEMS.filter((i) => !existingCodes.has(i.code));
-
-    return [...catalogItems, ...additionalInitials];
+    return catalogItems;
   }, [catalogList]);
 
 
@@ -423,8 +980,9 @@ export function WorkshopTab({
       branch: defaultBranch,
       description: '',
       streetAddress: '',
-      district: '',
-      province: 'TP. Hồ Chí Minh',
+      ward: undefined,
+      district: undefined,
+      province: undefined,
       isDefault: false,
       status: true,
     });
@@ -439,15 +997,16 @@ export function WorkshopTab({
       branch: wh.branch || branchesList[0]?.name || 'Chi nhánh trung tâm',
       description: wh.description || '',
       streetAddress: wh.streetAddress || wh.address || '',
-      district: wh.district || '',
-      province: wh.province || 'TP. Hồ Chí Minh',
+      ward: wh.ward || undefined,
+      district: wh.district || undefined,
+      province: wh.province || undefined,
       isDefault: Boolean(wh.isDefault),
       status: wh.status !== 'inactive',
     });
     setShowWarehouseModal(true);
   };
 
-  const handleCopyWarehouse = (wh: AdminWarehouse) => {
+  const handleCopyWarehouse = async (wh: AdminWarehouse) => {
     const existingCodes = new Set(warehousesList.map((w) => (w.code || '').toUpperCase()));
     let nextNum = warehousesList.length + 1;
     let autoCode = `KHO${nextNum.toString().padStart(4, '0')}`;
@@ -455,18 +1014,22 @@ export function WorkshopTab({
       nextNum++;
       autoCode = `KHO${nextNum.toString().padStart(4, '0')}`;
     }
-    const clonedWh: AdminWarehouse = {
+    const clonedWhPayload: Partial<AdminWarehouse> = {
       ...wh,
-      id: `wh_${Date.now()}`,
       code: autoCode,
       name: `${wh.name} (Bản sao)`,
       isDefault: false,
     };
-    setWarehousesList([clonedWh, ...warehousesList]);
-    message.success(`Đã nhân bản kho "${wh.name}" thành "${clonedWh.name}"!`);
+    try {
+      const created = await warehouseApi.createWarehouse(clonedWhPayload);
+      setWarehousesList((prev) => [created, ...prev]);
+      message.success(`Đã nhân bản kho "${wh.name}"!`);
+    } catch (err: any) {
+      message.error(err?.message || 'Nhân bản kho thất bại.');
+    }
   };
 
-  const handleWarehouseFormSubmit = (values: any) => {
+  const handleWarehouseFormSubmit = async (values: any) => {
     const trimmedCode = (values.code || '').trim().toUpperCase();
     const trimmedName = (values.name || '').trim();
     const defaultBranch = selectedGlobalBranch !== 'all' ? selectedGlobalBranch : (branchesList[0]?.name || 'Chi nhánh trung tâm');
@@ -475,43 +1038,48 @@ export function WorkshopTab({
       ? (values.status ? 'active' : 'inactive')
       : (values.status === 'inactive' ? 'inactive' : 'active');
 
-    const parts = [values.streetAddress, values.district, values.province].filter(Boolean);
+    const parts = [values.streetAddress, values.ward, values.district, values.province].filter(Boolean);
     const fullAddress = parts.length > 0 ? parts.join(', ') : (values.streetAddress || '');
 
     if (editingWarehouse) {
-      const updated = warehousesList.map((w) => {
-        if (w.id === editingWarehouse.id) {
-          return {
-            ...w,
-            code: trimmedCode,
-            name: trimmedName,
-            branch: values.branch || defaultBranch,
-            province: values.province || 'TP. Hồ Chí Minh',
-            district: values.district || '',
-            streetAddress: values.streetAddress || '',
-            address: fullAddress,
-            isDefault: isDef,
-            status: itemStatus,
-            description: values.description || '',
-          };
-        }
-        if (isDef) {
-          return { ...w, isDefault: false };
-        }
-        return w;
-      });
-      setWarehousesList(updated);
-      message.success(`Đã cập nhật thông tin kho "${trimmedName}" thành công!`);
+      const payload: Partial<AdminWarehouse> = {
+        ...editingWarehouse,
+        code: trimmedCode,
+        name: trimmedName,
+        branch: values.branch || defaultBranch,
+        province: values.province || '',
+        district: values.district || '',
+        ward: values.ward || '',
+        streetAddress: values.streetAddress || '',
+        address: fullAddress,
+        isDefault: isDef,
+        status: itemStatus,
+        description: values.description || '',
+      };
+      try {
+        const updatedWh = await warehouseApi.updateWarehouse(editingWarehouse.id, payload);
+        const updated = warehousesList.map((w) => {
+          if (w.id === editingWarehouse.id) return updatedWh;
+          if (isDef) return { ...w, isDefault: false };
+          return w;
+        });
+        setWarehousesList(updated);
+        message.success(`Đã cập nhật thông tin kho "${trimmedName}" thành công!`);
+        setShowWarehouseModal(false);
+        warehouseForm.resetFields();
+      } catch (err: any) {
+        message.error(err?.message || 'Cập nhật kho hàng thất bại.');
+      }
     } else {
-      const newWh: AdminWarehouse = {
-        id: `wh_${Date.now()}`,
+      const newWhPayload: Partial<AdminWarehouse> = {
         code: trimmedCode,
         name: trimmedName,
         type: 'main',
         typeLabel: 'Tổng kho hàng nội thất',
         branch: values.branch || defaultBranch,
-        province: values.province || 'TP. Hồ Chí Minh',
+        province: values.province || '',
         district: values.district || '',
+        ward: values.ward || '',
         streetAddress: values.streetAddress || '',
         address: fullAddress,
         managerName: 'Chưa phân công',
@@ -526,32 +1094,42 @@ export function WorkshopTab({
         description: values.description || '',
         totalValue: 0,
       };
-      if (isDef) {
-        setWarehousesList([newWh, ...warehousesList.map((w) => ({ ...w, isDefault: false }))]);
-      } else {
-        setWarehousesList([newWh, ...warehousesList]);
+      try {
+        const createdWh = await warehouseApi.createWarehouse(newWhPayload);
+        if (isDef) {
+          setWarehousesList([createdWh, ...warehousesList.map((w) => ({ ...w, isDefault: false }))]);
+        } else {
+          setWarehousesList([createdWh, ...warehousesList]);
+        }
+        message.success(`Đã thêm kho "${trimmedName}" thành công!`);
+        setShowWarehouseModal(false);
+        warehouseForm.resetFields();
+      } catch (err: any) {
+        message.error(err?.message || 'Thêm kho hàng thất bại.');
       }
-      message.success(`Đã thêm kho "${trimmedName}" thành công!`);
     }
-
-    setShowWarehouseModal(false);
-    warehouseForm.resetFields();
   };
 
-  const handleChangeWarehouseStatus = (id: string, newStatus: 'active' | 'inactive') => {
-    const updated = warehousesList.map((w) => {
-      if (w.id === id) {
-        message.success(`Đã đổi trạng thái kho "${w.name}" thành ${newStatus === 'active' ? 'Đang hoạt động' : 'Tạm dừng'}`);
-        return { ...w, status: newStatus };
-      }
-      return w;
-    });
-    setWarehousesList(updated);
+  const handleChangeWarehouseStatus = async (id: string, newStatus: 'active' | 'inactive') => {
+    try {
+      await warehouseApi.updateStatus(id, newStatus);
+      setWarehousesList((prev) =>
+        prev.map((w) => (w.id === id ? { ...w, status: newStatus } : w))
+      );
+      message.success(`Đã đổi trạng thái kho thành ${newStatus === 'active' ? 'Đang hoạt động' : 'Tạm dừng'}`);
+    } catch (err: any) {
+      message.error(err?.message || 'Đổi trạng thái kho thất bại.');
+    }
   };
 
-  const handleDeleteWarehouse = (id: string, name: string) => {
-    setWarehousesList(warehousesList.filter((w) => w.id !== id));
-    message.success(`Đã xóa kho "${name}" thành công!`);
+  const handleDeleteWarehouse = async (id: string, name: string) => {
+    try {
+      await warehouseApi.deleteWarehouse(id);
+      setWarehousesList((prev) => prev.filter((w) => w.id !== id));
+      message.success(`Đã xóa kho "${name}" thành công!`);
+    } catch (err: any) {
+      message.error(err?.message || 'Xóa kho hàng thất bại.');
+    }
   };
 
   const handleGenerateWarehouseCode = () => {
@@ -585,72 +1163,94 @@ export function WorkshopTab({
     setImportViewMode('create');
   };
 
-  const handleSaveImportSlip = (targetStatus: 'completed' | 'draft') => {
+  const handleSaveImportSlip = async (targetStatus: 'completed' | 'draft') => {
     if (importEntryLines.length === 0) {
       message.error('Vui lòng thêm ít nhất 1 mặt hàng vào phiếu nhập!');
       return;
     }
     const totalGoods = importEntryLines.reduce((sum, item) => sum + (item.total || (item.quantity * item.unitPrice)), 0);
     const payable = Math.max(0, totalGoods - (importDiscount || 0));
-    const paid = importPaidAmount !== undefined ? Number(importPaidAmount) : payable;
+    const paid = importPaidAmount !== undefined ? Number(importPaidAmount) : (targetStatus === 'draft' ? 0 : payable);
     const debt = Math.max(0, payable - paid);
     const currentCode = importCode || `#PN-2026-${(importsList.length + 91).toString().padStart(3, '0')}`;
     const firstItem = importEntryLines[0];
+    const itemName = importEntryLines.length === 1 ? firstItem.name : `${firstItem.name} + ${importEntryLines.length - 1} món khác`;
 
-    const newSlip: StockImportSlip = {
-      id: `imp_${Date.now()}`,
+    const matchedSupplier = suppliersList.find((s) => s.name === importSupplier || s.id === importSupplier);
+    const matchedWarehouse = warehousesList.find((w) => w.name === importWarehouse || w.id === importWarehouse);
+
+    const payload = {
       code: currentCode,
-      supplier: importSupplier || suppliersList[0]?.name || 'Northwest Hardwoods (USA)',
-      warehouseName: importWarehouse || warehousesList[0]?.name || 'Tổng Kho Bình Chánh',
-      itemName: importEntryLines.length === 1 ? firstItem.name : `${firstItem.name} + ${importEntryLines.length - 1} món khác`,
-      spec: firstItem.spec || '',
+      supplier: matchedSupplier?.name || importSupplier || suppliersList[0]?.name || 'Nhà cung cấp',
+      supplierId: matchedSupplier?.id && matchedSupplier.id.includes('-') ? matchedSupplier.id : undefined,
+      warehouseName: matchedWarehouse?.name || importWarehouse || warehousesList[0]?.name || 'Tổng kho',
+      warehouseId: matchedWarehouse?.id && matchedWarehouse.id.includes('-') ? matchedWarehouse.id : undefined,
+      itemName: itemName,
+      spec: firstItem?.spec || '',
       quantity: importEntryLines.reduce((sum, item) => sum + item.quantity, 0),
-      unitPrice: firstItem.unitPrice || 0,
-      unit: firstItem.unit || 'bộ',
-      mc: 'Đạt chuẩn',
+      unit: firstItem?.unit || 'bộ',
+      unitPrice: firstItem?.unitPrice || 0,
+      discount: importDiscount || 0,
       totalValue: payable,
       paidAmount: paid,
-      debtAmount: debt,
-      paymentMethod: importPaymentMethod || 'Chuyển khoản',
-      invoiceNumber: importInvoiceNumber || '',
-      note: importNote || '',
+      remainingDebt: debt,
+      mc: 'Đạt chuẩn',
       importDate: importDate || (new Date().toLocaleDateString('vi-VN') + ' ' + new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })),
-      inspector: importInspector || user?.name || 'Nguyễn Văn Nam (KCS)',
       status: targetStatus,
       statusLabel: targetStatus === 'draft' ? 'Lưu tạm' : 'Đã nhập kho',
+      inspector: importInspector || user?.name || 'KCS',
+      note: importNote || '',
+      itemsJson: JSON.stringify(importEntryLines),
     };
 
-    setImportsList([newSlip, ...importsList]);
+    try {
+      await stockImportApi.createStockImport(payload);
+      await loadImportsFromApi();
+      await refreshCatalogProducts();
 
-    // Update supplier's total purchased
-    if (targetStatus === 'completed' && newSlip.supplier && setSuppliersList) {
-      const supName = newSlip.supplier;
-      setSuppliersList((prev) =>
-        prev.map((s) =>
-          s.name.toLowerCase() === supName.toLowerCase() || supName.toLowerCase().includes(s.name.toLowerCase())
-            ? { ...s, totalPurchased: (s.totalPurchased || 0) + payable }
-            : s
-        )
-      );
+      if (targetStatus === 'draft') {
+        message.success(`Đã lưu tạm phiếu nhập kho "${payload.code}" vào Database thành công!`);
+      } else {
+        message.success(`Đã lập phiếu nhập kho "${payload.code}" và lưu vào Database thành công!`);
+      }
+
+      setImportEntryLines([]);
+      setImportCode('');
+      setImportSearchProduct('');
+      setImportViewMode('list');
+    } catch (err: any) {
+      console.error('Error saving import slip:', err);
+      message.error(err?.message || 'Không thể lưu phiếu nhập kho vào Database!');
     }
-
-    if (targetStatus === 'draft') {
-      message.success(`Đã lưu tạm phiếu nhập kho "${newSlip.code}"!`);
-    } else {
-      message.success(`Đã lập phiếu nhập kho "${newSlip.code}" thành công!`);
-    }
-
-    setImportEntryLines([]);
-    setImportCode('');
-    setImportSearchProduct('');
-    setImportViewMode('list');
   };
 
-  const handleDeleteImport = (id: string, code: string) => {
-    setImportsList((prev) => prev.filter((i) => i.id !== id));
-    message.success(`Đã xóa phiếu nhập kho ${code}!`);
+  const handleDeleteImport = async (id: string, code: string) => {
+    try {
+      if (id && id.includes('-')) {
+        await stockImportApi.deleteStockImport(id);
+      }
+      setImportsList((prev) => {
+        const nextList = prev.filter((i) => i.id !== id && i.code !== code);
+        setStoredAdminData(ADMIN_STORAGE_KEYS.STOCK_IMPORTS, nextList);
+        return nextList;
+      });
+      setSelectedImportKeys((prev) => prev.filter((k) => k !== id));
+      setExpandedImportRowKeys((prev) => prev.filter((k) => k !== id));
+      await loadImportsFromApi();
+      message.success(`Đã xóa phiếu nhập kho ${code}!`);
+    } catch (err: any) {
+      console.error('Error deleting import slip:', err);
+      // Fallback local removal
+      setImportsList((prev) => {
+        const nextList = prev.filter((i) => i.id !== id && i.code !== code);
+        setStoredAdminData(ADMIN_STORAGE_KEYS.STOCK_IMPORTS, nextList);
+        return nextList;
+      });
+      setSelectedImportKeys((prev) => prev.filter((k) => k !== id));
+      setExpandedImportRowKeys((prev) => prev.filter((k) => k !== id));
+      message.success(`Đã xóa phiếu nhập kho ${code}!`);
+    }
   };
-
 
   const handleOpenCreateStocktake = () => {
     const nextCode = `#KK-2026-${(auditSlips.length + 1).toString().padStart(2, '0')}`;
@@ -674,61 +1274,79 @@ export function WorkshopTab({
     setStocktakeViewMode('edit');
   };
 
-  const handleSaveDraftStocktake = () => {
-    if (editingSlipId) {
-      setAuditSlips(auditSlips.map(s => s.id === editingSlipId ? {
-        ...s,
-        note: stocktakeNote,
-        items: stocktakeEntryLines,
-      } : s));
-      message.success(`Đã lưu cập nhật phiếu kiểm ${stocktakeSlipCode}!`);
-    } else {
-      const newSlip: AuditSlip = {
-        id: `slip_${Date.now()}`,
-        code: stocktakeSlipCode,
-        title: `Phiên kiểm kê ${stocktakeWarehouseName}`,
-        createdAt: new Date().toLocaleDateString('vi-VN'),
-        creator: user?.name || 'Nguyễn Văn Nam (Thủ kho)',
-        scope: 'all',
-        scopeLabel: stocktakeWarehouseName,
-        status: 'auditing',
-        statusLabel: 'Đang kiểm đếm',
-        note: stocktakeNote,
-        items: stocktakeEntryLines,
-      };
-      setAuditSlips([newSlip, ...auditSlips]);
-      message.success(`Đã lưu tạm phiếu kiểm ${stocktakeSlipCode}!`);
+  const handleSaveDraftStocktake = async () => {
+    const matchedWarehouse = warehousesList.find((w) => w.name === stocktakeWarehouseName || w.id === stocktakeWarehouseName);
+    const matchedCount = stocktakeEntryLines.filter((it) => (it.actualQty ?? 0) === (it.systemQty ?? 0)).length;
+    const diffCount = stocktakeEntryLines.filter((it) => (it.actualQty ?? 0) !== (it.systemQty ?? 0)).length;
+
+    const payload = {
+      code: stocktakeSlipCode,
+      title: `Phiên kiểm kê ${stocktakeWarehouseName}`,
+      warehouseId: matchedWarehouse?.id && matchedWarehouse.id.includes('-') ? matchedWarehouse.id : undefined,
+      scopeLabel: stocktakeWarehouseName,
+      creator: user?.name || 'Thủ kho',
+      auditDate: new Date().toLocaleDateString('vi-VN') + ' ' + new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+      status: 'draft',
+      statusLabel: 'Đang kiểm đếm',
+      totalItems: stocktakeEntryLines.length,
+      matchedItems: matchedCount,
+      discrepantItems: diffCount,
+      totalDifferenceValue: 0,
+      note: stocktakeNote || '',
+      itemsJson: JSON.stringify(stocktakeEntryLines),
+    };
+
+    try {
+      if (editingSlipId && editingSlipId.includes('-')) {
+        await stockAuditApi.updateStockAudit(editingSlipId, payload);
+      } else {
+        await stockAuditApi.createStockAudit(payload);
+      }
+      await loadAuditsFromApi();
+      message.success(`Đã lưu tạm phiếu kiểm ${stocktakeSlipCode} vào Database!`);
+      setStocktakeViewMode('list');
+    } catch (err: any) {
+      console.error('Error saving stock audit:', err);
+      message.error(err?.message || 'Không thể lưu phiếu kiểm kho vào Database!');
     }
-    setStocktakeViewMode('list');
   };
 
-  const handleCompleteStocktake = () => {
-    if (editingSlipId) {
-      setAuditSlips(auditSlips.map(s => s.id === editingSlipId ? {
-        ...s,
-        status: 'completed' as const,
-        statusLabel: 'Đã hoàn tất 100%',
-        note: stocktakeNote,
-        items: stocktakeEntryLines,
-      } : s));
-    } else {
-      const newSlip: AuditSlip = {
-        id: `slip_${Date.now()}`,
-        code: stocktakeSlipCode,
-        title: `Phiên kiểm kê ${stocktakeWarehouseName}`,
-        createdAt: new Date().toLocaleDateString('vi-VN'),
-        creator: user?.name || 'Nguyễn Văn Nam (Thủ kho)',
-        scope: 'all',
-        scopeLabel: stocktakeWarehouseName,
-        status: 'completed',
-        statusLabel: 'Đã hoàn tất 100%',
-        note: stocktakeNote,
-        items: stocktakeEntryLines,
-      };
-      setAuditSlips([newSlip, ...auditSlips]);
+  const handleCompleteStocktake = async () => {
+    const matchedWarehouse = warehousesList.find((w) => w.name === stocktakeWarehouseName || w.id === stocktakeWarehouseName);
+    const matchedCount = stocktakeEntryLines.filter((it) => (it.actualQty ?? 0) === (it.systemQty ?? 0)).length;
+    const diffCount = stocktakeEntryLines.filter((it) => (it.actualQty ?? 0) !== (it.systemQty ?? 0)).length;
+
+    const payload = {
+      code: stocktakeSlipCode,
+      title: `Phiên kiểm kê ${stocktakeWarehouseName}`,
+      warehouseId: matchedWarehouse?.id && matchedWarehouse.id.includes('-') ? matchedWarehouse.id : undefined,
+      scopeLabel: stocktakeWarehouseName,
+      creator: user?.name || 'Thủ kho',
+      auditDate: new Date().toLocaleDateString('vi-VN') + ' ' + new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+      status: 'completed',
+      statusLabel: 'Đã hoàn tất 100%',
+      totalItems: stocktakeEntryLines.length,
+      matchedItems: matchedCount,
+      discrepantItems: diffCount,
+      totalDifferenceValue: 0,
+      note: stocktakeNote || '',
+      itemsJson: JSON.stringify(stocktakeEntryLines),
+    };
+
+    try {
+      if (editingSlipId && editingSlipId.includes('-')) {
+        await stockAuditApi.updateStockAudit(editingSlipId, payload);
+      } else {
+        await stockAuditApi.createStockAudit(payload);
+      }
+      await loadAuditsFromApi();
+      await refreshCatalogProducts();
+      message.success(`Đã hoàn tất và cân bằng tồn kho phiếu kiểm ${stocktakeSlipCode} vào Database!`);
+      setStocktakeViewMode('list');
+    } catch (err: any) {
+      console.error('Error completing stock audit:', err);
+      message.error(err?.message || 'Không thể hoàn tất phiếu kiểm kho!');
     }
-    setStocktakeViewMode('list');
-    message.success(`Đã hoàn tất cân bằng tồn kho theo phiếu kiểm ${stocktakeSlipCode}!`);
   };
 
   const handleOpenCreateReturn = () => {
@@ -751,7 +1369,7 @@ export function WorkshopTab({
     setReturnViewMode('create');
   };
 
-  const handleSaveReturnSlip = (targetStatus: 'completed' | 'draft') => {
+  const handleSaveReturnSlip = async (targetStatus: 'completed' | 'draft') => {
     if (returnEntryLines.length === 0) {
       message.error('Vui lòng thêm ít nhất 1 mặt hàng vào phiếu trả hàng!');
       return;
@@ -762,12 +1380,16 @@ export function WorkshopTab({
     const currentCode = returnCode || `#TH-2026-${(supplierReturnsList.length + 9).toString().padStart(3, '0')}`;
     const firstItem = returnEntryLines[0];
 
-    const newReturn: SupplierReturnSlip = {
-      id: `ret_${Date.now()}`,
+    const matchedSupplier = suppliersList.find((s) => s.name === returnSupplier || s.id === returnSupplier);
+    const matchedWarehouse = warehousesList.find((w) => w.name === returnWarehouse || w.id === returnWarehouse);
+
+    const payload = {
       code: currentCode,
-      sourcePurchaseEntryCode: returnSourceCode || '',
-      supplierName: returnSupplier || suppliersList[0]?.name || 'Gruppo Mastrotto (Italy)',
-      warehouseName: returnWarehouse || warehousesList[0]?.name || 'Tổng Kho Bình Chánh',
+      sourceImportCode: returnSourceCode || '',
+      supplierName: matchedSupplier?.name || returnSupplier || suppliersList[0]?.name || 'Nhà cung cấp',
+      supplierId: matchedSupplier?.id && matchedSupplier.id.includes('-') ? matchedSupplier.id : undefined,
+      warehouseName: matchedWarehouse?.name || returnWarehouse || warehousesList[0]?.name || 'Tổng kho',
+      warehouseId: matchedWarehouse?.id && matchedWarehouse.id.includes('-') ? matchedWarehouse.id : undefined,
       itemName: returnEntryLines.length === 1 ? firstItem.name : `${firstItem.name} + ${returnEntryLines.length - 1} món khác`,
       spec: firstItem.spec || '',
       quantity: returnEntryLines.reduce((sum, item) => sum + item.quantity, 0),
@@ -781,31 +1403,74 @@ export function WorkshopTab({
       paidAmount: paid,
       paymentMethod: returnPaymentMethod || 'Chuyển khoản',
       returnDate: returnDate || (new Date().toLocaleDateString('vi-VN') + ' ' + new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })),
-      staffName: returnStaffName || user?.name || 'Nguyễn Văn Nam (KCS)',
+      staffName: returnStaffName || user?.name || 'KCS',
       reason: returnReason || 'Lỗi quy cách / Kiểm định không đạt tiêu chuẩn',
       solution: returnSolution || 'Đã hoàn bù lô mới',
       status: targetStatus,
       statusLabel: targetStatus === 'draft' ? 'Phiếu tạm' : 'Đã trả hàng',
       note: returnNote || '',
+      itemsJson: JSON.stringify(returnEntryLines),
     };
 
-    setSupplierReturnsList([newReturn, ...supplierReturnsList]);
+    try {
+      await supplierReturnApi.createSupplierReturn(payload);
+      await loadReturnsFromApi();
+      await refreshCatalogProducts();
 
-    if (targetStatus === 'draft') {
-      message.success(`Đã lưu tạm phiếu trả hàng "${newReturn.code}"!`);
-    } else {
-      message.success(`Đã lập phiếu trả hàng "${newReturn.code}" thành công!`);
+      if (targetStatus === 'draft') {
+        message.success(`Đã lưu tạm phiếu trả hàng "${payload.code}" vào Database thành công!`);
+      } else {
+        message.success(`Đã lập phiếu trả hàng "${payload.code}" vào Database thành công!`);
+      }
+
+      if (returnSourceCode) {
+        setImportsList((prev) =>
+          prev.map((imp) =>
+            imp.code === returnSourceCode
+              ? {
+                  ...imp,
+                  returnStatus: targetStatus === 'draft' ? 'Đang xuất trả' : 'Đã trả hàng',
+                }
+              : imp
+          )
+        );
+      }
+
+      setReturnEntryLines([]);
+      setReturnCode('');
+      setReturnSearchProduct('');
+      setReturnViewMode('list');
+    } catch (err: any) {
+      console.error('Error saving supplier return slip:', err);
+      message.error(err?.message || 'Không thể lưu phiếu trả hàng vào Database!');
     }
-
-    setReturnEntryLines([]);
-    setReturnCode('');
-    setReturnSearchProduct('');
-    setReturnViewMode('list');
   };
 
-  const handleDeleteReturnSlip = (id: string, code: string) => {
-    setSupplierReturnsList(supplierReturnsList.filter((r) => r.id !== id));
-    message.success(`Đã xóa phiếu trả hàng ${code}!`);
+  const handleDeleteReturnSlip = async (id: string, code: string) => {
+    try {
+      if (id && id.includes('-')) {
+        await supplierReturnApi.deleteSupplierReturn(id);
+      }
+      setSupplierReturnsList((prev) => {
+        const nextList = prev.filter((r) => r.id !== id && r.code !== code);
+        setStoredAdminData(ADMIN_STORAGE_KEYS.SUPPLIER_RETURNS, nextList);
+        return nextList;
+      });
+      setSelectedReturnKeys((prev) => prev.filter((k) => k !== id));
+      setExpandedReturnRowKeys((prev) => prev.filter((k) => k !== id));
+      await loadReturnsFromApi();
+      message.success(`Đã xóa phiếu trả hàng ${code}!`);
+    } catch (err: any) {
+      console.error('Error deleting supplier return:', err);
+      setSupplierReturnsList((prev) => {
+        const nextList = prev.filter((r) => r.id !== id && r.code !== code);
+        setStoredAdminData(ADMIN_STORAGE_KEYS.SUPPLIER_RETURNS, nextList);
+        return nextList;
+      });
+      setSelectedReturnKeys((prev) => prev.filter((k) => k !== id));
+      setExpandedReturnRowKeys((prev) => prev.filter((k) => k !== id));
+      message.success(`Đã xóa phiếu trả hàng ${code}!`);
+    }
   };
 
   const handleTransferSubmit = (values: any) => {
@@ -1032,6 +1697,32 @@ export function WorkshopTab({
     message.success(`Đã xuất chi tiết đơn trả hàng ${returnCode} ra file Excel thành công!`);
   };
 
+  const handleExportCreateStocktakeLinesExcel = () => {
+    if (!stocktakeEntryLines || stocktakeEntryLines.length === 0) {
+      message.warning('Chưa có mặt hàng nào trong phiếu kiểm kê để xuất Excel!');
+      return;
+    }
+    const exportData = stocktakeEntryLines.map((line, idx) => ({
+      'STT': idx + 1,
+      'Mã phiếu kiểm': stocktakeSlipCode || 'KK-2026-08',
+      'Mã hàng': line.code,
+      'Tên sản phẩm': line.name,
+      'Đơn vị tính': line.unit,
+      'Độ ẩm MC': line.actualMc || line.systemMc || '---',
+      'Tồn sổ sách': line.systemQty,
+      'Tồn thực tế': line.actualQty,
+      'Số lượng chênh lệch': (Number(line.actualQty) || 0) - (Number(line.systemQty) || 0),
+      'Trạng thái kiểm': line.status === 'matched' ? 'Khớp tồn' : 'Lệch tồn',
+      'Vị trí / Kho': line.location || stocktakeWarehouseName,
+      'Ghi chú chất lượng': line.qualityNote || '',
+      'Kho kiểm kê': stocktakeWarehouseName,
+      'Người kiểm': stocktakeStaffName || user?.name || 'Nguyễn Văn Nam (Thủ kho)',
+      'Ngày kiểm': stocktakeDate || new Date().toLocaleDateString('vi-VN'),
+    }));
+    exportToExcel(exportData, `Phieu_kiem_kho_${(stocktakeSlipCode || 'KK').replace(/[^a-zA-Z0-9_-]/g, '')}`);
+    message.success(`Đã xuất dữ liệu phiếu kiểm kho ${stocktakeSlipCode} ra file Excel thành công!`);
+  };
+
 
   const handleCreateSlipSubmit = (values: any) => {
     const chosenIds: string[] = values.selectedItemIds || [];
@@ -1132,17 +1823,12 @@ export function WorkshopTab({
   return (
     <>
 
-          <div className="space-y-4 flex-1 flex flex-col h-full">
-            {/* Sub-Tabs Switcher (Domaco Kho Header: 5 Tabs Architecture) */}
-            <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-2.5 rounded-none shadow-xs">
+          <div className="flex-1 flex flex-col h-full">
+            {/* Sub-Tabs Switcher (Domaco Kho Header: 5 Tabs Architecture - Flush with Main Header) */}
+            <div className="-mx-4 sm:-mx-5 lg:-mx-6 -mt-4 sm:-mt-5 lg:-mt-6 px-4 sm:px-6 lg:px-8 py-2.5 bg-white border-b border-[#eae1dd] flex flex-wrap items-center justify-between gap-3 shadow-2xs mb-4">
               <Segmented
                 value={warehouseSubTab}
-                onChange={(val: any) => {
-                  setWarehouseSubTab(val);
-                  setStocktakeViewMode('list');
-                  setImportViewMode('list');
-                  setReturnViewMode('list');
-                }}
+                onChange={(val: any) => handleSubTabChange(val)}
                 options={[
                   { value: 'warehouses', label: <span className="px-2 py-1 font-medium text-xs sm:text-sm">🏢 Danh sách kho</span> },
                   { value: 'imports', label: <span className="px-2 py-1 font-medium text-xs sm:text-sm">📥 Nhập hàng</span> },
@@ -1152,130 +1838,65 @@ export function WorkshopTab({
                 ]}
                 className="bg-slate-100 p-1 rounded-lg"
               />
-
-              <div className="flex items-center gap-2">
-                {warehouseSubTab === 'warehouses' && (
-                  <Button
-                    type="primary"
-                    icon={<PlusOutlined />}
-                    onClick={handleOpenCreateWarehouse}
-                    className="h-10 rounded-lg bg-[#784e34] hover:!bg-[#5d371f] px-4 text-sm font-medium text-white shadow-none border-none flex items-center"
-                  >
-                    Tạo mới kho
-                  </Button>
-                )}
-                {warehouseSubTab === 'imports' && importViewMode === 'list' && (
-                  <Button
-                    type="primary"
-                    icon={<PlusOutlined />}
-                    onClick={handleOpenCreateImport}
-                    className="h-10 rounded-lg bg-[#784e34] hover:!bg-[#5d371f] px-4 text-sm font-medium text-white shadow-none border-none flex items-center"
-                  >
-                    Lập phiếu nhập hàng
-                  </Button>
-                )}
-                {warehouseSubTab === 'returns' && returnViewMode === 'list' && (
-                  <Button
-                    type="primary"
-                    icon={<PlusOutlined />}
-                    onClick={handleOpenCreateReturn}
-                    className="h-10 rounded-lg bg-rose-700 hover:!bg-rose-800 px-4 text-sm font-medium text-white shadow-none border-none flex items-center"
-                  >
-                    Lập phiếu trả hàng
-                  </Button>
-                )}
-                {warehouseSubTab === 'stocktake' && stocktakeViewMode === 'list' && (
-                  <Button
-                    type="primary"
-                    icon={<PlusOutlined />}
-                    onClick={handleOpenCreateStocktake}
-                    className="h-10 rounded-lg bg-[#784e34] hover:!bg-[#5d371f] px-4 text-sm font-medium text-white shadow-none border-none flex items-center"
-                  >
-                    Kiểm kho
-                  </Button>
-                )}
-                {warehouseSubTab === 'suppliers' && (
-                  <Button
-                    type="primary"
-                    icon={<PlusOutlined />}
-                    onClick={handleOpenCreateSupplier}
-                    className="h-10 rounded-lg bg-[#784e34] hover:!bg-[#5d371f] px-4 text-sm font-medium text-white shadow-none border-none flex items-center"
-                  >
-                    Thêm nhà cung cấp
-                  </Button>
-                )}
-              </div>
             </div>
 
             {/* SUB-TAB 1: DANH SÁCH KHO HÀNG (DOMACO WAREHOUSES MASTER) */}
-            {warehouseSubTab === 'warehouses' && (
+            {warehouseSubTab === 'warehouses' && (() => {
+              const filteredWarehouses = warehousesList.filter((w) => {
+                const q = warehouseSearchQuery.toLowerCase();
+                const matchSearch =
+                  !warehouseSearchQuery ||
+                  (w.name || '').toLowerCase().includes(q) ||
+                  (w.code || '').toLowerCase().includes(q) ||
+                  (w.branch || '').toLowerCase().includes(q) ||
+                  (w.streetAddress || '').toLowerCase().includes(q) ||
+                  (w.address || '').toLowerCase().includes(q);
+                const matchBranch = !w.branch || isMatchGlobalBranch(w.branch) || isMatchGlobalBranch(w.name);
+                const matchStatus = warehouseStatusFilter === 'all' || w.status === warehouseStatusFilter;
+                return matchSearch && matchBranch && matchStatus;
+              });
+
+              return (
               <div className="space-y-4">
                 {/* 2-Column Layout: Filter Sidebar + Warehouses Table */}
                 <div className="flex flex-col lg:flex-row gap-4 items-start">
                   {/* Filter Sidebar */}
-                  <aside className="hidden lg:block w-64 shrink-0">
-                    <div className="bg-white rounded-none shadow-xs p-4 sticky top-4 space-y-4 text-sm text-slate-700 font-normal">
-                      <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                        <span className="font-medium text-xs text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                          <FilterOutlined className="text-[#784e34]" /> Bộ lọc kho
-                        </span>
-                        {(warehouseStatusFilter !== 'all' || warehouseSearchQuery) && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setWarehouseSearchQuery('');
-                              setWarehouseStatusFilter('all');
-                              setSelectedWarehouseKeys([]);
-                            }}
-                            className="text-xs text-[#784e34] hover:underline font-normal bg-transparent border-none cursor-pointer p-0"
-                          >
-                            Xóa lọc
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Trạng thái hoạt động */}
-                      <div>
-                        <div className="mb-2 text-xs font-medium text-slate-700 uppercase tracking-wide">Trạng thái hoạt động</div>
-                        <div className="space-y-1">
-                          {[
-                            { value: 'all', label: 'Tất cả trạng thái', count: warehousesList.length },
-                            { value: 'active', label: 'Đang hoạt động', count: warehousesList.filter(w => w.status === 'active').length },
-                            { value: 'inactive', label: 'Tạm dừng', count: warehousesList.filter(w => w.status === 'inactive').length },
-                          ].map((opt) => {
-                            const isSelected = warehouseStatusFilter === opt.value;
-                            return (
-                              <button
-                                key={opt.value}
-                                type="button"
-                                onClick={() => setWarehouseStatusFilter(opt.value)}
-                                className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors cursor-pointer border-none ${isSelected
-                                    ? 'bg-amber-50/70 font-normal text-[#784e34]'
-                                    : 'bg-transparent font-normal text-slate-600 hover:bg-slate-50'
-                                  }`}
-                              >
-                                <span>{opt.label}</span>
-                                <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${isSelected ? 'bg-[#784e34] text-white font-normal' : 'text-slate-400 bg-slate-100'}`}>
-                                  {opt.count}
-                                </span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* Summary Card */}
-                      <AdminSidebarSummary
-                        title="Thống kê kho bãi"
-                        className="mt-3"
-                        items={[
-                          { label: 'Tổng số kho lưu trữ', value: `${warehousesList.length} kho` },
-                          { label: 'Đang hoạt động', value: `${warehousesList.filter(w => w.status === 'active').length} kho`, color: 'success' },
-                          { label: 'Tạm dừng', value: `${warehousesList.filter(w => w.status === 'inactive').length} kho`, color: 'default' },
+                  <AdminFilterSidebar
+                    title="Bộ lọc kho"
+                    hasActiveFilters={Boolean(warehouseStatusFilter !== 'all' || warehouseSearchQuery)}
+                    onResetFilters={() => {
+                      setWarehouseSearchQuery('');
+                      setWarehouseStatusFilter('all');
+                      setSelectedWarehouseKeys([]);
+                    }}
+                  >
+                    {/* Trạng thái hoạt động */}
+                    <div className="space-y-1.5">
+                      <label className="font-semibold text-slate-800 text-xs block">Trạng thái hoạt động</label>
+                      <Select
+                        value={warehouseStatusFilter}
+                        onChange={(v) => setWarehouseStatusFilter(v)}
+                        className="w-full text-xs"
+                        size="small"
+                        options={[
+                          { value: 'all', label: `Tất cả trạng thái (${warehousesList.length})` },
+                          { value: 'active', label: `Đang hoạt động (${warehousesList.filter(w => w.status === 'active').length})` },
+                          { value: 'inactive', label: `Tạm dừng (${warehousesList.filter(w => w.status === 'inactive').length})` },
                         ]}
                       />
                     </div>
-                  </aside>
+
+                    {/* Summary Card */}
+                    <AdminSidebarSummary
+                      title="Thống kê kho bãi"
+                      className="mt-3"
+                      items={[
+                        { label: 'Tổng số kho lưu trữ', value: `${warehousesList.length} kho` },
+                        { label: 'Đang hoạt động', value: `${warehousesList.filter(w => w.status === 'active').length} kho`, color: 'success' },
+                        { label: 'Tạm dừng', value: `${warehousesList.filter(w => w.status === 'inactive').length} kho`, color: 'default' },
+                      ]}
+                    />
+                  </AdminFilterSidebar>
 
                   {/* Main Warehouses Table */}
                   <div className="min-w-0 flex-1 w-full">
@@ -1284,32 +1905,19 @@ export function WorkshopTab({
                       selectedRowKeys={selectedWarehouseKeys}
                       onSelectionChange={(keys) => setSelectedWarehouseKeys(keys)}
                       titleText="Quản lý kho"
-                      totalCount={warehousesList.length}
+                      totalCount={filteredWarehouses.length}
                       countUnit="kho"
                       onCopySelected={handleCopySelectedWarehouse}
                       onEditSelected={handleEditSelectedWarehouse}
                       onDeleteSelected={handleDeleteSelectedWarehouses}
                       deleteConfirmTitle={`Xóa ${selectedWarehouseKeys.length} kho đã chọn?`}
                       onCreateNew={handleOpenCreateWarehouse}
-                      createButtonText="Thêm mới"
+                      createButtonText="Kho"
                       searchValue={warehouseSearchQuery}
                       onSearchChange={(val) => setWarehouseSearchQuery(val)}
                       searchPlaceholder="Tìm theo mã, tên, địa chỉ..."
                       extraHeaderActions={
                         <>
-                          <Button
-                            icon={<ReloadOutlined />}
-                            onClick={() => {
-                              setWarehouseSearchQuery('');
-                              setWarehouseStatusFilter('all');
-                              setSelectedWarehouseKeys([]);
-                              message.success('Đã làm mới danh sách kho hàng!');
-                            }}
-                            className="!h-8 px-2.5 rounded-lg border-slate-300 bg-white text-slate-700 text-xs shadow-xs inline-flex items-center justify-center hover:text-[#784e34]"
-                            title="Làm mới"
-                          >
-                            Làm mới
-                          </Button>
                           <Button
                             icon={<DownloadOutlined />}
                             onClick={handleExportWarehousesExcel}
@@ -1320,21 +1928,8 @@ export function WorkshopTab({
                           </Button>
                         </>
                       }
-                      dataSource={warehousesList.filter((w) => {
-                        const q = warehouseSearchQuery.toLowerCase();
-                        const matchSearch =
-                          !warehouseSearchQuery ||
-                          (w.name || '').toLowerCase().includes(q) ||
-                          (w.code || '').toLowerCase().includes(q) ||
-                          (w.branch || '').toLowerCase().includes(q) ||
-                          (w.streetAddress || '').toLowerCase().includes(q) ||
-                          (w.address || '').toLowerCase().includes(q);
-                        const matchBranch = !w.branch || isMatchGlobalBranch(w.branch) || isMatchGlobalBranch(w.name);
-                        const matchStatus = warehouseStatusFilter === 'all' || w.status === warehouseStatusFilter;
-                        return matchSearch && matchBranch && matchStatus;
-                      })}
+                      dataSource={filteredWarehouses}
                       rowKey="id"
-                      scroll={{ x: 900 }}
                       columns={[
                         {
                           title: 'Mã kho',
@@ -1493,51 +2088,12 @@ export function WorkshopTab({
                   </div>
                 </div>
               </div>
-            )}
+              );
+            })()}
 
             {/* SUB-TAB 2: NHẬP HÀNG HÓA (STOCK IN / IMPORTS - LIST MODE) */}
             {warehouseSubTab === 'imports' && importViewMode === 'list' && (
-              <div className="space-y-4">
-                {/* Search & Action Bar (Domaco POS Style) */}
-                <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-none shadow-xs">
-                  <div className="flex flex-1 items-center gap-2.5 min-w-[280px] max-w-md">
-                    <AdminSearchInput
-                      placeholder="Theo mã phiếu nhập, nhà cung cấp, tên hàng hóa, kho tiếp nhận..."
-                      value={importSearchQuery}
-                      onChange={(val) => setImportSearchQuery(val)}
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-2.5 flex-wrap">
-                    {/* Date Filter (Domaco POS Architecture) */}
-                    <PosDateFilter
-                      value={importDateRange}
-                      onChange={(range) => setImportDateRange(range)}
-                    />
-
-                    <Select
-                      variant="filled"
-                      value={importStatusFilter}
-                      onChange={(val) => setImportStatusFilter(val)}
-                      className="w-40 h-10 text-sm [&_.ant-select-selector]:!border-0 [&_.ant-select-selector]:!bg-slate-100 hover:[&_.ant-select-selector]:!bg-slate-200/80 [&_.ant-select-selector]:!rounded-lg"
-                      options={[
-                        { value: 'all', label: 'Tất cả trạng thái' },
-                        { value: 'completed', label: 'Đã nhập kho' },
-                        { value: 'inspecting', label: 'Đang kiểm KCS' },
-                      ]}
-                    />
-                    <Button
-                      type="primary"
-                      icon={<DownloadOutlined />}
-                      onClick={handleExportImportsExcel}
-                      className="h-10 rounded-lg text-sm font-semibold !bg-emerald-600 hover:!bg-emerald-700 !text-white !border-0 shadow-xs flex items-center gap-1.5"
-                    >
-                      Xuất Excel
-                    </Button>
-                  </div>
-                </div>
-
-                {/* Table of Imports */}
+              <div className="space-y-4 flex-1 flex flex-col h-full">
                 {(() => {
                   const filteredImports = importsList.filter((imp) => {
                     const matchSearch =
@@ -1549,43 +2105,114 @@ export function WorkshopTab({
                       imp.inspector.toLowerCase().includes(importSearchQuery.toLowerCase());
                     const matchBranch = isMatchGlobalBranch(imp.warehouseName);
                     const matchStatus = importStatusFilter === 'all' || imp.status === importStatusFilter;
+                    const matchWarehouse = importWarehouseFilter === 'all' || imp.warehouseName === importWarehouseFilter;
                     const matchDate = checkDateInRange(imp.importDate, importDateRange);
-                    return matchSearch && matchBranch && matchStatus && matchDate;
+                    return matchSearch && matchBranch && matchStatus && matchWarehouse && matchDate;
                   });
                   const totalImportGoodsSum = filteredImports.reduce((acc, i) => acc + (i.totalValue || 0), 0);
                   const totalImportPaidSum = filteredImports.reduce((acc, i) => acc + (i.paidAmount !== undefined ? i.paidAmount : i.totalValue), 0);
                   const totalImportDebtSum = filteredImports.reduce((acc, i) => acc + Math.max(0, (i.totalValue || 0) - (i.paidAmount !== undefined ? i.paidAmount : i.totalValue)), 0);
 
                   return (
-                    <div className="space-y-0">
-                      {/* Top 1-Line Metric Summary Bar (Domaco POS Style) */}
-                      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 bg-slate-50 border border-slate-200 text-xs text-slate-700">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-slate-800">Tổng cộng:</span>
-                          <span className="bg-slate-200/70 text-slate-800 font-mono font-bold px-2 py-0.5 rounded text-[11px]">
-                            {filteredImports.length} phiếu
-                          </span>
+                    <div className="flex flex-col lg:flex-row gap-4 items-start flex-1">
+                      {/* Left Filter Sidebar */}
+                      <AdminFilterSidebar
+                        title="Bộ lọc phiếu nhập"
+                        hasActiveFilters={Boolean(importSearchQuery || importStatusFilter !== 'all' || importWarehouseFilter !== 'all' || importDateRange)}
+                        onResetFilters={() => {
+                          setImportSearchQuery('');
+                          setImportStatusFilter('all');
+                          setImportWarehouseFilter('all');
+                          setImportDateRange(null);
+                          setSelectedImportKeys([]);
+                        }}
+                      >
+                        {/* Trạng thái nhập kho */}
+                        <div className="space-y-1.5">
+                          <label className="font-semibold text-slate-800 text-xs block">Trạng thái phiếu</label>
+                          <Select
+                            value={importStatusFilter}
+                            onChange={(v) => setImportStatusFilter(v)}
+                            className="w-full text-xs"
+                            size="small"
+                            options={[
+                              { value: 'all', label: 'Tất cả trạng thái' },
+                              { value: 'completed', label: 'Đã nhập kho' },
+                              { value: 'draft', label: 'Lưu tạm' },
+                              { value: 'inspecting', label: 'Đang kiểm KCS' },
+                            ]}
+                          />
                         </div>
-                        <div className="flex flex-wrap items-center gap-5 sm:gap-7">
-                          <div>
-                            <span className="text-slate-500 mr-1.5">Tổng giá trị nhập:</span>
-                            <span className="font-mono font-bold text-[#784e34]">{totalImportGoodsSum.toLocaleString('vi-VN')} đ</span>
-                          </div>
-                          <div>
-                            <span className="text-emerald-600 mr-1.5 font-semibold">Đã thanh toán:</span>
-                            <span className="font-mono font-bold text-emerald-700">{totalImportPaidSum.toLocaleString('vi-VN')} đ</span>
-                          </div>
-                          <div>
-                            <span className="text-amber-600 mr-1.5 font-semibold">Còn nợ NCC:</span>
-                            <span className="font-mono font-bold text-amber-700">{totalImportDebtSum.toLocaleString('vi-VN')} đ</span>
-                          </div>
-                        </div>
-                      </div>
 
-                      <AdminDataTable
-                        dataSource={filteredImports}
-                        rowKey="id"
-                        scroll={{ x: 1900 }}
+                        {/* Kho tiếp nhận */}
+                        <div className="space-y-1.5 pt-2 border-t border-slate-100">
+                          <label className="font-semibold text-slate-800 text-xs block">Kho tiếp nhận</label>
+                          <Select
+                            value={importWarehouseFilter}
+                            onChange={(v) => setImportWarehouseFilter(v)}
+                            className="w-full text-xs"
+                            size="small"
+                            options={[
+                              { value: 'all', label: 'Tất cả kho' },
+                              ...availableBranchWarehouses.map((w) => ({ value: w.name, label: w.name })),
+                            ]}
+                          />
+                        </div>
+
+                        {/* Thời gian nhập */}
+                        <div className="space-y-1.5 pt-2 border-t border-slate-100">
+                          <label className="font-semibold text-slate-800 text-xs block">Thời gian nhập</label>
+                          <PosDateFilter
+                            value={importDateRange}
+                            onChange={(range) => setImportDateRange(range)}
+                          />
+                        </div>
+
+                        {/* Summary Card */}
+                        <AdminSidebarSummary
+                          title="Thống kê nhập kho"
+                          className="mt-3"
+                          items={[
+                            { label: 'Tổng số phiếu', value: `${filteredImports.length} phiếu` },
+                            { label: 'Tổng giá trị nhập', value: `${totalImportGoodsSum.toLocaleString('vi-VN')} đ`, color: 'primary' },
+                            { label: 'Đã thanh toán', value: `${totalImportPaidSum.toLocaleString('vi-VN')} đ`, color: 'success' },
+                            { label: 'Còn nợ NCC', value: `${totalImportDebtSum.toLocaleString('vi-VN')} đ`, color: 'danger' },
+                          ]}
+                        />
+                      </AdminFilterSidebar>
+
+                      {/* Right Main Imports Table */}
+                      <div className="min-w-0 flex-1 w-full">
+                        <AdminDataTable
+                          enableSelectionToolbar
+                          selectedRowKeys={selectedImportKeys}
+                          onSelectionChange={(keys) => setSelectedImportKeys(keys)}
+                          titleText="Quản lý nhập hàng"
+                          totalCount={filteredImports.length}
+                          countUnit="phiếu"
+                          onCreateNew={handleOpenCreateImport}
+                          createButtonText="Nhập hàng"
+                          onCopySelected={handleCopySelectedImport}
+                          onEditSelected={handleEditSelectedImport}
+                          onDeleteSelected={handleDeleteSelectedImports}
+                          deleteConfirmTitle={`Xóa ${selectedImportKeys.length} phiếu nhập đã chọn?`}
+                          searchValue={importSearchQuery}
+                          onSearchChange={(val) => setImportSearchQuery(val)}
+                          searchPlaceholder="Tìm theo mã phiếu, NCC, mặt hàng, kho..."
+                          extraHeaderActions={
+                            <>
+                              <Button
+                                icon={<DownloadOutlined />}
+                                onClick={handleExportImportsExcel}
+                                className="!h-8 px-2.5 rounded-lg border-slate-300 bg-white text-slate-700 text-xs shadow-xs inline-flex items-center justify-center hover:text-[#784e34]"
+                                title="Xuất Excel"
+                              >
+                                Xuất Excel
+                              </Button>
+                            </>
+                          }
+                          dataSource={filteredImports}
+                          rowKey="id"
                   onRow={(record) => {
                     const isExp = expandedImportRowKeys.includes(record.id);
                     return {
@@ -1595,7 +2222,11 @@ export function WorkshopTab({
                           setImportRowTabs((prev) => ({ ...prev, [record.id]: 'items' }));
                         }
                       },
-                      className: `cursor-pointer transition-colors ${isExp ? '!bg-[#784e34]/10 font-medium' : 'hover:!bg-[#784e34]/5'}`,
+                      className: `cursor-pointer transition-colors ${
+                        isExp
+                          ? '!bg-[#004d40] text-white font-medium hover:!bg-[#004d40]'
+                          : 'hover:!bg-slate-50'
+                      }`,
                     };
                   }}
                   expandable={{
@@ -1608,171 +2239,322 @@ export function WorkshopTab({
                     },
                     expandedRowRender: (imp) => {
                       const currentTab = importRowTabs[imp.id] || 'items';
-                      const setTab = (t: 'items' | 'info') => {
+                      const setTab = (t: 'items' | 'info' | 'payments') => {
                         setImportRowTabs((prev) => ({ ...prev, [imp.id]: t }));
                       };
+
+                      const itemsList: StockImportSlipItem[] =
+                        imp.items && imp.items.length > 0
+                          ? imp.items
+                          : [
+                              {
+                                id: 'line_default_1',
+                                code: 'SP003261',
+                                name: imp.itemName || 'Sản phẩm nội thất nhập khẩu',
+                                unit: imp.unit || 'Bộ',
+                                batch: '---',
+                                expiryDate: '---',
+                                quantity: imp.quantity || 1,
+                                unitPrice: imp.unitPrice || 0,
+                                discount: 0,
+                                importPrice: imp.unitPrice || 0,
+                                total: imp.totalValue || 0,
+                              },
+                            ];
+
+                      const totalQty = itemsList.reduce((acc, item) => acc + (item.quantity || 0), 0);
+                      const totalGoods = imp.totalValue || itemsList.reduce((acc, item) => acc + (item.total || 0), 0);
+                      const discountAmount = imp.discount || 0;
+                      const paidAmount = imp.paidAmount !== undefined ? imp.paidAmount : totalGoods;
+
                       return (
-                        <div className="bg-slate-50/80 border border-slate-200 rounded-xl overflow-hidden my-1.5 shadow-xs">
-                          {/* 1. Dedicated Tabs Strip (Domaco POS Style) */}
-                          <div className="flex items-center gap-6 border-b border-slate-200 px-5 pt-2.5 bg-white overflow-x-auto">
+                        <div
+                          className="bg-white border-x border-b border-slate-200 shadow-sm overflow-hidden mb-2 text-slate-800"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {/* 1. Header Tabs Strip (Domaco POS Style) */}
+                          <div className="flex items-center gap-6 border-b border-slate-200 px-5 pt-3 bg-white overflow-x-auto">
                             <button
                               type="button"
-                              onClick={(e) => { e.stopPropagation(); setTab('items'); }}
-                              className={`border-b-2 px-1 pb-2 text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setTab('items');
+                              }}
+                              className={`border-b-2 px-1 pb-2.5 text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
                                 currentTab === 'items'
-                                  ? 'border-[#784e34] text-[#784e34]'
-                                  : 'border-transparent text-slate-600 hover:text-slate-950'
+                                  ? 'border-[#008080] text-[#008080]'
+                                  : 'border-transparent text-slate-600 hover:text-slate-900'
                               }`}
                             >
-                              Hàng hóa (1)
+                              Hàng hóa ({itemsList.length})
                             </button>
                             <button
                               type="button"
-                              onClick={(e) => { e.stopPropagation(); setTab('info'); }}
-                              className={`border-b-2 px-1 pb-2 text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setTab('info');
+                              }}
+                              className={`border-b-2 px-1 pb-2.5 text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
                                 currentTab === 'info'
-                                  ? 'border-[#784e34] text-[#784e34]'
-                                  : 'border-transparent text-slate-600 hover:text-slate-950'
+                                  ? 'border-[#008080] text-[#008080]'
+                                  : 'border-transparent text-slate-600 hover:text-slate-900'
                               }`}
                             >
-                              Thông tin phiếu nhập
+                              Thông tin
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setTab('payments');
+                              }}
+                              className={`border-b-2 px-1 pb-2.5 text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
+                                currentTab === 'payments'
+                                  ? 'border-[#008080] text-[#008080]'
+                                  : 'border-transparent text-slate-600 hover:text-slate-900'
+                              }`}
+                            >
+                              Lịch sử thanh toán
                             </button>
                           </div>
 
                           {/* 2. Tab Body */}
                           <div className="p-4 space-y-4">
+                            {/* TAB 1: HÀNG HÓA */}
                             {currentTab === 'items' && (
-                              <div className="space-y-3">
-                                {/* Product items table */}
-                                <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                              <div className="space-y-4">
+                                {/* Table of items */}
+                                <div className="overflow-x-auto border border-slate-200 bg-white">
                                   <table className="min-w-full text-xs">
                                     <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 font-semibold">
                                       <tr>
-                                        <th className="px-3 py-2 text-center w-10">STT</th>
-                                        <th className="px-3 py-2 text-left w-32">Mã phiếu</th>
-                                        <th className="px-3 py-2 text-left">Tên sản phẩm</th>
-                                        <th className="px-3 py-2 text-center w-20">ĐVT</th>
+                                        <th className="px-3 py-2 text-left w-28">Mã hàng</th>
+                                        <th className="px-3 py-2 text-left">Tên hàng</th>
+                                        <th className="px-3 py-2 text-left w-20">ĐVT</th>
+                                        <th className="px-3 py-2 text-left w-28">Hạn sử dụng</th>
                                         <th className="px-3 py-2 text-right w-24">Số lượng</th>
-                                        <th className="px-3 py-2 text-right w-32">Đơn giá nhập</th>
-                                        <th className="px-3 py-2 text-right w-36">Thành tiền</th>
+                                        <th className="px-3 py-2 text-right w-28">Đơn giá</th>
+                                        <th className="px-3 py-2 text-right w-24">Giảm giá</th>
+                                        <th className="px-3 py-2 text-right w-28">Giá nhập</th>
+                                        <th className="px-3 py-2 text-right w-32">Thành tiền</th>
                                       </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
-                                      <tr className="hover:bg-slate-50/50">
-                                        <td className="px-3 py-2.5 text-center text-slate-400 font-mono">1</td>
-                                        <td className="px-3 py-2.5 font-mono text-[#784e34] font-medium">{imp.code}</td>
-                                        <td className="px-3 py-2.5 font-medium text-slate-900">
-                                          <div>{imp.itemName}</div>
-                                        </td>
-                                        <td className="px-3 py-2.5 text-center text-slate-600">{imp.unit}</td>
-                                        <td className="px-3 py-2.5 text-right font-mono font-bold text-slate-900">{imp.quantity}</td>
-                                        <td className="px-3 py-2.5 text-right font-mono text-slate-700">{(imp.unitPrice || 0).toLocaleString('vi-VN')} đ</td>
-                                        <td className="px-3 py-2.5 text-right font-mono font-bold text-[#784e34]">{(imp.totalValue || 0).toLocaleString('vi-VN')} đ</td>
-                                      </tr>
+                                      {itemsList.map((item, idx) => (
+                                        <tr key={item.id || idx} className="hover:bg-slate-50/70">
+                                          <td className="px-3 py-2.5 font-mono text-[#008080] font-medium">
+                                            <span
+                                              className="cursor-pointer hover:underline inline-flex items-center gap-1 group"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                if (onNavigateToProduct) onNavigateToProduct(item.code || item.name);
+                                              }}
+                                              title={`Xem chi tiết sản phẩm "${item.name}" trong danh mục`}
+                                            >
+                                              <span>{item.code}</span>
+                                              <span className="text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">↗</span>
+                                            </span>
+                                          </td>
+                                          <td className="px-3 py-2.5 font-medium text-slate-900">
+                                            <span
+                                              className="cursor-pointer hover:text-[#008080] hover:underline"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                if (onNavigateToProduct) onNavigateToProduct(item.code || item.name);
+                                              }}
+                                              title={`Xem chi tiết sản phẩm "${item.name}"`}
+                                            >
+                                              {item.name}
+                                            </span>
+                                          </td>
+                                          <td className="px-3 py-2.5 text-slate-600">{item.unit}</td>
+                                          <td className="px-3 py-2.5 text-slate-400">{item.expiryDate || '---'}</td>
+                                          <td className="px-3 py-2.5 text-right font-mono font-medium text-slate-900">
+                                            {item.quantity}
+                                          </td>
+                                          <td className="px-3 py-2.5 text-right font-mono text-slate-700">
+                                            {(item.unitPrice || 0).toLocaleString('vi-VN')}
+                                          </td>
+                                          <td className="px-3 py-2.5 text-right font-mono text-slate-500">
+                                            {(item.discount || 0).toLocaleString('vi-VN')}
+                                          </td>
+                                          <td className="px-3 py-2.5 text-right font-mono text-slate-700">
+                                            {(item.importPrice ?? item.unitPrice ?? 0).toLocaleString('vi-VN')}
+                                          </td>
+                                          <td className="px-3 py-2.5 text-right font-mono font-bold text-slate-950">
+                                            {(item.total || (item.quantity * (item.unitPrice || 0))).toLocaleString('vi-VN')}
+                                          </td>
+                                        </tr>
+                                      ))}
                                     </tbody>
                                   </table>
                                 </div>
 
-                                {/* Financial Summary Box (Domaco POS Style) */}
-                                <div className="rounded-xl border border-slate-200 bg-white p-4">
-                                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                                    <div>
-                                      <div className="text-[11px] text-slate-500 mb-0.5">Tổng tiền hàng</div>
-                                      <div className="font-bold text-slate-900 text-sm font-mono">{(imp.totalValue || 0).toLocaleString('vi-VN')} đ</div>
+                                {/* Bottom 2-Column: Ghi chú (Left) & Financial Summary (Right) */}
+                                <div className="flex flex-col md:flex-row gap-6 items-start justify-between pt-1">
+                                  {/* Left: Ghi chú full box */}
+                                  <div className="flex-1 w-full">
+                                    <label className="text-xs font-semibold text-slate-600 block mb-1.5">
+                                      Ghi chú
+                                    </label>
+                                    <Input.TextArea
+                                      rows={4}
+                                      defaultValue={imp.note || ''}
+                                      placeholder="Ghi chú phiếu nhập hàng..."
+                                      className="w-full text-xs rounded-none border border-slate-200 bg-white p-2.5 text-slate-700 resize-none hover:border-slate-300 focus:border-[#008080]"
+                                      onClick={(e) => e.stopPropagation()}
+                                    />
+                                  </div>
+
+                                  {/* Right: Metrics Calculation lines */}
+                                  <div className="w-full md:w-80 shrink-0 space-y-1.5 text-xs text-slate-700 bg-slate-50/50 p-3 border border-slate-100">
+                                    <div className="flex justify-between items-center py-0.5">
+                                      <span className="text-slate-600">Số lượng mặt hàng</span>
+                                      <span className="font-mono font-semibold text-slate-900">{itemsList.length}</span>
                                     </div>
-                                    <div>
-                                      <div className="text-[11px] text-slate-500 mb-0.5">Đã thanh toán cho NCC</div>
-                                      <div className="font-bold text-emerald-700 text-sm font-mono">{(imp.paidAmount !== undefined ? imp.paidAmount : imp.totalValue).toLocaleString('vi-VN')} đ</div>
+                                    <div className="flex justify-between items-center py-0.5">
+                                      <span className="text-slate-600">Tổng số lượng</span>
+                                      <span className="font-mono font-semibold text-slate-900">{totalQty}</span>
                                     </div>
-                                    <div>
-                                      <div className="text-[11px] text-slate-500 mb-0.5">Còn nợ lại NCC</div>
-                                      <div className="font-bold text-rose-600 text-sm font-mono">
-                                        {Math.max(0, (imp.totalValue || 0) - (imp.paidAmount !== undefined ? imp.paidAmount : imp.totalValue)).toLocaleString('vi-VN')} đ
-                                      </div>
+                                    <div className="flex justify-between items-center py-0.5">
+                                      <span className="text-slate-600">Tổng tiền hàng</span>
+                                      <span className="font-mono font-semibold text-slate-900">{totalGoods.toLocaleString('vi-VN')}</span>
                                     </div>
-                                    <div>
-                                      <div className="text-[11px] text-slate-500 mb-0.5">Hình thức thanh toán</div>
-                                      <div className="font-semibold text-slate-800">{imp.paymentMethod || 'Chuyển khoản'}</div>
+                                    <div className="flex justify-between items-center py-0.5">
+                                      <span className="text-slate-600">Giảm giá</span>
+                                      <span className="font-mono text-slate-700">{discountAmount.toLocaleString('vi-VN')}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center pt-2 border-t border-slate-200">
+                                      <span className="font-bold text-slate-950 text-sm">Tổng cộng</span>
+                                      <span className="font-mono font-bold text-slate-950 text-base">{totalGoods.toLocaleString('vi-VN')}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center py-0.5">
+                                      <span className="font-semibold text-slate-800">Tiền đã trả NCC</span>
+                                      <span className="font-mono font-bold text-slate-950 text-sm">{paidAmount.toLocaleString('vi-VN')}</span>
                                     </div>
                                   </div>
                                 </div>
                               </div>
                             )}
 
+                            {/* TAB 2: THÔNG TIN PHIẾU NHẬP */}
                             {currentTab === 'info' && (
-                              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 bg-white p-4 rounded-xl border border-slate-200 text-xs">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 bg-slate-50/70 p-4 border border-slate-200 text-xs">
                                 <div>
-                                  <span className="text-slate-400 block text-[11px]">Mã phiếu nhập:</span>
-                                  <span className="font-mono font-bold text-slate-800">{imp.code}</span>
+                                  <span className="text-slate-400 block text-[11px] mb-0.5">Mã nhập hàng:</span>
+                                  <span className="font-mono font-bold text-[#008080]">{imp.code}</span>
                                 </div>
                                 <div>
-                                  <span className="text-slate-400 block text-[11px]">Thời gian nhập kho:</span>
+                                  <span className="text-slate-400 block text-[11px] mb-0.5">Thời gian nhập hàng:</span>
                                   <span className="font-mono font-medium text-slate-800">{imp.importDate}</span>
                                 </div>
                                 <div>
-                                  <span className="text-slate-400 block text-[11px]">Kho tiếp nhận:</span>
-                                  <span className="font-bold text-[#784e34]">{imp.warehouseName}</span>
+                                  <span className="text-slate-400 block text-[11px] mb-0.5">Kho tiếp nhận:</span>
+                                  <span className="font-bold text-slate-900">{imp.warehouseName}</span>
                                 </div>
                                 <div>
-                                  <span className="text-slate-400 block text-[11px]">Nhà cung cấp:</span>
-                                  <span className="font-semibold text-slate-800">{imp.supplier}</span>
+                                  <span className="text-slate-400 block text-[11px] mb-0.5">Nhà cung cấp:</span>
+                                  <span className="font-semibold text-slate-900">{imp.supplier}</span>
                                 </div>
                                 <div>
-                                  <span className="text-slate-400 block text-[11px]">Người tiếp nhận &amp; KCS:</span>
-                                  <span className="font-medium text-slate-800">{imp.inspector}</span>
+                                  <span className="text-slate-400 block text-[11px] mb-0.5">Mã nhà cung cấp:</span>
+                                  <span className="font-mono font-medium text-slate-700">{imp.supplierCode || 'NCC lẻ'}</span>
                                 </div>
                                 <div>
-                                  <span className="text-slate-400 block text-[11px]">Số hóa đơn VAT:</span>
+                                  <span className="text-slate-400 block text-[11px] mb-0.5">Người tạo / Người nhập:</span>
+                                  <span className="font-medium text-slate-800">{imp.creator || imp.inspector || 'Admin'}</span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-400 block text-[11px] mb-0.5">Số hóa đơn đầu vào:</span>
                                   <span className="font-mono font-medium text-slate-800">{imp.invoiceNumber || 'Chưa kèm hóa đơn'}</span>
                                 </div>
                                 <div>
-                                  <span className="text-slate-400 block text-[11px]">Trạng thái:</span>
-                                  <span className="font-medium text-slate-800">{imp.status === 'draft' ? 'Bản lưu tạm' : 'Đã nhập kho'}</span>
+                                  <span className="text-slate-400 block text-[11px] mb-0.5">Trạng thái:</span>
+                                  <span className="font-medium text-emerald-700">{imp.statusLabel || (imp.status === 'draft' ? 'Phiếu tạm' : 'Đã nhập hàng')}</span>
                                 </div>
                                 <div>
-                                  <span className="text-slate-400 block text-[11px]">Ghi chú:</span>
-                                  <span className="text-slate-700 italic">{imp.note || 'Không có'}</span>
+                                  <span className="text-slate-400 block text-[11px] mb-0.5">Trạng thái trả hàng:</span>
+                                  <span className="font-medium text-slate-700">{imp.returnStatus || 'Chưa trả'}</span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-400 block text-[11px] mb-0.5">Hình thức thanh toán:</span>
+                                  <span className="font-medium text-slate-800">{imp.paymentMethod || 'Chuyển khoản'}</span>
+                                </div>
+                                <div className="sm:col-span-2">
+                                  <span className="text-slate-400 block text-[11px] mb-0.5">Ghi chú phiếu:</span>
+                                  <span className="text-slate-700 italic">{imp.note || 'Không có ghi chú'}</span>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* TAB 3: LỊCH SỬ THANH TOÁN */}
+                            {currentTab === 'payments' && (
+                              <div className="space-y-3">
+                                <div className="overflow-x-auto border border-slate-200 bg-white">
+                                  <table className="min-w-full text-xs">
+                                    <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 font-semibold">
+                                      <tr>
+                                        <th className="px-3 py-2 text-left w-32">Mã phiếu chi</th>
+                                        <th className="px-3 py-2 text-left w-36">Thời gian</th>
+                                        <th className="px-3 py-2 text-left w-36">Phương thức</th>
+                                        <th className="px-3 py-2 text-right w-36">Số tiền chi</th>
+                                        <th className="px-3 py-2 text-left w-32">Người tạo</th>
+                                        <th className="px-3 py-2 text-center w-28">Trạng thái</th>
+                                        <th className="px-3 py-2 text-left">Ghi chú</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                      {(imp.payments && imp.payments.length > 0 ? imp.payments : [
+                                        {
+                                          id: `pay_${imp.id}`,
+                                          code: `PC${imp.code.replace(/[^0-9]/g, '') || '000329'}`,
+                                          date: imp.importDate,
+                                          amount: paidAmount,
+                                          method: imp.paymentMethod || 'Chuyển khoản (VietQR)',
+                                          creator: imp.creator || 'Admin',
+                                          status: 'Đã chi tiền',
+                                          note: `Thanh toán tiền hàng nhập theo phiếu ${imp.code}`,
+                                        },
+                                      ]).map((pay) => (
+                                        <tr key={pay.id} className="hover:bg-slate-50/70">
+                                          <td className="px-3 py-2.5 font-mono text-[#008080] font-medium">{pay.code}</td>
+                                          <td className="px-3 py-2.5 font-mono text-slate-600">{pay.date}</td>
+                                          <td className="px-3 py-2.5 text-slate-800">{pay.method}</td>
+                                          <td className="px-3 py-2.5 text-right font-mono font-bold text-emerald-700">
+                                            {pay.amount.toLocaleString('vi-VN')} đ
+                                          </td>
+                                          <td className="px-3 py-2.5 text-slate-700">{pay.creator}</td>
+                                          <td className="px-3 py-2.5 text-center">
+                                            <Tag color="green" className="m-0 text-[11px] font-normal border-none">
+                                              {pay.status}
+                                            </Tag>
+                                          </td>
+                                          <td className="px-3 py-2.5 text-slate-500 italic">{pay.note || '---'}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
                                 </div>
                               </div>
                             )}
                           </div>
 
-                          {/* 3. Footer Bar with Domaco POS Action Buttons */}
+                          {/* 3. Action Footer Bar matching Screenshot */}
                           <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 bg-white border-t border-slate-200">
-                            <Button
-                              size="small"
-                              icon={<UpOutlined />}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setExpandedImportRowKeys((prev) => prev.filter((k) => k !== imp.id));
-                              }}
-                              className="h-8 rounded-lg border-slate-300 px-3 text-xs font-medium text-slate-700 hover:!border-slate-400"
-                            >
-                              Thu gọn
-                            </Button>
+                            {/* Left: Thu gọn & Xóa */}
                             <div className="flex items-center gap-2">
                               <Button
                                 size="small"
-                                icon={<FileExcelOutlined />}
+                                icon={<UpOutlined />}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleExportSingleImportDetail(imp);
+                                  setExpandedImportRowKeys((prev) => prev.filter((k) => k !== imp.id));
                                 }}
-                                className="h-8 rounded-lg border-emerald-600 text-emerald-700 bg-emerald-50/50 hover:!bg-emerald-100 hover:!border-emerald-700 px-3.5 text-xs font-semibold"
+                                className="h-8 rounded-none border-slate-300 px-3 text-xs font-normal text-slate-700 hover:!border-slate-400 flex items-center"
                               >
-                                Xuất Excel
+                                Thu gọn
                               </Button>
-                              <Button
-                                size="small"
-                                icon={<PrinterOutlined />}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedImportSlipForPrint(imp);
-                                }}
-                                className="h-8 rounded-lg border-slate-300 px-3.5 text-xs font-semibold text-slate-700 hover:!border-[#784e34] hover:!text-[#784e34]"
-                              >
-                                In phiếu nhập
-                              </Button>
+
                               <Popconfirm
                                 title={`Xóa phiếu nhập ${imp.code}?`}
                                 description="Hành động này không thể hoàn tác."
@@ -1785,15 +2567,120 @@ export function WorkshopTab({
                                 okButtonProps={{ danger: true }}
                               >
                                 <Button
-                                  danger
                                   size="small"
                                   icon={<DeleteOutlined />}
                                   onClick={(e) => e.stopPropagation()}
-                                  className="h-8 rounded-lg px-3.5 text-xs font-semibold"
+                                  className="h-8 rounded-none border-slate-300 px-3 text-xs font-normal text-slate-500 hover:text-rose-600 hover:!border-rose-400 flex items-center"
                                 >
-                                  Xóa phiếu
+                                  Xóa
                                 </Button>
                               </Popconfirm>
+                            </div>
+
+                            {/* Right: Mở phiếu, Lưu, Sao chép, Trả hàng nhập, In, Xuất file */}
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Button
+                                size="small"
+                                icon={<FileTextOutlined />}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedImportDetail(imp);
+                                  setShowImportDetailDrawer(true);
+                                }}
+                                className="h-8 rounded-none !bg-[#008080] !border-[#008080] hover:!bg-[#006666] text-white px-3.5 text-xs font-medium flex items-center shadow-none"
+                              >
+                                Mở phiếu
+                              </Button>
+
+                              <Button
+                                size="small"
+                                icon={<SaveOutlined />}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  message.success(`Đã lưu cập nhật phiếu nhập ${imp.code}!`);
+                                }}
+                                className="h-8 rounded-none border-slate-300 px-3 text-xs font-normal text-slate-700 hover:!border-slate-400 flex items-center"
+                              >
+                                Lưu
+                              </Button>
+
+                              <Button
+                                size="small"
+                                icon={<CopyOutlined />}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const nextNum = (importsList.length + 91).toString().padStart(3, '0');
+                                  const cloned: StockImportSlip = {
+                                    ...imp,
+                                    id: `imp_${Date.now()}`,
+                                    code: `PN000${nextNum}`,
+                                    importDate:
+                                      new Date().toLocaleDateString('vi-VN') +
+                                      ' ' +
+                                      new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+                                  };
+                                  setImportsList((prev) => [cloned, ...prev]);
+                                  message.success(`Đã nhân bản phiếu nhập "${imp.code}"!`);
+                                }}
+                                className="h-8 rounded-none border-slate-300 px-3 text-xs font-normal text-slate-700 hover:!border-slate-400 flex items-center"
+                              >
+                                Sao chép
+                              </Button>
+
+                              <Button
+                                size="small"
+                                icon={<SwapOutlined />}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setWarehouseSubTab('returns');
+                                  setReturnViewMode('create');
+                                  setReturnSupplier(imp.supplier);
+                                  setReturnSourceCode(imp.code);
+                                  if (itemsList.length > 0) {
+                                    setReturnEntryLines(
+                                      itemsList.map((it, i) => ({
+                                        id: `ret_line_${Date.now()}_${i}`,
+                                        code: it.code,
+                                        name: it.name,
+                                        spec: '',
+                                        unit: it.unit,
+                                        quantity: it.quantity,
+                                        purchasePrice: it.unitPrice || 0,
+                                        returnPrice: it.unitPrice || 0,
+                                        total: it.total,
+                                      }))
+                                    );
+                                  }
+                                  message.info(`Đã mở giao diện trả hàng cho phiếu nhập ${imp.code}`);
+                                }}
+                                className="h-8 rounded-none border-slate-300 px-3 text-xs font-normal text-slate-700 hover:!border-slate-400 flex items-center"
+                              >
+                                Trả hàng nhập
+                              </Button>
+
+                              <Button
+                                size="small"
+                                icon={<PrinterOutlined />}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedImportSlipForPrint(imp);
+                                }}
+                                className="h-8 rounded-none border-slate-300 px-3 text-xs font-normal text-slate-700 hover:!border-slate-400 flex items-center"
+                              >
+                                In
+                              </Button>
+
+                              <Button
+                                size="small"
+                                icon={<DownloadOutlined />}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleExportSingleImportDetail(imp);
+                                }}
+                                className="h-8 rounded-none border-slate-300 px-3 text-xs font-normal text-slate-700 hover:!border-slate-400 flex items-center"
+                              >
+                                Xuất file
+                              </Button>
                             </div>
                           </div>
                         </div>
@@ -1802,91 +2689,79 @@ export function WorkshopTab({
                   }}
                   columns={[
                     {
-                      title: 'Mã phiếu nhập',
+                      title: 'Mã nhập hàng',
                       dataIndex: 'code',
                       key: 'code',
-                      width: 170,
-                      render: (code) => (
-                        <span className="font-mono text-xs font-normal text-[#784e34] bg-[#784e34]/10 px-2.5 py-1 rounded whitespace-nowrap inline-block">
-                          {code}
-                        </span>
-                      ),
+                      width: 160,
+                      render: (code, record) => {
+                        const isExp = expandedImportRowKeys.includes(record.id);
+                        return (
+                          <span
+                            className={`font-mono text-xs font-semibold px-2 py-0.5 rounded whitespace-nowrap inline-block ${
+                              isExp ? 'text-white bg-white/20' : 'text-[#784e34] bg-[#784e34]/10'
+                            }`}
+                          >
+                            {code}
+                          </span>
+                        );
+                      },
                     },
                     {
-                      title: 'Kho tiếp nhận',
-                      dataIndex: 'warehouseName',
-                      key: 'warehouseName',
-                      width: 240,
-                      render: (wh) => (
-                        <span className="font-normal text-sm text-slate-800 leading-tight block">
-                          {wh}
-                        </span>
-                      ),
+                      title: 'Thời gian',
+                      dataIndex: 'importDate',
+                      key: 'importDate',
+                      width: 170,
+                      render: (date, record) => {
+                        const isExp = expandedImportRowKeys.includes(record.id);
+                        return (
+                          <span className={`font-mono text-xs ${isExp ? 'text-white' : 'text-slate-700'}`}>
+                            {date}
+                          </span>
+                        );
+                      },
+                    },
+                    {
+                      title: 'Mã NCC',
+                      dataIndex: 'supplierCode',
+                      key: 'supplierCode',
+                      width: 120,
+                      render: (code, record) => {
+                        const isExp = expandedImportRowKeys.includes(record.id);
+                        return (
+                          <span className={`text-xs ${isExp ? 'text-white/80' : 'text-slate-500'}`}>
+                            {code || '---'}
+                          </span>
+                        );
+                      },
                     },
                     {
                       title: 'Nhà cung cấp',
                       dataIndex: 'supplier',
                       key: 'supplier',
-                      width: 240,
-                      render: (sup) => (
-                        <div>
-                          <span className="font-normal text-sm text-slate-700">{sup}</span>
-                        </div>
-                      ),
+                      width: 220,
+                      render: (sup, record) => {
+                        const isExp = expandedImportRowKeys.includes(record.id);
+                        return (
+                          <span className={`font-medium text-sm ${isExp ? 'text-white' : 'text-slate-800'}`}>
+                            {sup}
+                          </span>
+                        );
+                      },
                     },
                     {
-                      title: 'Tên hàng hóa',
-                      key: 'item',
-                      width: 280,
-                      render: (_, r) => (
-                        <div className="font-normal text-sm text-slate-800 leading-snug">{r.itemName}</div>
-                      ),
-                    },
-                    {
-                      title: 'Số lượng',
-                      key: 'qty',
-                      width: 120,
-                      align: 'right',
-                      render: (_, r) => (
-                        <span className="font-mono font-normal text-sm text-slate-800 whitespace-nowrap">
-                          {r.quantity} {r.unit}
-                        </span>
-                      ),
-                    },
-                    {
-                      title: 'Đơn giá nhập',
-                      dataIndex: 'unitPrice',
-                      key: 'unitPrice',
-                      width: 140,
-                      align: 'right',
-                      render: (price) => (
-                        <span className="font-mono font-normal text-xs text-slate-700 whitespace-nowrap">
-                          {(price || 0).toLocaleString('vi-VN')} đ
-                        </span>
-                      ),
-                    },
-                    {
-                      title: 'Tổng giá trị nhập',
+                      title: 'Cần trả NCC',
                       dataIndex: 'totalValue',
                       key: 'totalValue',
                       width: 160,
                       align: 'right',
-                      render: (val) => (
-                        <span className="font-mono font-normal text-sm text-[#784e34] whitespace-nowrap">
-                          {(val || 0).toLocaleString('vi-VN')} đ
-                        </span>
-                      ),
-                    },
-                    {
-                      title: 'Thời gian & KCS',
-                      key: 'inspector',
-                      width: 180,
-                      render: (_, r) => (
-                        <div>
-                          <div className="font-mono text-xs text-slate-600 font-normal whitespace-nowrap">{r.importDate}</div>
-                          <div className="text-xs text-slate-500 mt-0.5 font-normal">{r.inspector}</div>
-                        </div>
-                      ),
+                      render: (val, record) => {
+                        const isExp = expandedImportRowKeys.includes(record.id);
+                        return (
+                          <span className={`font-mono font-bold text-sm ${isExp ? 'text-white' : 'text-slate-900'}`}>
+                            {(val || 0).toLocaleString('vi-VN')}
+                          </span>
+                        );
+                      },
                     },
                     {
                       title: 'Trạng thái',
@@ -1894,590 +2769,129 @@ export function WorkshopTab({
                       key: 'status',
                       width: 140,
                       align: 'center',
-                      render: (s, r) => (
-                        <Tag color={r.status === 'draft' ? 'gold' : 'green'} className="font-normal text-xs px-2.5 py-0.5 whitespace-nowrap">
-                          {r.status === 'draft' ? '📝 Lưu tạm' : `✓ ${r.statusLabel || 'Đã nhập kho'}`}
-                        </Tag>
-                      ),
+                      render: (s, r) => {
+                        return (
+                          <Tag
+                            color={r.status === 'draft' ? 'gold' : 'cyan'}
+                            className="font-normal text-xs px-2.5 py-0.5 whitespace-nowrap rounded-full border-none"
+                          >
+                            {r.status === 'draft' ? 'Phiếu tạm' : r.statusLabel || 'Đã nhập hàng'}
+                          </Tag>
+                        );
+                      },
+                    },
+                    {
+                      title: 'Trạng thái trả hàng',
+                      dataIndex: 'returnStatus',
+                      key: 'returnStatus',
+                      width: 140,
+                      align: 'center',
+                      render: (s, record) => {
+                        const isExp = expandedImportRowKeys.includes(record.id);
+                        const matchedReturn = supplierReturnsList.find(
+                          (ret) =>
+                            (ret.sourcePurchaseEntryCode && ret.sourcePurchaseEntryCode === record.code) ||
+                            (ret.code && ret.code === record.code) ||
+                            (ret.itemName && ret.itemName.includes(record.code))
+                        );
+
+                        const isReturned = Boolean(matchedReturn) || (s && s !== 'Chưa trả');
+                        const statusLabel = matchedReturn
+                          ? (matchedReturn.status === 'draft' ? 'Đang xuất trả' : 'Đã trả hàng')
+                          : (s || 'Đã trả hàng');
+
+                        if (isReturned) {
+                          return (
+                            <Tag
+                              color="volcano"
+                              className="font-medium text-xs px-2.5 py-0.5 whitespace-nowrap rounded-full border-none m-0"
+                            >
+                              {statusLabel}
+                            </Tag>
+                          );
+                        }
+
+                        return (
+                          <span className={`text-xs ${isExp ? 'text-white/80' : 'text-slate-400'}`}>
+                            Chưa trả
+                          </span>
+                        );
+                      },
                     },
                     {
                       title: 'Thao tác',
                       key: 'actions',
-                      width: 85,
+                      width: 80,
                       align: 'center',
-                      render: (_, r) => (
-                        <Space size={2} onClick={(e) => e.stopPropagation()}>
+                      render: (_, imp) => (
+                        <Popconfirm
+                          title={`Xóa phiếu nhập "${imp.code}"?`}
+                          onConfirm={() => handleDeleteImport(imp.id, imp.code)}
+                          okText="Xóa"
+                          cancelText="Hủy"
+                          okButtonProps={{ danger: true }}
+                        >
                           <Button
+                            icon={<DeleteOutlined className="text-sm" />}
                             size="small"
                             type="text"
-                            icon={<PrinterOutlined className="text-slate-500 hover:text-[#784e34]" />}
-                            onClick={() => setSelectedImportSlipForPrint(r)}
-                            className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-slate-100"
+                            className="text-slate-400 hover:text-red-600 hover:bg-red-50"
+                            onClick={(e) => e.stopPropagation()}
                           />
-                          <Popconfirm
-                            title={`Xóa phiếu nhập ${r.code}?`}
-                            description="Hành động này không thể hoàn tác."
-                            onConfirm={() => handleDeleteImport(r.id, r.code)}
-                            okText="Xóa"
-                            cancelText="Hủy"
-                            okButtonProps={{ danger: true }}
-                          >
-                            <Button
-                              size="small"
-                              type="text"
-                              danger
-                              icon={<DeleteOutlined className="text-rose-500 hover:text-rose-700" />}
-                              className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-rose-50"
-                            />
-                          </Popconfirm>
-                        </Space>
+                        </Popconfirm>
                       ),
                     },
                   ]}
                 />
               </div>
-            );
-          })()}
-              </div>
-            )}
+            </div>
+              );
+            })()}
+          </div>
+        )}
 
             {/* SUB-TAB 2 (ENTRY MODE): GIAO DIỆN LẬP PHIẾU NHẬP HÀNG CHUẨN DOMACO POS */}
             {warehouseSubTab === 'imports' && importViewMode === 'create' && (
-              <div className="space-y-4">
-                {/* Header Top Bar */}
-                <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-none shadow-xs border border-slate-200">
-                  <div className="flex items-center gap-3 flex-1 min-w-[280px]">
-                    <Button
-                      icon={<ArrowLeftOutlined />}
-                      onClick={() => setImportViewMode('list')}
-                      className="h-9 w-9 rounded-lg text-slate-700 hover:!bg-slate-100 hover:!text-[#784e34] flex items-center justify-center"
-                      title="Quay lại danh sách phiếu nhập (giữ nháp)"
-                    />
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h1 className="m-0 shrink-0 text-sm font-bold text-slate-950">
-                          Lập Phiếu Nhập Hàng
-                        </h1>
-                        <span className="font-mono text-xs font-bold text-[#784e34] bg-[#784e34]/10 px-2 py-0.5 rounded">
-                          {importCode || '#PN-2026-NEW'}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Product Search Input with Dropdown Popover */}
-                    <div className="relative min-w-0 max-w-[500px] flex-1">
-                      <AdminSearchInput
-                        placeholder="Tìm hàng hóa theo tên sản phẩm, mã SKU, bộ sưu tập (F3)..."
-                        value={importSearchProduct}
-                        onChange={(val) => {
-                          setImportSearchProduct(val);
-                          setShowImportProductPopover(val.trim().length > 0);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Escape') setShowImportProductPopover(false);
-                        }}
-                        sizeVariant="sm"
-                      />
-
-                      {showImportProductPopover && importSearchProduct.trim() !== '' && (
-                        <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-80 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-2xl">
-                          <div className="flex items-center justify-between px-2 py-1 mb-1 border-b border-slate-100 text-[11px] text-slate-500 font-medium">
-                            <span>Kết quả tìm kiếm cho &quot;{importSearchProduct}&quot;</span>
-                            <button
-                              type="button"
-                              onClick={() => setShowImportProductPopover(false)}
-                              className="text-slate-400 hover:text-slate-700 border-none bg-transparent cursor-pointer"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                          {catalogList
-                            .filter(
-                              (p) =>
-                                p.name.toLowerCase().includes(importSearchProduct.toLowerCase()) ||
-                                p.code.toLowerCase().includes(importSearchProduct.toLowerCase()) ||
-                                (p.collection && p.collection.toLowerCase().includes(importSearchProduct.toLowerCase()))
-                            )
-                            .map((product) => {
-                              const alreadyAdded = importEntryLines.some((l) => l.code === product.code || l.id === product.id);
-                              return (
-                                <button
-                                  key={product.id || product.code}
-                                  type="button"
-                                  onClick={() => {
-                                    if (!alreadyAdded) {
-                                      const defaultUnit = product.name.toLowerCase().includes('sofa') || product.name.toLowerCase().includes('bàn') ? 'bộ' : 'chiếc';
-                                      setImportEntryLines((prev) => [
-                                        ...prev,
-                                        {
-                                          id: `line_${Date.now()}_${product.id}`,
-                                          code: product.code,
-                                          name: product.name,
-                                          spec: product.collection || '',
-                                          unit: defaultUnit,
-                                          quantity: 1,
-                                          unitPrice: product.price || 0,
-                                          discount: 0,
-                                          total: product.price || 0,
-                                        },
-                                      ]);
-                                      message.success(`Đã thêm ${product.name} vào phiếu nhập!`);
-                                    } else {
-                                      setImportEntryLines((prev) =>
-                                        prev.map((l) =>
-                                          l.code === product.code || l.id === product.id
-                                            ? { ...l, quantity: l.quantity + 1, total: (l.quantity + 1) * l.unitPrice }
-                                            : l
-                                        )
-                                      );
-                                      message.info(`Đã tăng số lượng ${product.name} (+1)!`);
-                                    }
-                                    setImportSearchProduct('');
-                                    setShowImportProductPopover(false);
-                                  }}
-                                  className={`flex w-full cursor-pointer items-center justify-between gap-3 rounded-lg p-2 text-left transition-colors border-none bg-transparent ${
-                                    alreadyAdded ? 'bg-amber-50/50' : 'hover:bg-slate-50'
-                                  }`}
-                                >
-                                  <div className="min-w-0 flex-1">
-                                    <div className="truncate text-xs font-medium text-slate-900">
-                                      <span className="font-mono text-[#784e34] mr-1.5">{product.code}</span>
-                                      {product.name}
-                                    </div>
-                                    <div className="text-[11px] text-slate-500">
-                                      {product.collection || 'Nội thất xuất khẩu'} • Giá niêm yết: {(product.price || 0).toLocaleString('vi-VN')} đ
-                                    </div>
-                                  </div>
-                                  <div className="shrink-0 text-right">
-                                    <span className="text-xs font-bold text-[#784e34]">
-                                      {(product.price || 0).toLocaleString('vi-VN')} đ
-                                    </span>
-                                  </div>
-                                </button>
-                              );
-                            })}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    {importEntryLines.length > 0 && (
-                      <>
-                        <Button
-                          size="small"
-                          icon={<FileExcelOutlined />}
-                          onClick={handleExportCreateImportLinesExcel}
-                          className="h-9 px-3 text-xs font-medium rounded-lg border-emerald-600 text-emerald-700 bg-emerald-50/50 hover:!bg-emerald-100 hover:!border-emerald-700"
-                        >
-                          Xuất Excel chi tiết
-                        </Button>
-                        <Popconfirm
-                          title="Xóa tất cả các mặt hàng đã chọn?"
-                          onConfirm={() => {
-                            setImportEntryLines([]);
-                            message.info('Đã xóa danh sách mặt hàng!');
-                          }}
-                          okText="Xóa hết"
-                          cancelText="Hủy"
-                          okButtonProps={{ danger: true }}
-                        >
-                          <Button
-                            size="small"
-                            danger
-                            icon={<DeleteOutlined />}
-                            className="h-9 px-3 text-xs font-medium rounded-lg"
-                          >
-                            Xóa trắng ({importEntryLines.length})
-                          </Button>
-                        </Popconfirm>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {/* 2-Column Domaco POS Layout */}
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
-                  {/* Left Column: Line Items Table (col-span-8) */}
-                  <div className="lg:col-span-8 bg-white p-4 rounded-none shadow-xs border border-slate-200 space-y-4">
-                    <div className="flex items-center justify-between border-b border-slate-200 pb-2.5">
-                      <div className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                        <span>Danh sách hàng hóa nhập kho</span>
-                        <span className="bg-[#784e34]/10 text-[#784e34] px-2 py-0.5 rounded-full font-mono text-[11px]">
-                          {importEntryLines.length} mặt hàng
-                        </span>
-                      </div>
-                      <div className="text-xs text-slate-500 font-medium">
-                        Tổng SL: <strong className="text-slate-900 font-mono">{importEntryLines.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0)}</strong>
-                      </div>
-                    </div>
-
-                    {importEntryLines.length === 0 ? (
-                      /* Domaco POS Empty State */
-                      <div className="flex flex-col items-center justify-center py-20 text-center bg-slate-50/50 rounded-lg border border-dashed border-slate-300">
-                        <div className="w-12 h-12 rounded-full bg-[#784e34]/10 text-[#784e34] flex items-center justify-center text-2xl mb-3">
-                          📥
-                        </div>
-                        <div className="mb-1 text-sm font-medium text-slate-900">
-                          Chưa có sản phẩm nào trong phiếu nhập
-                        </div>
-                        <p className="text-xs text-slate-500 max-w-sm">
-                          Tìm kiếm hàng hóa theo mã SKU hoặc tên sản phẩm ở ô tìm kiếm phía trên (F3) để thêm vào phiếu nhập.
-                        </p>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="overflow-x-auto rounded-lg border border-slate-200">
-                          <table className="min-w-full text-xs">
-                            <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
-                              <tr>
-                                <th className="px-3 py-2.5 text-center w-10">STT</th>
-                                <th className="px-3 py-2.5 text-left w-28">Mã hàng</th>
-                                <th className="px-3 py-2.5 text-left">Tên sản phẩm</th>
-                                <th className="px-3 py-2.5 text-center w-20">ĐVT</th>
-                                <th className="px-3 py-2.5 text-right w-24">Số lượng</th>
-                                <th className="px-3 py-2.5 text-right w-36">Đơn giá nhập</th>
-                                <th className="px-3 py-2.5 text-right w-36">Thành tiền</th>
-                                <th className="px-3 py-2.5 text-center w-12">Xóa</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                              {importEntryLines.map((line, idx) => (
-                                <tr key={line.id} className="hover:bg-amber-50/20 transition-colors">
-                                  <td className="px-3 py-2 text-center text-slate-400 font-mono">{idx + 1}</td>
-                                  <td className="px-3 py-2 font-mono font-medium text-[#784e34]">{line.code}</td>
-                                  <td className="px-3 py-2.5 font-medium text-slate-900">
-                                    {line.name}
-                                  </td>
-                                  <td className="px-3 py-2 text-center">
-                                    <Select
-                                      value={line.unit}
-                                      onChange={(u) => {
-                                        setImportEntryLines((prev) =>
-                                          prev.map((l) => (l.id === line.id ? { ...l, unit: u } : l))
-                                        );
-                                      }}
-                                      className="h-7 text-xs w-20"
-                                      options={[
-                                        { value: 'bộ', label: 'Bộ' },
-                                        { value: 'chiếc', label: 'Chiếc' },
-                                        { value: 'cái', label: 'Cái' },
-                                        { value: 'sản phẩm', label: 'Sản phẩm' },
-                                        { value: 'hộp', label: 'Hộp' },
-                                        { value: 'thùng', label: 'Thùng' },
-                                      ]}
-                                    />
-                                  </td>
-                                  <td className="px-3 py-2 text-right">
-                                    <InputNumber
-                                      min={1}
-                                      step={1}
-                                      value={line.quantity}
-                                      onChange={(q) => {
-                                        const numQ = Number(q) || 1;
-                                        setImportEntryLines((prev) =>
-                                          prev.map((l) =>
-                                            l.id === line.id
-                                              ? { ...l, quantity: numQ, total: numQ * l.unitPrice }
-                                              : l
-                                          )
-                                        );
-                                      }}
-                                      className="w-20 h-7 text-xs font-mono font-bold"
-                                    />
-                                  </td>
-                                  <td className="px-3 py-2 text-right">
-                                    <InputNumber
-                                      min={0}
-                                      value={line.unitPrice}
-                                      formatter={(val) => (val !== undefined && val !== null ? `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '')}
-                                      parser={(val) => (val ? Number(val.replace(/\$\s?|(,*)/g, '')) : 0) as any}
-                                      onChange={(p) => {
-                                        const numP = Number(p) || 0;
-                                        setImportEntryLines((prev) =>
-                                          prev.map((l) =>
-                                            l.id === line.id
-                                              ? { ...l, unitPrice: numP, total: line.quantity * numP }
-                                              : l
-                                          )
-                                        );
-                                      }}
-                                      className="w-32 h-7 text-xs font-mono font-bold [&_input]:!text-right"
-                                    />
-                                  </td>
-                                  <td className="px-3 py-2 text-right font-mono font-bold text-[#784e34]">
-                                    {(line.total || line.quantity * line.unitPrice).toLocaleString('vi-VN')} đ
-                                  </td>
-                                  <td className="px-3 py-2 text-center">
-                                    <Button
-                                      size="small"
-                                      type="text"
-                                      danger
-                                      icon={<DeleteOutlined className="text-slate-400 hover:text-red-600" />}
-                                      onClick={() => {
-                                        setImportEntryLines((prev) => prev.filter((l) => l.id !== line.id));
-                                      }}
-                                      className="w-7 h-7 flex items-center justify-center rounded hover:bg-red-50"
-                                    />
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-
-                        <div className="flex items-center justify-end pt-2">
-                          <span className="text-xs text-slate-500">
-                            Tổng cộng: <strong className="text-sm font-mono text-[#784e34] font-bold">
-                              {importEntryLines.reduce((sum, item) => sum + (item.total || (item.quantity * item.unitPrice)), 0).toLocaleString('vi-VN')} đ
-                            </strong>
-                          </span>
-                        </div>
-                      </>
-                    )}
-                  </div>
-
-                  {/* Right Column: Metadata & Financial Calculation Sidebar (col-span-4) */}
-                  <div className="lg:col-span-4 bg-white p-4 rounded-none shadow-xs border border-slate-200 space-y-4">
-                    {/* Meta Header Box */}
-                    <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                      <div className="flex items-center gap-2">
-                        <Avatar size="small" icon={<UserOutlined />} className="bg-[#784e34]" />
-                        <div>
-                          <div className="text-xs font-bold text-slate-900">{importInspector || user?.name || 'Nguyễn Văn Nam (KCS)'}</div>
-                          <div className="text-[11px] text-slate-400">Người lập phiếu / KCS</div>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-xs font-mono font-medium text-slate-700">{importDate || new Date().toLocaleDateString('vi-VN')}</div>
-                        <div className="text-[11px] text-slate-400">Thời gian tạo</div>
-                      </div>
-                    </div>
-
-                    {/* Basic Form Controls */}
-                    <div className="space-y-3">
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <label className="text-xs font-semibold text-slate-800">Nhà cung cấp đối tác</label>
-                          <button
-                            type="button"
-                            onClick={handleOpenCreateSupplier}
-                            className="text-[11px] font-medium text-[#784e34] hover:underline bg-transparent border-none cursor-pointer"
-                          >
-                            + Thêm NCC
-                          </button>
-                        </div>
-                        <Select
-                          value={importSupplier}
-                          onChange={(val) => setImportSupplier(val)}
-                          placeholder="Chọn nhà cung cấp..."
-                          className="w-full h-9 text-xs"
-                          showSearch
-                          optionFilterProp="children"
-                          allowClear
-                        >
-                          {suppliersList.map((s) => (
-                            <Option key={s.id} value={s.name}>
-                              {s.name} ({s.code})
-                            </Option>
-                          ))}
-                        </Select>
-                      </div>
-
-                      <div>
-                        <label className="text-xs font-semibold text-slate-800 block mb-1">Kho tiếp nhận lưu trữ</label>
-                        <Select
-                          value={importWarehouse}
-                          onChange={(val) => setImportWarehouse(val)}
-                          placeholder="Chọn kho tiếp nhận..."
-                          className="w-full h-9 text-xs"
-                          showSearch
-                          optionFilterProp="children"
-                        >
-                          {warehousesList.map((w) => (
-                            <Option key={w.id} value={w.name}>
-                              {w.name} ({w.branch})
-                            </Option>
-                          ))}
-                        </Select>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-xs font-semibold text-slate-800 block mb-1">Số hóa đơn VAT / Phiếu giao</label>
-                          <Input
-                            value={importInvoiceNumber}
-                            onChange={(e) => setImportInvoiceNumber(e.target.value)}
-                            placeholder="VD: HD-2026/089"
-                            className="h-8 text-xs font-mono"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs font-semibold text-slate-800 block mb-1">Người phụ trách KCS</label>
-                          <Input
-                            value={importInspector}
-                            onChange={(e) => setImportInspector(e.target.value)}
-                            placeholder="VD: Nguyễn Văn Nam"
-                            className="h-8 text-xs"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Financial Calculations Box (Domaco POS Architecture) */}
-                    <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-2.5 text-xs">
-                      {(() => {
-                        const totalGoods = importEntryLines.reduce((sum, item) => sum + (item.total || (item.quantity * item.unitPrice)), 0);
-                        const payable = Math.max(0, totalGoods - (importDiscount || 0));
-                        const paid = importPaidAmount !== undefined ? Number(importPaidAmount) : payable;
-                        const debt = Math.max(0, payable - paid);
-
-                        return (
-                          <>
-                            <div className="flex items-center justify-between">
-                              <span className="text-slate-600 font-medium">Tổng tiền hàng ({importEntryLines.length} món)</span>
-                              <span className="font-mono font-bold text-slate-900">{totalGoods.toLocaleString('vi-VN')} đ</span>
-                            </div>
-
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-slate-600 font-medium shrink-0">Giảm giá / Chiết khấu</span>
-                              <InputNumber
-                                min={0}
-                                value={importDiscount}
-                                formatter={(val) => (val !== undefined && val !== null ? `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '')}
-                                parser={(val) => (val ? Number(val.replace(/\$\s?|(,*)/g, '')) : 0) as any}
-                                onChange={(val) => setImportDiscount(Number(val) || 0)}
-                                className="w-36 h-7 text-xs font-mono [&_input]:!text-right"
-                              />
-                            </div>
-
-                            <div className="flex items-center justify-between pt-2 border-t border-slate-200">
-                              <span className="font-bold text-slate-900 text-xs">Cần trả nhà cung cấp</span>
-                              <span className="font-mono font-bold text-[#784e34] text-sm">{payable.toLocaleString('vi-VN')} đ</span>
-                            </div>
-
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-slate-700 font-semibold shrink-0">Tiền trả nhà cung cấp</span>
-                              <InputNumber
-                                min={0}
-                                placeholder={payable.toLocaleString('vi-VN')}
-                                value={importPaidAmount}
-                                formatter={(val) => (val !== undefined && val !== null ? `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '')}
-                                parser={(val) => (val ? Number(val.replace(/\$\s?|(,*)/g, '')) : 0) as any}
-                                onChange={(val) => setImportPaidAmount(val !== null && val !== undefined ? Number(val) : undefined)}
-                                className="w-36 h-7 text-xs font-mono font-bold text-emerald-700 [&_input]:!text-right"
-                              />
-                            </div>
-
-                            <div className="flex items-center justify-between">
-                              <span className="text-slate-600 font-medium">Tính vào công nợ NCC</span>
-                              <span className={`font-mono font-bold ${debt > 0 ? 'text-rose-600' : 'text-slate-500'}`}>
-                                {debt > 0 ? `-${debt.toLocaleString('vi-VN')} đ` : '0 đ'}
-                              </span>
-                            </div>
-
-                            <div className="pt-2 border-t border-slate-200">
-                              <label className="text-[11px] font-semibold text-slate-600 block mb-1">Hình thức thanh toán</label>
-                              <Select
-                                value={importPaymentMethod}
-                                onChange={(m) => setImportPaymentMethod(m)}
-                                className="w-full h-8 text-xs"
-                                options={[
-                                  { value: 'Chuyển khoản', label: 'Chuyển khoản MBBank / QR' },
-                                  { value: 'Tiền mặt', label: 'Tiền mặt' },
-                                  { value: 'Chưa thanh toán', label: 'Chưa thanh toán (Ghi nợ NCC)' },
-                                ]}
-                              />
-                            </div>
-                          </>
-                        );
-                      })()}
-                    </div>
-
-                    {/* Note */}
-                    <div>
-                      <label className="text-xs font-semibold text-slate-800 block mb-1">Ghi chú phiếu nhập / Vị trí xếp kho</label>
-                      <Input.TextArea
-                        value={importNote}
-                        onChange={(e) => setImportNote(e.target.value)}
-                        placeholder="VD: Xếp tại Kệ B2 - Showroom Thảo Điền, hàng nguyên đai nguyên kiện..."
-                        rows={2}
-                        className="text-xs rounded-lg"
-                      />
-                    </div>
-
-                    {/* Sticky Bottom Actions */}
-                    <div className="pt-3 border-t border-slate-200 space-y-2">
-                      <div className="grid grid-cols-2 gap-2">
-                        <Button
-                          onClick={() => setImportViewMode('list')}
-                          className="h-10 text-xs font-semibold rounded-lg text-slate-700 hover:!border-slate-400"
-                        >
-                          Bỏ qua (Giữ nháp)
-                        </Button>
-                        <Button
-                          onClick={() => handleSaveImportSlip('draft')}
-                          className="h-10 text-xs font-bold rounded-lg border-amber-400 text-amber-800 bg-amber-50 hover:!bg-amber-100"
-                        >
-                          📝 Lưu tạm
-                        </Button>
-                      </div>
-                      <Button
-                        type="primary"
-                        onClick={() => handleSaveImportSlip('completed')}
-                        className="w-full h-11 text-xs font-bold rounded-lg bg-[#784e34] hover:!bg-[#5d371f] text-white border-none shadow-sm"
-                      >
-                        ✓ Xác nhận nhập kho
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <StockImportCreate
+                importCode={importCode}
+                importDate={importDate}
+                importSupplier={importSupplier}
+                setImportSupplier={setImportSupplier}
+                importWarehouse={importWarehouse}
+                setImportWarehouse={setImportWarehouse}
+                importInvoiceNumber={importInvoiceNumber}
+                setImportInvoiceNumber={setImportInvoiceNumber}
+                importInspector={importInspector}
+                setImportInspector={setImportInspector}
+                importDiscount={importDiscount}
+                setImportDiscount={setImportDiscount}
+                importPaidAmount={importPaidAmount}
+                setImportPaidAmount={setImportPaidAmount}
+                importPaymentMethod={importPaymentMethod}
+                setImportPaymentMethod={setImportPaymentMethod}
+                importNote={importNote}
+                setImportNote={setImportNote}
+                importEntryLines={importEntryLines}
+                setImportEntryLines={setImportEntryLines}
+                importSearchProduct={importSearchProduct}
+                setImportSearchProduct={setImportSearchProduct}
+                filteredImportProducts={filteredImportProducts}
+                availableBranchSuppliers={availableBranchSuppliers}
+                availableBranchWarehouses={availableBranchWarehouses}
+                onNavigateToProduct={onNavigateToProduct}
+                onBack={() => setImportViewMode('list')}
+                onSaveDraft={() => handleSaveImportSlip('draft')}
+                onSubmit={() => handleSaveImportSlip('completed')}
+                onOpenCreateSupplier={handleOpenCreateSupplier}
+                onExportExcel={handleExportCreateImportLinesExcel}
+                user={user}
+              />
             )}
+            
 
             {/* SUB-TAB: TRẢ HÀNG CHO NHÀ CUNG CẤP (DOMACO POS PURCHASE RETURNS - LIST MODE) */}
             {warehouseSubTab === 'returns' && returnViewMode === 'list' && (
-              <div className="space-y-4">
-                {/* Search & Action Bar (Domaco POS Style) */}
-                <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-none shadow-xs">
-                  <div className="flex flex-1 items-center gap-2.5 min-w-[280px] max-w-md">
-                    <AdminSearchInput
-                      placeholder="Theo mã phiếu trả (#TH-), mã nhập hàng (#PN-), NCC, mặt hàng hoàn trả..."
-                      value={returnSearchQuery}
-                      onChange={(val) => setReturnSearchQuery(val)}
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-2.5 flex-wrap">
-                    {/* Date Filter (Domaco POS Architecture) */}
-                    <PosDateFilter
-                      value={returnDateRange}
-                      onChange={(range) => setReturnDateRange(range)}
-                    />
-
-                    <Select
-                      variant="filled"
-                      value={returnStatusFilter}
-                      onChange={(val) => setReturnStatusFilter(val)}
-                      className="w-44 h-10 text-sm [&_.ant-select-selector]:!border-0 [&_.ant-select-selector]:!bg-slate-100 hover:[&_.ant-select-selector]:!bg-slate-200/80 [&_.ant-select-selector]:!rounded-lg"
-                      options={[
-                        { value: 'all', label: 'Tất cả trạng thái' },
-                        { value: 'completed', label: 'Đã trả hàng' },
-                        { value: 'draft', label: 'Phiếu tạm' },
-                      ]}
-                    />
-                    <Button
-                      type="primary"
-                      icon={<DownloadOutlined />}
-                      onClick={handleExportReturnsExcel}
-                      className="h-10 rounded-lg text-sm font-semibold !bg-emerald-600 hover:!bg-emerald-700 !text-white !border-0 shadow-xs flex items-center gap-1.5"
-                    >
-                      Xuất Excel
-                    </Button>
-                  </div>
-                </div>
-
-                {/* Summary Metrics Bar (Domaco POS Style) */}
+              <div className="space-y-4 flex-1 flex flex-col h-full">
                 {(() => {
                   const filteredReturns = supplierReturnsList.filter((ret) => {
                     const matchSearch =
@@ -2490,8 +2904,9 @@ export function WorkshopTab({
                       (ret.reason && ret.reason.toLowerCase().includes(returnSearchQuery.toLowerCase()));
                     const matchBranch = isMatchGlobalBranch(ret.warehouseName);
                     const matchStatus = returnStatusFilter === 'all' || ret.status === returnStatusFilter;
+                    const matchWarehouse = returnWarehouseFilter === 'all' || ret.warehouseName === returnWarehouseFilter;
                     const matchDate = checkDateInRange(ret.returnDate, returnDateRange);
-                    return matchSearch && matchBranch && matchStatus && matchDate;
+                    return matchSearch && matchBranch && matchStatus && matchWarehouse && matchDate;
                   });
                   const totalGoodsSum = filteredReturns.reduce((acc, r) => acc + (r.totalGoods || 0), 0);
                   const totalDiscountSum = filteredReturns.reduce((acc, r) => acc + (r.invoiceDiscount || 0), 0);
@@ -2499,39 +2914,104 @@ export function WorkshopTab({
                   const totalPaidSum = filteredReturns.reduce((acc, r) => acc + (r.paidAmount || 0), 0);
 
                   return (
-                    <div className="space-y-0">
-                      {/* Top 1-Line Metric Summary Bar (Domaco POS Style) */}
-                      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 bg-slate-50 border border-slate-200 text-xs text-slate-700">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-slate-800">Tổng cộng:</span>
-                          <span className="bg-slate-200/70 text-slate-800 font-mono font-bold px-2 py-0.5 rounded text-[11px]">
-                            {filteredReturns.length} phiếu
-                          </span>
+                    <div className="flex flex-col lg:flex-row gap-4 items-start flex-1">
+                      {/* Left Filter Sidebar */}
+                      <AdminFilterSidebar
+                        title="Bộ lọc trả hàng"
+                        hasActiveFilters={Boolean(returnSearchQuery || returnStatusFilter !== 'all' || returnWarehouseFilter !== 'all' || returnDateRange)}
+                        onResetFilters={() => {
+                          setReturnSearchQuery('');
+                          setReturnStatusFilter('all');
+                          setReturnWarehouseFilter('all');
+                          setReturnDateRange(null);
+                          setSelectedReturnKeys([]);
+                        }}
+                      >
+                        {/* Trạng thái trả hàng */}
+                        <div className="space-y-1.5">
+                          <label className="font-semibold text-slate-800 text-xs block">Trạng thái phiếu</label>
+                          <Select
+                            value={returnStatusFilter}
+                            onChange={(v) => setReturnStatusFilter(v)}
+                            className="w-full text-xs"
+                            size="small"
+                            options={[
+                              { value: 'all', label: 'Tất cả trạng thái' },
+                              { value: 'completed', label: 'Đã trả hàng' },
+                              { value: 'draft', label: 'Phiếu tạm' },
+                            ]}
+                          />
                         </div>
-                        <div className="flex flex-wrap items-center gap-5 sm:gap-7">
-                          <div>
-                            <span className="text-slate-500 mr-1.5">Tổng tiền hàng:</span>
-                            <span className="font-mono font-bold text-slate-900">{totalGoodsSum.toLocaleString('vi-VN')} đ</span>
-                          </div>
-                          <div>
-                            <span className="text-slate-500 mr-1.5">Giảm giá:</span>
-                            <span className="font-mono font-medium text-slate-600">{totalDiscountSum.toLocaleString('vi-VN')} đ</span>
-                          </div>
-                          <div>
-                            <span className="text-rose-600 mr-1.5 font-semibold">NCC cần trả:</span>
-                            <span className="font-mono font-bold text-rose-700">{totalRefundSum.toLocaleString('vi-VN')} đ</span>
-                          </div>
-                          <div>
-                            <span className="text-emerald-600 mr-1.5 font-semibold">NCC đã trả:</span>
-                            <span className="font-mono font-bold text-emerald-700">{totalPaidSum.toLocaleString('vi-VN')} đ</span>
-                          </div>
-                        </div>
-                      </div>
 
-                      <AdminDataTable
-                        dataSource={filteredReturns}
-                        rowKey="id"
-                        scroll={{ x: 2200 }}
+                        {/* Kho xuất trả */}
+                        <div className="space-y-1.5 pt-2 border-t border-slate-100">
+                          <label className="font-semibold text-slate-800 text-xs block">Kho xuất trả</label>
+                          <Select
+                            value={returnWarehouseFilter}
+                            onChange={(v) => setReturnWarehouseFilter(v)}
+                            className="w-full text-xs"
+                            size="small"
+                            options={[
+                              { value: 'all', label: 'Tất cả kho' },
+                              ...availableBranchWarehouses.map((w) => ({ value: w.name, label: w.name })),
+                            ]}
+                          />
+                        </div>
+
+                        {/* Thời gian xuất trả */}
+                        <div className="space-y-1.5 pt-2 border-t border-slate-100">
+                          <label className="font-semibold text-slate-800 text-xs block">Thời gian trả</label>
+                          <PosDateFilter
+                            value={returnDateRange}
+                            onChange={(range) => setReturnDateRange(range)}
+                          />
+                        </div>
+
+                        {/* Summary Card */}
+                        <AdminSidebarSummary
+                          title="Thống kê trả hàng"
+                          className="mt-3"
+                          items={[
+                            { label: 'Tổng số phiếu', value: `${filteredReturns.length} phiếu` },
+                            { label: 'Tổng tiền hàng', value: `${totalGoodsSum.toLocaleString('vi-VN')} đ`, color: 'primary' },
+                            { label: 'NCC cần hoàn', value: `${totalRefundSum.toLocaleString('vi-VN')} đ`, color: 'danger' },
+                            { label: 'NCC đã trả', value: `${totalPaidSum.toLocaleString('vi-VN')} đ`, color: 'success' },
+                          ]}
+                        />
+                      </AdminFilterSidebar>
+
+                      {/* Right Main Table */}
+                      <div className="min-w-0 flex-1 w-full">
+                        <AdminDataTable
+                          enableSelectionToolbar
+                          selectedRowKeys={selectedReturnKeys}
+                          onSelectionChange={(keys) => setSelectedReturnKeys(keys)}
+                          titleText="Quản lý trả hàng"
+                          totalCount={filteredReturns.length}
+                          countUnit="phiếu"
+                          onCreateNew={handleOpenCreateReturn}
+                          createButtonText="Trả hàng"
+                          onCopySelected={handleCopySelectedReturn}
+                          onEditSelected={handleEditSelectedReturn}
+                          onDeleteSelected={handleDeleteSelectedReturns}
+                          deleteConfirmTitle={`Xóa ${selectedReturnKeys.length} phiếu trả hàng đã chọn?`}
+                          searchValue={returnSearchQuery}
+                          onSearchChange={(val) => setReturnSearchQuery(val)}
+                          searchPlaceholder="Theo mã phiếu trả (#TH-), mã nhập (#PN-), NCC..."
+                          extraHeaderActions={
+                            <>
+                              <Button
+                                icon={<DownloadOutlined />}
+                                onClick={handleExportReturnsExcel}
+                                className="!h-8 px-2.5 rounded-lg border-slate-300 bg-white text-slate-700 text-xs shadow-xs inline-flex items-center justify-center hover:text-[#784e34]"
+                                title="Xuất Excel"
+                              >
+                                Xuất Excel
+                              </Button>
+                            </>
+                          }
+                          dataSource={filteredReturns}
+                          rowKey="id"
                         onRow={(record) => {
                           const isExp = expandedReturnRowKeys.includes(record.id);
                           return {
@@ -2607,9 +3087,30 @@ export function WorkshopTab({
                                           <tbody className="divide-y divide-slate-100">
                                             <tr className="hover:bg-slate-50/50">
                                               <td className="px-3 py-2.5 text-center text-slate-400 font-mono">1</td>
-                                              <td className="px-3 py-2.5 font-mono text-rose-700 font-medium">{ret.code}</td>
+                                              <td className="px-3 py-2.5 font-mono text-rose-700 font-medium">
+                                                <span
+                                                  className="cursor-pointer hover:underline"
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (onNavigateToProduct) onNavigateToProduct(ret.itemName);
+                                                  }}
+                                                  title={`Xem chi tiết sản phẩm "${ret.itemName}"`}
+                                                >
+                                                  {ret.code}
+                                                </span>
+                                              </td>
                                               <td className="px-3 py-2.5 font-medium text-slate-900">
-                                                <div>{ret.itemName}</div>
+                                                <div
+                                                  className="cursor-pointer hover:text-rose-700 hover:underline inline-flex items-center gap-1 group"
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (onNavigateToProduct) onNavigateToProduct(ret.itemName);
+                                                  }}
+                                                  title={`Xem chi tiết sản phẩm "${ret.itemName}" trong kho`}
+                                                >
+                                                  <span>{ret.itemName}</span>
+                                                  <span className="text-[10px] text-slate-400 group-hover:text-rose-700">↗</span>
+                                                </div>
                                               </td>
                                               <td className="px-3 py-2.5 text-center text-slate-600">{ret.unit}</td>
                                               <td className="px-3 py-2.5 text-right font-mono font-bold text-slate-900">{ret.quantity}</td>
@@ -2943,6 +3444,7 @@ export function WorkshopTab({
                         ]}
                       />
                     </div>
+                  </div>
                   );
                 })()}
               </div>
@@ -2950,1106 +3452,822 @@ export function WorkshopTab({
 
             {/* SUB-TAB: TRẢ HÀNG CHO NHÀ CUNG CẤP (DOMACO POS PURCHASE RETURN ENTRY MODE) */}
             {warehouseSubTab === 'returns' && returnViewMode === 'create' && (
-              <div className="space-y-4">
-                {/* Header Top Bar */}
-                <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-none shadow-xs border border-slate-200">
-                  <div className="flex items-center gap-3 flex-1 min-w-[280px]">
-                    <Button
-                      icon={<ArrowLeftOutlined />}
-                      onClick={() => setReturnViewMode('list')}
-                      className="h-9 w-9 rounded-lg text-slate-700 hover:!bg-slate-100 hover:!text-rose-700 flex items-center justify-center"
-                      title="Quay lại danh sách phiếu trả hàng (giữ nháp)"
-                    />
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h1 className="m-0 shrink-0 text-sm font-bold text-slate-950">
-                          Lập Phiếu Trả Hàng Cho NCC
-                        </h1>
-                        <span className="font-mono text-xs font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded">
-                          {returnCode || '#TH-2026-NEW'}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Product / Slip Search Input with Dropdown Popover */}
-                    <div className="relative min-w-0 max-w-[500px] flex-1">
-                      <AdminSearchInput
-                        placeholder="Tìm hàng hóa theo mã, tên, mã phiếu nhập gốc (#PN-)..."
-                        value={returnSearchProduct}
-                        onChange={(val) => {
-                          setReturnSearchProduct(val);
-                          setShowReturnProductPopover(val.trim().length > 0);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Escape') setShowReturnProductPopover(false);
-                        }}
-                        sizeVariant="sm"
-                      />
-
-                      {showReturnProductPopover && returnSearchProduct.trim() !== '' && (
-                        <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-80 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-2xl">
-                          <div className="flex items-center justify-between px-2 py-1 mb-1 border-b border-slate-100 text-[11px] text-slate-500 font-medium">
-                            <span>Kết quả tìm kiếm cho &quot;{returnSearchProduct}&quot;</span>
-                            <button
-                              type="button"
-                              onClick={() => setShowReturnProductPopover(false)}
-                              className="text-slate-400 hover:text-slate-700 border-none bg-transparent cursor-pointer"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                          {/* Search matching import slips */}
-                          {importsList
-                            .filter(
-                              (i) =>
-                                i.code.toLowerCase().includes(returnSearchProduct.toLowerCase()) ||
-                                i.itemName.toLowerCase().includes(returnSearchProduct.toLowerCase()) ||
-                                i.supplier.toLowerCase().includes(returnSearchProduct.toLowerCase())
-                            )
-                            .map((imp) => (
-                              <button
-                                key={imp.id}
-                                type="button"
-                                onClick={() => {
-                                  setReturnSourceCode(imp.code);
-                                  setReturnSupplier(imp.supplier);
-                                  setReturnWarehouse(imp.warehouseName);
-                                  setReturnEntryLines((prev) => [
-                                    ...prev,
-                                    {
-                                      id: `line_ret_${Date.now()}_${imp.id}`,
-                                      code: imp.code,
-                                      name: imp.itemName,
-                                      spec: imp.spec || '',
-                                      unit: imp.unit || 'bộ',
-                                      quantity: 1,
-                                      purchasePrice: imp.unitPrice || imp.totalValue || 0,
-                                      returnPrice: imp.unitPrice || imp.totalValue || 0,
-                                      total: imp.unitPrice || imp.totalValue || 0,
-                                      reason: 'Lỗi quy cách / Kiểm định không đạt KCS',
-                                    },
-                                  ]);
-                                  message.success(`Đã tự động nạp mặt hàng từ phiếu nhập ${imp.code}!`);
-                                  setReturnSearchProduct('');
-                                  setShowReturnProductPopover(false);
-                                }}
-                                className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-lg p-2 text-left hover:bg-rose-50/50 transition-colors border-none bg-transparent"
-                              >
-                                <div className="min-w-0 flex-1">
-                                  <div className="truncate text-xs font-medium text-slate-900">
-                                    <span className="font-mono text-rose-700 mr-1.5">{imp.code}</span>
-                                    {imp.itemName}
-                                  </div>
-                                  <div className="text-[11px] text-slate-500">
-                                    NCC: {imp.supplier} | Kho: {imp.warehouseName}
-                                  </div>
-                                </div>
-                                <div className="shrink-0 text-right">
-                                  <span className="text-xs font-bold text-rose-700">
-                                    {(imp.totalValue || 0).toLocaleString('vi-VN')} đ
-                                  </span>
-                                </div>
-                              </button>
-                            ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    {returnEntryLines.length > 0 && (
-                      <>
-                        <Button
-                          size="small"
-                          icon={<FileExcelOutlined />}
-                          onClick={handleExportCreateReturnLinesExcel}
-                          className="h-9 px-3 text-xs font-medium rounded-lg border-emerald-600 text-emerald-700 bg-emerald-50/50 hover:!bg-emerald-100 hover:!border-emerald-700"
-                        >
-                          Xuất Excel chi tiết
-                        </Button>
-                        <Popconfirm
-                          title="Xóa tất cả mặt hàng xuất trả?"
-                          onConfirm={() => {
-                            setReturnEntryLines([]);
-                            message.info('Đã xóa danh sách mặt hàng trả!');
-                          }}
-                          okText="Xóa hết"
-                          cancelText="Hủy"
-                          okButtonProps={{ danger: true }}
-                        >
-                          <Button
-                            size="small"
-                            danger
-                            icon={<DeleteOutlined />}
-                            className="h-9 px-3 text-xs font-medium rounded-lg"
-                          >
-                            Xóa trắng ({returnEntryLines.length})
-                          </Button>
-                        </Popconfirm>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {/* 2-Column Domaco Layout */}
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
-                  {/* Left Column: Return Line Items (col-span-8) */}
-                  <div className="lg:col-span-8 bg-white p-4 rounded-none shadow-xs border border-slate-200 space-y-4">
-                    <div className="flex items-center justify-between border-b border-slate-200 pb-2.5">
-                      <div className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                        <span>Danh sách hàng hóa hoàn trả NCC</span>
-                        <span className="bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full font-mono text-[11px]">
-                          {returnEntryLines.length} mặt hàng
-                        </span>
-                      </div>
-                      <div className="text-xs text-slate-500 font-medium">
-                        Tổng SL trả: <strong className="text-slate-900 font-mono">{returnEntryLines.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0)}</strong>
-                      </div>
-                    </div>
-
-                    {returnEntryLines.length === 0 ? (
-                      /* Domaco POS Empty State */
-                      <div className="flex flex-col items-center justify-center py-20 text-center bg-slate-50/50 rounded-lg border border-dashed border-slate-300">
-                        <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center text-2xl mb-3">
-                          🔄
-                        </div>
-                        <div className="mb-1 text-sm font-medium text-slate-900">
-                          Chưa có sản phẩm nào trong phiếu trả hàng
-                        </div>
-                        <p className="text-xs text-slate-500 max-w-sm">
-                          Chọn phiếu nhập gốc hoặc tìm kiếm mặt hàng ở thanh tìm kiếm phía trên để lập phiếu xuất trả.
-                        </p>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="overflow-x-auto rounded-lg border border-slate-200">
-                          <table className="min-w-full text-xs">
-                            <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
-                              <tr>
-                                <th className="px-3 py-2.5 text-center w-10">STT</th>
-                                <th className="px-3 py-2.5 text-left w-28">Mã hàng</th>
-                                <th className="px-3 py-2.5 text-left">Tên sản phẩm</th>
-                                <th className="px-3 py-2.5 text-center w-20">ĐVT</th>
-                                <th className="px-3 py-2.5 text-right w-24">Số lượng</th>
-                                <th className="px-3 py-2.5 text-right w-32">Giá trả lại</th>
-                                <th className="px-3 py-2.5 text-right w-36">Thành tiền</th>
-                                <th className="px-3 py-2.5 text-center w-12">Xóa</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                              {returnEntryLines.map((line, idx) => (
-                                <tr key={line.id} className="hover:bg-rose-50/20 transition-colors">
-                                  <td className="px-3 py-2 text-center text-slate-400 font-mono">{idx + 1}</td>
-                                  <td className="px-3 py-2 font-mono font-medium text-rose-700">{line.code}</td>
-                                  <td className="px-3 py-2.5 font-medium text-slate-900">
-                                    {line.name}
-                                  </td>
-                                  <td className="px-3 py-2 text-center text-slate-600 font-medium">
-                                    {line.unit}
-                                  </td>
-                                  <td className="px-3 py-2 text-right">
-                                    <InputNumber
-                                      min={0.1}
-                                      step={1}
-                                      value={line.quantity}
-                                      onChange={(q) => {
-                                        const numQ = Number(q) || 1;
-                                        setReturnEntryLines((prev) =>
-                                          prev.map((l) =>
-                                            l.id === line.id
-                                              ? { ...l, quantity: numQ, total: numQ * l.returnPrice }
-                                              : l
-                                          )
-                                        );
-                                      }}
-                                      className="w-20 h-7 text-xs font-mono font-bold"
-                                    />
-                                  </td>
-                                  <td className="px-3 py-2 text-right">
-                                    <InputNumber
-                                      min={0}
-                                      value={line.returnPrice}
-                                      formatter={(val) => (val !== undefined && val !== null ? `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '')}
-                                      parser={(val) => (val ? Number(val.replace(/\$\s?|(,*)/g, '')) : 0) as any}
-                                      onChange={(p) => {
-                                        const numP = Number(p) || 0;
-                                        setReturnEntryLines((prev) =>
-                                          prev.map((l) =>
-                                            l.id === line.id
-                                              ? { ...l, returnPrice: numP, total: line.quantity * numP }
-                                              : l
-                                          )
-                                        );
-                                      }}
-                                      className="w-32 h-7 text-xs font-mono font-bold [&_input]:!text-right"
-                                    />
-                                  </td>
-                                  <td className="px-3 py-2 text-right font-mono font-bold text-rose-700">
-                                    {(line.total || line.quantity * line.returnPrice).toLocaleString('vi-VN')} đ
-                                  </td>
-                                  <td className="px-3 py-2 text-center">
-                                    <Button
-                                      size="small"
-                                      type="text"
-                                      danger
-                                      icon={<DeleteOutlined className="text-slate-400 hover:text-red-600" />}
-                                      onClick={() => {
-                                        setReturnEntryLines((prev) => prev.filter((l) => l.id !== line.id));
-                                      }}
-                                      className="w-7 h-7 flex items-center justify-center rounded hover:bg-red-50"
-                                    />
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-
-                        <div className="flex items-center justify-end pt-2">
-                          <span className="text-xs text-slate-500">
-                            Tổng giá trị hoàn trả: <strong className="text-sm font-mono text-rose-700 font-bold">
-                              {returnEntryLines.reduce((sum, item) => sum + (item.total || (item.quantity * item.returnPrice)), 0).toLocaleString('vi-VN')} đ
-                            </strong>
-                          </span>
-                        </div>
-                      </>
-                    )}
-                  </div>
-
-                  {/* Right Column: Metadata & Financial Calculation Sidebar (col-span-4) */}
-                  <div className="lg:col-span-4 bg-white p-4 rounded-none shadow-xs border border-slate-200 space-y-4">
-                    {/* Meta Header Box */}
-                    <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                      <div className="flex items-center gap-2">
-                        <Avatar size="small" icon={<UserOutlined />} className="bg-rose-700" />
-                        <div>
-                          <div className="text-xs font-bold text-slate-900">{returnStaffName || user?.name || 'Nguyễn Văn Nam (KCS)'}</div>
-                          <div className="text-[11px] text-slate-400">Người lập phiếu trả hàng</div>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-xs font-mono font-medium text-slate-700">{returnDate || new Date().toLocaleDateString('vi-VN')}</div>
-                        <div className="text-[11px] text-slate-400">Thời gian tạo</div>
-                      </div>
-                    </div>
-
-                    {/* Basic Form Controls */}
-                    <div className="space-y-3">
-                      <div>
-                        <label className="text-xs font-semibold text-slate-800 block mb-1">Phiếu nhập gốc (Liên kết)</label>
-                        <Select
-                          value={returnSourceCode}
-                          onChange={(val) => {
-                            setReturnSourceCode(val);
-                            const matched = importsList.find((i) => i.code === val);
-                            if (matched) {
-                              setReturnSupplier(matched.supplier);
-                              setReturnWarehouse(matched.warehouseName);
-                              setReturnEntryLines([
-                                {
-                                  id: `line_ret_${Date.now()}_${matched.id}`,
-                                  code: matched.code,
-                                  name: matched.itemName,
-                                  spec: matched.spec || '',
-                                  unit: matched.unit || 'bộ',
-                                  quantity: matched.quantity || 1,
-                                  purchasePrice: matched.unitPrice || matched.totalValue || 0,
-                                  returnPrice: matched.unitPrice || matched.totalValue || 0,
-                                  total: matched.totalValue || (matched.unitPrice ? matched.unitPrice * matched.quantity : 0),
-                                  reason: 'Lỗi quy cách / Kiểm định không đạt tiêu chuẩn',
-                                },
-                              ]);
-                              message.success(`Đã tự động điền thông tin từ phiếu nhập ${matched.code}`);
-                            }
-                          }}
-                          placeholder="Chọn phiếu nhập gốc để trả hàng..."
-                          className="w-full h-9 text-xs"
-                          allowClear
-                        >
-                          {importsList.map((i) => (
-                            <Option key={i.id} value={i.code}>
-                              <span className="font-mono">{i.code}</span> - {i.itemName} ({i.supplier})
-                            </Option>
-                          ))}
-                        </Select>
-                      </div>
-
-                      <div>
-                        <label className="text-xs font-semibold text-slate-800 block mb-1">Nhà cung cấp nhận hàng</label>
-                        <Select
-                          value={returnSupplier}
-                          onChange={(val) => setReturnSupplier(val)}
-                          placeholder="Chọn nhà cung cấp..."
-                          className="w-full h-9 text-xs"
-                          showSearch
-                          optionFilterProp="children"
-                        >
-                          {suppliersList.map((s) => (
-                            <Option key={s.id} value={s.name}>
-                              {s.name} ({s.code})
-                            </Option>
-                          ))}
-                        </Select>
-                      </div>
-
-                      <div>
-                        <label className="text-xs font-semibold text-slate-800 block mb-1">Kho xuất trả hàng</label>
-                        <Select
-                          value={returnWarehouse}
-                          onChange={(val) => setReturnWarehouse(val)}
-                          placeholder="Chọn kho xuất trả..."
-                          className="w-full h-9 text-xs"
-                          showSearch
-                          optionFilterProp="children"
-                        >
-                          {warehousesList.map((w) => (
-                            <Option key={w.id} value={w.name}>
-                              {w.name}
-                            </Option>
-                          ))}
-                        </Select>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-xs font-semibold text-slate-800 block mb-1">Lý do hoàn trả</label>
-                          <Select
-                            value={returnReason}
-                            onChange={(r) => setReturnReason(r)}
-                            className="w-full h-8 text-xs"
-                            options={[
-                              { value: 'Lỗi quy cách / Kiểm định không đạt tiêu chuẩn', label: 'Lỗi quy cách / KCS' },
-                              { value: 'Giao sai mẫu mã / vật tư', label: 'Sai mẫu mã' },
-                              { value: 'Nứt vỡ / trầy xước trong vận chuyển', label: 'Hỏng do vận chuyển' },
-                              { value: 'Hàng thừa sau khi nghiệm thu công trình', label: 'Hàng thừa hoàn lại' },
-                            ]}
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs font-semibold text-slate-800 block mb-1">Phương án xử lý</label>
-                          <Select
-                            value={returnSolution}
-                            onChange={(s) => setReturnSolution(s)}
-                            className="w-full h-8 text-xs"
-                            options={[
-                              { value: 'Đã hoàn bù lô mới', label: 'Hoàn bù lô mới' },
-                              { value: 'NCC đã hoàn lại tiền', label: 'NCC hoàn lại tiền' },
-                              { value: 'Cấn trừ vào công nợ', label: 'Cấn trừ công nợ' },
-                              { value: 'Đổi mặt hàng tương đương', label: 'Đổi hàng tương đương' },
-                            ]}
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Financial Calculations Box */}
-                    <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-2.5 text-xs">
-                      {(() => {
-                        const totalGoods = returnEntryLines.reduce((sum, item) => sum + (item.total || (item.quantity * item.returnPrice)), 0);
-                        const refund = Math.max(0, totalGoods - (returnDiscount || 0));
-                        const paid = returnPaidAmount !== undefined ? Number(returnPaidAmount) : refund;
-                        const remaining = Math.max(0, refund - paid);
-
-                        return (
-                          <>
-                            <div className="flex items-center justify-between">
-                              <span className="text-slate-600 font-medium">Tổng tiền hàng ({returnEntryLines.length} món)</span>
-                              <span className="font-mono font-bold text-slate-900">{totalGoods.toLocaleString('vi-VN')} đ</span>
-                            </div>
-
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-slate-600 font-medium shrink-0">Giảm giá / Phí hoàn hàng</span>
-                              <InputNumber
-                                min={0}
-                                value={returnDiscount}
-                                formatter={(val) => (val !== undefined && val !== null ? `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '')}
-                                parser={(val) => (val ? Number(val.replace(/\$\s?|(,*)/g, '')) : 0) as any}
-                                onChange={(val) => setReturnDiscount(Number(val) || 0)}
-                                className="w-36 h-7 text-xs font-mono [&_input]:!text-right"
-                              />
-                            </div>
-
-                            <div className="flex items-center justify-between pt-2 border-t border-slate-200">
-                              <span className="font-bold text-slate-900 text-xs">NCC cần hoàn lại</span>
-                              <span className="font-mono font-bold text-rose-700 text-sm">{refund.toLocaleString('vi-VN')} đ</span>
-                            </div>
-
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-slate-700 font-semibold shrink-0">Tiền NCC đã trả</span>
-                              <InputNumber
-                                min={0}
-                                placeholder={refund.toLocaleString('vi-VN')}
-                                value={returnPaidAmount}
-                                formatter={(val) => (val !== undefined && val !== null ? `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '')}
-                                parser={(val) => (val ? Number(val.replace(/\$\s?|(,*)/g, '')) : 0) as any}
-                                onChange={(val) => setReturnPaidAmount(val !== null && val !== undefined ? Number(val) : undefined)}
-                                className="w-36 h-7 text-xs font-mono font-bold text-emerald-700 [&_input]:!text-right"
-                              />
-                            </div>
-
-                            <div className="flex items-center justify-between">
-                              <span className="text-slate-600 font-medium">Còn nợ hoàn tiền</span>
-                              <span className={`font-mono font-bold ${remaining > 0 ? 'text-rose-600' : 'text-slate-500'}`}>
-                                {remaining > 0 ? `${remaining.toLocaleString('vi-VN')} đ` : '0 đ'}
-                              </span>
-                            </div>
-
-                            <div className="pt-2 border-t border-slate-200">
-                              <label className="text-[11px] font-semibold text-slate-600 block mb-1">Hình thức hoàn tiền</label>
-                              <Select
-                                value={returnPaymentMethod}
-                                onChange={(m) => setReturnPaymentMethod(m)}
-                                className="w-full h-8 text-xs"
-                                options={[
-                                  { value: 'Chuyển khoản', label: 'Chuyển khoản ngân hàng' },
-                                  { value: 'Tiền mặt', label: 'Tiền mặt' },
-                                  { value: 'Cấn trừ công nợ', label: 'Cấn trừ vào công nợ tiếp theo' },
-                                ]}
-                              />
-                            </div>
-                          </>
-                        );
-                      })()}
-                    </div>
-
-                    {/* Note */}
-                    <div>
-                      <label className="text-xs font-semibold text-slate-800 block mb-1">Ghi chú phiếu trả hàng</label>
-                      <Input.TextArea
-                        value={returnNote}
-                        onChange={(e) => setReturnNote(e.target.value)}
-                        placeholder="VD: Biên bản kiểm định chất lượng kèm theo..."
-                        rows={2}
-                        className="text-xs rounded-lg"
-                      />
-                    </div>
-
-                    {/* Sticky Bottom Actions */}
-                    <div className="pt-3 border-t border-slate-200 space-y-2">
-                      <div className="grid grid-cols-2 gap-2">
-                        <Button
-                          onClick={() => setReturnViewMode('list')}
-                          className="h-10 text-xs font-semibold rounded-lg text-slate-700 hover:!border-slate-400"
-                        >
-                          Bỏ qua (Giữ nháp)
-                        </Button>
-                        <Button
-                          onClick={() => handleSaveReturnSlip('draft')}
-                          className="h-10 text-xs font-bold rounded-lg border-amber-400 text-amber-800 bg-amber-50 hover:!bg-amber-100"
-                        >
-                          📝 Lưu tạm
-                        </Button>
-                      </div>
-                      <Button
-                        type="primary"
-                        onClick={() => handleSaveReturnSlip('completed')}
-                        className="w-full h-11 text-xs font-bold rounded-lg bg-rose-700 hover:!bg-rose-800 text-white border-none shadow-sm"
-                      >
-                        ✓ Xác nhận trả hàng
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <SupplierReturnCreate
+                returnCode={returnCode}
+                returnDate={returnDate}
+                returnSourceCode={returnSourceCode}
+                setReturnSourceCode={setReturnSourceCode}
+                returnSupplier={returnSupplier}
+                setReturnSupplier={setReturnSupplier}
+                returnWarehouse={returnWarehouse}
+                setReturnWarehouse={setReturnWarehouse}
+                returnStaffName={returnStaffName}
+                setReturnStaffName={setReturnStaffName}
+                returnReason={returnReason}
+                setReturnReason={setReturnReason}
+                returnSolution={returnSolution}
+                setReturnSolution={setReturnSolution}
+                returnDiscount={returnDiscount}
+                setReturnDiscount={setReturnDiscount}
+                returnPaidAmount={returnPaidAmount}
+                setReturnPaidAmount={setReturnPaidAmount}
+                returnPaymentMethod={returnPaymentMethod}
+                setReturnPaymentMethod={setReturnPaymentMethod}
+                returnNote={returnNote}
+                setReturnNote={setReturnNote}
+                returnEntryLines={returnEntryLines}
+                setReturnEntryLines={setReturnEntryLines}
+                returnSearchProduct={returnSearchProduct}
+                setReturnSearchProduct={setReturnSearchProduct}
+                allProducts={allAvailableProducts}
+                importsList={importsList}
+                availableBranchSuppliers={availableBranchSuppliers}
+                availableBranchWarehouses={availableBranchWarehouses}
+                isMatchGlobalBranch={isMatchGlobalBranch}
+                onNavigateToProduct={onNavigateToProduct}
+                onBack={() => setReturnViewMode('list')}
+                onSaveDraft={() => handleSaveReturnSlip('draft')}
+                onSubmit={() => handleSaveReturnSlip('completed')}
+                onOpenCreateSupplier={handleOpenCreateSupplier}
+                onExportExcel={handleExportCreateReturnLinesExcel}
+                user={user}
+              />
             )}
+            
 
             {/* SUB-TAB 3: KIỂM KÊ KHO (DOMACO POS / ACCOUNTING STOCKTAKE) */}
             {warehouseSubTab === 'stocktake' && stocktakeViewMode === 'list' && (
-              <div className="space-y-4">
-                {/* Search & Action Bar (Domaco POS Style) */}
-                <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-none shadow-xs">
-                  <div className="flex flex-1 items-center gap-2.5 min-w-[280px] max-w-md">
-                    <AdminSearchInput
-                      placeholder="Theo mã kiểm kho, tên phiên, người tạo..."
-                      value={auditSearchQuery}
-                      onChange={(val) => setAuditSearchQuery(val)}
-                    />
-                  </div>
+              <div className="space-y-4 flex-1 flex flex-col h-full">
+                {(() => {
+                  const filteredAudits = auditSlips.filter((s) => {
+                    const matchBranch = isMatchGlobalBranch(s.scopeLabel) || isMatchGlobalBranch(s.title);
+                    const matchSearch =
+                      !auditSearchQuery ||
+                      s.code.toLowerCase().includes(auditSearchQuery.toLowerCase()) ||
+                      s.title.toLowerCase().includes(auditSearchQuery.toLowerCase()) ||
+                      s.creator.toLowerCase().includes(auditSearchQuery.toLowerCase());
+                    const matchStatus = auditStatusFilter === 'all' || s.status === auditStatusFilter;
+                    const matchWarehouse = auditWarehouseFilter === 'all' || s.scopeLabel === auditWarehouseFilter;
+                    const matchDate = checkDateInRange(s.createdAt, auditDateRange);
+                    return matchBranch && matchSearch && matchStatus && matchWarehouse && matchDate;
+                  });
+                  const completedCount = filteredAudits.filter((s) => s.status === 'completed').length;
+                  const inProgressCount = filteredAudits.filter((s) => s.status !== 'completed').length;
 
-                  <div className="flex items-center gap-2.5 flex-wrap">
-                    {/* Date Filter (Domaco POS Architecture) */}
-                    <PosDateFilter
-                      value={auditDateRange}
-                      onChange={(range) => setAuditDateRange(range)}
-                    />
+                  return (
+                    <div className="flex flex-col lg:flex-row gap-4 items-start flex-1">
+                      {/* Left Filter Sidebar */}
+                      <AdminFilterSidebar
+                        title="Bộ lọc kiểm kho"
+                        hasActiveFilters={Boolean(auditSearchQuery || auditStatusFilter !== 'all' || auditWarehouseFilter !== 'all' || auditDateRange)}
+                        onResetFilters={() => {
+                          setAuditSearchQuery('');
+                          setAuditStatusFilter('all');
+                          setAuditWarehouseFilter('all');
+                          setAuditDateRange(null);
+                          setSelectedAuditKeys([]);
+                        }}
+                      >
+                        {/* Trạng thái kiểm kê */}
+                        <div className="space-y-1.5">
+                          <label className="font-semibold text-slate-800 text-xs block">Trạng thái phiếu</label>
+                          <Select
+                            value={auditStatusFilter}
+                            onChange={(v) => setAuditStatusFilter(v)}
+                            className="w-full text-xs"
+                            size="small"
+                            options={[
+                              { value: 'all', label: 'Tất cả trạng thái' },
+                              { value: 'completed', label: 'Đã hoàn tất 100%' },
+                              { value: 'in_progress', label: 'Đang kiểm đếm' },
+                            ]}
+                          />
+                        </div>
 
-                    <Button
-                      icon={<ReloadOutlined />}
-                      onClick={() => {
-                        setAuditSearchQuery('');
-                        setAuditDateRange(null);
-                        message.success('Đã làm mới danh sách phiếu kiểm!');
-                      }}
-                      className="h-10 rounded-lg text-sm font-normal text-slate-700 hover:text-[#784e34]"
-                    >
-                      Làm mới
-                    </Button>
-                    <Button
-                      icon={<DownloadOutlined />}
-                      onClick={() => message.success('Đã xuất danh sách phiếu kiểm ra Excel!')}
-                      className="h-10 rounded-lg text-sm font-normal text-slate-700 hover:text-[#784e34]"
-                    >
-                      Xuất Excel
-                    </Button>
-                  </div>
-                </div>
+                        {/* Phạm vi kho */}
+                        <div className="space-y-1.5 pt-2 border-t border-slate-100">
+                          <label className="font-semibold text-slate-800 text-xs block">Kho kiểm kê</label>
+                          <Select
+                            value={auditWarehouseFilter}
+                            onChange={(v) => setAuditWarehouseFilter(v)}
+                            className="w-full text-xs"
+                            size="small"
+                            options={[
+                              { value: 'all', label: 'Tất cả kho' },
+                              ...availableBranchWarehouses.map((w) => ({ value: w.name, label: w.name })),
+                            ]}
+                          />
+                        </div>
 
-                <div className="bg-white rounded-none shadow-xs border border-slate-200/80 overflow-hidden">
-                  <Table
-                    dataSource={auditSlips.filter((s) => {
-                      const matchBranch = isMatchGlobalBranch(s.scopeLabel) || isMatchGlobalBranch(s.title);
-                      const matchSearch =
-                        !auditSearchQuery ||
-                        s.code.toLowerCase().includes(auditSearchQuery.toLowerCase()) ||
-                        s.title.toLowerCase().includes(auditSearchQuery.toLowerCase()) ||
-                        s.creator.toLowerCase().includes(auditSearchQuery.toLowerCase());
-                      const matchDate = checkDateInRange(s.createdAt, auditDateRange);
-                      return matchBranch && matchSearch && matchDate;
-                    })}
-                    rowKey="id"
-                    pagination={false}
-                    className="[&_.ant-table-thead>tr>th]:!bg-slate-50/90 [&_.ant-table-thead>tr>th]:!text-slate-700 [&_.ant-table-thead>tr>th]:!font-medium [&_.ant-table-thead>tr>th]:!text-xs [&_.ant-table-thead>tr>th]:!py-3.5 [&_.ant-table-thead>tr>th]:!whitespace-nowrap [&_.ant-table-cell]:!py-3.5 [&_.ant-table-cell]:!text-sm"
-                    columns={[
-                      {
-                        title: 'Mã kiểm kho',
-                        dataIndex: 'code',
-                        key: 'code',
-                        width: 150,
-                        render: (c) => (
-                          <span className="font-mono font-semibold text-xs text-[#784e34] bg-[#784e34]/10 px-2.5 py-1 rounded whitespace-nowrap inline-block">
-                            {c}
-                          </span>
-                        ),
-                      },
-                      {
-                        title: 'Tên phiên kiểm kê',
-                        dataIndex: 'title',
-                        key: 'title',
-                        render: (t) => <span className="font-semibold text-xs text-slate-900 leading-normal">{t}</span>,
-                      },
-                      {
-                        title: 'Phạm vi kho',
-                        dataIndex: 'scopeLabel',
-                        key: 'scopeLabel',
-                        render: (s) => <span className="text-xs text-slate-600 font-normal">{s}</span>,
-                      },
-                      {
-                        title: 'Ngày kiểm',
-                        dataIndex: 'createdAt',
-                        key: 'createdAt',
-                        width: 130,
-                        render: (d) => <span className="font-mono text-xs text-slate-500 font-normal whitespace-nowrap">{d}</span>,
-                      },
-                      {
-                        title: 'Người chủ trì',
-                        dataIndex: 'creator',
-                        key: 'creator',
-                        render: (cr) => <span className="text-xs text-slate-700 font-normal">{cr}</span>,
-                      },
-                      {
-                        title: 'Trạng thái',
-                        dataIndex: 'status',
-                        key: 'status',
-                        align: 'center',
-                        width: 150,
-                        render: (s) =>
-                          s === 'completed' ? (
-                            <Tag color="green" className="font-normal text-xs px-2.5 py-1 rounded whitespace-nowrap">Đã hoàn tất 100%</Tag>
-                          ) : (
-                            <Tag color="processing" className="font-normal text-xs px-2.5 py-1 rounded whitespace-nowrap">Đang kiểm đếm</Tag>
-                          ),
-                      },
-                      {
-                        title: 'Thao tác',
-                        key: 'action',
-                        align: 'center',
-                        width: 90,
-                        render: (_, r) => (
-                          <Space size={4}>
-                            <Button
-                              icon={<EditOutlined className="text-base" />}
-                              size="small"
-                              type="text"
-                              onClick={() => handleOpenEditStocktake(r)}
-                              className="text-slate-600 hover:text-[#784e34] hover:bg-slate-100"
-                              title="Chỉnh sửa phiếu kiểm"
-                            />
-                            <Popconfirm
-                              title={`Xóa phiếu kiểm kê "${r.code}"?`}
-                              onConfirm={() => {
-                                setAuditSlips((prev) => prev.filter((s) => s.id !== r.id));
-                                message.success(`Đã xóa phiếu kiểm kê ${r.code} thành công!`);
-                              }}
-                              okText="Xóa"
-                              cancelText="Hủy"
-                              okButtonProps={{ danger: true }}
-                            >
+                        {/* Thời gian kiểm */}
+                        <div className="space-y-1.5 pt-2 border-t border-slate-100">
+                          <label className="font-semibold text-slate-800 text-xs block">Thời gian kiểm</label>
+                          <PosDateFilter
+                            value={auditDateRange}
+                            onChange={(range) => setAuditDateRange(range)}
+                          />
+                        </div>
+
+                        {/* Summary Card */}
+                        <AdminSidebarSummary
+                          title="Thống kê kiểm kê"
+                          className="mt-3"
+                          items={[
+                            { label: 'Tổng số phiếu', value: `${filteredAudits.length} phiếu` },
+                            { label: 'Đã hoàn tất', value: `${completedCount} phiếu`, color: 'success' },
+                            { label: 'Đang kiểm đếm', value: `${inProgressCount} phiếu`, color: 'primary' },
+                          ]}
+                        />
+                      </AdminFilterSidebar>
+
+                      {/* Right Main Table */}
+                      <div className="min-w-0 flex-1 w-full">
+                        <AdminDataTable
+                          enableSelectionToolbar
+                          selectedRowKeys={selectedAuditKeys}
+                          onSelectionChange={(keys) => setSelectedAuditKeys(keys)}
+                          titleText="Quản lý kiểm kho"
+                          totalCount={filteredAudits.length}
+                          countUnit="phiếu"
+                          onCreateNew={handleOpenCreateStocktake}
+                          createButtonText="Kiểm kho"
+                          onCopySelected={handleCopySelectedAudit}
+                          onEditSelected={handleEditSelectedAudit}
+                          onDeleteSelected={handleDeleteSelectedAudits}
+                          deleteConfirmTitle={`Xóa ${selectedAuditKeys.length} phiếu kiểm kho đã chọn?`}
+                          searchValue={auditSearchQuery}
+                          onSearchChange={(val) => setAuditSearchQuery(val)}
+                          searchPlaceholder="Tìm theo mã kiểm, tên phiên, người tạo..."
+                          extraHeaderActions={
+                            <>
                               <Button
-                                icon={<DeleteOutlined className="text-base" />}
-                                size="small"
-                                type="text"
-                                className="text-slate-400 hover:text-red-600 hover:bg-red-50"
-                                title="Xóa phiếu"
-                              />
-                            </Popconfirm>
-                          </Space>
-                        ),
-                      },
-                    ]}
-                  />
-                </div>
+                                icon={<ReloadOutlined />}
+                                onClick={handleRefreshAudits}
+                                className="!h-8 px-2.5 rounded-lg border-slate-300 bg-white text-slate-700 text-xs shadow-xs inline-flex items-center justify-center hover:text-[#784e34]"
+                                title="Làm mới"
+                              >
+                                Làm mới
+                              </Button>
+                              <Button
+                                icon={<DownloadOutlined />}
+                                onClick={() => {
+                                  const exportData = filteredAudits.map((a, idx) => ({
+                                    'STT': idx + 1,
+                                    'Mã kiểm kho': a.code,
+                                    'Tên phiên kiểm': a.title,
+                                    'Phạm vi kho': a.scopeLabel,
+                                    'Ngày kiểm': a.createdAt,
+                                    'Người chủ trì': a.creator,
+                                    'Trạng thái': a.status === 'completed' ? 'Đã hoàn tất 100%' : 'Đang kiểm đếm',
+                                    'Ghi chú': a.note || '',
+                                  }));
+                                  exportToExcel(exportData, 'Danh_sach_phieu_kiem_kho');
+                                  message.success('Đã xuất danh sách phiếu kiểm kho ra Excel!');
+                                }}
+                                className="!h-8 px-2.5 rounded-lg border-slate-300 bg-white text-slate-700 text-xs shadow-xs inline-flex items-center justify-center hover:text-[#784e34]"
+                                title="Xuất Excel"
+                              >
+                                Xuất Excel
+                              </Button>
+                            </>
+                          }
+                          dataSource={filteredAudits}
+                          rowKey="id"
+                          onRow={(record) => {
+                            const isExp = expandedAuditRowKeys.includes(record.id);
+                            return {
+                              onClick: () => {
+                                setExpandedAuditRowKeys(isExp ? [] : [record.id]);
+                                if (!isExp && !auditRowTabs[record.id]) {
+                                  setAuditRowTabs((prev) => ({ ...prev, [record.id]: 'items' }));
+                                }
+                              },
+                              className: `cursor-pointer transition-colors ${
+                                isExp
+                                  ? '!bg-[#004d40] text-white font-medium hover:!bg-[#004d40]'
+                                  : 'hover:!bg-slate-50'
+                              }`,
+                            };
+                          }}
+                          expandable={{
+                            expandedRowKeys: expandedAuditRowKeys,
+                            onExpand: (expanded, record) => {
+                              setExpandedAuditRowKeys(expanded ? [record.id] : []);
+                              if (expanded && !auditRowTabs[record.id]) {
+                                setAuditRowTabs((prev) => ({ ...prev, [record.id]: 'items' }));
+                              }
+                            },
+                            expandedRowRender: (slip) => {
+                              const currentTab = auditRowTabs[slip.id] || 'items';
+                              const setTab = (t: 'items' | 'info') => {
+                                setAuditRowTabs((prev) => ({ ...prev, [slip.id]: t }));
+                              };
+                              const itemsList: StockAuditItem[] =
+                                slip.items && slip.items.length > 0 ? slip.items : [];
+
+                              const totalItems = itemsList.length;
+                              const totalSystemQty = itemsList.reduce((acc, it) => acc + (it.systemQty || 0), 0);
+                              const totalActualQty = itemsList.reduce((acc, it) => acc + (it.actualQty || 0), 0);
+                              const diffQty = totalActualQty - totalSystemQty;
+                              const matchedCount = itemsList.filter(
+                                (it) => (it.actualQty || 0) === (it.systemQty || 0)
+                              ).length;
+                              const diffCount = itemsList.filter(
+                                (it) => (it.actualQty || 0) !== (it.systemQty || 0)
+                              ).length;
+
+                              return (
+                                <div
+                                  className="bg-white border-x border-b border-slate-200 shadow-sm overflow-hidden mb-2 text-slate-800"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  {/* 1. Header Tabs Strip (Domaco POS Style) */}
+                                  <div className="flex items-center gap-6 border-b border-slate-200 px-5 pt-3 bg-white overflow-x-auto">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setTab('items');
+                                      }}
+                                      className={`border-b-2 px-1 pb-2.5 text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
+                                        currentTab === 'items'
+                                          ? 'border-[#008080] text-[#008080]'
+                                          : 'border-transparent text-slate-600 hover:text-slate-900'
+                                      }`}
+                                    >
+                                      Hàng hóa kiểm kê ({itemsList.length})
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setTab('info');
+                                      }}
+                                      className={`border-b-2 px-1 pb-2.5 text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
+                                        currentTab === 'info'
+                                          ? 'border-[#008080] text-[#008080]'
+                                          : 'border-transparent text-slate-600 hover:text-slate-900'
+                                      }`}
+                                    >
+                                      Thông tin phiên kiểm
+                                    </button>
+                                  </div>
+
+                                  {/* 2. Tab Body */}
+                                  <div className="p-4 space-y-4">
+                                    {/* TAB 1: HÀNG HÓA KIỂM KÊ */}
+                                    {currentTab === 'items' && (
+                                      <div className="space-y-4">
+                                        {/* Table of items */}
+                                        <div className="overflow-x-auto border border-slate-200 bg-white">
+                                          <table className="min-w-full text-xs">
+                                            <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 font-semibold">
+                                              <tr>
+                                                <th className="px-3 py-2 text-center w-12">STT</th>
+                                                <th className="px-3 py-2 text-left w-32">Mã hàng</th>
+                                                <th className="px-3 py-2 text-left">Tên sản phẩm</th>
+                                                <th className="px-3 py-2 text-center w-20">ĐVT</th>
+                                                <th className="px-3 py-2 text-right w-28">Tồn sổ sách</th>
+                                                <th className="px-3 py-2 text-right w-28">Thực tế</th>
+                                                <th className="px-3 py-2 text-right w-28">Chênh lệch</th>
+                                                <th className="px-3 py-2 text-center w-32">Trạng thái</th>
+                                                <th className="px-3 py-2 text-left">Ghi chú / Vị trí</th>
+                                              </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                              {itemsList.map((item, idx) => {
+                                                const diff = (item.actualQty ?? 0) - (item.systemQty ?? 0);
+                                                return (
+                                                  <tr key={item.id || idx} className="hover:bg-slate-50/70">
+                                                    <td className="px-3 py-2.5 text-center font-mono text-slate-400">
+                                                      {idx + 1}
+                                                    </td>
+                                                    <td className="px-3 py-2.5 font-mono text-[#008080] font-medium">
+                                                      <span
+                                                        className="cursor-pointer hover:underline inline-flex items-center gap-1 group"
+                                                        onClick={(e) => {
+                                                          e.stopPropagation();
+                                                          if (onNavigateToProduct) onNavigateToProduct(item.code || item.name);
+                                                        }}
+                                                        title={`Xem chi tiết sản phẩm "${item.name}" trong danh mục`}
+                                                      >
+                                                        <span>{item.code}</span>
+                                                        <span className="text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">↗</span>
+                                                      </span>
+                                                    </td>
+                                                    <td className="px-3 py-2.5 font-medium text-slate-900">
+                                                      <span
+                                                        className="cursor-pointer hover:text-[#008080] hover:underline"
+                                                        onClick={(e) => {
+                                                          e.stopPropagation();
+                                                          if (onNavigateToProduct) onNavigateToProduct(item.code || item.name);
+                                                        }}
+                                                        title={`Xem chi tiết sản phẩm "${item.name}"`}
+                                                      >
+                                                        {item.name}
+                                                      </span>
+                                                    </td>
+                                                    <td className="px-3 py-2.5 text-center text-slate-600">
+                                                      {item.unit || 'Cái'}
+                                                    </td>
+                                                    <td className="px-3 py-2.5 text-right font-mono text-slate-700">
+                                                      {item.systemQty ?? 0}
+                                                    </td>
+                                                    <td className="px-3 py-2.5 text-right font-mono font-bold text-slate-900">
+                                                      {item.actualQty ?? 0}
+                                                    </td>
+                                                    <td className="px-3 py-2.5 text-right font-mono font-bold">
+                                                      {diff === 0 ? (
+                                                        <span className="text-slate-500">0</span>
+                                                      ) : diff > 0 ? (
+                                                        <span className="text-emerald-600">+{diff}</span>
+                                                      ) : (
+                                                        <span className="text-rose-600">{diff}</span>
+                                                      )}
+                                                    </td>
+                                                    <td className="px-3 py-2.5 text-center">
+                                                      {diff === 0 ? (
+                                                        <Tag color="green" className="m-0 text-[11px] font-normal border-none">
+                                                          Khớp 100%
+                                                        </Tag>
+                                                      ) : diff > 0 ? (
+                                                        <Tag color="cyan" className="m-0 text-[11px] font-normal border-none">
+                                                          Thừa (+{diff})
+                                                        </Tag>
+                                                      ) : (
+                                                        <Tag color="red" className="m-0 text-[11px] font-normal border-none">
+                                                          Thiếu ({diff})
+                                                        </Tag>
+                                                      )}
+                                                    </td>
+                                                    <td className="px-3 py-2.5 text-slate-500">
+                                                      {item.location || item.qualityNote || '---'}
+                                                    </td>
+                                                  </tr>
+                                                );
+                                              })}
+                                            </tbody>
+                                          </table>
+                                        </div>
+
+                                        {/* Bottom 2-Column: Ghi chú (Left) & Summary (Right) */}
+                                        <div className="flex flex-col md:flex-row gap-6 items-start justify-between pt-1">
+                                          {/* Left: Ghi chú box */}
+                                          <div className="flex-1 w-full">
+                                            <label className="text-xs font-semibold text-slate-600 block mb-1.5">
+                                              Ghi chú phiên kiểm
+                                            </label>
+                                            <Input.TextArea
+                                              rows={4}
+                                              defaultValue={slip.note || ''}
+                                              placeholder="Ghi chú đợt kiểm kê kho..."
+                                              className="w-full text-xs rounded-none border border-slate-200 bg-white p-2.5 text-slate-700 resize-none hover:border-slate-300 focus:border-[#008080]"
+                                              onClick={(e) => e.stopPropagation()}
+                                            />
+                                          </div>
+
+                                          {/* Right: Metrics Calculation lines */}
+                                          <div className="w-full md:w-80 shrink-0 space-y-1.5 text-xs text-slate-700 bg-slate-50/50 p-3 border border-slate-100">
+                                            <div className="flex justify-between items-center py-0.5">
+                                              <span className="text-slate-600">Số lượng mặt hàng</span>
+                                              <span className="font-mono font-semibold text-slate-900">{totalItems}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center py-0.5">
+                                              <span className="text-slate-600">Tổng tồn sổ sách</span>
+                                              <span className="font-mono font-semibold text-slate-900">{totalSystemQty}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center py-0.5">
+                                              <span className="text-slate-600">Tổng tồn thực tế</span>
+                                              <span className="font-mono font-bold text-slate-900 text-sm">{totalActualQty}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center py-0.5">
+                                              <span className="text-slate-600">Mặt hàng khớp</span>
+                                              <span className="font-mono font-semibold text-emerald-600">{matchedCount}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center py-0.5">
+                                              <span className="text-slate-600">Mặt hàng lệch</span>
+                                              <span className="font-mono font-semibold text-rose-600">{diffCount}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center pt-2 border-t border-slate-200">
+                                              <span className="font-bold text-slate-950 text-sm">Tổng lệch</span>
+                                              <span
+                                                className={`font-mono font-bold text-base ${
+                                                  diffQty === 0
+                                                    ? 'text-emerald-700'
+                                                    : diffQty > 0
+                                                    ? 'text-cyan-700'
+                                                    : 'text-rose-700'
+                                                }`}
+                                              >
+                                                {diffQty > 0 ? `+${diffQty}` : diffQty}
+                                              </span>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* TAB 2: THÔNG TIN PHIẾU KIỂM */}
+                                    {currentTab === 'info' && (
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 bg-slate-50/70 p-4 border border-slate-200 text-xs">
+                                        <div>
+                                          <span className="text-slate-400 block text-[11px] mb-0.5">Mã kiểm kho:</span>
+                                          <span className="font-mono font-bold text-[#008080]">{slip.code}</span>
+                                        </div>
+                                        <div>
+                                          <span className="text-slate-400 block text-[11px] mb-0.5">Tên phiên kiểm kê:</span>
+                                          <span className="font-semibold text-slate-900">{slip.title}</span>
+                                        </div>
+                                        <div>
+                                          <span className="text-slate-400 block text-[11px] mb-0.5">Phạm vi kho:</span>
+                                          <span className="font-bold text-slate-900">{slip.scopeLabel}</span>
+                                        </div>
+                                        <div>
+                                          <span className="text-slate-400 block text-[11px] mb-0.5">Thời gian kiểm:</span>
+                                          <span className="font-mono font-medium text-slate-800">{slip.createdAt}</span>
+                                        </div>
+                                        <div>
+                                          <span className="text-slate-400 block text-[11px] mb-0.5">Người chủ trì / Kiểm đếm:</span>
+                                          <span className="font-medium text-slate-800">{slip.creator}</span>
+                                        </div>
+                                        <div>
+                                          <span className="text-slate-400 block text-[11px] mb-0.5">Trạng thái:</span>
+                                          <span className="font-medium text-emerald-700">
+                                            {slip.status === 'completed' ? 'Đã hoàn tất 100%' : 'Đang kiểm đếm'}
+                                          </span>
+                                        </div>
+                                        <div className="sm:col-span-2">
+                                          <span className="text-slate-400 block text-[11px] mb-0.5">Ghi chú phiên kiểm:</span>
+                                          <span className="text-slate-700 italic">{slip.note || 'Không có ghi chú'}</span>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* 3. Action Footer Bar */}
+                                  <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 bg-white border-t border-slate-200">
+                                    {/* Left: Thu gọn & Xóa */}
+                                    <div className="flex items-center gap-2">
+                                      <Button
+                                        size="small"
+                                        icon={<UpOutlined />}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setExpandedAuditRowKeys((prev) => prev.filter((k) => k !== slip.id));
+                                        }}
+                                        className="h-8 rounded-none border-slate-300 px-3 text-xs font-normal text-slate-700 hover:!border-slate-400 flex items-center"
+                                      >
+                                        Thu gọn
+                                      </Button>
+
+                                      <Popconfirm
+                                        title={`Xóa phiếu kiểm kho ${slip.code}?`}
+                                        description="Hành động này không thể hoàn tác."
+                                        onConfirm={(e) => {
+                                          e?.stopPropagation();
+                                          setAuditSlips((prev) => prev.filter((s) => s.id !== slip.id));
+                                          message.success(`Đã xóa phiếu kiểm kho ${slip.code} thành công!`);
+                                        }}
+                                        okText="Xóa"
+                                        cancelText="Hủy"
+                                        okButtonProps={{ danger: true }}
+                                      >
+                                        <Button
+                                          size="small"
+                                          icon={<DeleteOutlined />}
+                                          onClick={(e) => e.stopPropagation()}
+                                          className="h-8 rounded-none border-slate-300 px-3 text-xs font-normal text-slate-500 hover:text-rose-600 hover:!border-rose-400 flex items-center"
+                                        >
+                                          Xóa
+                                        </Button>
+                                      </Popconfirm>
+                                    </div>
+
+                                    {/* Right: Cập nhật kết quả, Lưu, Sao chép, In, Xuất file */}
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <Button
+                                        size="small"
+                                        icon={<EditOutlined />}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleOpenEditStocktake(slip);
+                                        }}
+                                        className="h-8 rounded-none !bg-[#008080] !border-[#008080] hover:!bg-[#006666] text-white px-3.5 text-xs font-medium flex items-center shadow-none"
+                                      >
+                                        Cập nhật kết quả
+                                      </Button>
+
+                                      <Button
+                                        size="small"
+                                        icon={<SaveOutlined />}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          message.success(`Đã lưu cập nhật kết quả kiểm kho ${slip.code}!`);
+                                        }}
+                                        className="h-8 rounded-none border-slate-300 px-3 text-xs font-normal text-slate-700 hover:!border-slate-400 flex items-center"
+                                      >
+                                        Lưu
+                                      </Button>
+
+                                      <Button
+                                        size="small"
+                                        icon={<CopyOutlined />}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          const nextNum = (auditSlips.length + 1).toString().padStart(2, '0');
+                                          const cloned: AuditSlip = {
+                                            ...slip,
+                                            id: `slip_${Date.now()}`,
+                                            code: `#KK-2026-${nextNum}`,
+                                            title: `${slip.title} (Bản sao)`,
+                                            createdAt: new Date().toLocaleDateString('vi-VN'),
+                                            status: 'auditing',
+                                            statusLabel: 'Đang kiểm đếm',
+                                          };
+                                          setAuditSlips((prev) => [cloned, ...prev]);
+                                          message.success(`Đã nhân bản phiếu kiểm kho "${slip.code}"!`);
+                                        }}
+                                        className="h-8 rounded-none border-slate-300 px-3 text-xs font-normal text-slate-700 hover:!border-slate-400 flex items-center"
+                                      >
+                                        Sao chép
+                                      </Button>
+
+                                      <Button
+                                        size="small"
+                                        icon={<PrinterOutlined />}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          printStocktakeSlip({
+                                            code: slip.code,
+                                            date: slip.createdAt,
+                                            warehouseName: slip.scopeLabel || 'Kho Tổng',
+                                            staffName: slip.creator || 'Admin',
+                                            lines: itemsList.map((l) => ({
+                                              itemCode: l.code,
+                                              itemName: l.name,
+                                              unit: l.unit || 'Cái',
+                                              systemQty: Number(l.systemQty || 0),
+                                              actualQty: Number(l.actualQty || 0),
+                                              diffQty: Number(l.actualQty || 0) - Number(l.systemQty || 0),
+                                              unitPrice: Number(l.unitPrice || l.costPrice || 500000),
+                                              diffValue:
+                                                (Number(l.actualQty || 0) - Number(l.systemQty || 0)) *
+                                                Number(l.unitPrice || l.costPrice || 500000),
+                                              reason:
+                                                l.qualityNote ||
+                                                (Number(l.actualQty || 0) === Number(l.systemQty || 0)
+                                                  ? 'Khớp số liệu tồn'
+                                                  : 'Chênh lệch thực tế'),
+                                            })),
+                                          });
+                                        }}
+                                        className="h-8 rounded-none border-slate-300 px-3 text-xs font-normal text-slate-700 hover:!border-slate-400 flex items-center"
+                                      >
+                                        In
+                                      </Button>
+
+                                      <Button
+                                        size="small"
+                                        icon={<DownloadOutlined />}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          const exportData = itemsList.map((it, idx) => ({
+                                            'STT': idx + 1,
+                                            'Mã hàng': it.code,
+                                            'Tên sản phẩm': it.name,
+                                            'ĐVT': it.unit || 'Cái',
+                                            'Tồn sổ sách': it.systemQty ?? 0,
+                                            'Tồn thực tế': it.actualQty ?? 0,
+                                            'Chênh lệch': (it.actualQty ?? 0) - (it.systemQty ?? 0),
+                                            'Trạng thái':
+                                              (it.actualQty ?? 0) === (it.systemQty ?? 0)
+                                                ? 'Khớp'
+                                                : (it.actualQty ?? 0) > (it.systemQty ?? 0)
+                                                ? 'Thừa'
+                                                : 'Thiếu',
+                                            'Ghi chú': it.location || it.qualityNote || '',
+                                          }));
+                                          exportToExcel(exportData, `Phieu_kiem_kho_${slip.code}`);
+                                          message.success(`Đã xuất dữ liệu phiếu ${slip.code} ra Excel!`);
+                                        }}
+                                        className="h-8 rounded-none border-slate-300 px-3 text-xs font-normal text-slate-700 hover:!border-slate-400 flex items-center"
+                                      >
+                                        Xuất file
+                                      </Button>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            },
+                          }}
+                          columns={[
+                            {
+                              title: 'Mã kiểm kho',
+                              dataIndex: 'code',
+                              key: 'code',
+                              width: 150,
+                              render: (c, record) => {
+                                const isExp = expandedAuditRowKeys.includes(record.id);
+                                return (
+                                  <span
+                                    className={`font-mono text-xs font-semibold px-2.5 py-1 rounded whitespace-nowrap inline-block ${
+                                      isExp ? 'text-white bg-white/20' : 'text-[#784e34] bg-[#784e34]/10'
+                                    }`}
+                                  >
+                                    {c}
+                                  </span>
+                                );
+                              },
+                            },
+                            {
+                              title: 'Tên phiên kiểm kê',
+                              dataIndex: 'title',
+                              key: 'title',
+                              render: (t, record) => {
+                                const isExp = expandedAuditRowKeys.includes(record.id);
+                                return (
+                                  <span
+                                    className={`font-semibold text-xs leading-normal ${
+                                      isExp ? 'text-white' : 'text-slate-900'
+                                    }`}
+                                  >
+                                    {t}
+                                  </span>
+                                );
+                              },
+                            },
+                            {
+                              title: 'Phạm vi kho',
+                              dataIndex: 'scopeLabel',
+                              key: 'scopeLabel',
+                              render: (s, record) => {
+                                const isExp = expandedAuditRowKeys.includes(record.id);
+                                return (
+                                  <span className={`text-xs ${isExp ? 'text-white/90' : 'text-slate-600 font-normal'}`}>
+                                    {s}
+                                  </span>
+                                );
+                              },
+                            },
+                            {
+                              title: 'Ngày kiểm',
+                              dataIndex: 'createdAt',
+                              key: 'createdAt',
+                              width: 130,
+                              render: (d, record) => {
+                                const isExp = expandedAuditRowKeys.includes(record.id);
+                                return (
+                                  <span
+                                    className={`font-mono text-xs whitespace-nowrap ${
+                                      isExp ? 'text-white/80' : 'text-slate-500 font-normal'
+                                    }`}
+                                  >
+                                    {d}
+                                  </span>
+                                );
+                              },
+                            },
+                            {
+                              title: 'Người chủ trì',
+                              dataIndex: 'creator',
+                              key: 'creator',
+                              render: (cr, record) => {
+                                const isExp = expandedAuditRowKeys.includes(record.id);
+                                return (
+                                  <span className={`text-xs ${isExp ? 'text-white/90' : 'text-slate-700 font-normal'}`}>
+                                    {cr}
+                                  </span>
+                                );
+                              },
+                            },
+                            {
+                              title: 'Trạng thái',
+                              dataIndex: 'status',
+                              key: 'status',
+                              align: 'center',
+                              width: 150,
+                              render: (s) =>
+                                s === 'completed' ? (
+                                  <Tag color="green" className="font-normal text-xs px-2.5 py-1 rounded whitespace-nowrap">
+                                    Đã hoàn tất 100%
+                                  </Tag>
+                                ) : (
+                                  <Tag
+                                    color="processing"
+                                    className="font-normal text-xs px-2.5 py-1 rounded whitespace-nowrap"
+                                  >
+                                    Đang kiểm đếm
+                                  </Tag>
+                                ),
+                            },
+                            {
+                              title: 'Thao tác',
+                              key: 'action',
+                              align: 'center',
+                              width: 90,
+                              render: (_, r) => {
+                                const isExp = expandedAuditRowKeys.includes(r.id);
+                                return (
+                                  <Space size={4} onClick={(e) => e.stopPropagation()}>
+                                    <Button
+                                      icon={
+                                        <EditOutlined
+                                          className={`text-base ${
+                                            isExp ? 'text-white hover:text-amber-200' : 'text-slate-600 hover:text-[#784e34]'
+                                          }`}
+                                        />
+                                      }
+                                      size="small"
+                                      type="text"
+                                      onClick={() => handleOpenEditStocktake(r)}
+                                      className="hover:bg-black/10"
+                                      title="Chỉnh sửa phiếu kiểm"
+                                    />
+                                    <Popconfirm
+                                      title={`Xóa phiếu kiểm kê "${r.code}"?`}
+                                      onConfirm={() => {
+                                        setAuditSlips((prev) => prev.filter((s) => s.id !== r.id));
+                                        message.success(`Đã xóa phiếu kiểm kê ${r.code} thành công!`);
+                                      }}
+                                      okText="Xóa"
+                                      cancelText="Hủy"
+                                      okButtonProps={{ danger: true }}
+                                    >
+                                      <Button
+                                        icon={
+                                          <DeleteOutlined
+                                            className={`text-base ${
+                                              isExp ? 'text-rose-200 hover:text-white' : 'text-slate-400 hover:text-red-600'
+                                            }`}
+                                          />
+                                        }
+                                        title="Xóa phiếu"
+                                      />
+                                    </Popconfirm>
+                                  </Space>
+                                );
+                              },
+                            },
+                          ]}
+                        />
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
             {/* SUB-TAB 3 (ENTRY MODE): GIAO DIỆN KIỂM KHO CHUẨN DOMACO ACCOUNTING / POS */}
             {warehouseSubTab === 'stocktake' && (stocktakeViewMode === 'create' || stocktakeViewMode === 'edit') && (
-              <div className="space-y-4">
-                {/* Header Top Bar */}
-                <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-none shadow-xs border border-slate-200">
-                  <div className="flex items-center gap-3 flex-1 min-w-[280px]">
-                    <Button
-                      icon={<ArrowLeftOutlined />}
-                      onClick={() => setStocktakeViewMode('list')}
-                      className="h-9 w-9 rounded-lg text-slate-700 hover:!bg-slate-100 hover:!text-[#784e34] flex items-center justify-center"
-                      title="Quay lại danh sách kiểm kho"
-                    />
-                    <h1 className="m-0 shrink-0 text-sm font-medium text-slate-950">
-                      {stocktakeViewMode === 'create' ? 'Kiểm kho' : 'Cập nhật phiếu kiểm kho'}
-                    </h1>
-
-                    {/* Product Search Input with Dropdown Popover */}
-                    <div className="relative min-w-0 max-w-[480px] flex-1">
-                      <AdminSearchInput
-                        placeholder="Tìm hàng hóa theo mã hoặc tên sản phẩm thành phẩm (F3)..."
-                        value={stocktakeSearchProduct}
-                        onChange={(val) => {
-                          setStocktakeSearchProduct(val);
-                          setShowStocktakeProductPopover(val.trim().length > 0);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Escape') setShowStocktakeProductPopover(false);
-                        }}
-                        sizeVariant="sm"
-                      />
-
-                      {showStocktakeProductPopover && stocktakeSearchProduct.trim() !== '' && (
-                        <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-72 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-2xl">
-                          <div className="flex items-center justify-between px-2 py-1 mb-1 border-b border-slate-100 text-[11px] text-slate-500 font-medium">
-                            <span>Kết quả tìm kiếm cho &quot;{stocktakeSearchProduct}&quot;</span>
-                            <button
-                              type="button"
-                              onClick={() => setShowStocktakeProductPopover(false)}
-                              className="text-slate-400 hover:text-slate-700 border-none bg-transparent cursor-pointer"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                          {allAuditableStock
-                            .filter(
-                              (p) =>
-                                p.name.toLowerCase().includes(stocktakeSearchProduct.toLowerCase()) ||
-                                p.code.toLowerCase().includes(stocktakeSearchProduct.toLowerCase())
-                            )
-                            .map((product) => {
-                              const alreadyAdded = stocktakeEntryLines.some((line) => line.code === product.code);
-                              return (
-                                <button
-                                  key={product.id || product.code}
-                                  type="button"
-                                  onClick={() => {
-                                    if (!alreadyAdded) {
-                                      setStocktakeEntryLines((prev) => [
-                                        ...prev,
-                                        { ...product, actualQty: product.systemQty, status: 'matched' },
-                                      ]);
-                                      message.success(`Đã thêm ${product.name} vào phiếu kiểm!`);
-                                    } else {
-                                      message.info(`${product.name} đã có trong danh sách!`);
-                                    }
-                                    setStocktakeSearchProduct('');
-                                    setShowStocktakeProductPopover(false);
-                                  }}
-                                  className={`flex w-full cursor-pointer items-center justify-between gap-3 rounded-lg p-2 text-left transition-colors border-none bg-transparent ${
-                                    alreadyAdded ? 'bg-amber-50/50' : 'hover:bg-slate-50'
-                                  }`}
-                                >
-                                  <div className="min-w-0 flex-1">
-                                    <div className="truncate text-xs font-medium text-slate-900">
-                                      <span className="font-mono text-[#784e34] mr-1.5">{product.code}</span>
-                                      {product.name}
-                                    </div>
-                                    <div className="text-[11px] text-slate-500">
-                                      ĐVT: {product.unit} | MC: {product.systemMc} | {product.location}
-                                    </div>
-                                  </div>
-                                  <div className="shrink-0 text-right">
-                                    {alreadyAdded ? (
-                                      <span className="text-xs font-medium text-[#784e34]">Đã chọn ✓</span>
-                                    ) : (
-                                      <span className="text-xs text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
-                                        Tồn: {product.systemQty} {product.unit}
-                                      </span>
-                                    )}
-                                  </div>
-                                </button>
-                              );
-                            })}
-                          {allAuditableStock.filter(
-                            (p) =>
-                              p.name.toLowerCase().includes(stocktakeSearchProduct.toLowerCase()) ||
-                              p.code.toLowerCase().includes(stocktakeSearchProduct.toLowerCase())
-                          ).length === 0 && (
-                            <div className="p-4 text-center text-xs text-slate-400">Không tìm thấy sản phẩm phù hợp</div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <Button
-                      icon={<PrinterOutlined />}
-                      onClick={() => {
-                        if (stocktakeEntryLines.length === 0) {
-                          message.warning('Vui lòng thêm sản phẩm vào danh sách để in phiếu kiểm!');
-                          return;
-                        }
-                        printStocktakeSlip({
-                          code: stocktakeSlipCode || 'KK-2026-08',
-                          date: new Date().toLocaleDateString('vi-VN'),
-                          warehouseName: stocktakeWarehouseName || 'Tổng Kho Bình Chánh',
-                          staffName: user?.name || 'Nguyễn Văn Nam (KCS)',
-                          lines: stocktakeEntryLines.map((l) => ({
-                            itemCode: l.code,
-                            itemName: l.name,
-                            unit: l.unit || 'Bộ',
-                            systemQty: Number(l.systemQty || 0),
-                            actualQty: Number(l.actualQty || 0),
-                            diffQty: Number(l.actualQty || 0) - Number(l.systemQty || 0),
-                            unitPrice: Number(l.unitPrice || l.costPrice || 500000),
-                            diffValue: (Number(l.actualQty || 0) - Number(l.systemQty || 0)) * Number(l.unitPrice || l.costPrice || 500000),
-                            reason: l.reason || (Number(l.actualQty || 0) === Number(l.systemQty || 0) ? 'Khớp số liệu tồn' : 'Chênh lệch thực tế'),
-                          })),
-                        });
-                      }}
-                      title="In phiếu kiểm kho (A4)"
-                      className="h-9 w-9 rounded-lg p-0 text-slate-700 hover:text-[#784e34] flex items-center justify-center"
-                    />
-                  </div>
-                </div>
-
-                {/* 2-Column Domaco Layout (Left: Lines Table, Right: Sticky Aside Panel) */}
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
-                  {/* Left Column: Stocktake Lines Table & Filters */}
-                  <div className="lg:col-span-8 bg-white p-4 rounded-none shadow-xs border border-slate-200 space-y-3">
-                    {stocktakeEntryLines.length === 0 ? (
-                      /* Domaco POS Empty State */
-                      <div className="flex flex-col items-center justify-center py-20 text-center bg-slate-50/50 rounded-lg border border-dashed border-slate-300">
-                        <div className="w-12 h-12 rounded-full bg-[#784e34]/10 text-[#784e34] flex items-center justify-center text-2xl mb-3">
-                          📋
-                        </div>
-                        <div className="mb-1 text-sm font-medium text-slate-900">
-                          Thêm sản phẩm vào phiếu kiểm kho
-                        </div>
-                        <p className="mb-4 text-xs text-slate-500 max-w-sm">
-                          Tìm kiếm hàng hóa theo mã hoặc tên ở ô tìm kiếm phía trên để bắt đầu kiểm kê.
-                        </p>
-                        <Button
-                          type="primary"
-                          icon={<SearchOutlined />}
-                          onClick={() => {
-                            const input = document.querySelector('input[placeholder*="Tìm hàng hóa"]') as HTMLInputElement;
-                            if (input) {
-                              input.focus();
-                            }
-                          }}
-                          className="h-9 rounded-lg bg-[#784e34] hover:!bg-[#5d371f] px-4 text-xs font-normal text-white shadow-none border-none flex items-center gap-1.5"
-                        >
-                          Tìm hàng hóa
-                        </Button>
-                      </div>
-                    ) : (
-                      <>
-                        {/* Sub-Filter Tabs: Tất cả, Khớp, Lệch, Lệch tăng, Lệch giảm */}
-                        <div className="flex items-center gap-4 border-b border-slate-200 text-xs pb-1 overflow-x-auto">
-                          {[
-                            { key: 'all', label: `Tất cả (${stocktakeEntryLines.length})` },
-                            {
-                              key: 'matched',
-                              label: `Khớp (${
-                                stocktakeEntryLines.filter(
-                                  (l) => Number(l.actualQty || 0) === Number(l.systemQty || 0)
-                                ).length
-                              })`,
-                            },
-                            {
-                              key: 'diff',
-                              label: `Lệch (${
-                                stocktakeEntryLines.filter(
-                                  (l) => Number(l.actualQty || 0) !== Number(l.systemQty || 0)
-                                ).length
-                              })`,
-                            },
-                            {
-                              key: 'increase',
-                              label: `Lệch tăng (${
-                                stocktakeEntryLines.filter(
-                                  (l) => Number(l.actualQty || 0) > Number(l.systemQty || 0)
-                                ).length
-                              })`,
-                            },
-                            {
-                              key: 'decrease',
-                              label: `Lệch giảm (${
-                                stocktakeEntryLines.filter(
-                                  (l) => Number(l.actualQty || 0) < Number(l.systemQty || 0)
-                                ).length
-                              })`,
-                            },
-                          ].map((tab) => {
-                            const isActive = stocktakeTabFilter === tab.key;
-                            return (
-                              <button
-                                key={tab.key}
-                                type="button"
-                                onClick={() => setStocktakeTabFilter(tab.key as any)}
-                                className={`pb-2 transition-all cursor-pointer border-none bg-transparent whitespace-nowrap text-xs font-normal ${
-                                  isActive
-                                    ? 'border-b-2 !border-[#784e34] text-[#784e34] font-medium'
-                                    : 'text-slate-600 hover:text-slate-900'
-                                }`}
-                              >
-                                {tab.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-
-                        {/* Lines Table */}
-                        <div className="overflow-x-auto border border-slate-200 rounded-lg">
-                          <table className="w-full text-left border-collapse text-xs">
-                            <thead>
-                              <tr className="bg-slate-50 text-slate-700 font-medium border-b border-slate-200">
-                                <th className="py-2.5 px-3 w-10 text-center">#</th>
-                                <th className="py-2.5 px-3">Mã hàng</th>
-                                <th className="py-2.5 px-3">Tên hàng hóa</th>
-                                <th className="py-2.5 px-3 text-center">ĐVT</th>
-                                <th className="py-2.5 px-3 text-center">Độ ẩm MC</th>
-                                <th className="py-2.5 px-3 text-right">Tồn kho</th>
-                                <th className="py-2.5 px-3 text-center w-28">Thực tế</th>
-                                <th className="py-2.5 px-3 text-right">SL lệch</th>
-                                <th className="py-2.5 px-3 text-center w-12"></th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-200 font-normal">
-                              {stocktakeEntryLines
-                                .filter((line) => {
-                                  const diff = Number(line.actualQty || 0) - Number(line.systemQty || 0);
-                                  if (stocktakeTabFilter === 'matched') return diff === 0;
-                                  if (stocktakeTabFilter === 'diff') return diff !== 0;
-                                  if (stocktakeTabFilter === 'increase') return diff > 0;
-                                  if (stocktakeTabFilter === 'decrease') return diff < 0;
-                                  return true;
-                                })
-                                .map((line, idx) => {
-                                  const diff = Number((Number(line.actualQty || 0) - Number(line.systemQty || 0)).toFixed(2));
-                                  const diffColor =
-                                    diff > 0
-                                      ? 'text-emerald-600'
-                                      : diff < 0
-                                      ? 'text-rose-600'
-                                      : 'text-slate-600';
-                                  return (
-                                    <tr key={line.id || line.code || idx} className="hover:bg-slate-50/80 transition-colors">
-                                      <td className="py-2 px-3 text-center font-mono text-slate-400 text-[11px]">{idx + 1}</td>
-                                      <td className="py-2 px-3">
-                                        <span className="font-mono text-xs text-[#784e34] bg-[#784e34]/10 px-2 py-0.5 rounded">
-                                          {line.code}
-                                        </span>
-                                      </td>
-                                      <td className="py-2 px-3">
-                                        <div className="font-medium text-slate-900 text-xs">{line.name}</div>
-                                        <div className="text-[11px] text-slate-500">{line.qualityNote || line.location}</div>
-                                      </td>
-                                      <td className="py-2 px-3 text-center text-slate-600">{line.unit}</td>
-                                      <td className="py-2 px-3 text-center font-mono text-slate-600">{line.actualMc || line.systemMc}</td>
-                                      <td className="py-2 px-3 text-right font-mono font-medium text-slate-900">{line.systemQty}</td>
-                                      <td className="py-2 px-3 text-center">
-                                        <InputNumber
-                                          min={0}
-                                          step={0.1}
-                                          value={line.actualQty}
-                                          onChange={(val) => {
-                                            const newQty = val === null ? 0 : Number(val);
-                                            setStocktakeEntryLines((prev) =>
-                                              prev.map((l) =>
-                                                l.code === line.code
-                                                  ? {
-                                                      ...l,
-                                                      actualQty: newQty,
-                                                      status: newQty === Number(l.systemQty) ? 'matched' : 'discrepancy',
-                                                    }
-                                                  : l
-                                              )
-                                            );
-                                          }}
-                                          className="w-24 text-center h-8 text-xs font-normal"
-                                        />
-                                      </td>
-                                      <td className={`py-2 px-3 text-right font-mono font-medium ${diffColor}`}>
-                                        {diff > 0 ? `+${diff}` : diff}
-                                      </td>
-                                      <td className="py-2 px-3 text-center">
-                                        <Button
-                                          type="text"
-                                          size="small"
-                                          icon={<DeleteOutlined className="text-slate-400 hover:text-rose-600 text-sm" />}
-                                          onClick={() =>
-                                            setStocktakeEntryLines((prev) => prev.filter((l) => l.code !== line.code))
-                                          }
-                                          className="w-7 h-7 flex items-center justify-center rounded hover:bg-rose-50"
-                                          title="Xóa khỏi danh sách"
-                                        />
-                                      </td>
-                                    </tr>
-                                  );
-                                })}
-                            </tbody>
-                          </table>
-                        </div>
-                      </>
-                    )}
-                  </div>
-
-                  {/* Right Column: Sticky Summary & Action Panel */}
-                  <div className="lg:col-span-4 bg-white p-4 rounded-none shadow-xs border border-slate-200 space-y-4">
-                    {/* User & Date Bar */}
-                    <div className="flex items-center justify-between pb-3 border-b border-slate-100 text-xs">
-                      <div className="flex items-center gap-2 text-slate-800 font-medium">
-                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-slate-600">
-                          <UserOutlined />
-                        </span>
-                        <span>{user?.name || 'Nguyễn Văn Nam (Thủ kho)'}</span>
-                      </div>
-                      <span className="font-mono text-slate-500 text-xs">{new Date().toLocaleDateString('vi-VN')}</span>
-                    </div>
-
-                    {/* Metadata Grid */}
-                    <div className="space-y-2.5 text-xs text-slate-700">
-                      <div className="flex justify-between items-center">
-                        <span className="text-slate-500">Mã kiểm kho:</span>
-                        <span className="font-mono text-[#784e34] font-medium bg-[#784e34]/10 px-2.5 py-0.5 rounded">
-                          {stocktakeSlipCode}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-slate-500">Chi nhánh:</span>
-                        <span className="font-medium text-slate-900 text-right">Xưởng Sản Xuất Bình Chánh</span>
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-slate-500 block">Kho kiểm kê:</label>
-                        <Select
-                          value={stocktakeWarehouseName}
-                          onChange={setStocktakeWarehouseName}
-                          options={warehousesList.map((w) => ({ value: w.name, label: w.name }))}
-                          className="w-full text-xs font-normal"
-                        />
-                      </div>
-                      <div className="flex justify-between items-center pt-1">
-                        <span className="text-slate-500">Trạng thái:</span>
-                        <Tag color={stocktakeViewMode === 'edit' ? 'processing' : 'gold'} className="m-0 text-xs font-normal">
-                          {stocktakeViewMode === 'edit' ? 'Đang kiểm đếm' : 'Phiếu tạm'}
-                        </Tag>
-                      </div>
-                    </div>
-
-                    {/* Statistics Box */}
-                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-200/80 space-y-2 text-xs">
-                      <div className="flex justify-between text-slate-700">
-                        <span>Tổng SL thực tế:</span>
-                        <span className="font-mono font-medium text-slate-950">
-                          {stocktakeEntryLines
-                            .reduce((acc, curr) => acc + (Number(curr.actualQty) || 0), 0)
-                            .toFixed(1)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-slate-700">
-                        <span>Tổng SL lệch:</span>
-                        <span
-                          className={`font-mono font-medium ${
-                            stocktakeEntryLines.reduce(
-                              (acc, curr) => acc + ((Number(curr.actualQty) || 0) - (Number(curr.systemQty) || 0)),
-                              0
-                            ) !== 0
-                              ? 'text-amber-600'
-                              : 'text-slate-950'
-                          }`}
-                        >
-                          {stocktakeEntryLines
-                            .reduce(
-                              (acc, curr) => acc + ((Number(curr.actualQty) || 0) - (Number(curr.systemQty) || 0)),
-                              0
-                            )
-                            .toFixed(1)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-emerald-700 pt-1 border-t border-slate-200">
-                        <span>Tổng lệch tăng:</span>
-                        <span className="font-mono font-medium">
-                          +
-                          {stocktakeEntryLines
-                            .reduce((acc, curr) => {
-                              const diff = (Number(curr.actualQty) || 0) - (Number(curr.systemQty) || 0);
-                              return diff > 0 ? acc + diff : acc;
-                            }, 0)
-                            .toFixed(1)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-rose-600">
-                        <span>Tổng lệch giảm:</span>
-                        <span className="font-mono font-medium">
-                          -
-                          {stocktakeEntryLines
-                            .reduce((acc, curr) => {
-                              const diff = (Number(curr.actualQty) || 0) - (Number(curr.systemQty) || 0);
-                              return diff < 0 ? acc + Math.abs(diff) : acc;
-                            }, 0)
-                            .toFixed(1)}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Note Box */}
-                    <div className="space-y-1">
-                      <label className="text-slate-700 block text-xs font-normal">Ghi chú kiểm kho:</label>
-                      <Input.TextArea
-                        rows={3}
-                        placeholder="Nhập ghi chú hoặc lý do chênh lệch..."
-                        value={stocktakeNote}
-                        onChange={(e) => setStocktakeNote(e.target.value)}
-                        className="text-xs font-normal rounded-lg"
-                      />
-                    </div>
-
-                    {/* Action Buttons */}
-                    <div className="grid grid-cols-2 gap-2 pt-2">
-                      <Button
-                        onClick={handleSaveDraftStocktake}
-                        className="h-10 rounded-lg text-xs font-normal text-slate-700 hover:text-[#784e34] border-slate-300"
-                      >
-                        Lưu tạm
-                      </Button>
-                      <Button
-                        type="primary"
-                        onClick={handleCompleteStocktake}
-                        className="h-10 rounded-lg text-xs font-normal bg-[#784e34] hover:!bg-[#5d371f] text-white shadow-none border-none"
-                      >
-                        Cân bằng kho
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <StocktakeCreate
+                stocktakeViewMode={stocktakeViewMode}
+                stocktakeSlipCode={stocktakeSlipCode}
+                stocktakeDate={stocktakeDate}
+                stocktakeWarehouseName={stocktakeWarehouseName}
+                setStocktakeWarehouseName={setStocktakeWarehouseName}
+                stocktakeStaffName={stocktakeStaffName}
+                setStocktakeStaffName={setStocktakeStaffName}
+                stocktakeNote={stocktakeNote}
+                setStocktakeNote={setStocktakeNote}
+                stocktakeTabFilter={stocktakeTabFilter}
+                setStocktakeTabFilter={setStocktakeTabFilter}
+                stocktakeEntryLines={stocktakeEntryLines}
+                setStocktakeEntryLines={setStocktakeEntryLines}
+                stocktakeSearchProduct={stocktakeSearchProduct}
+                setStocktakeSearchProduct={setStocktakeSearchProduct}
+                allAuditableStock={allAuditableStock}
+                allProducts={allAvailableProducts}
+                availableBranchWarehouses={availableBranchWarehouses}
+                onNavigateToProduct={onNavigateToProduct}
+                onBack={() => setStocktakeViewMode('list')}
+                onSaveDraft={handleSaveDraftStocktake}
+                onSubmit={handleCompleteStocktake}
+                onExportExcel={handleExportCreateStocktakeLinesExcel}
+                onPrint={() => {
+                  if (stocktakeEntryLines.length === 0) {
+                    message.warning('Vui lòng thêm sản phẩm vào danh sách để in phiếu kiểm!');
+                    return;
+                  }
+                  printStocktakeSlip({
+                    code: stocktakeSlipCode || 'KK-2026-08',
+                    date: new Date().toLocaleDateString('vi-VN'),
+                    warehouseName: stocktakeWarehouseName || 'Tổng Kho Bình Chánh',
+                    staffName: user?.name || 'Nguyễn Văn Nam (KCS)',
+                    lines: stocktakeEntryLines.map((l) => ({
+                      itemCode: l.code,
+                      itemName: l.name,
+                      unit: l.unit || 'Bộ',
+                      systemQty: Number(l.systemQty || 0),
+                      actualQty: Number(l.actualQty || 0),
+                      diffQty: Number(l.actualQty || 0) - Number(l.systemQty || 0),
+                      unitPrice: Number(l.unitPrice || l.costPrice || 500000),
+                      diffValue: (Number(l.actualQty || 0) - Number(l.systemQty || 0)) * Number(l.unitPrice || l.costPrice || 500000),
+                      reason: l.reason || (Number(l.actualQty || 0) === Number(l.systemQty || 0) ? 'Khớp số liệu tồn' : 'Chênh lệch thực tế'),
+                    })),
+                  });
+                }}
+                user={user}
+              />
             )}
 
             {/* SUB-TAB 5: QUẢN LÝ NHÀ CUNG CẤP (DOMACO ACCOUNTING / CRM VENDOR MASTER) */}
@@ -4133,26 +4351,70 @@ export function WorkshopTab({
             <Input className="h-9 rounded-lg text-xs sm:text-sm" placeholder="Số nhà, đường phố, thôn/xóm..." />
           </Form.Item>
 
-          <Row gutter={12}>
-            <Col span={12}>
+          <Row gutter={10}>
+            <Col span={8}>
               <Form.Item
-                label={<span className="text-xs font-semibold text-slate-700">Xã / Phường</span>}
-                name="district"
-              >
-                <Input className="h-9 rounded-lg text-xs sm:text-sm" placeholder="Chọn xã/phường..." />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                label={<span className="text-xs font-semibold text-slate-700">Tỉnh / Thành phố</span>}
+                label={<span className="text-xs font-semibold text-slate-700">Tỉnh / Thành</span>}
                 name="province"
               >
-                <Select
-                  className="h-9 rounded-lg text-xs sm:text-sm"
-                  placeholder="Chọn tỉnh..."
-                  showSearch
-                  options={VIETNAM_PROVINCES.map((p) => ({ value: p, label: p }))}
-                />
+                <AutoComplete
+                  className="w-full text-xs sm:text-sm"
+                  placeholder="Chọn/nhập tỉnh..."
+                  allowClear
+                  options={provincesList.map((p) => ({ value: p.name, label: p.name }))}
+                  onChange={() => {
+                    warehouseForm.setFieldsValue({
+                      district: undefined,
+                      ward: undefined,
+                    });
+                  }}
+                  filterOption={(inputValue, option) =>
+                    (option?.value ?? '').toLowerCase().includes(inputValue.toLowerCase())
+                  }
+                >
+                  <Input className="h-9 rounded-lg text-xs sm:text-sm" />
+                </AutoComplete>
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item
+                label={<span className="text-xs font-semibold text-slate-700">Quận / Huyện</span>}
+                name="district"
+              >
+                <AutoComplete
+                  className="w-full text-xs sm:text-sm"
+                  placeholder={selectedWarehouseProvince ? 'Chọn/nhập quận/huyện...' : 'Chọn tỉnh trước'}
+                  allowClear
+                  disabled={!selectedWarehouseProvince}
+                  options={districtOptions.map((d) => ({ value: d.name, label: d.name }))}
+                  onChange={() => {
+                    warehouseForm.setFieldValue('ward', undefined);
+                  }}
+                  filterOption={(inputValue, option) =>
+                    (option?.value ?? '').toLowerCase().includes(inputValue.toLowerCase())
+                  }
+                >
+                  <Input className="h-9 rounded-lg text-xs sm:text-sm" />
+                </AutoComplete>
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item
+                label={<span className="text-xs font-semibold text-slate-700">Phường / Xã</span>}
+                name="ward"
+              >
+                <AutoComplete
+                  className="w-full text-xs sm:text-sm"
+                  placeholder={selectedWarehouseDistrict ? 'Chọn/nhập phường/xã...' : 'Chọn quận/huyện trước'}
+                  allowClear
+                  disabled={!selectedWarehouseDistrict}
+                  options={wardOptions.map((w) => ({ value: w.name, label: w.name }))}
+                  filterOption={(inputValue, option) =>
+                    (option?.value ?? '').toLowerCase().includes(inputValue.toLowerCase())
+                  }
+                >
+                  <Input className="h-9 rounded-lg text-xs sm:text-sm" />
+                </AutoComplete>
               </Form.Item>
             </Col>
           </Row>
@@ -4189,7 +4451,7 @@ export function WorkshopTab({
         open={showCreateSlipModal}
         onClose={() => setShowCreateSlipModal(false)}
         styles={{ wrapper: { width: 620, maxWidth: '100vw' } }}
-        destroyOnHidden
+        forceRender
         className="[&_.ant-drawer-header]:px-5 [&_.ant-drawer-header]:py-3.5 [&_.ant-drawer-header]:border-b [&_.ant-drawer-header]:border-slate-200 [&_.ant-drawer-body]:px-5 [&_.ant-drawer-body]:py-5 [&_.ant-drawer-footer]:px-5 [&_.ant-drawer-footer]:py-3 [&_.ant-drawer-footer]:border-t [&_.ant-drawer-footer]:border-slate-200"
         footer={
           <div className="flex items-center justify-between">
@@ -4370,7 +4632,7 @@ export function WorkshopTab({
         open={showAddItemModal}
         onClose={() => setShowAddItemModal(false)}
         styles={{ wrapper: { width: 560, maxWidth: '100vw' } }}
-        destroyOnHidden
+        forceRender
         className="[&_.ant-drawer-header]:px-5 [&_.ant-drawer-header]:py-3.5 [&_.ant-drawer-header]:border-b [&_.ant-drawer-header]:border-slate-200 [&_.ant-drawer-body]:px-5 [&_.ant-drawer-body]:py-5 [&_.ant-drawer-footer]:px-5 [&_.ant-drawer-footer]:py-3 [&_.ant-drawer-footer]:border-t [&_.ant-drawer-footer]:border-slate-200"
         footer={
           <div className="flex items-center justify-between">
@@ -4479,7 +4741,7 @@ export function WorkshopTab({
         open={showTransferModal}
         onClose={() => setShowTransferModal(false)}
         styles={{ wrapper: { width: 560, maxWidth: '100vw' } }}
-        destroyOnHidden
+        forceRender
         className="[&_.ant-drawer-header]:px-5 [&_.ant-drawer-header]:py-3.5 [&_.ant-drawer-header]:border-b [&_.ant-drawer-header]:border-slate-200 [&_.ant-drawer-body]:px-5 [&_.ant-drawer-body]:py-5 [&_.ant-drawer-footer]:px-5 [&_.ant-drawer-footer]:py-3 [&_.ant-drawer-footer]:border-t [&_.ant-drawer-footer]:border-slate-200"
         footer={
           <div className="flex items-center justify-between">

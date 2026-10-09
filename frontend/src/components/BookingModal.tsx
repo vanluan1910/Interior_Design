@@ -16,6 +16,11 @@ export default function BookingModal({ isOpen, onClose }: BookingModalProps) {
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [submittedName, setSubmittedName] = useState('');
+  const [mounted, setMounted] = useState(false);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const onFinish = (values: any) => {
     setLoading(true);
@@ -42,6 +47,10 @@ export default function BookingModal({ isOpen, onClose }: BookingModalProps) {
     }, 800);
   };
 
+  if (!mounted) {
+    return null;
+  }
+
   return (
     <Modal
       open={isOpen}
@@ -49,7 +58,7 @@ export default function BookingModal({ isOpen, onClose }: BookingModalProps) {
       footer={null}
       centered
       width={560}
-      destroyOnHidden
+      forceRender
       styles={{
         body: {
           backgroundColor: '#fff8f5',

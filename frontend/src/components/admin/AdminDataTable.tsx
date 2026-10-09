@@ -1,7 +1,7 @@
 'use client';
 
-import React from 'react';
-import { Table, Tag, Button, Popconfirm } from 'antd';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Table, Tag, Button, Popconfirm, Pagination } from 'antd';
 import type { TableProps, TablePaginationConfig } from 'antd';
 import {
   CopyOutlined,
@@ -34,6 +34,7 @@ export interface AdminDataTableProps<T = any> extends TableProps<T> {
   onSearchChange?: (val: string) => void;
   totalCount?: number;
   countUnit?: string;
+  selectOnRowClick?: boolean;
 }
 
 export function AdminDataTable<T extends object = any>({
@@ -57,6 +58,7 @@ export function AdminDataTable<T extends object = any>({
   onSearchChange,
   totalCount,
   countUnit = 'bản ghi',
+  selectOnRowClick = false,
   pagination,
   columns,
   dataSource,
@@ -71,21 +73,27 @@ export function AdminDataTable<T extends object = any>({
   const selectedCount = selectedRowKeys ? selectedRowKeys.length : 0;
   const currentTotal = totalCount !== undefined ? totalCount : (Array.isArray(dataSource) ? dataSource.length : 0);
 
-  const defaultPagination: TablePaginationConfig | false =
-    pagination === false
-      ? false
-      : {
-          pageSize: 10,
-          showSizeChanger: true,
-          pageSizeOptions: ['10', '20', '50', '100'],
-          showTotal: (total, range) => (
-            <span className="text-xs text-slate-500 font-medium">
-              Hiển thị {range[0]} – {range[1]} trong tổng số {total} {countUnit}
-            </span>
-          ),
-          className: '!px-4 !py-2.5 !m-0 border-t border-slate-200 bg-white flex flex-wrap items-center justify-between',
-          ...(typeof pagination === 'object' ? pagination : {}),
-        };
+  // Domaco POS Pagination State Management
+  const isExternalPagination = typeof pagination === 'object';
+  const [currentPage, setCurrentPage] = useState(isExternalPagination && pagination?.current ? pagination.current : 1);
+  const [pageSize, setPageSize] = useState(isExternalPagination && pagination?.pageSize ? pagination.pageSize : 10);
+
+  useEffect(() => {
+    if (isExternalPagination && pagination) {
+      if (pagination.current) setCurrentPage(pagination.current);
+      if (pagination.pageSize) setPageSize(pagination.pageSize);
+    }
+  }, [pagination, isExternalPagination]);
+
+  const paginatedData = useMemo(() => {
+    if (pagination === false) return dataSource;
+    if (!Array.isArray(dataSource)) return dataSource;
+    if (isExternalPagination && typeof pagination?.onChange === 'function') {
+      return dataSource;
+    }
+    const startIndex = (currentPage - 1) * pageSize;
+    return dataSource.slice(startIndex, startIndex + pageSize);
+  }, [dataSource, currentPage, pageSize, pagination, isExternalPagination]);
 
   const computedRowSelection = rowSelection || (isSelectionToolbarActive && onSelectionChange
     ? {
@@ -96,7 +104,7 @@ export function AdminDataTable<T extends object = any>({
 
   const computedOnRow = (record: T, index?: number) => {
     const existing = onRow ? onRow(record, index) : {};
-    if (isSelectionToolbarActive && onSelectionChange && selectedRowKeys) {
+    if (selectOnRowClick && isSelectionToolbarActive && onSelectionChange && selectedRowKeys) {
       const recKey = typeof rowKey === 'function' ? rowKey(record) : (record as any)[rowKey as string] || (record as any).id;
       return {
         ...existing,
@@ -237,10 +245,10 @@ export function AdminDataTable<T extends object = any>({
       {/* 3. Table Body */}
       <div className="w-full max-w-full overflow-x-auto flex-1 min-h-0">
         <Table<T>
-          dataSource={dataSource}
+          dataSource={paginatedData}
           columns={columns}
           rowKey={rowKey}
-          pagination={defaultPagination}
+          pagination={false}
           rowSelection={computedRowSelection}
           onRow={computedOnRow}
           scroll={scroll}
@@ -249,6 +257,46 @@ export function AdminDataTable<T extends object = any>({
           {...restProps}
         />
       </div>
+
+      {/* 4. Domaco POS Standard ERP High-Density Pagination Footer */}
+      {pagination !== false && (
+        <div
+          className="px-3 sm:px-4 py-2 border-t border-slate-200 bg-white flex flex-col sm:flex-row sm:items-center sm:justify-between shrink-0 gap-2"
+          data-table-guide="pagination"
+        >
+          {/* Total data summary */}
+          <div className="text-slate-500 font-medium text-xs tracking-tight">
+            {(() => {
+              const total = (isExternalPagination && pagination?.total) || currentTotal;
+              if (total > 0) {
+                const start = (currentPage - 1) * pageSize + 1;
+                const end = Math.min(currentPage * pageSize, total);
+                return `Hiển thị ${start} - ${end} trong tổng số ${total} ${countUnit}`;
+              }
+              return 'Không có dữ liệu';
+            })()}
+          </div>
+
+          <Pagination
+            size="small"
+            showSizeChanger={isExternalPagination && pagination?.showSizeChanger !== undefined ? pagination.showSizeChanger : (currentTotal > pageSize)}
+            pageSizeOptions={isExternalPagination && pagination?.pageSizeOptions ? pagination.pageSizeOptions : ['10', '20', '50', '100']}
+            showQuickJumper={isExternalPagination && pagination?.showQuickJumper !== undefined ? pagination.showQuickJumper : false}
+            hideOnSinglePage={isExternalPagination && pagination?.hideOnSinglePage !== undefined ? pagination.hideOnSinglePage : false}
+            current={currentPage}
+            pageSize={pageSize}
+            total={(isExternalPagination && pagination?.total) || currentTotal}
+            onChange={(page, pSize) => {
+              setCurrentPage(page);
+              setPageSize(pSize);
+              if (isExternalPagination && pagination?.onChange) {
+                pagination.onChange(page, pSize);
+              }
+            }}
+            className="m-0 text-xs [&_.ant-pagination-item]:!rounded-md [&_.ant-pagination-item-active]:!border-[#784e34] [&_.ant-pagination-item-active]:!bg-[#784e34] [&_.ant-pagination-item-active_a]:!text-white [&_.ant-select-selector]:!rounded-md [&_.ant-select-selector]:!text-xs [&_.ant-pagination-options-quick-jumper_input]:!rounded-md [&_.ant-pagination-options-quick-jumper_input]:!text-xs [&_.ant-pagination-options-quick-jumper_input:focus]:!border-[#784e34]"
+          />
+        </div>
+      )}
     </div>
   );
 }

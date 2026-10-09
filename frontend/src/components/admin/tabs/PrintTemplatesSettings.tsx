@@ -3,33 +3,26 @@
 import React, { useState, useEffect } from 'react';
 import {
   Button,
-  Segmented,
-  Tag,
-  Form,
-  Input,
   Select,
   Switch,
-  Space,
-  Divider,
+  Input,
+  Form,
+  Tag,
   App,
-  Card,
-  Row,
-  Col,
-  Tooltip,
+  Segmented,
 } from 'antd';
 import {
   PrinterOutlined,
   EditOutlined,
-  CopyOutlined,
   ReloadOutlined,
-  CheckOutlined,
-  PlusOutlined,
   EyeOutlined,
-  SettingOutlined,
-  ThunderboltOutlined,
+  ShopOutlined,
   QrcodeOutlined,
-  InfoCircleOutlined,
+  UserOutlined,
+  FileTextOutlined,
+  DollarOutlined,
 } from '@ant-design/icons';
+import { settingsApi } from '@/api/settingsApi';
 import { AdminFormDrawer } from '@/components/admin';
 
 export interface PrintTemplateConfig {
@@ -51,11 +44,11 @@ export interface PrintTemplateConfig {
 const DEFAULT_PRINT_TEMPLATES: PrintTemplateConfig[] = [
   {
     key: 'invoice',
-    tab: 'Hóa đơn bán hàng',
-    select: 'Mẫu hóa đơn thanh toán Showroom',
+    tab: 'Đơn hàng',
+    select: 'Mẫu Hóa đơn / Phiếu bán hàng (Màn hình Đơn hàng)',
     title: 'HÓA ĐƠN BÁN HÀNG & DỊCH VỤ NỘI THẤT',
     codePrefix: 'HD',
-    paperSize: 'k80',
+    paperSize: 'a4',
     showLogo: true,
     showQr: true,
     showCustomer: true,
@@ -64,52 +57,10 @@ const DEFAULT_PRINT_TEMPLATES: PrintTemplateConfig[] = [
     footerNote: 'Cảm ơn Quý khách! Sản phẩm gỗ tự nhiên được bảo hành chính hãng 05 năm.',
   },
   {
-    key: 'order',
-    tab: 'Phiếu đặt hàng / Cọc',
-    select: 'Mẫu hợp đồng đặt cọc may đo',
-    title: 'PHIẾU ĐẶT HÀNG & TẠM ỨNG MAY ĐO',
-    codePrefix: 'DH',
-    paperSize: 'a4',
-    showLogo: true,
-    showQr: true,
-    showCustomer: true,
-    showSignature: true,
-    headerNote: 'Xưởng Sản Xuất & Gia Công Nội Thất Mộc Gia Atelier',
-    footerNote: 'Tiến độ sản xuất từ 15-20 ngày làm việc kể từ ngày duyệt bản vẽ 3D kỹ thuật.',
-  },
-  {
-    key: 'delivery',
-    tab: 'Phiếu giao hàng / Lắp đặt',
-    select: 'Mẫu biên bản bàn giao công trình',
-    title: 'BIÊN BẢN BÀN GIAO & LẮP ĐẶT NỘI THẤT',
-    codePrefix: 'BG',
-    paperSize: 'a4',
-    showLogo: true,
-    showQr: false,
-    showCustomer: true,
-    showSignature: true,
-    headerNote: 'Đội Thi Công & Lắp Đặt Hoàn Thiện Công Trình',
-    footerNote: 'Quý khách vui lòng kiểm tra kỹ hiện trạng sản phẩm, phụ kiện trước khi ký nhận bàn giao.',
-  },
-  {
-    key: 'return',
-    tab: 'Phiếu trả hàng / Bảo hành',
-    select: 'Mẫu phiếu đổi trả hàng bảo hành',
-    title: 'PHIẾU TIẾP NHẬN BẢO HÀNH & ĐỔI TRẢ',
-    codePrefix: 'TH',
-    paperSize: 'a5',
-    showLogo: true,
-    showQr: false,
-    showCustomer: true,
-    showSignature: true,
-    headerNote: 'Trung Tâm Dịch Vụ Khách Hàng D2 LUXURY',
-    footerNote: 'Cam kết xử lý và phản hồi tình trạng sản phẩm trong vòng 48h làm việc.',
-  },
-  {
     key: 'purchase',
-    tab: 'Phiếu nhập kho vật tư',
-    select: 'Mẫu phiếu nhập kho xưởng sản xuất',
-    title: 'PHIẾU NHẬP KHO VẬT TƯ GỖ & PHỤ KIỆN',
+    tab: 'Nhập kho',
+    select: 'Mẫu Phiếu nhập kho (Màn hình Kho & Xưởng)',
+    title: 'PHIẾU NHẬP KHO VẬT TƯ & HÀNG HÓA',
     codePrefix: 'PNK',
     paperSize: 'a4',
     showLogo: true,
@@ -120,32 +71,18 @@ const DEFAULT_PRINT_TEMPLATES: PrintTemplateConfig[] = [
     footerNote: 'Thủ kho và người giao hàng chịu trách nhiệm về số lượng và quy cách quy chuẩn thực nhập.',
   },
   {
-    key: 'receipt',
-    tab: 'Phiếu thu tiền',
-    select: 'Mẫu phiếu thu tiền mặt / chuyển khoản',
-    title: 'PHIẾU THU TIỀN TẠM ỨNG DỰ ÁN',
-    codePrefix: 'PT',
-    paperSize: 'a5',
-    showLogo: true,
-    showQr: true,
-    showCustomer: true,
-    showSignature: true,
-    headerNote: 'Phòng Kế Toán - Tài Chính D2 LUXURY',
-    footerNote: 'Phiếu thu có giá trị xác nhận thanh toán khi có đủ chữ ký của thủ quỹ và người nộp tiền.',
-  },
-  {
-    key: 'payment',
-    tab: 'Phiếu chi',
-    select: 'Mẫu phiếu chi thanh toán xưởng / NCC',
-    title: 'PHIẾU CHI TIỀN THANH TOÁN VẬT TƯ',
-    codePrefix: 'PC',
-    paperSize: 'a5',
+    key: 'stocktake',
+    tab: 'Kiểm kho',
+    select: 'Mẫu Biên bản kiểm kê kho (Màn hình Kho & Xưởng)',
+    title: 'PHIẾU KIỂM KÊ TỒN KHO HÀNG HÓA',
+    codePrefix: 'KK',
+    paperSize: 'a4',
     showLogo: true,
     showQr: false,
     showCustomer: false,
     showSignature: true,
-    headerNote: 'Phòng Kế Toán - Tài Chính D2 LUXURY',
-    footerNote: 'Đề nghị người nhận tiền kiểm đếm đủ trước khi rời khỏi quầy thủ quỹ.',
+    headerNote: 'Phân hệ Quản lý Kho Vật tư & Xưởng Sản Xuất',
+    footerNote: 'Biên bản kiểm kê có giá trị làm căn cứ đối soát sổ sách kho và xử lý tồn kho.',
   },
 ];
 
@@ -161,7 +98,6 @@ const VARIABLE_TAGS = [
   { label: 'Địa chỉ công trình', tag: '{Dia_Chi_Khach_Hang}' },
   { label: 'Bảng sản phẩm', tag: '{Danh_Sach_SanPham}' },
   { label: 'Tổng tiền hàng', tag: '{Tong_Tien_Hang}' },
-  { label: 'Chiết khấu KTS', tag: '{Chiet_Khau}' },
   { label: 'Tổng thanh toán', tag: '{Tong_Thanh_Toan}' },
   { label: 'Tiền bằng chữ', tag: '{Tong_Tien_Bang_Chu}' },
   { label: 'Mã QR VietQR', tag: '{Ma_QR_Thanh_Toan}' },
@@ -171,32 +107,79 @@ const VARIABLE_TAGS = [
 export function PrintTemplatesSettings() {
   const { message } = App.useApp();
   const [activeKey, setActiveKey] = useState<string>('invoice');
-  const [templates, setTemplates] = useState<PrintTemplateConfig[]>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem('d2_admin_print_templates');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-        }
-      } catch {}
-    }
-    return DEFAULT_PRINT_TEMPLATES;
-  });
+  const [templates, setTemplates] = useState<PrintTemplateConfig[]>(DEFAULT_PRINT_TEMPLATES);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<PrintTemplateConfig | null>(null);
   const [form] = Form.useForm();
 
+  // Helper to merge stored/API templates with the updated screen-based default definitions
+  const mergeTemplatesWithDefaults = (savedList: any[]): PrintTemplateConfig[] => {
+    const map = new Map<string, PrintTemplateConfig>();
+    DEFAULT_PRINT_TEMPLATES.forEach((def) => map.set(def.key, { ...def }));
+    if (Array.isArray(savedList)) {
+      savedList.forEach((item) => {
+        if (item && item.key && map.has(item.key)) {
+          const def = map.get(item.key)!;
+          map.set(item.key, {
+            ...def,
+            ...item,
+            tab: def.tab, // Always preserve the standard screen-based tab name
+            select: def.select,
+          });
+        }
+      });
+    }
+    return Array.from(map.values());
+  };
+
+  const loadPrintTemplatesFromApi = async () => {
+    try {
+      const data = await settingsApi.getPrintTemplates();
+      if (data && Array.isArray(data) && data.length > 0) {
+        const merged = mergeTemplatesWithDefaults(data);
+        setTemplates(merged);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('d2_admin_print_templates', JSON.stringify(merged));
+        }
+      }
+    } catch (err) {
+      console.warn('Could not load print templates from API:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('d2_admin_print_templates');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const merged = mergeTemplatesWithDefaults(parsed);
+            setTemplates(merged);
+            localStorage.setItem('d2_admin_print_templates', JSON.stringify(merged));
+          }
+        }
+      } catch {}
+    }
+    loadPrintTemplatesFromApi();
+  }, []);
+
   // Active current template config
   const activeTemplate = templates.find((t) => t.key === activeKey) || templates[0];
 
-  // Save templates to localStorage
-  const saveTemplatesToStorage = (nextTemplates: PrintTemplateConfig[]) => {
-    setTemplates(nextTemplates);
+  // Save templates to localStorage and API
+  const saveTemplatesToStorage = async (nextTemplates: PrintTemplateConfig[]) => {
+    const merged = mergeTemplatesWithDefaults(nextTemplates);
+    setTemplates(merged);
     try {
-      localStorage.setItem('d2_admin_print_templates', JSON.stringify(nextTemplates));
-    } catch {}
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('d2_admin_print_templates', JSON.stringify(merged));
+      }
+      await settingsApi.savePrintTemplates(merged);
+    } catch (err) {
+      console.warn('Could not save print templates to API:', err);
+    }
   };
 
   const handleOpenEdit = () => {
@@ -214,7 +197,7 @@ export function PrintTemplatesSettings() {
     setDrawerOpen(true);
   };
 
-  const handleSaveForm = (values: any) => {
+  const handleSaveForm = async (values: any) => {
     const updatedTemplates = templates.map((t) => {
       if (t.key === activeKey) {
         return {
@@ -224,12 +207,25 @@ export function PrintTemplatesSettings() {
       }
       return t;
     });
-    saveTemplatesToStorage(updatedTemplates);
+    await saveTemplatesToStorage(updatedTemplates);
     message.success(`Đã lưu cấu hình mẫu in "${activeTemplate.tab}" thành công!`);
     setDrawerOpen(false);
   };
 
-  const handleResetToDefault = () => {
+  const handleResetToDefault = async () => {
+    try {
+      const resetList = await settingsApi.resetPrintTemplates();
+      if (resetList && Array.isArray(resetList)) {
+        const merged = mergeTemplatesWithDefaults(resetList);
+        setTemplates(merged);
+        localStorage.setItem('d2_admin_print_templates', JSON.stringify(merged));
+        message.success(`Đã khôi phục tất cả mẫu in về mặc định.`);
+        return;
+      }
+    } catch (err) {
+      console.warn('API reset failed, resetting locally:', err);
+    }
+
     const defaultOne = DEFAULT_PRINT_TEMPLATES.find((t) => t.key === activeKey);
     if (defaultOne) {
       const updated = templates.map((t) => (t.key === activeKey ? { ...defaultOne } : t));
@@ -247,7 +243,7 @@ export function PrintTemplatesSettings() {
 
     const slipHtml = printEl.innerHTML;
     const isThermal = activeTemplate.paperSize === 'k80' || activeTemplate.paperSize === 'k57';
-    const paperWidth = activeTemplate.paperSize === 'k80' ? '76mm' : activeTemplate.paperSize === 'k57' ? '54mm' : '190mm';
+    const paperWidth = activeTemplate.paperSize === 'k80' ? '76mm' : activeTemplate.paperSize === 'k57' ? '54mm' : activeTemplate.paperSize === 'a5' ? '148mm' : '190mm';
     const pageStyle = activeTemplate.paperSize === 'k80' 
       ? '@page { size: 80mm auto; margin: 0; }' 
       : activeTemplate.paperSize === 'k57' 
@@ -298,7 +294,9 @@ export function PrintTemplatesSettings() {
           .italic { font-style: italic; }
           .uppercase { text-transform: uppercase; }
           .grid { display: grid; }
+          .grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
           .grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+          .grid-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
           .flex { display: flex; }
           .justify-between { justify-content: space-between; }
           .items-center { align-items: center; }
@@ -370,6 +368,18 @@ export function PrintTemplatesSettings() {
     }
   };
 
+  const insertVariableToTitle = (tag: string) => {
+    const current = form.getFieldValue('title') || '';
+    form.setFieldsValue({ title: `${current} ${tag}`.trim() });
+    message.info(`Đã chèn biến ${tag}`);
+  };
+
+  const insertVariableToHeader = (tag: string) => {
+    const current = form.getFieldValue('headerNote') || '';
+    form.setFieldsValue({ headerNote: `${current} ${tag}`.trim() });
+    message.info(`Đã chèn biến ${tag}`);
+  };
+
   const insertVariableToFooter = (tag: string) => {
     const current = form.getFieldValue('footerNote') || '';
     form.setFieldsValue({ footerNote: `${current} ${tag}`.trim() });
@@ -386,11 +396,11 @@ export function PrintTemplatesSettings() {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="font-bold text-base text-slate-900 m-0">Mẫu Phiếu In & Hóa Đơn Hệ Thống</h2>
+              <h2 className="font-bold text-base text-slate-900 m-0">Mẫu Phiếu In &amp; Hóa Đơn Hệ Thống</h2>
               <Tag color="gold" className="text-[10px] font-semibold m-0">POS &amp; ERP</Tag>
             </div>
             <p className="text-xs text-slate-500 m-0 mt-0.5">
-              Tùy biến hóa đơn bán lẻ, phiếu bảo hành, hợp đồng may đo, biên bản giao hàng công trình và phiếu thu chi
+              Cấu hình mẫu in chuẩn cho Đơn hàng, Nhập kho, Kiểm kho, Xuất trả NCC, Bàn giao và Thu chi
             </p>
           </div>
         </div>
@@ -421,7 +431,7 @@ export function PrintTemplatesSettings() {
         </div>
       </div>
 
-      {/* 2. Sub-Tabs Selector */}
+      {/* 2. Sub-Tabs Selector matching system modules */}
       <div className="bg-white p-2 rounded-xl border border-slate-200/80 shadow-xs overflow-x-auto">
         <Segmented
           value={activeKey}
@@ -439,21 +449,21 @@ export function PrintTemplatesSettings() {
       </div>
 
       {/* 3. Main Workspace: Settings Quick Config + Live Preview Paper */}
-      <div className="flex flex-col lg:flex-row gap-5 items-start flex-1 min-h-0">
-        {/* Left Quick Settings Card */}
-        <div className="w-full lg:w-80 bg-white rounded-xl border border-slate-200/80 shadow-xs p-4 space-y-4 shrink-0 text-xs">
-          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-            <span className="font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-              <SettingOutlined className="text-[#784e34]" /> Cấu hình nhanh
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        {/* Left Quick Config Panel */}
+        <div className="lg:col-span-4 bg-white p-4 sm:p-5 rounded-xl border border-slate-200/80 shadow-xs space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+            <span className="font-bold text-xs uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+              <FileTextOutlined className="text-[#784e34]" /> Cấu hình nhanh
             </span>
-            <Tag color="blue" className="m-0 font-mono text-[10px] uppercase">
+            <Tag color="cyan" className="font-mono text-[10px] m-0 uppercase font-semibold">
               {activeTemplate.paperSize.toUpperCase()}
             </Tag>
           </div>
 
-          {/* Paper Size */}
-          <div className="space-y-1.5">
-            <label className="font-semibold text-slate-800 block">Khổ giấy in mặc định</label>
+          {/* Paper size select */}
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-slate-700 block">Khổ giấy in mặc định</label>
             <Select
               value={activeTemplate.paperSize}
               onChange={(val) => {
@@ -499,7 +509,7 @@ export function PrintTemplatesSettings() {
             </div>
 
             <div className="flex items-center justify-between">
-              <span className="text-slate-700">Thông tin Khách &amp; Công trình</span>
+              <span className="text-slate-700">Thông tin Khách &amp; Đối tác</span>
               <Switch
                 size="small"
                 checked={activeTemplate.showCustomer}
@@ -550,7 +560,7 @@ export function PrintTemplatesSettings() {
         </div>
 
         {/* Right Live Preview Paper Area */}
-        <div className="flex-1 w-full bg-slate-100/70 p-4 sm:p-6 rounded-xl border border-slate-200/80 flex flex-col items-center justify-start overflow-y-auto min-h-[680px]">
+        <div className="lg:col-span-8 bg-slate-100/70 p-4 sm:p-6 rounded-xl border border-slate-200/80 flex flex-col items-center justify-start overflow-y-auto min-h-[680px]">
           <div className="text-center text-xs font-semibold text-slate-500 mb-3 flex items-center gap-1.5">
             <EyeOutlined className="text-[#784e34]" /> Bản xem trước thực tế (Khổ: {activeTemplate.paperSize.toUpperCase()})
           </div>
@@ -578,8 +588,8 @@ export function PrintTemplatesSettings() {
                     className="h-8 w-auto object-contain"
                   />
                   <div className="text-left">
-                    <div className="font-bold text-sm text-[#5d371f] leading-none">D2 LUXURY</div>
-                    <div className="text-[9px] text-[#83746c] tracking-wider mt-0.5">NỘI THẤT GỖ TỰ NHIÊN</div>
+                    <div className="font-bold text-sm text-[#5d371f] leading-none uppercase">D2 LUXURY</div>
+                    <div className="text-[9px] text-[#83746c] tracking-wider mt-0.5 uppercase">NỘI THẤT GỖ TỰ NHIÊN</div>
                   </div>
                 </div>
               )}
@@ -604,21 +614,43 @@ export function PrintTemplatesSettings() {
               </div>
             </div>
 
-            {/* Customer & Project Info */}
-            {activeTemplate.showCustomer && (
+            {/* Specialized Metadata section per template type */}
+            {activeTemplate.key === 'purchase' ? (
               <div className="py-2.5 px-3 bg-slate-50/80 rounded-md border border-slate-200 text-[11px] space-y-1 mb-3">
                 <div className="flex justify-between">
-                  <span><strong className="text-slate-800">Khách hàng:</strong> Ông Nguyễn Văn Luân</span>
-                  <span className="font-mono font-semibold text-slate-700">0912.888.999</span>
+                  <span><strong className="text-slate-800">Nhà cung cấp:</strong> Công ty Cổ phần Gỗ An Cường</span>
+                  <span className="font-mono font-semibold text-slate-700">028.3862.5726</span>
                 </div>
-                <div>
-                  <strong className="text-slate-800">Địa chỉ công trình:</strong> Biệt thự Hoa Sữa 08-12, KĐT Vinhomes Riverside, Long Biên, Hà Nội
-                </div>
+                <div><strong className="text-slate-800">Kho tiếp nhận:</strong> Tổng Kho Xưởng Sản Xuất Thạch Thất</div>
                 <div className="flex justify-between text-slate-600 text-[10px]">
-                  <span><strong>KTS phụ trách:</strong> Trần Quang Huy (Xưởng 01)</span>
-                  <span><strong>Hình thức:</strong> May đo theo bản vẽ 3D</span>
+                  <span><strong>Cán bộ KCS nhận hàng:</strong> Nguyễn Văn Nam</span>
+                  <span><strong>Hình thức thanh toán:</strong> Chuyển khoản ngân hàng</span>
                 </div>
               </div>
+            ) : activeTemplate.key === 'stocktake' ? (
+              <div className="py-2.5 px-3 bg-slate-50/80 rounded-md border border-slate-200 text-[11px] space-y-1 mb-3">
+                <div className="flex justify-between">
+                  <span><strong className="text-slate-800">Kho kiểm kê:</strong> Kho Gỗ Tự Nhiên &amp; Phụ Kiện Showroom</span>
+                  <span><strong className="text-slate-800">Trưởng ban:</strong> KTS. Trần Quang Huy</span>
+                </div>
+                <div><strong className="text-slate-800">Mục đích:</strong> Kiểm kê định kỳ tháng đối soát sổ sách và thực tế tồn kho</div>
+              </div>
+            ) : (
+              activeTemplate.showCustomer && (
+                <div className="py-2.5 px-3 bg-slate-50/80 rounded-md border border-slate-200 text-[11px] space-y-1 mb-3">
+                  <div className="flex justify-between">
+                    <span><strong className="text-slate-800">Khách hàng:</strong> Ông Nguyễn Văn Luân</span>
+                    <span className="font-mono font-semibold text-slate-700">0912.888.999</span>
+                  </div>
+                  <div>
+                    <strong className="text-slate-800">Địa chỉ công trình:</strong> Biệt thự Hoa Sữa 08-12, KĐT Vinhomes Riverside, Long Biên, Hà Nội
+                  </div>
+                  <div className="flex justify-between text-slate-600 text-[10px]">
+                    <span><strong>KTS phụ trách:</strong> Trần Quang Huy (Xưởng 01)</span>
+                    <span><strong>Hình thức:</strong> May đo theo bản vẽ 3D</span>
+                  </div>
+                </div>
+              )
             )}
 
             {/* Items Table */}
@@ -679,19 +711,15 @@ export function PrintTemplatesSettings() {
                 <span className="font-mono font-semibold">87,500,000 đ</span>
               </div>
               <div className="flex justify-between text-slate-700">
-                <span>Chiết khấu đối tác KTS (6%):</span>
-                <span className="font-mono text-rose-600 font-semibold">- 5,250,000 đ</span>
-              </div>
-              <div className="flex justify-between text-slate-700">
                 <span>Chi phí vận chuyển &amp; lắp đặt tận nơi:</span>
                 <span className="font-mono text-emerald-700 font-semibold">Miễn phí</span>
               </div>
               <div className="flex justify-between items-center text-xs font-bold text-slate-900 pt-1.5 border-t border-slate-900">
                 <span className="uppercase">Tổng thanh toán:</span>
-                <span className="text-sm font-mono font-bold text-[#784e34]">82,250,000 đ</span>
+                <span className="text-sm font-mono font-bold text-[#784e34]">87,500,000 đ</span>
               </div>
               <div className="text-left text-[10px] italic text-slate-600 pt-0.5">
-                (Bằng chữ: Tám mươi hai triệu hai trăm năm mươi nghìn đồng chẵn)
+                (Bằng chữ: Tám mươi bảy triệu năm trăm nghìn đồng chẵn)
               </div>
             </div>
 
@@ -705,12 +733,12 @@ export function PrintTemplatesSettings() {
                   <div>Ngân hàng: <strong>MBBank (Hà Nội)</strong></div>
                   <div>Số tài khoản: <strong className="font-mono font-bold text-[#784e34]">0986739587</strong></div>
                   <div>Chủ TK: <strong>CTCP NOI THAT D2 LUXURY</strong></div>
-                  <div className="text-[9px] text-slate-500">Nội dung: HD-2026-0889</div>
+                  <div className="text-[9px] text-slate-500">Nội dung: {activeTemplate.codePrefix}-2026-0889</div>
                 </div>
 
                 <div className="flex flex-col items-center shrink-0">
                   <img
-                    src="https://api.vietqr.io/image/970422-0986739587-n2LwzB0.jpg?accountName=CTCP%20NOI%20THAT%20D2%20LUXURY&amount=82250000&addInfo=HD-2026-0889"
+                    src="https://api.vietqr.io/image/970422-0986739587-n2LwzB0.jpg?accountName=CTCP%20NOI%20THAT%20D2%20LUXURY&amount=87500000&addInfo=HD-2026-0889"
                     alt="VietQR Chuyển khoản"
                     className="w-20 h-20 rounded border border-slate-200 object-contain bg-white p-0.5"
                     onError={(e: any) => {
@@ -726,13 +754,13 @@ export function PrintTemplatesSettings() {
             {activeTemplate.showSignature && (
               <div className="mt-6 pt-2 grid grid-cols-3 text-center text-[10px] text-slate-700 font-semibold gap-2">
                 <div>
-                  <div>Khách hàng / Đại diện</div>
+                  <div>{activeTemplate.key === 'purchase' || activeTemplate.key === 'return' ? 'Đại diện Đối tác' : 'Khách hàng / Đại diện'}</div>
                   <div className="text-[9px] font-normal italic text-slate-400 mt-0.5">(Ký &amp; ghi rõ họ tên)</div>
                   <div className="h-12"></div>
                   <div className="font-normal text-slate-800">Nguyễn Văn Luân</div>
                 </div>
                 <div>
-                  <div>Kỹ sư giám sát</div>
+                  <div>{activeTemplate.key === 'purchase' || activeTemplate.key === 'stocktake' ? 'Thủ kho / KCS' : 'Kỹ sư giám sát'}</div>
                   <div className="text-[9px] font-normal italic text-slate-400 mt-0.5">(Ký &amp; ghi rõ họ tên)</div>
                   <div className="h-12"></div>
                   <div className="font-normal text-slate-800">Trần Quang Huy</div>
@@ -763,119 +791,94 @@ export function PrintTemplatesSettings() {
         title={`Chỉnh sửa: ${activeTemplate.tab}`}
         width={580}
         form={form}
-        onSubmit={() => form.submit()}
+        onSubmit={async () => {
+          try {
+            const values = await form.validateFields();
+            await handleSaveForm(values);
+          } catch (err) {
+            console.warn('Form validation failed:', err);
+          }
+        }}
+        submitText="Lưu cấu hình mẫu"
+        destroyOnHidden
       >
-        <Form
-          form={form}
-          layout="vertical"
-          onFinish={handleSaveForm}
-          className="space-y-4 text-xs"
-        >
-          <Form.Item
-            label="Tiêu đề chính trên phiếu in"
-            name="title"
-            rules={[{ required: true, message: 'Vui lòng nhập tiêu đề phiếu' }]}
-          >
-            <Input className="h-9 rounded-lg" placeholder="Ví dụ: HÓA ĐƠN BÁN HÀNG NỘI THẤT" />
-          </Form.Item>
-
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item label="Khổ giấy in tiêu chuẩn" name="paperSize">
-                <Select
-                  className="w-full"
-                  options={[
-                    { value: 'k80', label: 'Khổ K80 (80mm)' },
-                    { value: 'k57', label: 'Khổ K57 (57mm)' },
-                    { value: 'a4', label: 'Khổ A4 (Khổ đứng)' },
-                    { value: 'a5', label: 'Khổ A5 (Khổ ngang)' },
-                  ]}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item label="Tiêu đề phụ / Đội thi công" name="headerNote">
-                <Input className="h-9 rounded-lg" placeholder="Ví dụ: Showroom D2 LUXURY" />
-              </Form.Item>
-            </Col>
-          </Row>
-
-          <Divider className="my-2" />
-
-          <div className="space-y-3">
-            <span className="font-bold text-slate-800 block text-xs">Tùy chọn hiển thị các khối nội dung</span>
-            <Row gutter={[16, 12]}>
-              <Col span={12}>
-                <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-200">
-                  <span className="text-slate-700">Logo thương hiệu</span>
-                  <Form.Item name="showLogo" valuePropName="checked" noStyle>
-                    <Switch size="small" />
-                  </Form.Item>
-                </div>
-              </Col>
-              <Col span={12}>
-                <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-200">
-                  <span className="text-slate-700">Mã VietQR động</span>
-                  <Form.Item name="showQr" valuePropName="checked" noStyle>
-                    <Switch size="small" />
-                  </Form.Item>
-                </div>
-              </Col>
-              <Col span={12}>
-                <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-200">
-                  <span className="text-slate-700">Khách &amp; Công trình</span>
-                  <Form.Item name="showCustomer" valuePropName="checked" noStyle>
-                    <Switch size="small" />
-                  </Form.Item>
-                </div>
-              </Col>
-              <Col span={12}>
-                <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-200">
-                  <span className="text-slate-700">Chữ ký các bên</span>
-                  <Form.Item name="showSignature" valuePropName="checked" noStyle>
-                    <Switch size="small" />
-                  </Form.Item>
-                </div>
-              </Col>
-            </Row>
+        <Form form={form} layout="vertical" onFinish={handleSaveForm} requiredMark={false} className="space-y-4">
+          <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+            <span className="font-semibold text-xs text-slate-700 block mb-1">Loại mẫu áp dụng:</span>
+            <span className="text-sm font-bold text-[#784e34]">{activeTemplate.select}</span>
           </div>
 
-          <Divider className="my-2" />
+          <Form.Item
+            name="title"
+            label={<span className="text-xs font-semibold text-slate-700">Tiêu đề chính trên phiếu in</span>}
+            rules={[{ required: true, message: 'Vui lòng nhập tiêu đề mẫu in' }]}
+          >
+            <Input className="h-10 text-sm font-semibold rounded-lg" placeholder="VD: HÓA ĐƠN BÁN HÀNG & DỊCH VỤ" />
+          </Form.Item>
 
-          {/* Quick Insert Tokens */}
+          <Form.Item
+            name="paperSize"
+            label={<span className="text-xs font-semibold text-slate-700">Khổ giấy in</span>}
+            rules={[{ required: true }]}
+          >
+            <Select
+              className="h-10 text-sm"
+              options={[
+                { value: 'k80', label: 'Khổ K80 (Cuộn nhiệt 80mm - Máy POS)' },
+                { value: 'k57', label: 'Khổ K57 (Cuộn nhiệt 57mm mini)' },
+                { value: 'a4', label: 'Khổ A4 (Khổ đứng văn phòng / Hợp đồng)' },
+                { value: 'a5', label: 'Khổ A5 (Khổ ngang phiếu kho & vận chuyển)' },
+              ]}
+            />
+          </Form.Item>
+
+          <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
+            <Form.Item name="showLogo" valuePropName="checked" className="mb-0">
+              <Switch checkedChildren="Logo: Bật" unCheckedChildren="Logo: Tắt" />
+            </Form.Item>
+            <Form.Item name="showQr" valuePropName="checked" className="mb-0">
+              <Switch checkedChildren="QR VietQR: Bật" unCheckedChildren="QR VietQR: Tắt" />
+            </Form.Item>
+            <Form.Item name="showCustomer" valuePropName="checked" className="mb-0">
+              <Switch checkedChildren="Khách hàng: Bật" unCheckedChildren="Khách hàng: Tắt" />
+            </Form.Item>
+            <Form.Item name="showSignature" valuePropName="checked" className="mb-0">
+              <Switch checkedChildren="Chữ ký: Bật" unCheckedChildren="Chữ ký: Tắt" />
+            </Form.Item>
+          </div>
+
+          <Form.Item
+            name="headerNote"
+            label={<span className="text-xs font-semibold text-slate-700">Tiêu đề phụ / Khẩu hiệu</span>}
+          >
+            <Input className="h-10 text-sm rounded-lg" placeholder="Hệ thống Showroom Nội Thất..." />
+          </Form.Item>
+
+          <Form.Item
+            name="footerNote"
+            label={<span className="text-xs font-semibold text-slate-700">Ghi chú chân trang</span>}
+          >
+            <Input.TextArea rows={3} className="rounded-lg text-sm" placeholder="Cảm ơn Quý khách!..." />
+          </Form.Item>
+
+          {/* Variables helper */}
           <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="font-bold text-slate-800 text-xs flex items-center gap-1">
-                <ThunderboltOutlined className="text-amber-500" /> Nhấp để chèn biến dữ liệu nhanh
-              </span>
-              <span className="text-[10px] text-slate-400">Tự động thay thế khi in</span>
-            </div>
-            <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-2 bg-slate-50 rounded-lg border border-slate-200">
-              {VARIABLE_TAGS.map((item) => (
+            <span className="text-xs font-semibold text-slate-700 block mb-1.5">
+              Từ khóa dữ liệu động (Click để chèn vào chân trang):
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {VARIABLE_TAGS.map((tag) => (
                 <Tag
-                  key={item.tag}
-                  color="default"
-                  onClick={() => insertVariableToFooter(item.tag)}
-                  className="cursor-pointer hover:border-[#784e34] hover:text-[#784e34] text-[11px] font-mono py-0.5 px-1.5 m-0"
-                  title={`Chèn ${item.label}`}
+                  key={tag.tag}
+                  color="blue"
+                  className="cursor-pointer text-[11px] hover:opacity-80 m-0"
+                  onClick={() => insertVariableToFooter(tag.tag)}
                 >
-                  + {item.tag}
+                  {tag.label}
                 </Tag>
               ))}
             </div>
           </div>
-
-          <Form.Item
-            label="Ghi chú chính sách bảo hành & chân trang"
-            name="footerNote"
-            rules={[{ required: true, message: 'Vui lòng nhập ghi chú chân trang' }]}
-          >
-            <Input.TextArea
-              rows={3}
-              className="rounded-lg text-xs"
-              placeholder="Ví dụ: Bảo hành 05 năm sản phẩm gỗ tự nhiên..."
-            />
-          </Form.Item>
         </Form>
       </AdminFormDrawer>
     </div>

@@ -89,16 +89,28 @@ export interface FeaturedCatalogProduct {
   code: string;
   collection: string;
   name: string;
-  price: number;
+  price: number; // Giá bán niêm yết
+  originalPrice?: number; // Giá gốc / Giá vốn / Giá nhập
+  costPrice?: number; // Alias giá gốc
   stockNote: string;
   stockType: 'in_stock' | 'low' | 'custom';
   image: string;
+  images?: string[];
+  subImages?: string;
   metaInfo?: string;
   metaIcon?: string;
   categoryId?: string;
   categoryName?: string;
+  space?: string;
+  unit?: string;
   branch?: string;
   location?: string;
+  description?: string;
+  dimensions?: string;
+  material?: string;
+  color?: string;
+  warranty?: string;
+  shippingNote?: string;
 }
 
 export interface StockAuditItem {
@@ -145,6 +157,7 @@ export interface AdminWarehouse {
   branch: string;
   province?: string;
   district?: string;
+  ward?: string;
   streetAddress?: string;
   address: string;
   managerName: string;
@@ -160,11 +173,39 @@ export interface AdminWarehouse {
   totalValue: number;
 }
 
+export interface StockImportSlipItem {
+  id?: string;
+  code: string;
+  name: string;
+  unit: string;
+  batch?: string;
+  expiryDate?: string;
+  quantity: number;
+  unitPrice: number;
+  discount?: number;
+  importPrice?: number;
+  total: number;
+}
+
+export interface StockImportPaymentHistory {
+  id: string;
+  code: string;
+  date: string;
+  amount: number;
+  method: string;
+  creator: string;
+  status: string;
+  note?: string;
+}
+
 export interface StockImportSlip {
   id: string;
   code: string;
   supplier: string;
+  supplierCode?: string;
+  supplierPhone?: string;
   warehouseName: string;
+  warehouseCode?: string;
   itemName: string;
   spec: string;
   quantity: number;
@@ -172,15 +213,20 @@ export interface StockImportSlip {
   unit: string;
   mc: string;
   totalValue: number;
+  discount?: number;
   paidAmount?: number;
   debtAmount?: number;
+  returnStatus?: string;
   paymentMethod?: string;
   invoiceNumber?: string;
+  creator?: string;
   note?: string;
   importDate: string;
   inspector: string;
   status: 'completed' | 'inspecting' | 'draft';
   statusLabel: string;
+  items?: StockImportSlipItem[];
+  payments?: StockImportPaymentHistory[];
 }
 
 export interface AdminSupplier {
@@ -191,6 +237,7 @@ export interface AdminSupplier {
   phone: string;
   email: string;
   address: string;
+  branch?: string;
   totalPurchased: number;
   currentDebt?: number;
   totalCollected?: number;
@@ -362,6 +409,8 @@ export interface AdminEmployee {
   status: 'working' | 'resigned';
   workingDate?: string;
   area?: string;
+  province?: string;
+  district?: string;
   ward?: string;
   addressDetail?: string;
   debt?: number;
@@ -370,6 +419,22 @@ export interface AdminEmployee {
   zalo?: string;
   linkedUsernames?: string | string[];
   skills?: string[];
+}
+
+export interface AdminSpace {
+  id: string;
+  code: string;
+  name: string;
+  slug: string;
+  tagline?: string;
+  description?: string;
+  image?: string;
+  icon?: string;
+  displayOrder: number;
+  status: 'active' | 'hidden';
+  showOnHome: boolean;
+  showOnHeader: boolean;
+  categoryCount?: number;
 }
 
 export interface AdminCategory {
@@ -381,6 +446,7 @@ export interface AdminCategory {
   featuredProduct: string;
   image: string;
   space: string;
+  spaceId?: string;
   displayOrder: number;
   status: 'active' | 'hidden';
   showOnHome: boolean;

@@ -16,24 +16,50 @@ public sealed record OrderItemDto(
 public sealed record OrderDto(
     Guid Id,
     string OrderCode,
+    string OrderType,
+    string OrderTypeLabel,
     Guid? CustomerId,
     string CustomerName,
     string CustomerPhone,
     string CustomerEmail,
     string ShippingAddress,
-    string City,
-    string District,
+    string CustomerProvince,
+    string CustomerDistrict,
+    string CustomerAddress,
+    string? ProductName,
+    string? ProductSpec,
+    string? WoodType,
+    string? SpaceType,
+    string? SpaceLabel,
+    string? Branch,
+    string? Showroom,
+    string OrderDate,
+    string? DeadlineDate,
     string Note,
     string PaymentMethod,
     string PaymentStatus,
     string Status,
+    string StatusLabel,
     decimal SubTotal,
+    decimal Value,
+    decimal DepositPercent,
+    decimal DepositAmount,
+    string? DepositNote,
     decimal ShippingFee,
     decimal DiscountAmount,
     decimal TotalAmount,
     List<OrderItemDto> Items,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt
+);
+
+public sealed record OrderStatsDto(
+    int TotalOrders,
+    int PendingOrders,
+    int ProcessingOrders,
+    int CompletedOrders,
+    decimal TotalRevenue,
+    decimal TotalDeposit
 );
 
 public sealed record ConsultationDto(

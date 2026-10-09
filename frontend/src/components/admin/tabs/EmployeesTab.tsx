@@ -56,6 +56,7 @@ import {
   AdminSearchInput,
 } from '@/components/admin';
 import { exportToExcel } from '@/utils/exportExcel';
+import { employeeApi } from '@/api/employeeApi';
 import type { AdminEmployee, AdminBranch, AdminRole } from '@/types/admin';
 import {
   INITIAL_EMPLOYEES,
@@ -63,6 +64,8 @@ import {
   INITIAL_ROLES,
 } from '@/data/admin/mockData';
 import { isMatchBranch } from '@/utils/branchHelper';
+import { VIETNAM_PROVINCES } from '@/data/vietnamAddresses';
+import { ADMIN_STORAGE_KEYS, setStoredAdminData } from '@/utils/adminStorage';
 
 export interface EmployeesTabProps {
   employeesList?: AdminEmployee[];
@@ -110,6 +113,29 @@ const generateUsername = (name: string): string => {
   return `${lastName}.${initials}`;
 };
 
+// Helper to detect province and district from address string
+const detectProvinceAndDistrict = (address?: string) => {
+  if (!address) return { province: undefined, district: undefined, detail: '' };
+  for (const prov of VIETNAM_PROVINCES) {
+    if (address.includes(prov.name)) {
+      for (const dist of prov.districts) {
+        if (address.includes(dist.name)) {
+          const detail = address
+            .replace(prov.name, '')
+            .replace(dist.name, '')
+            .replace(/,\s*,/g, ',')
+            .replace(/^,\s*|,\s*$/g, '')
+            .trim();
+          return { province: prov.name, district: dist.name, detail };
+        }
+      }
+      const detail = address.replace(prov.name, '').replace(/^,\s*|,\s*$/g, '').trim();
+      return { province: prov.name, district: undefined, detail };
+    }
+  }
+  return { province: undefined, district: undefined, detail: address };
+};
+
 export function EmployeesTab({
   employeesList: initialEmployees = INITIAL_EMPLOYEES,
   setEmployeesList: externalSetEmployeesList,
@@ -120,8 +146,28 @@ export function EmployeesTab({
   const { message } = App.useApp();
 
   const [internalEmployees, setInternalEmployees] = useState<AdminEmployee[]>(initialEmployees);
+  const [loading, setLoading] = useState(false);
   const employeesList = externalSetEmployeesList ? initialEmployees : internalEmployees;
   const setEmployeesList = externalSetEmployeesList || setInternalEmployees;
+
+  const loadEmployeesFromApi = async () => {
+    try {
+      setLoading(true);
+      const res = await employeeApi.getEmployees();
+      if (res && Array.isArray(res)) {
+        setEmployeesList(res);
+        setStoredAdminData(ADMIN_STORAGE_KEYS.EMPLOYEES, res);
+      }
+    } catch (err) {
+      console.warn('Could not load employees from API:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  React.useEffect(() => {
+    loadEmployeesFromApi();
+  }, []);
 
   // Search and Filter states
   const [searchQuery, setSearchQuery] = useState('');
@@ -135,6 +181,18 @@ export function EmployeesTab({
   const [form] = Form.useForm();
   const [isUsernameCustom, setIsUsernameCustom] = useState(false);
 
+  // Address dynamic options (Tỉnh / Thành & Quận / Huyện)
+  const selectedProvince = Form.useWatch('province', form);
+  const availableDistricts = useMemo(() => {
+    if (!selectedProvince) return [];
+    const found = VIETNAM_PROVINCES.find(
+      (p) =>
+        p.name === selectedProvince ||
+        p.name.toLowerCase() === selectedProvince.toLowerCase()
+    );
+    return found ? found.districts : [];
+  }, [selectedProvince]);
+
   // Detail Drawer States
   const [detailDrawerOpen, setDetailDrawerOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<AdminEmployee | null>(null);
@@ -147,6 +205,18 @@ export function EmployeesTab({
 
   // Import Excel Modal State
   const [importModalOpen, setImportModalOpen] = useState(false);
+
+  // Available branch filter options (combining registered branches and assigned branches)
+  const branchFilterOptions = useMemo(() => {
+    const branchSet = new Set<string>();
+    branchesList.forEach((b) => {
+      if (b.name) branchSet.add(b.name);
+    });
+    employeesList.forEach((e) => {
+      if (e.branch) branchSet.add(e.branch);
+    });
+    return Array.from(branchSet).map((b) => ({ value: b, label: b }));
+  }, [branchesList, employeesList]);
 
   // Filtered employees list
   const filteredEmployees = useMemo(() => {
@@ -166,70 +236,80 @@ export function EmployeesTab({
 
       const matchStatus = statusFilter === 'all' || emp.status === statusFilter;
       const matchDept = departmentFilter === 'all' || emp.department === departmentFilter;
-      const matchBranch = branchFilter === 'all' || emp.branch === branchFilter;
-      const matchGlobalBranch = isMatchBranch(emp.branch, selectedGlobalBranch);
+      const matchBranch = branchFilter === 'all' ? true : isMatchBranch(emp.branch, branchFilter);
 
-      return matchSearch && matchStatus && matchDept && matchBranch && matchGlobalBranch;
+      return matchSearch && matchStatus && matchDept && matchBranch;
     });
-  }, [employeesList, searchQuery, statusFilter, departmentFilter, branchFilter, selectedGlobalBranch]);
+  }, [employeesList, searchQuery, statusFilter, departmentFilter, branchFilter]);
 
   // Open Create Employee Drawer
   const handleOpenCreate = () => {
     setEditingEmployee(null);
     setIsUsernameCustom(false);
-    form.resetFields();
     const nextNum = employeesList.length + 1;
     const nextCode = `NV${String(nextNum).padStart(3, '0')}`;
-
-    form.setFieldsValue({
-      code: nextCode,
-      name: '',
-      gender: 'Nam',
-      birthday: null,
-      idNumber: '',
-      phone: '',
-      email: '',
-      address: '',
-      department: DEPARTMENTS[0],
-      title: TITLES[0],
-      branch: branchesList[0]?.name || 'Showroom Flagship Thảo Điền',
-      branchIds: [branchesList[0]?.id || 'br_1'],
-      username: '',
-      password: 'D2Luxury@2026',
-      role: 'role_staff',
-      status: true,
-      workingDate: dayjs(),
-      skills: [],
-    });
     setDrawerOpen(true);
+
+    setTimeout(() => {
+      form.resetFields();
+      form.setFieldsValue({
+        code: nextCode,
+        name: '',
+        gender: 'Nam',
+        birthday: null,
+        idNumber: '',
+        phone: '',
+        email: '',
+        province: undefined,
+        district: undefined,
+        addressDetail: '',
+        address: '',
+        department: branchesList[0]?.name || 'Chi nhánh',
+        title: TITLES[0],
+        branch: branchesList[0]?.name || 'Showroom Flagship Thảo Điền',
+        branchIds: [branchesList[0]?.id || 'br_1'],
+        username: '',
+        password: 'D2Luxury@2026',
+        role: 'role_staff',
+        status: true,
+        skills: [],
+      });
+    }, 0);
   };
 
   // Open Edit Employee Drawer
   const handleOpenEdit = (emp: AdminEmployee) => {
     setEditingEmployee(emp);
     setIsUsernameCustom(true);
-    form.resetFields();
-    form.setFieldsValue({
-      code: emp.code,
-      name: emp.name,
-      gender: emp.gender || 'Nam',
-      birthday: emp.birthday ? dayjs(emp.birthday, 'DD/MM/YYYY') : null,
-      idNumber: emp.idNumber || '',
-      phone: emp.phone || '',
-      email: emp.email || '',
-      address: emp.address || '',
-      department: emp.department,
-      title: emp.title,
-      branch: emp.branch,
-      branchIds: emp.branchIds || [],
-      username: emp.username || emp.login,
-      role: emp.role || 'role_staff',
-      status: emp.status === 'working',
-      workingDate: emp.workingDate ? dayjs(emp.workingDate) : dayjs(),
-      skills: emp.skills || [],
-      note: emp.note || '',
-    });
     setDrawerOpen(true);
+
+    setTimeout(() => {
+      form.resetFields();
+      const { province, district, detail } = detectProvinceAndDistrict(emp.address);
+      form.setFieldsValue({
+        code: emp.code,
+        name: emp.name,
+        gender: emp.gender || 'Nam',
+        birthday: emp.birthday ? dayjs(emp.birthday, 'DD/MM/YYYY') : null,
+        idNumber: emp.idNumber || '',
+        phone: emp.phone || '',
+        email: emp.email || '',
+        province: emp.province || province,
+        district: emp.district || district,
+        addressDetail: emp.addressDetail || detail || emp.address || '',
+        address: emp.address || '',
+        department: emp.department,
+        title: emp.title,
+        branch: emp.branch,
+        branchIds: emp.branchIds || [],
+        username: emp.username || emp.login,
+        role: emp.role || 'role_staff',
+        status: emp.status === 'working',
+        workingDate: emp.workingDate ? dayjs(emp.workingDate) : dayjs(),
+        skills: emp.skills || [],
+        note: emp.note || '',
+      });
+    }, 0);
   };
 
   // Open Detail Drawer
@@ -245,30 +325,55 @@ export function EmployeesTab({
     const trimmedName = (values.name || '').trim();
     const username = (values.username || generateUsername(trimmedName)).trim();
 
+    const fullAddress = [
+      values.addressDetail,
+      values.district,
+      values.province,
+    ]
+      .map((s) => (s || '').trim())
+      .filter(Boolean)
+      .join(', ');
+
     if (editingEmployee) {
+      const payload: Partial<AdminEmployee> = {
+        code: trimmedCode,
+        name: trimmedName,
+        gender: values.gender || 'Nam',
+        birthday: values.birthday ? values.birthday.format('DD/MM/YYYY') : editingEmployee.birthday,
+        idNumber: values.idNumber || '',
+        phone: values.phone || '',
+        email: values.email || '',
+        address: fullAddress || values.address || '',
+        addressDetail: values.addressDetail || '',
+        province: values.province || '',
+        district: values.district || '',
+        department: values.department || '',
+        title: values.title || '',
+        branch: values.branch || '',
+        branchIds: values.branchIds || [],
+        login: username,
+        username: username,
+        role: values.role,
+        status: values.status ? ('working' as const) : ('resigned' as const),
+        workingDate: values.workingDate ? values.workingDate.format('YYYY-MM-DD') : editingEmployee.workingDate,
+        skills: values.skills || [],
+        note: values.note || '',
+      };
+      if (values.password) {
+        payload.password = values.password;
+      }
+
+      try {
+        await employeeApi.updateEmployee(editingEmployee.id, payload);
+      } catch (err) {
+        console.warn('API update employee failed, saving locally:', err);
+      }
+
       const updatedList = employeesList.map((emp) =>
         emp.id === editingEmployee.id
           ? {
               ...emp,
-              code: trimmedCode,
-              name: trimmedName,
-              gender: values.gender || 'Nam',
-              birthday: values.birthday ? values.birthday.format('DD/MM/YYYY') : emp.birthday,
-              idNumber: values.idNumber || '',
-              phone: values.phone || '',
-              email: values.email || '',
-              address: values.address || '',
-              department: values.department || '',
-              title: values.title || '',
-              branch: values.branch || '',
-              branchIds: values.branchIds || [],
-              login: username,
-              username: username,
-              role: values.role,
-              status: values.status ? ('working' as const) : ('resigned' as const),
-              workingDate: values.workingDate ? values.workingDate.format('YYYY-MM-DD') : emp.workingDate,
-              skills: values.skills || [],
-              note: values.note || '',
+              ...payload,
             }
           : emp
       );
@@ -276,29 +381,12 @@ export function EmployeesTab({
       if (selectedEmployee?.id === editingEmployee.id) {
         setSelectedEmployee({
           ...selectedEmployee,
-          code: trimmedCode,
-          name: trimmedName,
-          gender: values.gender || 'Nam',
-          birthday: values.birthday ? values.birthday.format('DD/MM/YYYY') : selectedEmployee.birthday,
-          idNumber: values.idNumber || '',
-          phone: values.phone || '',
-          email: values.email || '',
-          address: values.address || '',
-          department: values.department || '',
-          title: values.title || '',
-          branch: values.branch || '',
-          login: username,
-          username: username,
-          role: values.role,
-          status: values.status ? 'working' : 'resigned',
-          skills: values.skills || [],
-          note: values.note || '',
-        });
+          ...payload,
+        } as AdminEmployee);
       }
       message.success(`Đã cập nhật hồ sơ nhân viên "${trimmedName}" thành công!`);
     } else {
-      const newEmp: AdminEmployee = {
-        id: `emp_${Date.now()}`,
+      const newEmpPayload: Partial<AdminEmployee> = {
         code: trimmedCode || `NV${String(employeesList.length + 1).padStart(3, '0')}`,
         name: trimmedName,
         gender: values.gender || 'Nam',
@@ -306,8 +394,11 @@ export function EmployeesTab({
         idNumber: values.idNumber || '',
         phone: values.phone || '',
         email: values.email || '',
-        address: values.address || '',
-        department: values.department || DEPARTMENTS[0],
+        address: fullAddress || values.address || '',
+        addressDetail: values.addressDetail || '',
+        province: values.province || '',
+        district: values.district || '',
+        department: values.branch || values.department || 'Chi nhánh',
         title: values.title || TITLES[0],
         branch: values.branch || branchesList[0]?.name || 'Showroom Thảo Điền',
         branchIds: values.branchIds || [],
@@ -320,16 +411,35 @@ export function EmployeesTab({
         skills: values.skills || ['Tư vấn nội thất'],
         note: values.note || '',
       };
-      setEmployeesList([newEmp, ...employeesList]);
-      message.success(`Đã thêm mới nhân viên "${newEmp.name}" vào hệ thống!`);
+
+      let createdEmp: AdminEmployee;
+      try {
+        createdEmp = await employeeApi.createEmployee(newEmpPayload);
+      } catch (err) {
+        console.warn('API create employee failed, saving locally:', err);
+        createdEmp = {
+          ...newEmpPayload,
+          id: `emp_${Date.now()}`,
+        } as AdminEmployee;
+      }
+
+      setEmployeesList([createdEmp, ...employeesList]);
+      message.success(`Đã thêm mới nhân viên "${createdEmp.name}" vào hệ thống!`);
     }
     setDrawerOpen(false);
   };
 
   // Toggle Working Status
-  const handleToggleStatus = (empId: string, currentStatus: 'working' | 'resigned') => {
+  const handleToggleStatus = async (empId: string, currentStatus: 'working' | 'resigned') => {
     const newStatus = currentStatus === 'working' ? 'resigned' : 'working';
     const target = employeesList.find((e) => e.id === empId);
+    
+    try {
+      await employeeApi.updateStatus(empId, newStatus);
+    } catch (err) {
+      console.warn('API toggle status failed:', err);
+    }
+
     setEmployeesList((prev) =>
       prev.map((e) => (e.id === empId ? { ...e, status: newStatus } : e))
     );
@@ -344,7 +454,13 @@ export function EmployeesTab({
   };
 
   // Delete Employee
-  const handleDeleteEmployee = (empId: string, empName: string) => {
+  const handleDeleteEmployee = async (empId: string, empName: string) => {
+    try {
+      await employeeApi.deleteEmployee(empId);
+    } catch (err) {
+      console.warn('API delete employee failed:', err);
+    }
+
     setEmployeesList((prev) => prev.filter((e) => e.id !== empId));
     if (selectedEmployee?.id === empId) {
       setDetailDrawerOpen(false);
@@ -360,16 +476,21 @@ export function EmployeesTab({
   };
 
   // Confirm Reset Password
-  const handleConfirmResetPassword = () => {
+  const handleConfirmResetPassword = async () => {
     if (!passwordTargetEmployee) return;
     if (!newPassword.trim()) {
       message.error('Vui lòng nhập mật khẩu mới!');
       return;
     }
-    message.success(
-      `Đã đặt lại mật khẩu mới cho tài khoản "${passwordTargetEmployee.login}": ${newPassword}`
-    );
-    setPasswordModalOpen(false);
+    try {
+      await employeeApi.resetPassword(passwordTargetEmployee.id, newPassword.trim());
+      message.success(
+        `Đã đặt lại mật khẩu mới cho tài khoản "${passwordTargetEmployee.login || passwordTargetEmployee.username || passwordTargetEmployee.code}": ${newPassword}`
+      );
+      setPasswordModalOpen(false);
+    } catch (err: any) {
+      message.error(err?.message || 'Không thể đặt lại mật khẩu.');
+    }
   };
 
   // Export Employees to Excel
@@ -536,16 +657,13 @@ export function EmployeesTab({
               value={branchFilter}
               onChange={setBranchFilter}
               className="w-full text-sm"
-              options={[
-                { value: 'all', label: 'Tất cả chi nhánh' },
-                ...branchesList.map((b) => ({ value: b.name, label: b.name })),
-              ]}
+              options={branchFilterOptions}
             />
           </div>
 
           {/* Summary Card */}
           <AdminSidebarSummary
-            title="Thống kê nhân sự POS"
+            title="Thống kê nhân sự"
             items={[
               { label: 'Tổng số nhân viên', value: `${employeesList.length} người` },
               {
@@ -559,8 +677,8 @@ export function EmployeesTab({
                 color: 'default',
               },
               {
-                label: 'Tài khoản đăng nhập',
-                value: `${employeesList.filter((e) => Boolean(e.login || e.username)).length} TK`,
+                label: 'Tài khoản có vai trò',
+                value: `${employeesList.filter((e) => Boolean(e.role || e.login || e.username)).length} TK`,
                 color: 'primary',
               },
             ]}
@@ -570,12 +688,18 @@ export function EmployeesTab({
         {/* Right Employees Data Table */}
         <div className="flex-1 w-full min-w-0">
           <AdminDataTable
-            titleText="Danh Sách Nhân Viên & Tài Khoản POS"
+            titleText="Danh Sách Nhân Viên & Vai Trò"
             titleIcon={<TeamOutlined className="text-[#784e34]" />}
             countTag={`${filteredEmployees.length} nhân sự`}
+            totalCount={filteredEmployees.length}
+            countUnit="nhân sự"
             dataSource={filteredEmployees}
             rowKey="id"
-            pagination={{ pageSize: 10 }}
+            pagination={{
+              pageSize: filteredEmployees.length > 0 ? filteredEmployees.length : 10,
+              showSizeChanger: false,
+              hideOnSinglePage: true,
+            }}
             onRow={(record) => ({
               onClick: () => handleOpenDetail(record),
               className: 'cursor-pointer hover:bg-slate-50 transition-colors',
@@ -624,16 +748,6 @@ export function EmployeesTab({
                 ),
               },
               {
-                title: 'Chức danh',
-                dataIndex: 'title',
-                key: 'title',
-                render: (title) => (
-                  <span className="text-sm text-slate-700">
-                    {title}
-                  </span>
-                ),
-              },
-              {
                 title: 'Chi nhánh',
                 dataIndex: 'branch',
                 key: 'branch',
@@ -645,14 +759,18 @@ export function EmployeesTab({
                 ),
               },
               {
-                title: 'Tài khoản POS',
-                key: 'login',
-                width: 120,
-                render: (_, emp) => (
-                  <span className="font-mono text-xs font-semibold text-slate-800">
-                    {emp.login || emp.username || '---'}
-                  </span>
-                ),
+                title: 'Vai trò',
+                key: 'role',
+                width: 140,
+                render: (_, emp) => {
+                  const roleObj = rolesList.find((r) => r.id === emp.role);
+                  const roleLabel = roleObj?.name || emp.role || emp.login || emp.username || '---';
+                  return (
+                    <span className="font-mono text-xs font-semibold text-slate-800">
+                      {roleLabel}
+                    </span>
+                  );
+                },
               },
               {
                 title: 'Trạng thái',
@@ -844,20 +962,16 @@ export function EmployeesTab({
               <div className="space-y-4">
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-200/80 space-y-3">
                   <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-200 pb-2 m-0">
-                    <ApartmentOutlined className="text-[#784e34]" /> Vị trí công tác &amp; Phòng ban
+                    <ShopOutlined className="text-[#784e34]" /> Vị trí công tác &amp; Chi nhánh làm việc
                   </h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                     <div>
-                      <span className="text-slate-500 block">Phòng ban:</span>
-                      <strong className="text-slate-900">{selectedEmployee.department}</strong>
+                      <span className="text-slate-500 block">Chi nhánh làm việc chính:</span>
+                      <strong className="text-[#784e34] font-semibold">{selectedEmployee.branch}</strong>
                     </div>
                     <div>
                       <span className="text-slate-500 block">Chức danh / Vị trí:</span>
                       <strong className="text-slate-900">{selectedEmployee.title}</strong>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 block">Chi nhánh làm việc chính:</span>
-                      <strong className="text-[#784e34]">{selectedEmployee.branch}</strong>
                     </div>
                     <div>
                       <span className="text-slate-500 block">Ngày bắt đầu vào làm:</span>
@@ -957,7 +1071,7 @@ export function EmployeesTab({
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         styles={{ wrapper: { width: 720, maxWidth: '100vw' } }}
-        destroyOnHidden
+        forceRender
         footer={
           <div className="flex items-center justify-between">
             <Button onClick={() => setDrawerOpen(false)} className="h-10 px-5 text-sm font-semibold rounded-lg">
@@ -1092,47 +1206,24 @@ export function EmployeesTab({
             )}
           </div>
 
-          {/* SECTION 3: TỔ CHỨC & VỊ TRÍ CÔNG TÁC */}
+          {/* SECTION 3: CHI NHÁNH & VỊ TRÍ LÀM VIỆC */}
           <div className="bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/80 space-y-3">
             <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-200 pb-2 m-0">
-              <ApartmentOutlined className="text-[#784e34]" /> Phòng ban &amp; Chi nhánh
+              <ShopOutlined className="text-[#784e34]" /> Chi nhánh làm việc
             </h4>
 
-            <Row gutter={12}>
-              <Col span={12}>
-                <Form.Item
-                  label={<span className="text-xs font-semibold text-slate-800">Phòng ban</span>}
-                  name="department"
-                  rules={[{ required: true, message: 'Chọn phòng ban' }]}
-                >
-                  <Select className="h-10 text-sm">
-                    {DEPARTMENTS.map((d) => (
-                      <Select.Option key={d} value={d}>
-                        {d}
-                      </Select.Option>
-                    ))}
-                  </Select>
-                </Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item
-                  label={<span className="text-xs font-semibold text-slate-800">Chức danh / Chức vụ</span>}
-                  name="title"
-                  rules={[{ required: true, message: 'Nhập chức danh' }]}
-                >
-                  <Input placeholder="VD: Trưởng phòng Tư vấn & Thiết kế" className="h-10 rounded-lg text-sm" />
-                </Form.Item>
-              </Col>
-            </Row>
+            <Form.Item name="department" hidden initialValue="Chi nhánh">
+              <Input />
+            </Form.Item>
 
             <Row gutter={12}>
               <Col span={12}>
                 <Form.Item
                   label={<span className="text-xs font-semibold text-slate-800">Chi nhánh làm việc chính</span>}
                   name="branch"
-                  rules={[{ required: true, message: 'Chọn chi nhánh chính' }]}
+                  rules={[{ required: true, message: 'Vui lòng chọn chi nhánh làm việc' }]}
                 >
-                  <Select className="h-10 text-sm">
+                  <Select className="h-10 text-sm" placeholder="Chọn chi nhánh...">
                     {branchesList.map((b) => (
                       <Select.Option key={b.id} value={b.name}>
                         {b.name}
@@ -1142,8 +1233,12 @@ export function EmployeesTab({
                 </Form.Item>
               </Col>
               <Col span={12}>
-                <Form.Item label={<span className="text-xs font-semibold text-slate-800">Ngày vào làm</span>} name="workingDate">
-                  <DatePicker format="DD/MM/YYYY" placeholder="DD/MM/YYYY" className="w-full h-10 text-sm rounded-lg" />
+                <Form.Item
+                  label={<span className="text-xs font-semibold text-slate-800">Chức danh / Vị trí</span>}
+                  name="title"
+                  rules={[{ required: true, message: 'Vui lòng nhập chức danh' }]}
+                >
+                  <Input placeholder="VD: Quản lý showroom, Tư vấn viên..." className="h-10 rounded-lg text-sm" />
                 </Form.Item>
               </Col>
             </Row>
@@ -1152,7 +1247,7 @@ export function EmployeesTab({
           {/* SECTION 4: LIÊN HỆ & ĐỊA CHỈ */}
           <div className="bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/80 space-y-3">
             <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-200 pb-2 m-0">
-              <PhoneOutlined className="text-emerald-600" /> Thông tin liên hệ
+              <PhoneOutlined className="text-emerald-600" /> Thông tin liên hệ &amp; Địa chỉ
             </h4>
 
             <Row gutter={12}>
@@ -1160,7 +1255,7 @@ export function EmployeesTab({
                 <Form.Item
                   label={<span className="text-xs font-semibold text-slate-800">Số điện thoại di động</span>}
                   name="phone"
-                  rules={[{ required: true, message: 'Nhập số điện thoại' }]}
+                  rules={[{ required: true, message: 'Vui lòng nhập số điện thoại' }]}
                 >
                   <Input placeholder="0918.234.567" className="h-10 rounded-lg font-mono text-sm" />
                 </Form.Item>
@@ -1172,8 +1267,56 @@ export function EmployeesTab({
               </Col>
             </Row>
 
-            <Form.Item label={<span className="text-xs font-semibold text-slate-800">Địa chỉ thường trú / Tạm trú</span>} name="address">
-              <Input placeholder="Số nhà, đường phố, phường/xã, quận/huyện..." className="h-10 rounded-lg text-sm" />
+            <Row gutter={12}>
+              <Col span={12}>
+                <Form.Item
+                  label={<span className="text-xs font-semibold text-slate-800">Tỉnh / Thành phố</span>}
+                  name="province"
+                >
+                  <Select
+                    placeholder="-- Chọn Tỉnh / Thành phố --"
+                    className="h-10 text-sm"
+                    showSearch
+                    optionFilterProp="label"
+                    allowClear
+                    onChange={() => form.setFieldsValue({ district: undefined })}
+                    options={VIETNAM_PROVINCES.map((p) => ({
+                      value: p.name,
+                      label: p.name,
+                    }))}
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item
+                  label={<span className="text-xs font-semibold text-slate-800">Quận / Huyện</span>}
+                  name="district"
+                >
+                  <Select
+                    placeholder={selectedProvince ? '-- Chọn Quận / Huyện --' : '-- Chọn Tỉnh/Thành trước --'}
+                    className="h-10 text-sm"
+                    showSearch
+                    optionFilterProp="label"
+                    allowClear
+                    disabled={!selectedProvince}
+                    options={availableDistricts.map((d) => ({
+                      value: d.name,
+                      label: d.name,
+                    }))}
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+
+            <Form.Item
+              label={<span className="text-xs font-semibold text-slate-800">Địa chỉ chi tiết (Số nhà, tên đường, phường/xã)</span>}
+              name="addressDetail"
+            >
+              <Input placeholder="VD: Số 123 Đường Nguyễn Trãi, Phường Bến Thành..." className="h-10 rounded-lg text-sm" />
+            </Form.Item>
+
+            <Form.Item name="address" hidden>
+              <Input />
             </Form.Item>
           </div>
 

@@ -6,6 +6,10 @@ import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { App, Modal } from 'antd';
 import { useAuth } from '@/context/AuthContext';
 import ProfileModal from '@/components/ProfileModal';
+import { spaceApi } from '@/api/spaceApi';
+import { categoryApi } from '@/api/categoryApi';
+import { settingsApi } from '@/api/settingsApi';
+import { AdminSpace, AdminCategory } from '@/types/admin';
 
 interface HeaderProps {
   cartCount: number;
@@ -14,6 +18,12 @@ interface HeaderProps {
   onOpenBooking: () => void;
   onOpenWishlist?: () => void;
 }
+
+// Global in-memory cache to prevent repetitive roundtrips during page navigation
+let cachedHeaderSpaces: AdminSpace[] | null = null;
+let cachedHeaderCategories: AdminCategory[] | null = null;
+let lastHeaderFetchTime = 0;
+const CACHE_DURATION_MS = 60 * 1000; // 60 seconds
 
 function HeaderContent({
   cartCount,
@@ -27,12 +37,92 @@ function HeaderContent({
   const spaceParam = searchParams.get('space');
   const { user, isLoggedIn, isAdmin, logout, loginAsAdmin, loginAsCustomer } = useAuth();
 
+  const [mounted, setMounted] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [spaces, setSpaces] = useState<AdminSpace[]>(() => cachedHeaderSpaces || []);
+  const [categories, setCategories] = useState<AdminCategory[]>(() => cachedHeaderCategories || []);
+  const [storeInfo, setStoreInfo] = useState<{ logoUrl?: string | null; brandName?: string; companyName?: string }>({
+    logoUrl: '/logo.png',
+    brandName: 'D2 LUXURY',
+    companyName: 'Nội Thất Gỗ Tự Nhiên',
+  });
   const profileRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setMounted(true);
+    const loadCompany = async () => {
+      try {
+        const info: any = await settingsApi.getCompanyInfo();
+        if (info) {
+          setStoreInfo({
+            logoUrl: info.logoUrl || info.LogoUrl || '/logo.png',
+            brandName: info.brandName || info.BrandName || info.companyName || info.CompanyName || 'D2 LUXURY',
+            companyName: info.businessSector || info.BusinessSector || 'Nội Thất Gỗ Tự Nhiên',
+          });
+        }
+      } catch {
+        // fallback
+      }
+    };
+    loadCompany();
+
+    const handleSettingsUpdated = (e: any) => {
+      const detail = e.detail;
+      if (detail) {
+        setStoreInfo({
+          logoUrl: detail.logoUrl || detail.LogoUrl || '/logo.png',
+          brandName: detail.brandName || detail.BrandName || detail.companyName || detail.CompanyName || 'D2 LUXURY',
+          companyName: detail.businessSector || detail.BusinessSector || 'Nội Thất Gỗ Tự Nhiên',
+        });
+      } else {
+        loadCompany();
+      }
+    };
+
+    window.addEventListener('store_settings_updated', handleSettingsUpdated);
+    return () => window.removeEventListener('store_settings_updated', handleSettingsUpdated);
+  }, []);
+
+  // Fetch dynamic spaces and categories from backend API with memory cache
+  useEffect(() => {
+    let isMounted = true;
+    const now = Date.now();
+    if (cachedHeaderSpaces && cachedHeaderCategories && (now - lastHeaderFetchTime < CACHE_DURATION_MS)) {
+      return;
+    }
+
+    const fetchMenuData = async () => {
+      try {
+        const [spacesData, categoriesData] = await Promise.all([
+          spaceApi.getSpaces({ status: 'active' }).catch(() => []),
+          categoryApi.getCategories({ status: 'active' }).catch(() => []),
+        ]);
+        if (isMounted) {
+          if (Array.isArray(spacesData) && spacesData.length > 0) {
+            const filtered = spacesData.filter((s) => s.status !== 'hidden' && s.showOnHeader !== false);
+            cachedHeaderSpaces = filtered;
+            setSpaces(filtered);
+          }
+          if (Array.isArray(categoriesData) && categoriesData.length > 0) {
+            const filtered = categoriesData.filter((c) => c.status !== 'hidden' && c.showOnMenu !== false);
+            cachedHeaderCategories = filtered;
+            setCategories(filtered);
+          }
+          lastHeaderFetchTime = Date.now();
+        }
+      } catch (err) {
+        console.error('Error loading header navigation:', err);
+      }
+    };
+    fetchMenuData();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Close profile dropdown when clicking outside
   useEffect(() => {
@@ -47,8 +137,8 @@ function HeaderContent({
     };
   }, []);
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     setIsProfileOpen(false);
     message.success('Đã đăng xuất thành công!');
     router.push('/login');
@@ -56,17 +146,6 @@ function HeaderContent({
 
   // Determine active navigation item
   const isHomeActive = pathname === '/' && !spaceParam;
-  const isLivingActive =
-    (pathname === '/products' && spaceParam === 'living') || pathname === '/living-room';
-  const isDiningActive =
-    (pathname === '/products' && spaceParam === 'dining') || pathname === '/dining-room';
-  const isBedroomActive =
-    (pathname === '/products' && spaceParam === 'bedroom') || pathname === '/bedroom';
-  const isOfficeActive =
-    (pathname === '/products' && spaceParam === 'office') || pathname === '/office';
-  const isCollectionActive =
-    ((pathname === '/products' || pathname === '/categories') && (!spaceParam || spaceParam === 'all')) ||
-    pathname.startsWith('/collections');
 
   const handleSearch = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && searchQuery.trim()) {
@@ -80,74 +159,132 @@ function HeaderContent({
     }
   };
 
+  // Fallback spaces in case API is loading or empty (core spaces only, no "Sản phẩm khác")
+  const defaultSpaces: AdminSpace[] = [
+    {
+      id: 'living',
+      code: 'KG01',
+      name: 'Phòng khách',
+      slug: 'living',
+      tagline: 'Không gian phòng khách',
+      description: 'Nội thất phòng khách sang trọng',
+      image: '',
+      icon: '',
+      displayOrder: 1,
+      categoryCount: 0,
+      status: 'active',
+      showOnHome: true,
+      showOnHeader: true,
+    },
+    {
+      id: 'dining',
+      code: 'KG02',
+      name: 'Phòng ăn',
+      slug: 'dining',
+      tagline: 'Không gian phòng ăn',
+      description: 'Nội thất phòng ăn ấm cúng',
+      image: '',
+      icon: '',
+      displayOrder: 2,
+      categoryCount: 0,
+      status: 'active',
+      showOnHome: true,
+      showOnHeader: true,
+    },
+    {
+      id: 'bedroom',
+      code: 'KG03',
+      name: 'Phòng ngủ',
+      slug: 'bedroom',
+      tagline: 'Không gian phòng ngủ',
+      description: 'Nội thất phòng ngủ thanh lịch',
+      image: '',
+      icon: '',
+      displayOrder: 3,
+      categoryCount: 0,
+      status: 'active',
+      showOnHome: true,
+      showOnHeader: true,
+    },
+    {
+      id: 'office',
+      code: 'KG04',
+      name: 'Phòng làm việc',
+      slug: 'office',
+      tagline: 'Không gian phòng làm việc',
+      description: 'Nội thất phòng làm việc đẳng cấp',
+      image: '',
+      icon: '',
+      displayOrder: 4,
+      categoryCount: 0,
+      status: 'active',
+      showOnHome: true,
+      showOnHeader: true,
+    },
+  ];
+
+  const currentSpaces = spaces.length > 0 ? spaces : defaultSpaces;
+
   const navItems = [
     {
       title: 'Trang chủ',
       href: '/',
       isActive: isHomeActive,
+      submenu: undefined,
     },
-    {
-      title: 'Phòng khách',
-      href: '/products?space=living',
-      isActive: isLivingActive,
-      submenu: [
-        { label: 'Bàn trà – Bàn nước', href: '/products?space=living&category=table' },
-        { label: 'Kệ tivi', href: '/products?space=living&category=cabinet' },
-        { label: 'Kệ trang trí', href: '/products?space=living&category=cabinet' },
-        { label: 'Sofa Gỗ Mây', href: '/products?space=living&category=sofa' },
-        { label: 'Tủ giày', href: '/products?space=living&category=cabinet' },
-        { label: 'Tủ góc', href: '/products?space=living&category=cabinet' },
-        { label: 'Tủ ly', href: '/products?space=living&category=cabinet' },
-        { label: 'Sofa Đệm Êm', href: '/products?space=living&category=sofa' },
-        { label: 'Ghế thư giãn & Đôn', href: '/products?space=living&category=chair' },
-      ],
-    },
-    {
-      title: 'Phòng ăn',
-      href: '/products?space=dining',
-      isActive: isDiningActive,
-      submenu: [
-        { label: 'Bàn ăn tự nhiên', href: '/products?space=dining&category=dining' },
-        { label: 'Ghế ăn cao cấp', href: '/products?space=dining&category=chair' },
-        { label: 'Tủ rượu & Đảo bếp', href: '/products?space=dining&category=island' },
-        { label: 'Tủ buffet & Kệ bát', href: '/products?space=dining&category=cabinet' },
-      ],
-    },
-    {
-      title: 'Phòng ngủ',
-      href: '/products?space=bedroom',
-      isActive: isBedroomActive,
-      submenu: [
-        { label: 'Giường ngủ tự nhiên', href: '/products?space=bedroom&category=bed' },
-        { label: 'Táp đầu giường', href: '/products?space=bedroom&category=tab' },
-        { label: 'Tủ quần áo', href: '/products?space=bedroom&category=wardrobe' },
-        { label: 'Bàn trang điểm', href: '/products?space=bedroom&category=dresser' },
-        { label: 'Tủ ngăn kéo', href: '/products?space=bedroom&category=cabinet' },
-      ],
-    },
-    {
-      title: 'Phòng làm việc',
-      href: '/products?space=office',
-      isActive: isOfficeActive,
-      submenu: [
-        { label: 'Bàn làm việc tự nhiên', href: '/products?space=office&category=desk' },
-        { label: 'Kệ sách & Tủ tài liệu', href: '/products?space=office&category=cabinet' },
-        { label: 'Ghế làm việc cao cấp', href: '/products?space=office&category=chair' },
-        { label: 'Tủ hồ sơ & Ngăn kéo', href: '/products?space=office&category=cabinet' },
-      ],
-    },
-    {
-      title: 'Sản phẩm khác',
-      href: '/products',
-      isActive: isCollectionActive,
-      submenu: [
-        { label: 'BST Gỗ Óc Chó Bắc Mỹ', href: '/products?material=walnut' },
-        { label: 'BST Gỗ Sồi Trắng Mỹ', href: '/products?material=oak' },
-        { label: 'BST Gỗ Tần Bì Bắc Âu', href: '/products?material=ash' },
-        { label: 'BST Khung Gỗ Bọc Da Ý', href: '/products?material=leather' },
-        { label: 'Tất cả sản phẩm', href: '/products' },
-      ],
-    },
+    ...currentSpaces
+      .slice()
+      .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0))
+      .map((s) => {
+        const code = (s.code || '').toUpperCase();
+        let spaceParamKey = 'living';
+        if (code === 'KG01') spaceParamKey = 'living';
+        else if (code === 'KG02') spaceParamKey = 'dining';
+        else if (code === 'KG03') spaceParamKey = 'bedroom';
+        else if (code === 'KG04') spaceParamKey = 'office';
+        else {
+          const normName = (s.name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
+          if (normName.includes('khach')) spaceParamKey = 'living';
+          else if (normName.includes('ngu')) spaceParamKey = 'bedroom';
+          else if (normName.includes('an')) spaceParamKey = 'dining';
+          else if (normName.includes('lam viec')) spaceParamKey = 'office';
+          else spaceParamKey = (s.slug || s.code.toLowerCase()).replace(/^phong-/, '').replace(/^phong/, '');
+        }
+
+        const isCurrentSpaceActive =
+          (pathname === '/products' &&
+            (spaceParam === spaceParamKey ||
+              spaceParam === s.slug ||
+              spaceParam === s.code ||
+              spaceParam?.toLowerCase() === s.name.toLowerCase())) ||
+          pathname === `/${spaceParamKey}` ||
+          pathname === `/${spaceParamKey}-room`;
+
+        // Submenu categories
+        const spaceCategories = categories.filter((c) => {
+          if (c.spaceId && c.spaceId === s.id) return true;
+          const cSpace = (c.space || '').toLowerCase().trim();
+          const sName = (s.name || '').toLowerCase().trim();
+          const sCode = (s.code || '').toLowerCase().trim();
+          const sSlug = (s.slug || '').toLowerCase().trim();
+          return cSpace === sName || cSpace === sCode || cSpace === sSlug || cSpace.includes(sName);
+        });
+
+        const submenu =
+          spaceCategories.length > 0
+            ? spaceCategories.map((c) => ({
+                label: c.name,
+                href: `/products?space=${encodeURIComponent(spaceParamKey)}&category=${encodeURIComponent(c.slug || c.id)}`,
+              }))
+            : undefined;
+
+        return {
+          title: s.name,
+          href: `/products?space=${encodeURIComponent(spaceParamKey)}`,
+          isActive: isCurrentSpaceActive,
+          submenu,
+        };
+      }),
   ];
 
   return (
@@ -156,16 +293,16 @@ function HeaderContent({
         {/* Logo Thương Hiệu */}
         <Link href="/" className="flex items-center gap-2.5 sm:gap-3.5 group shrink-0">
           <img
-            alt="Logo Nội Thất D2 LUXURY"
+            alt={storeInfo.brandName || 'Logo'}
             className="h-11 sm:h-12 md:h-14 w-auto object-contain transition-transform group-hover:scale-105"
-            src="/logo.png"
+            src={storeInfo.logoUrl || '/logo.png'}
           />
           <div className="flex flex-col">
             <span className="font-headline-sm text-base sm:text-lg md:text-xl text-[#5d371f] leading-none tracking-tight font-bold">
-              D2 LUXURY
+              {storeInfo.brandName || 'D2 LUXURY'}
             </span>
             <span className="font-label-sm text-[9px] sm:text-[10px] md:text-label-sm text-[#83746c] tracking-wider mt-0.5 font-medium">
-              Nội Thất Gỗ Tự Nhiên
+              {storeInfo.companyName || 'Nội Thất Gỗ Tự Nhiên'}
             </span>
           </div>
         </Link>
@@ -253,18 +390,16 @@ function HeaderContent({
 
           {/* User Profile Avatar with Dropdown */}
           <div className="relative flex items-center pl-0.5 shrink-0" ref={profileRef}>
-            {isLoggedIn && user ? (
+            {mounted && isLoggedIn && user ? (
               <button
                 type="button"
                 onClick={() => setIsProfileOpen(!isProfileOpen)}
                 className="relative focus:outline-none cursor-pointer flex items-center group"
                 aria-label="Tài khoản cá nhân"
               >
-                <img
-                  alt={user.name}
-                  className="w-8 h-8 rounded-none object-cover ring-1 ring-[#d5c3ba] group-hover:ring-[#5d371f] transition-all"
-                  src={user.avatar}
-                />
+                <div className="w-8 h-8 rounded-none bg-gradient-to-br from-[#5d371f] to-[#382012] text-[#ffdbb5] font-serif font-bold text-xs flex items-center justify-center ring-1 ring-[#d5c3ba] group-hover:ring-[#5d371f] transition-all select-none shrink-0">
+                  {user.name ? user.name.trim().charAt(0).toUpperCase() : 'G'}
+                </div>
                 {isAdmin && (
                   <span
                     className="absolute -top-1 -right-1 w-3 h-3 bg-[#5d371f] border border-white flex items-center justify-center text-[7px] text-[#ffdbb5] font-bold"
@@ -285,15 +420,13 @@ function HeaderContent({
             )}
 
             {/* Profile Dropdown Menu */}
-            {isProfileOpen && isLoggedIn && user && (
+            {mounted && isProfileOpen && isLoggedIn && user && (
               <div className="absolute right-0 top-full mt-2.5 w-64 sm:w-72 bg-[#fff8f5] border border-[#eae1dd] shadow-xl z-50 animate-in fade-in-0 zoom-in-95 duration-150 flex flex-col">
                 {/* Dropdown Header */}
                 <div className="p-4 bg-[#241c18] text-white flex items-center gap-3">
-                  <img
-                    src={user.avatar}
-                    alt={user.name}
-                    className="w-10 h-10 object-cover ring-1 ring-[#d5c3ba] shrink-0"
-                  />
+                  <div className="w-10 h-10 bg-gradient-to-br from-[#5d371f] to-[#382012] text-[#ffdbb5] font-serif font-bold text-sm flex items-center justify-center ring-1 ring-[#d5c3ba] shrink-0 select-none">
+                    {user.name ? user.name.trim().charAt(0).toUpperCase() : 'G'}
+                  </div>
                   <div className="flex flex-col min-w-0 flex-1 text-left">
                     <div className="flex items-center gap-1.5">
                       <span className="font-bold text-xs text-[#fff8f5] truncate">
@@ -391,6 +524,7 @@ function HeaderContent({
       {/* Mobile Drawer Menu */}
       {mobileMenuOpen && (
         <div className="lg:hidden bg-[#fff8f5] border-b border-[#eae1dd] px-6 py-4 flex flex-col gap-3 shadow-lg max-h-[80vh] overflow-y-auto animate-in slide-in-from-top duration-200">
+          {/* Trang chủ mobile */}
           <Link
             href="/"
             onClick={() => setMobileMenuOpen(false)}
@@ -403,158 +537,38 @@ function HeaderContent({
             Trang chủ
           </Link>
 
-          {/* Phòng khách mobile */}
-          <div className="flex flex-col border-b border-[#eae1dd]/40 pb-2">
-            <Link
-              href="/products?space=living"
-              onClick={() => setMobileMenuOpen(false)}
-              className={`py-2 text-sm transition-colors font-bold flex items-center justify-between ${
-                isLivingActive ? 'text-[#5d371f] pl-3 bg-[#f5ece8]/70 border-l-4 border-l-[#5d371f]' : 'text-[#51443d] pl-2'
-              }`}
-            >
-              <span>Phòng khách</span>
-            </Link>
-            <div className="grid grid-cols-2 gap-1.5 pl-4 pt-1">
-              {[
-                { label: 'Bàn trà – Bàn nước', href: '/products?space=living&category=table' },
-                { label: 'Kệ tivi', href: '/products?space=living&category=cabinet' },
-                { label: 'Kệ trang trí', href: '/products?space=living&category=cabinet' },
-                { label: 'Sofa Gỗ Mây', href: '/products?space=living&category=sofa' },
-                { label: 'Tủ giày', href: '/products?space=living&category=cabinet' },
-                { label: 'Sofa Đệm Êm', href: '/products?space=living&category=sofa' },
-              ].map((sub) => (
+          {/* Dynamic Spaces and Subcategories in Mobile Navigation */}
+          {navItems
+            .filter((item) => item.href !== '/')
+            .map((item) => (
+              <div key={item.title} className="flex flex-col border-b border-[#eae1dd]/40 pb-2">
                 <Link
-                  key={sub.label}
-                  href={sub.href}
+                  href={item.href}
                   onClick={() => setMobileMenuOpen(false)}
-                  className="text-xs text-[#83746c] hover:text-[#5d371f] py-1"
+                  className={`py-2 text-sm transition-colors font-bold flex items-center justify-between ${
+                    item.isActive
+                      ? 'text-[#5d371f] pl-3 bg-[#f5ece8]/70 border-l-4 border-l-[#5d371f]'
+                      : 'text-[#51443d] pl-2 hover:text-[#5d371f]'
+                  }`}
                 >
-                  • {sub.label}
+                  <span>{item.title}</span>
                 </Link>
-              ))}
-            </div>
-          </div>
-
-          {/* Phòng ăn mobile */}
-          <div className="flex flex-col border-b border-[#eae1dd]/40 pb-2">
-            <Link
-              href="/products?space=dining"
-              onClick={() => setMobileMenuOpen(false)}
-              className={`py-2 text-sm transition-colors font-bold flex items-center justify-between ${
-                isDiningActive ? 'text-[#5d371f] pl-3 bg-[#f5ece8]/70 border-l-4 border-l-[#5d371f]' : 'text-[#51443d] pl-2'
-              }`}
-            >
-              <span>Phòng ăn</span>
-            </Link>
-            <div className="grid grid-cols-2 gap-1.5 pl-4 pt-1">
-              {[
-                { label: 'Bàn ăn tự nhiên', href: '/products?space=dining&category=dining' },
-                { label: 'Ghế ăn cao cấp', href: '/products?space=dining&category=chair' },
-                { label: 'Tủ rượu & Đảo bếp', href: '/products?space=dining&category=island' },
-                { label: 'Tủ buffet', href: '/products?space=dining&category=cabinet' },
-              ].map((sub) => (
-                <Link
-                  key={sub.label}
-                  href={sub.href}
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="text-xs text-[#83746c] hover:text-[#5d371f] py-1"
-                >
-                  • {sub.label}
-                </Link>
-              ))}
-            </div>
-          </div>
-
-          {/* Phòng ngủ mobile */}
-          <div className="flex flex-col border-b border-[#eae1dd]/40 pb-2">
-            <Link
-              href="/products?space=bedroom"
-              onClick={() => setMobileMenuOpen(false)}
-              className={`py-2 text-sm transition-colors font-bold flex items-center justify-between ${
-                isBedroomActive ? 'text-[#5d371f] pl-3 bg-[#f5ece8]/70 border-l-4 border-l-[#5d371f]' : 'text-[#51443d] pl-2'
-              }`}
-            >
-              <span>Phòng ngủ</span>
-            </Link>
-            <div className="grid grid-cols-2 gap-1.5 pl-4 pt-1">
-              {[
-                { label: 'Giường ngủ tự nhiên', href: '/products?space=bedroom&category=bed' },
-                { label: 'Táp đầu giường', href: '/products?space=bedroom&category=tab' },
-                { label: 'Tủ quần áo', href: '/products?space=bedroom&category=wardrobe' },
-                { label: 'Bàn trang điểm', href: '/products?space=bedroom&category=dresser' },
-              ].map((sub) => (
-                <Link
-                  key={sub.label}
-                  href={sub.href}
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="text-xs text-[#83746c] hover:text-[#5d371f] py-1"
-                >
-                  • {sub.label}
-                </Link>
-              ))}
-            </div>
-          </div>
-
-          {/* Phòng làm việc mobile */}
-          <div className="flex flex-col border-b border-[#eae1dd]/40 pb-2">
-            <Link
-              href="/products?space=office"
-              onClick={() => setMobileMenuOpen(false)}
-              className={`py-2 text-sm transition-colors font-bold flex items-center justify-between ${
-                isOfficeActive ? 'text-[#5d371f] pl-3 bg-[#f5ece8]/70 border-l-4 border-l-[#5d371f]' : 'text-[#51443d] pl-2'
-              }`}
-            >
-              <span>Phòng làm việc</span>
-            </Link>
-            <div className="grid grid-cols-2 gap-1.5 pl-4 pt-1">
-              {[
-                { label: 'Bàn làm việc tự nhiên', href: '/products?space=office&category=desk' },
-                { label: 'Kệ sách & Tủ tài liệu', href: '/products?space=office&category=cabinet' },
-                { label: 'Ghế làm việc cao cấp', href: '/products?space=office&category=chair' },
-                { label: 'Tủ hồ sơ & Ngăn kéo', href: '/products?space=office&category=cabinet' },
-              ].map((sub) => (
-                <Link
-                  key={sub.label}
-                  href={sub.href}
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="text-xs text-[#83746c] hover:text-[#5d371f] py-1"
-                >
-                  • {sub.label}
-                </Link>
-              ))}
-            </div>
-          </div>
-
-          {/* Sản phẩm khác mobile */}
-          <div className="flex flex-col border-b border-[#eae1dd]/40 pb-2">
-            <Link
-              href="/products"
-              onClick={() => setMobileMenuOpen(false)}
-              className={`py-2 text-sm transition-colors font-bold flex items-center justify-between ${
-                isCollectionActive ? 'text-[#5d371f] pl-3 bg-[#f5ece8]/70 border-l-4 border-l-[#5d371f]' : 'text-[#51443d] pl-2'
-              }`}
-            >
-              <span>Sản phẩm khác</span>
-            </Link>
-            <div className="grid grid-cols-2 gap-1.5 pl-4 pt-1">
-              {[
-                { label: 'Gỗ óc chó Bắc Mỹ', href: '/products?material=walnut' },
-                { label: 'Gỗ sồi trắng Mỹ', href: '/products?material=oak' },
-                { label: 'Gỗ tần bì tự nhiên', href: '/products?material=ash' },
-                { label: 'Khung gỗ da bò Ý', href: '/products?material=leather' },
-                { label: 'Tất cả sản phẩm', href: '/products' },
-              ].map((sub) => (
-                <Link
-                  key={sub.label}
-                  href={sub.href}
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="text-xs text-[#83746c] hover:text-[#5d371f] py-1"
-                >
-                  • {sub.label}
-                </Link>
-              ))}
-            </div>
-          </div>
+                {item.submenu && item.submenu.length > 0 && (
+                  <div className="grid grid-cols-2 gap-1.5 pl-4 pt-1">
+                    {item.submenu.map((sub) => (
+                      <Link
+                        key={sub.label}
+                        href={sub.href}
+                        onClick={() => setMobileMenuOpen(false)}
+                        className="text-xs text-[#83746c] hover:text-[#5d371f] py-1"
+                      >
+                        • {sub.label}
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
         </div>
       )}
 

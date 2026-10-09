@@ -1,8 +1,11 @@
 import React, { useState, useMemo } from 'react';
+import dayjs from 'dayjs';
+import customParseFormat from 'dayjs/plugin/customParseFormat';
+dayjs.extend(customParseFormat);
 import {
   Button,
   Select,
-  Modal,
+  Drawer,
   Tag,
   Form,
   Row,
@@ -13,6 +16,10 @@ import {
   DatePicker,
   Popconfirm,
   App,
+  Card,
+  Divider,
+  AutoComplete,
+  Dropdown,
 } from 'antd';
 import {
   EditOutlined,
@@ -20,6 +27,12 @@ import {
   FileExcelOutlined,
   DownloadOutlined,
   PrinterOutlined,
+  SaveOutlined,
+  CloseOutlined,
+  ShoppingOutlined,
+  UserOutlined,
+  DollarOutlined,
+  AppstoreOutlined,
 } from '@ant-design/icons';
 import {
   AdminDataTable,
@@ -30,7 +43,11 @@ import {
   type DateRangeValue,
 } from '@/components/admin';
 import { exportToExcel } from '@/utils/exportExcel';
-import type { OrderRow } from '@/types/admin';
+import type { OrderRow, AdminCustomer, FeaturedCatalogProduct } from '@/types/admin';
+import { orderApi } from '@/api/orderApi';
+import { customerApi } from '@/api/customerApi';
+import { productApi } from '@/api/productApi';
+import { VIETNAM_PROVINCES } from '@/data/vietnamAddresses';
 import { isMatchBranch } from '@/utils/branchHelper';
 import { printOrderInvoice } from '@/utils/printHelper';
 
@@ -38,15 +55,56 @@ export interface OrdersTabProps {
   ordersList: OrderRow[];
   setOrdersList: React.Dispatch<React.SetStateAction<OrderRow[]>>;
   selectedGlobalBranch?: string;
+  catalogList?: FeaturedCatalogProduct[];
+  customersList?: AdminCustomer[];
+  onNavigateToProduct?: (productCodeOrName: string) => void;
   onOpenCreateOrder?: () => void;
   onOpenEditOrder?: (order: OrderRow) => void;
   onSelectOrderDetail?: (order: OrderRow) => void;
+}
+
+export const formatWoodTypeName = (wood?: string): string => {
+  if (!wood) return 'Gỗ tự nhiên';
+  return wood;
+};
+
+export function removeVietnameseTones(str: string): string {
+  if (!str) return '';
+  return str
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase()
+    .trim();
+}
+
+export function hasVietnameseTone(str: string): boolean {
+  return /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(str);
+}
+
+export function matchVietnameseText(query: string, target: string): boolean {
+  if (!query || !target) return false;
+  const q = query.trim();
+  const t = target.trim();
+  if (!q) return true;
+
+  // If user typed with specific Vietnamese diacritics (e.g. "tủ", "ghế", "bàn")
+  if (hasVietnameseTone(q)) {
+    return t.toLowerCase().includes(q.toLowerCase());
+  }
+
+  // If user typed without diacritics (e.g. "tu", "ghe", "ban")
+  return removeVietnameseTones(t).includes(removeVietnameseTones(q));
 }
 
 export function OrdersTab({
   ordersList,
   setOrdersList,
   selectedGlobalBranch = 'all',
+  catalogList = [],
+  customersList = [],
+  onNavigateToProduct,
   onOpenCreateOrder,
   onOpenEditOrder,
   onSelectOrderDetail,
@@ -57,17 +115,51 @@ export function OrdersTab({
   // Local filter states
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [orderTypeFilter, setOrderTypeFilter] = useState('all');
-  const [spaceFilter, setSpaceFilter] = useState('all');
-  const [orderWoodFilter, setOrderWoodFilter] = useState('all');
   const [orderDateRange, setOrderDateRange] = useState<DateRangeValue>(null);
   const [selectedOrderKeys, setSelectedOrderKeys] = useState<React.Key[]>([]);
   const [expandedOrderRowKeys, setExpandedOrderRowKeys] = useState<string[]>([]);
   const [orderPanelTabs, setOrderPanelTabs] = useState<Record<string, 'items' | 'info' | 'financial'>>({});
 
-  // Modal State
-  const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
+  // Drawer State (Create / Edit Order)
+  const [isOrderDrawerOpen, setIsOrderDrawerOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<OrderRow | null>(null);
+
+  // Real Database Data for Auto-complete (from props or fallback fetch)
+  const [dbCustomers, setDbCustomers] = useState<AdminCustomer[]>([]);
+  const [dbProducts, setDbProducts] = useState<FeaturedCatalogProduct[]>([]);
+
+  const effectiveCustomers = customersList.length > 0 ? customersList : dbCustomers;
+  const effectiveProducts = catalogList.length > 0 ? catalogList : dbProducts;
+
+  // Province and District linkage
+  const selectedProvince = Form.useWatch('customerProvince', form);
+  const currentDistricts = useMemo(() => {
+    if (!selectedProvince) return [];
+    const found = VIETNAM_PROVINCES.find((p) => p.name === selectedProvince);
+    return found ? found.districts : [];
+  }, [selectedProvince]);
+
+  // Distinct real materials extracted directly from the database products
+  const availableWoodTypes = useMemo(() => {
+    const materials = effectiveProducts
+      .map((p) => p.material?.trim())
+      .filter((m): m is string => Boolean(m));
+    return Array.from(new Set(materials));
+  }, [effectiveProducts]);
+
+  React.useEffect(() => {
+    if (customersList.length === 0) {
+      customerApi.getCustomers({ pageSize: 500 }).then((res) => {
+        if (Array.isArray(res)) setDbCustomers(res);
+      }).catch(() => {});
+    }
+
+    if (catalogList.length === 0) {
+      productApi.getProducts({ pageSize: 500 }).then((res) => {
+        if (Array.isArray(res)) setDbProducts(res);
+      }).catch(() => {});
+    }
+  }, [customersList.length, catalogList.length]);
 
   // Branch-scoped orders
   const branchScopedOrders = useMemo(() => {
@@ -88,14 +180,11 @@ export function OrdersTab({
         item.productName.toLowerCase().includes(searchQuery.toLowerCase());
 
       const matchStatus = statusFilter === 'all' || item.status === statusFilter;
-      const matchType = orderTypeFilter === 'all' || item.orderType === orderTypeFilter;
-      const matchSpace = spaceFilter === 'all' || item.spaceType === spaceFilter;
-      const matchWood = orderWoodFilter === 'all' || item.woodType === orderWoodFilter;
       const matchDate = checkDateInRange(item.orderDate, orderDateRange);
 
-      return matchSearch && matchStatus && matchType && matchSpace && matchWood && matchDate;
+      return matchSearch && matchStatus && matchDate;
     });
-  }, [branchScopedOrders, searchQuery, statusFilter, orderTypeFilter, spaceFilter, orderWoodFilter, orderDateRange]);
+  }, [branchScopedOrders, searchQuery, statusFilter, orderDateRange]);
 
   // Derived filter counts
   const orderFilterCounts = useMemo(() => {
@@ -115,23 +204,6 @@ export function OrdersTab({
     return counts;
   }, [branchScopedOrders]);
 
-  const orderTypeCounts = useMemo(() => {
-    const counts: Record<string, number> = {
-      all: branchScopedOrders.length,
-      retail: 0,
-      custom: 0,
-      package: 0,
-      project: 0,
-      subcontract: 0,
-      ready: 0,
-    };
-    branchScopedOrders.forEach((order) => {
-      if (counts[order.orderType] !== undefined) {
-        counts[order.orderType]++;
-      }
-    });
-    return counts;
-  }, [branchScopedOrders]);
 
   const totalOrdersValue = useMemo(() => {
     return filteredOrders.reduce((sum, order) => sum + order.value, 0);
@@ -156,7 +228,7 @@ export function OrdersTab({
       'Địa chỉ': o.customerAddress,
       'Sản phẩm chế tác': o.productName,
       'Quy cách kỹ thuật': o.productSpec,
-      'Loại gỗ': o.woodType === 'walnut' ? 'Gỗ Óc Chó' : o.woodType === 'oak' ? 'Gỗ Sồi' : o.woodType,
+      'Loại gỗ': formatWoodTypeName(o.woodType),
       'Ngày đặt': o.orderDate,
       'Hạn bàn giao': o.deadlineDate,
       'Tổng giá trị (VNĐ)': o.value,
@@ -175,7 +247,7 @@ export function OrdersTab({
         'Mã đơn': order.orderCode,
         'Tên sản phẩm': order.productName,
         'Quy cách': order.productSpec,
-        'Chủng loại gỗ': `Gỗ ${order.woodType}`,
+        'Chủng loại gỗ': formatWoodTypeName(order.woodType),
         'Số lượng': 1,
         'Đơn giá (VNĐ)': order.value,
         'Giảm giá': 0,
@@ -192,36 +264,51 @@ export function OrdersTab({
     message.success(`Đã xuất file chi tiết đơn hàng ${order.orderCode} thành công!`);
   };
 
-  const handleDeleteOrder = (id: string) => {
-    setOrdersList((prev) => prev.filter((o) => o.id !== id));
-    message.success('Đã xóa đơn hàng thành công!');
+  const handleDeleteOrder = async (id: string) => {
+    try {
+      await orderApi.deleteOrder(id);
+      setOrdersList((prev) => prev.filter((o) => o.id !== id));
+      message.success('Đã xóa đơn hàng thành công!');
+    } catch (err: any) {
+      message.error(err.message || 'Xóa đơn hàng thất bại');
+    }
   };
 
-  const handleBulkDeleteOrders = () => {
+  const handleBulkDeleteOrders = async () => {
     if (selectedOrderKeys.length === 0) return;
-    setOrdersList((prev) => prev.filter((o) => !selectedOrderKeys.includes(o.id)));
-    setSelectedOrderKeys([]);
-    message.success(`Đã xóa thành công ${selectedOrderKeys.length} đơn hàng đã chọn!`);
+    try {
+      await Promise.all(selectedOrderKeys.map((k) => orderApi.deleteOrder(String(k))));
+      setOrdersList((prev) => prev.filter((o) => !selectedOrderKeys.includes(o.id)));
+      setSelectedOrderKeys([]);
+      message.success(`Đã xóa thành công ${selectedOrderKeys.length} đơn hàng đã chọn!`);
+    } catch (err: any) {
+      message.error(err.message || 'Xóa đơn hàng thất bại');
+    }
   };
 
-  const handleBulkUpdateStatus = (status: OrderRow['status']) => {
+  const handleBulkUpdateStatus = async (status: OrderRow['status']) => {
     if (selectedOrderKeys.length === 0) return;
-    const labelMap: Record<string, string> = {
-      pending: 'Chờ duyệt',
-      processing: 'Đang gia công',
-      delivering: 'Đang giao hàng',
-      completed: 'Hoàn tất bàn giao',
-      cancelled: 'Đã hủy',
-    };
-    setOrdersList((prev) =>
-      prev.map((o) =>
-        selectedOrderKeys.includes(o.id)
-          ? { ...o, status, statusLabel: labelMap[status] || o.statusLabel }
-          : o
-      )
-    );
-    setSelectedOrderKeys([]);
-    message.success(`Đã cập nhật trạng thái cho ${selectedOrderKeys.length} đơn hàng!`);
+    try {
+      await orderApi.bulkUpdateStatus(selectedOrderKeys.map(String), status);
+      const labelMap: Record<string, string> = {
+        pending: 'Chờ duyệt',
+        processing: 'Đang gia công',
+        delivering: 'Đang giao hàng',
+        completed: 'Hoàn tất bàn giao',
+        cancelled: 'Đã hủy',
+      };
+      setOrdersList((prev) =>
+        prev.map((o) =>
+          selectedOrderKeys.includes(o.id)
+            ? { ...o, status, statusLabel: labelMap[status] || o.statusLabel }
+            : o
+        )
+      );
+      setSelectedOrderKeys([]);
+      message.success(`Đã cập nhật trạng thái cho ${selectedOrderKeys.length} đơn hàng!`);
+    } catch (err: any) {
+      message.error(err.message || 'Cập nhật trạng thái thất bại');
+    }
   };
 
   const handlePrintOrderReceipt = (order: OrderRow) => {
@@ -234,18 +321,24 @@ export function OrdersTab({
       return;
     }
     setEditingOrder(null);
-    form.resetFields();
-    form.setFieldsValue({
-      orderCode: `DH-${Date.now().toString().slice(-4)}`,
-      woodType: 'walnut',
-      orderType: 'custom',
-      status: 'pending',
-      value: 45000000,
-      depositAmount: 15000000,
-      deadlineDate: '25/05/2026',
-      showroom: selectedGlobalBranch !== 'all' ? selectedGlobalBranch : 'Showroom Nam Từ Liêm (Hà Nội)',
-    });
-    setIsOrderModalOpen(true);
+    setIsOrderDrawerOpen(true);
+
+    setTimeout(() => {
+      form.resetFields();
+      form.setFieldsValue({
+        orderCode: `DH-${Date.now().toString().slice(-4)}`,
+        woodType: '',
+        orderType: 'retail',
+        status: 'pending',
+        customerProvince: undefined,
+        customerDistrict: undefined,
+        customerAddress: '',
+        value: 0,
+        depositAmount: 0,
+        deadlineToPicker: dayjs().add(7, 'day'),
+        showroom: selectedGlobalBranch !== 'all' ? selectedGlobalBranch : '',
+      });
+    }, 0);
   };
 
   const handleOpenEditOrder = (order: OrderRow) => {
@@ -254,22 +347,38 @@ export function OrdersTab({
       return;
     }
     setEditingOrder(order);
-    form.setFieldsValue({
-      orderCode: order.orderCode,
-      customerName: order.customerName,
-      customerPhone: order.customerPhone,
-      customerAddress: order.customerAddress,
-      productName: order.productName,
-      productSpec: order.productSpec,
-      woodType: order.woodType,
-      orderType: order.orderType,
-      status: order.status,
-      value: order.value,
-      depositAmount: order.depositAmount,
-      deadlineDate: order.deadlineDate,
-      showroom: order.showroom || 'Showroom Nam Từ Liêm (Hà Nội)',
-    });
-    setIsOrderModalOpen(true);
+    setIsOrderDrawerOpen(true);
+
+    let parsedDeadline = undefined;
+    if (order.deadlineDate) {
+      const trimmed = order.deadlineDate.trim();
+      if (trimmed.includes('/')) {
+        parsedDeadline = dayjs(trimmed, 'DD/MM/YYYY');
+      } else {
+        parsedDeadline = dayjs(trimmed);
+      }
+    }
+
+    setTimeout(() => {
+      form.resetFields();
+      form.setFieldsValue({
+        orderCode: order.orderCode,
+        customerName: order.customerName,
+        customerPhone: order.customerPhone,
+        customerProvince: order.customerProvince,
+        customerDistrict: order.customerDistrict,
+        customerAddress: order.customerAddress,
+        productName: order.productName,
+        productSpec: order.productSpec,
+        woodType: order.woodType,
+        orderType: order.orderType || 'retail',
+        status: order.status,
+        value: order.value,
+        depositAmount: order.depositAmount,
+        deadlineToPicker: parsedDeadline && parsedDeadline.isValid() ? parsedDeadline : dayjs().add(7, 'day'),
+        showroom: order.showroom || '',
+      });
+    }, 0);
   };
 
   const handleSaveOrder = async () => {
@@ -284,48 +393,73 @@ export function OrdersTab({
       };
 
       const depositPercent = values.value > 0 ? Math.round(((values.depositAmount || 0) / values.value) * 100) : 0;
+      const fullShippingAddress = [
+        values.customerAddress,
+        values.customerDistrict,
+        values.customerProvince,
+      ].filter(Boolean).join(', ');
+
+      const formattedDeadline = values.deadlineToPicker
+        ? dayjs(values.deadlineToPicker).format('DD/MM/YYYY')
+        : dayjs().add(7, 'day').format('DD/MM/YYYY');
 
       if (editingOrder) {
+        const updated = await orderApi.updateOrder(editingOrder.id, {
+          ...values,
+          deadlineDate: formattedDeadline,
+          city: values.customerProvince,
+          district: values.customerDistrict,
+          shippingAddress: fullShippingAddress || values.customerAddress,
+          orderType: values.orderType || editingOrder.orderType || 'retail',
+          depositPercent,
+        });
         setOrdersList((prev) =>
           prev.map((item) =>
             item.id === editingOrder.id
               ? {
                   ...item,
-                  ...values,
+                  ...updated,
+                  deadlineDate: formattedDeadline,
+                  customerProvince: values.customerProvince,
+                  customerDistrict: values.customerDistrict,
                   statusLabel: statusLabels[values.status] || item.statusLabel,
                   depositPercent,
                 }
               : item
           )
         );
-        message.success(`Đã cập nhật đơn hàng ${values.orderCode} thành công!`);
+        message.success(`Đã cập nhật đơn hàng ${values.orderCode || editingOrder.orderCode} thành công!`);
       } else {
-        const newOrder: OrderRow = {
-          id: `ord_${Date.now()}`,
-          orderCode: values.orderCode || `DH-${Date.now().toString().slice(-4)}`,
+        const created = await orderApi.createOrder({
+          orderCode: values.orderCode,
           customerName: values.customerName,
           customerPhone: values.customerPhone,
           customerAddress: values.customerAddress,
+          customerProvince: values.customerProvince,
+          customerDistrict: values.customerDistrict,
+          city: values.customerProvince,
+          district: values.customerDistrict,
+          shippingAddress: fullShippingAddress || values.customerAddress,
           productName: values.productName,
           productSpec: values.productSpec || 'Theo thiết kế kỹ thuật',
-          woodType: values.woodType || 'walnut',
+          woodType: values.woodType || 'Gỗ tự nhiên cao cấp',
           value: values.value || 0,
           depositAmount: values.depositAmount || 0,
           depositPercent,
           status: values.status || 'pending',
-          statusLabel: statusLabels[values.status] || 'Chờ duyệt',
-          orderDate: '06/10/2026',
-          deadlineDate: values.deadlineDate || '25/05/2026',
-          orderType: values.orderType || 'custom',
+          deadlineDate: formattedDeadline,
+          orderType: values.orderType || 'retail',
           spaceType: 'living',
-          showroom: values.showroom || 'Showroom Nam Từ Liêm (Hà Nội)',
-        };
-        setOrdersList((prev) => [newOrder, ...prev]);
-        message.success(`Đã tạo đơn hàng mới ${newOrder.orderCode} thành công!`);
+          showroom: values.showroom || (selectedGlobalBranch !== 'all' ? selectedGlobalBranch : ''),
+          branch: selectedGlobalBranch !== 'all' ? selectedGlobalBranch : undefined,
+        });
+        setOrdersList((prev) => [created, ...prev]);
+        message.success(`Đã tạo đơn hàng mới ${created.orderCode} thành công!`);
       }
-      setIsOrderModalOpen(false);
-    } catch {
-      // Form validation failed
+      setIsOrderDrawerOpen(false);
+    } catch (err: any) {
+      if (err?.errorFields) return;
+      message.error(err.message || 'Lưu đơn hàng thất bại');
     }
   };
 
@@ -336,11 +470,17 @@ export function OrdersTab({
               searchPlaceholder="Theo mã đơn, tên khách, số điện thoại, sản phẩm nội thất..."
               searchValue={searchQuery}
               onSearchChange={(val) => setSearchQuery(val)}
-              onRefresh={() => {
+              onRefresh={async () => {
                 setSearchQuery('');
-                setOrderWoodFilter('all');
-                setOrderTypeFilter('all');
-                message.success('Đã làm mới danh sách đơn hàng!');
+                setStatusFilter('all');
+                setOrderDateRange(null);
+                try {
+                  const fresh = await orderApi.getOrders();
+                  setOrdersList(fresh);
+                  message.success('Đã làm mới danh sách đơn hàng từ máy chủ!');
+                } catch {
+                  message.info('Đã làm mới bộ lọc danh sách đơn hàng!');
+                }
               }}
               onExport={handleExportOrdersExcel}
               createButtonText="Tạo đơn hàng mới"
@@ -352,11 +492,10 @@ export function OrdersTab({
               {/* Left Sidebar Filter */}
               <AdminFilterSidebar
                 title="Bộ lọc đơn hàng"
-                hasActiveFilters={Boolean(searchQuery || orderWoodFilter !== 'all' || orderTypeFilter !== 'all' || orderDateRange)}
+                hasActiveFilters={Boolean(searchQuery || statusFilter !== 'all' || orderDateRange)}
                 onResetFilters={() => {
                   setSearchQuery('');
-                  setOrderWoodFilter('all');
-                  setOrderTypeFilter('all');
+                  setStatusFilter('all');
                   setOrderDateRange(null);
                 }}
               >
@@ -372,62 +511,31 @@ export function OrdersTab({
                   />
                 </div>
 
-                {/* Filter 2: Phân loại đơn hàng */}
+                {/* Filter 2: Trạng thái đơn hàng */}
                 <div>
                   <div className="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">
-                    Phân loại đơn hàng
+                    Trạng thái đơn hàng
                   </div>
                   <div className="space-y-1">
                     {[
-                      { value: 'all', label: 'Tất cả đơn hàng', count: branchScopedOrders.length },
-                      { value: 'custom', label: '🛍️ Bán lẻ Showroom', count: branchScopedOrders.filter((o) => o.orderType === 'custom').length },
-                      { value: 'package', label: '🏠 Combo Căn hộ', count: branchScopedOrders.filter((o) => o.orderType === 'package').length },
-                      { value: 'subcontract', label: '📐 Dự án KTS Đối tác', count: branchScopedOrders.filter((o) => o.orderType === 'subcontract').length },
-                      { value: 'ready', label: '✨ Đặt theo yêu cầu', count: branchScopedOrders.filter((o) => o.orderType === 'ready').length },
+                      { value: 'all', label: 'Tất cả đơn hàng', count: orderFilterCounts.all },
+                      { value: 'pending', label: '⏳ Chờ duyệt', count: orderFilterCounts.pending },
+                      { value: 'processing', label: '⚙️ Đang gia công', count: orderFilterCounts.processing },
+                      { value: 'delivering', label: '🚚 Đang giao hàng', count: orderFilterCounts.delivering },
+                      { value: 'completed', label: '✅ Hoàn tất bàn giao', count: orderFilterCounts.completed },
+                      { value: 'cancelled', label: '❌ Đã hủy', count: orderFilterCounts.cancelled },
                     ].map((opt) => {
-                      const isSelected = orderTypeFilter === opt.value;
+                      const isSelected = statusFilter === opt.value;
                       return (
                         <button
                           key={opt.value}
                           type="button"
-                          onClick={() => setOrderTypeFilter(opt.value)}
-                          className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors cursor-pointer border ${isSelected
+                          onClick={() => setStatusFilter(opt.value)}
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors cursor-pointer border ${
+                            isSelected
                               ? 'bg-[#784e34]/10 text-[#784e34] font-semibold border-[#784e34]/20'
                               : 'bg-transparent text-slate-600 border-transparent hover:bg-slate-50'
-                            }`}
-                        >
-                          <span>{opt.label}</span>
-                          <span className="font-mono text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">
-                            {opt.count}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Filter 3: Loại gỗ tự nhiên */}
-                <div>
-                  <div className="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">
-                    Chất liệu gỗ chủ đạo
-                  </div>
-                  <div className="space-y-1">
-                    {[
-                      { value: 'all', label: 'Tất cả loại gỗ', count: branchScopedOrders.length },
-                      { value: 'walnut', label: 'Gỗ Óc Chó FAS', count: branchScopedOrders.filter((o) => (o.woodType || '').toLowerCase().includes('óc chó') || o.woodType === 'walnut').length },
-                      { value: 'oak', label: 'Gỗ Sồi Trắng', count: branchScopedOrders.filter((o) => (o.woodType || '').toLowerCase().includes('sồi') || o.woodType === 'oak').length },
-                      { value: 'ash', label: 'Gỗ Tần Bì', count: branchScopedOrders.filter((o) => (o.woodType || '').toLowerCase().includes('tần bì') || o.woodType === 'ash').length },
-                    ].map((opt) => {
-                      const isSelected = orderWoodFilter === opt.value;
-                      return (
-                        <button
-                          key={opt.value}
-                          type="button"
-                          onClick={() => setOrderWoodFilter(opt.value)}
-                          className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors cursor-pointer border ${isSelected
-                              ? 'bg-[#784e34]/10 text-[#784e34] font-semibold border-[#784e34]/20'
-                              : 'bg-transparent text-slate-600 border-transparent hover:bg-slate-50'
-                            }`}
+                          }`}
                         >
                           <span>{opt.label}</span>
                           <span className="font-mono text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">
@@ -472,9 +580,11 @@ export function OrdersTab({
                   titleText="Danh Sách Đơn Hàng Bán Lẻ &amp; Hợp Đồng Dự Án"
                   titleIcon={<span className="w-2.5 h-2.5 rounded-full bg-[#784e34] inline-block" />}
                   countTag={`${filteredOrders.length} đơn hàng`}
+                  totalCount={filteredOrders.length}
+                  countUnit="đơn hàng"
                   dataSource={filteredOrders}
                   rowKey="id"
-                  pagination={{ pageSize: 10, showTotal: (total) => `Tổng cộng ${total} đơn hàng` }}
+                  pagination={{ pageSize: 10 }}
                   onRow={(record) => {
                     const isExp = expandedOrderRowKeys.includes(record.id);
                     return {
@@ -538,7 +648,7 @@ export function OrdersTab({
                                 onClick={() => printOrderInvoice(order)}
                                 className="h-8 px-3 text-xs font-semibold rounded-lg bg-white border border-slate-200 text-slate-700 hover:text-[#784e34] hover:border-[#784e34] shadow-xs flex items-center gap-1.5"
                               >
-                                In hóa đơn / Hợp đồng
+                                In hóa đơn / Phiếu in
                               </Button>
                               <Button
                                 icon={<DownloadOutlined />}
@@ -571,11 +681,21 @@ export function OrdersTab({
                                     <tr className="hover:bg-slate-50/50">
                                       <td className="py-2.5 px-3 font-mono font-medium text-[#784e34] whitespace-nowrap">{order.orderCode}</td>
                                       <td className="py-2.5 px-3">
-                                        <div className="font-medium text-slate-900">{order.productName}</div>
+                                        <div
+                                          className="font-medium text-[#784e34] hover:underline cursor-pointer inline-flex items-center gap-1 group"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            if (onNavigateToProduct) onNavigateToProduct(order.productName);
+                                          }}
+                                          title={`Xem chi tiết sản phẩm "${order.productName}" trong danh mục`}
+                                        >
+                                          <span>{order.productName}</span>
+                                          <span className="text-[10px] text-slate-400 group-hover:text-[#784e34]">↗</span>
+                                        </div>
                                         <div className="text-[11px] text-slate-500 mt-0.5">{order.productSpec}</div>
                                       </td>
                                       <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap">Bộ / Chiếc</td>
-                                      <td className="py-2.5 px-3 text-slate-600 capitalize whitespace-nowrap">Gỗ {order.woodType}</td>
+                                      <td className="py-2.5 px-3 text-slate-700 whitespace-nowrap">{formatWoodTypeName(order.woodType)}</td>
                                       <td className="py-2.5 px-3 font-mono text-slate-700 whitespace-nowrap">{order.deadlineDate}</td>
                                       <td className="py-2.5 px-3 text-center font-medium text-slate-900 whitespace-nowrap">1</td>
                                       <td className="py-2.5 px-3 text-right font-mono font-medium text-slate-900 whitespace-nowrap">{order.value.toLocaleString('vi-VN')} đ</td>
@@ -639,7 +759,7 @@ export function OrdersTab({
                               </div>
                               <div>
                                 <span className="text-slate-400 block mb-0.5">Loại gỗ chế tác:</span>
-                                <span className="font-medium text-[#784e34] capitalize">Gỗ {order.woodType} tự nhiên</span>
+                                <span className="font-medium text-[#784e34]">{formatWoodTypeName(order.woodType)}</span>
                               </div>
                               <div className="lg:col-span-3">
                                 <span className="text-slate-400 block mb-0.5">Địa chỉ giao hàng:</span>
@@ -779,7 +899,17 @@ export function OrdersTab({
                       dataIndex: 'productName',
                       key: 'productName',
                       render: (text) => (
-                        <span className="font-normal text-slate-700 text-sm">{text}</span>
+                        <span
+                          className="font-medium text-[#784e34] hover:underline cursor-pointer inline-flex items-center gap-1 group"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (onNavigateToProduct) onNavigateToProduct(text);
+                          }}
+                          title={`Xem chi tiết sản phẩm "${text}" trong danh mục`}
+                        >
+                          <span>{text}</span>
+                          <span className="text-[10px] text-slate-400 group-hover:text-[#784e34]">↗</span>
+                        </span>
                       ),
                     },
                     {
@@ -816,7 +946,7 @@ export function OrdersTab({
                             type="text"
                             size="small"
                             icon={<PrinterOutlined className="text-slate-600 hover:text-[#784e34] text-base" />}
-                            title="In hóa đơn / Phiếu may đo"
+                            title="In hóa đơn / Phiếu in"
                             onClick={() => printOrderInvoice(r)}
                             className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100"
                           />
@@ -830,10 +960,7 @@ export function OrdersTab({
                           <Popconfirm
                             title="Xác nhận xóa đơn hàng"
                             description={`Bạn có chắc chắn muốn xóa đơn ${r.orderCode}?`}
-                            onConfirm={() => {
-                              setOrdersList((prev) => prev.filter((item) => item.id !== r.id));
-                              message.success(`Đã xóa đơn hàng ${r.orderCode}!`);
-                            }}
+                            onConfirm={() => handleDeleteOrder(r.id)}
                             okText="Xóa"
                             cancelText="Hủy"
                             okButtonProps={{ danger: true }}
@@ -854,149 +981,342 @@ export function OrdersTab({
             </div>
           </div>
 
-          {/* CREATE / EDIT ORDER MODAL */}
-          <Modal
-            title={editingOrder ? `Chỉnh sửa đơn hàng ${editingOrder.orderCode}` : 'Tạo mới đơn hàng'}
-            open={isOrderModalOpen}
-            onOk={handleSaveOrder}
-            onCancel={() => setIsOrderModalOpen(false)}
-            okText={editingOrder ? 'Cập nhật' : 'Tạo đơn'}
-            cancelText="Hủy"
-            width={700}
+          {/* CREATE / EDIT ORDER DRAWER */}
+          <Drawer
+            title={
+              <div className="flex items-center gap-3 py-1">
+                <div
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-lg border shadow-xs ${
+                    editingOrder
+                      ? 'bg-amber-50 text-[#784e34] border-amber-200'
+                      : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  }`}
+                >
+                  {editingOrder ? <EditOutlined /> : <ShoppingOutlined />}
+                </div>
+                <div>
+                  <div className="text-base font-bold text-slate-800 flex items-center gap-2">
+                    {editingOrder ? 'Chỉnh sửa đơn hàng' : 'Tạo mới đơn hàng may đo'}
+                    {editingOrder && (
+                      <Tag color="gold" className="font-mono text-sm px-2 m-0 font-medium">
+                        {editingOrder.orderCode}
+                      </Tag>
+                    )}
+                  </div>
+                  <div className="text-xs text-slate-500 font-normal">
+                    {editingOrder
+                      ? 'Cập nhật quy cách may đo, số tiền & tiến độ bàn giao'
+                      : 'Lập phiếu đặt may đo / gia công nội thất gỗ tự nhiên'}
+                  </div>
+                </div>
+              </div>
+            }
+            open={isOrderDrawerOpen}
+            onClose={() => setIsOrderDrawerOpen(false)}
+            size="large"
+            forceRender
+            footer={
+              <div className="flex items-center justify-between px-2 py-1.5">
+                <Button onClick={() => setIsOrderDrawerOpen(false)} icon={<CloseOutlined />} size="middle">
+                  Đóng
+                </Button>
+                <Space>
+                  <Button
+                    type="primary"
+                    onClick={handleSaveOrder}
+                    icon={<SaveOutlined />}
+                    className="!bg-[#784e34] hover:!bg-[#633e28] !border-[#784e34] font-medium h-10 px-6 rounded-lg shadow-sm"
+                  >
+                    {editingOrder ? 'Lưu thay đổi' : 'Tạo đơn hàng'}
+                  </Button>
+                </Space>
+              </div>
+            }
           >
-            <Form form={form} layout="vertical" className="mt-4">
-              <Row gutter={16}>
-                <Col span={12}>
-                  <Form.Item
-                    label="Mã đơn hàng"
-                    name="orderCode"
-                    rules={[{ required: true, message: 'Vui lòng nhập mã đơn hàng' }]}
-                  >
-                    <Input placeholder="VD: DH-2026-09" />
-                  </Form.Item>
-                </Col>
-                <Col span={12}>
-                  <Form.Item
-                    label="Phân loại đơn"
-                    name="orderType"
-                    rules={[{ required: true, message: 'Vui lòng chọn loại đơn' }]}
-                  >
-                    <Select
-                      options={[
-                        { value: 'custom', label: '🛍️ Bán lẻ Showroom' },
-                        { value: 'package', label: '📦 Thi công trọn gói' },
-                        { value: 'project', label: '🏢 Dự án / Doanh nghiệp' },
-                      ]}
-                    />
-                  </Form.Item>
-                </Col>
-              </Row>
+            <Form form={form} layout="vertical" className="space-y-4">
+              {/* Card 1: Thông tin chung */}
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+                <div className="flex items-center gap-2 text-sm font-semibold text-slate-800 pb-1 border-b border-slate-200">
+                  <AppstoreOutlined className="text-[#784e34]" />
+                  <span>1. Thông tin chung & Kênh tiếp nhận</span>
+                </div>
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item
+                      label="Mã đơn hàng"
+                      name="orderCode"
+                      rules={[{ required: true, message: 'Vui lòng nhập mã đơn hàng' }]}
+                    >
+                      <Input placeholder="VD: DH-2026-09" className="font-mono font-medium" />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item label="Trạng thái đơn hàng" name="status">
+                      <Select
+                        options={[
+                          { value: 'pending', label: '⏳ Chờ duyệt' },
+                          { value: 'processing', label: '⚙️ Đang gia công' },
+                          { value: 'delivering', label: '🚚 Đang giao hàng' },
+                          { value: 'completed', label: '✅ Hoàn tất bàn giao' },
+                          { value: 'cancelled', label: '❌ Đã hủy' },
+                        ]}
+                      />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Form.Item label="Chi nhánh / Showroom" name="showroom">
+                  <Input placeholder="VD: Showroom Nam Từ Liêm (Hà Nội)" />
+                </Form.Item>
+              </div>
 
-              <Row gutter={16}>
-                <Col span={12}>
-                  <Form.Item
-                    label="Tên khách hàng"
-                    name="customerName"
-                    rules={[{ required: true, message: 'Vui lòng nhập tên khách hàng' }]}
-                  >
-                    <Input placeholder="VD: Nguyễn Văn Luân" />
-                  </Form.Item>
-                </Col>
-                <Col span={12}>
-                  <Form.Item
-                    label="Số điện thoại"
-                    name="customerPhone"
-                    rules={[{ required: true, message: 'Vui lòng nhập số điện thoại' }]}
-                  >
-                    <Input placeholder="VD: 0918 345 678" />
-                  </Form.Item>
-                </Col>
-              </Row>
+              {/* Card 2: Thông tin khách hàng */}
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+                <div className="flex items-center gap-2 text-sm font-semibold text-slate-800 pb-1 border-b border-slate-200">
+                  <UserOutlined className="text-[#784e34]" />
+                  <span>2. Thông tin khách hàng & Địa chỉ</span>
+                </div>
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item
+                      label="Tên khách hàng"
+                      name="customerName"
+                      rules={[{ required: true, message: 'Vui lòng nhập tên khách hàng' }]}
+                    >
+                      <AutoComplete
+                        options={effectiveCustomers.map((c) => ({
+                          value: c.name,
+                          label: (
+                            <div className="flex justify-between items-center py-0.5">
+                              <div>
+                                <span className="font-semibold text-slate-800 mr-2">{c.name}</span>
+                                {c.code && <span className="text-[11px] font-mono text-slate-400">({c.code})</span>}
+                              </div>
+                              <span className="text-xs text-slate-500 font-mono">{c.phone}</span>
+                            </div>
+                          ),
+                          customer: c,
+                        }))}
+                        filterOption={(inputValue, option) => {
+                          if (!inputValue) return true;
+                          const c = (option as any)?.customer;
+                          if (!c) {
+                            return matchVietnameseText(inputValue, String(option?.value || ''));
+                          }
+                          return (
+                            matchVietnameseText(inputValue, c.name || '') ||
+                            matchVietnameseText(inputValue, c.phone || '') ||
+                            matchVietnameseText(inputValue, c.code || '') ||
+                            matchVietnameseText(inputValue, c.address || '')
+                          );
+                        }}
+                        onSelect={(_val, option: any) => {
+                          if (option?.customer) {
+                            form.setFieldsValue({
+                              customerPhone: option.customer.phone || '',
+                              customerAddress: option.customer.address || '',
+                              customerProvince: option.customer.invoiceProvince || undefined,
+                              customerDistrict: option.customer.invoiceWard || undefined,
+                            });
+                          }
+                        }}
+                        placeholder="Nhập họ tên, SĐT hoặc chọn từ danh sách khách hàng..."
+                      />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item
+                      label="Số điện thoại"
+                      name="customerPhone"
+                      rules={[{ required: true, message: 'Vui lòng nhập số điện thoại' }]}
+                    >
+                      <Input placeholder="VD: 0918 345 678" />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item label="Tỉnh / Thành phố" name="customerProvince">
+                      <Select
+                        placeholder="-- Chọn Tỉnh / Thành phố --"
+                        showSearch
+                        optionFilterProp="label"
+                        allowClear
+                        onChange={() => {
+                          form.setFieldsValue({ customerDistrict: undefined });
+                        }}
+                        options={VIETNAM_PROVINCES.map((p) => ({
+                          value: p.name,
+                          label: p.name,
+                        }))}
+                      />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item label="Quận / Huyện" name="customerDistrict">
+                      <Select
+                        placeholder="-- Chọn Quận / Huyện --"
+                        showSearch
+                        optionFilterProp="label"
+                        allowClear
+                        disabled={!selectedProvince}
+                        options={currentDistricts.map((d) => ({
+                          value: d.name,
+                          label: d.name,
+                        }))}
+                      />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Form.Item label="Địa chỉ cụ thể nhận nội thất" name="customerAddress">
+                  <Input placeholder="Số nhà, đường, tòa nhà, căn hộ..." />
+                </Form.Item>
+              </div>
 
-              <Form.Item label="Địa chỉ giao nhận" name="customerAddress">
-                <Input placeholder="VD: Vinhomes Grand Park, TP. Thủ Đức" />
-              </Form.Item>
+              {/* Card 3: Sản phẩm may đo */}
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+                <div className="flex items-center gap-2 text-sm font-semibold text-slate-800 pb-1 border-b border-slate-200">
+                  <ShoppingOutlined className="text-[#784e34]" />
+                  <span>3. Quy cách sản phẩm</span>
+                </div>
+                <Row gutter={16}>
+                  <Col span={14}>
+                    <Form.Item
+                      label="Sản phẩm / Hạng mục đặt làm"
+                      name="productName"
+                      rules={[{ required: true, message: 'Vui lòng nhập tên sản phẩm' }]}
+                    >
+                      <AutoComplete
+                        options={effectiveProducts.map((p) => ({
+                          value: p.name,
+                          label: (
+                            <div className="flex justify-between items-center py-0.5">
+                              <div>
+                                <span className="font-semibold text-slate-800 mr-2">{p.name}</span>
+                                {p.code && <span className="text-[11px] font-mono text-slate-400">({p.code})</span>}
+                              </div>
+                              <span className="text-xs text-[#784e34] font-mono font-medium whitespace-nowrap ml-2">
+                                {p.price.toLocaleString('vi-VN')} đ
+                              </span>
+                            </div>
+                          ),
+                          product: p,
+                        }))}
+                        filterOption={(inputValue, option) => {
+                          if (!inputValue) return true;
+                          const p = (option as any)?.product;
+                          if (!p) {
+                            return matchVietnameseText(inputValue, String(option?.value || ''));
+                          }
+                          return (
+                            matchVietnameseText(inputValue, p.name || '') ||
+                            matchVietnameseText(inputValue, p.code || '') ||
+                            matchVietnameseText(inputValue, p.sku || '') ||
+                            matchVietnameseText(inputValue, p.categoryName || '') ||
+                            matchVietnameseText(inputValue, p.collection || '')
+                          );
+                        }}
+                        onSelect={(_val, option: any) => {
+                          if (option?.product) {
+                            const realMaterial = option.product.material || '';
+                            form.setFieldsValue({
+                              value: option.product.price || 0,
+                              woodType: realMaterial,
+                              productSpec: option.product.dimensions
+                                ? `${option.product.dimensions}${realMaterial ? ` - ${realMaterial}` : ''}`
+                                : option.product.specs?.[0] || option.product.collection || 'Theo quy cách xuất xưởng',
+                            });
+                          }
+                        }}
+                        placeholder="Gõ tên, mã sản phẩm (VD: Tủ áo, Kệ Tivi, Sofa...)"
+                      />
+                    </Form.Item>
+                  </Col>
+                  <Col span={10}>
+                    <Form.Item label="Chủng loại gỗ / Chất liệu" name="woodType">
+                      <AutoComplete
+                        options={availableWoodTypes.map((mat) => ({
+                          value: mat,
+                          label: mat,
+                        }))}
+                        filterOption={(inputValue, option) => {
+                          if (!inputValue) return true;
+                          return matchVietnameseText(inputValue, String(option?.value || ''));
+                        }}
+                        placeholder="VD: Gỗ Óc Chó FAS, Gỗ Sồi Mỹ..."
+                      />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Form.Item label="Quy cách / Kích thước kỹ thuật" name="productSpec">
+                  <Input placeholder="VD: 2800 x 1800 x 850 mm - Đệm Bỉ cao cấp" />
+                </Form.Item>
+              </div>
 
-              <Row gutter={16}>
-                <Col span={14}>
-                  <Form.Item
-                    label="Sản phẩm / Hạng mục đặt làm"
-                    name="productName"
-                    rules={[{ required: true, message: 'Vui lòng nhập tên sản phẩm' }]}
-                  >
-                    <Input placeholder="VD: Sofa Chữ L Óc Chó Kyoto" />
-                  </Form.Item>
-                </Col>
-                <Col span={10}>
-                  <Form.Item label="Chủng loại gỗ" name="woodType">
-                    <Select
-                      options={[
-                        { value: 'walnut', label: 'Gỗ Óc Chó (FAS)' },
-                        { value: 'oak', label: 'Gỗ Sồi Mỹ (White Oak)' },
-                        { value: 'lim', label: 'Gỗ Lim Xanh' },
-                        { value: 'other', label: 'Khác' },
-                      ]}
-                    />
-                  </Form.Item>
-                </Col>
-              </Row>
-
-              <Form.Item label="Quy cách / Kích thước kỹ thuật" name="productSpec">
-                <Input placeholder="VD: 2800 x 1800 x 850 mm - Đệm Bỉ" />
-              </Form.Item>
-
-              <Row gutter={16}>
-                <Col span={8}>
-                  <Form.Item
-                    label="Tổng giá trị (VNĐ)"
-                    name="value"
-                    rules={[{ required: true, message: 'Vui lòng nhập tổng tiền' }]}
-                  >
-                    <InputNumber
-                      className="w-full"
-                      formatter={(val) => `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-                      parser={(val) => (val ? Number(val.replace(/\$\s?|(,*)/g, '')) : 0)}
-                    />
-                  </Form.Item>
-                </Col>
-                <Col span={8}>
-                  <Form.Item label="Đã đặt cọc (VNĐ)" name="depositAmount">
-                    <InputNumber
-                      className="w-full"
-                      formatter={(val) => `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-                      parser={(val) => (val ? Number(val.replace(/\$\s?|(,*)/g, '')) : 0)}
-                    />
-                  </Form.Item>
-                </Col>
-                <Col span={8}>
-                  <Form.Item label="Hạn bàn giao" name="deadlineDate">
-                    <Input placeholder="VD: 25/05/2026" />
-                  </Form.Item>
-                </Col>
-              </Row>
-
-              <Row gutter={16}>
-                <Col span={12}>
-                  <Form.Item label="Trạng thái đơn hàng" name="status">
-                    <Select
-                      options={[
-                        { value: 'pending', label: 'Chờ duyệt' },
-                        { value: 'processing', label: 'Đang gia công' },
-                        { value: 'delivering', label: 'Đang giao hàng' },
-                        { value: 'completed', label: 'Hoàn tất bàn giao' },
-                        { value: 'cancelled', label: 'Đã hủy' },
-                      ]}
-                    />
-                  </Form.Item>
-                </Col>
-                <Col span={12}>
-                  <Form.Item label="Chi nhánh Showroom" name="showroom">
-                    <Input placeholder="VD: Showroom Nam Từ Liêm (Hà Nội)" />
-                  </Form.Item>
-                </Col>
-              </Row>
+              {/* Card 4: Giá trị & Cọc */}
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-4">
+                <div className="flex items-center gap-2 text-sm font-semibold text-slate-800 pb-1 border-b border-slate-200">
+                  <DollarOutlined className="text-[#784e34]" />
+                  <span>4. Giá trị đơn hàng, Đặt cọc & Hạn bàn giao</span>
+                </div>
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item
+                      label="Tổng giá trị đơn hàng (VNĐ)"
+                      name="value"
+                      rules={[{ required: true, message: 'Vui lòng nhập tổng giá trị' }]}
+                    >
+                      <InputNumber<number>
+                        className="w-full font-mono text-base font-bold text-[#784e34]"
+                        style={{ width: '100%' }}
+                        controls={false}
+                        min={0}
+                        formatter={(val) => `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                        parser={(val) => (val ? Number(val.replace(/\$\s?|(,*)/g, '')) : 0)}
+                        placeholder="0"
+                      />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item label="Đã đặt cọc (VNĐ)" name="depositAmount">
+                      <InputNumber<number>
+                        className="w-full font-mono text-base font-bold text-emerald-700"
+                        style={{ width: '100%' }}
+                        controls={false}
+                        min={0}
+                        formatter={(val) => `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                        parser={(val) => (val ? Number(val.replace(/\$\s?|(,*)/g, '')) : 0)}
+                        placeholder="0"
+                      />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item
+                      label="Hạn bàn giao & Lắp đặt"
+                      name="deadlineToPicker"
+                      rules={[{ required: true, message: 'Vui lòng chọn hạn bàn giao' }]}
+                    >
+                      <DatePicker
+                        className="w-full h-9 font-medium"
+                        style={{ width: '100%' }}
+                        format="DD/MM/YYYY"
+                        placeholder="Chọn ngày (DD/MM/YYYY)"
+                      />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <div className="p-2.5 rounded-lg bg-amber-50/70 border border-amber-200/80 text-xs text-amber-900 flex items-center justify-between h-9 mt-6">
+                      <span className="text-slate-600 font-medium">Còn phải thu khi giao:</span>
+                      <span className="font-mono font-bold text-rose-600 text-sm">
+                        {Math.max(0, (Form.useWatch('value', form) || 0) - (Form.useWatch('depositAmount', form) || 0)).toLocaleString('vi-VN')} đ
+                      </span>
+                    </div>
+                  </Col>
+                </Row>
+              </div>
             </Form>
-          </Modal>
+          </Drawer>
         </div>
   );
 }
