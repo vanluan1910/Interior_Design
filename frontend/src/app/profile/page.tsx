@@ -1,9 +1,12 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { App, Modal } from 'antd';
+import { App, Modal, Input, Select, DatePicker } from 'antd';
+import dayjs, { Dayjs } from 'dayjs';
+import customParseFormat from 'dayjs/plugin/customParseFormat';
+import 'dayjs/locale/vi';
 import {
   UserOutlined,
   MailOutlined,
@@ -23,12 +26,20 @@ import {
   EnvironmentOutlined,
   CarOutlined,
   ArrowRightOutlined,
+  IdcardOutlined,
 } from '@ant-design/icons';
+
+dayjs.extend(customParseFormat);
+dayjs.locale('vi');
+
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { useAuth } from '@/context/AuthContext';
 import { useCart } from '@/context/CartContext';
+import { authApi } from '@/api/authApi';
 import { VIETNAM_PROVINCES } from '@/data/vietnamAddresses';
+
+const { TextArea } = Input;
 
 interface AddressItem {
   id: string;
@@ -67,21 +78,23 @@ const INITIAL_ADDRESSES: AddressItem[] = [
 function ProfilePageContent() {
   const { message } = App.useApp();
   const router = useRouter();
-  const { user, isAdmin, updateProfile, logout } = useAuth();
+  const { user, isLoading, isAdmin, updateProfile, logout } = useAuth();
   const { cartCount } = useCart();
 
   // Active navigation tab on left menu
   const [activeTab, setActiveTab] = useState<'profile' | 'addresses' | 'orders' | 'security'>('profile');
 
   // Form states for profile
-  const [fullName, setFullName] = useState(user?.name || 'Nguyễn Hoàng Minh');
-  const [dob, setDob] = useState('14/08/1988');
-  const [phone, setPhone] = useState(user?.phone || '0918 345 678');
-  const [email, setEmail] = useState(user?.email || 'minh.nguyen@archistudio.vn');
-  const [bio, setBio] = useState(user?.bio || 'Gia chủ yêu thích phong cách Japandi & Wabi-Sabi tinh tế, trân trọng chất mộc mạc nguyên bản của gỗ óc chó Bắc Mỹ.');
+  const [fullName, setFullName] = useState('');
+  const [dob, setDob] = useState<Dayjs | null>(null);
+  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
+  const [bio, setBio] = useState('');
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
 
-  // Addresses state
-  const [addresses, setAddresses] = useState<AddressItem[]>(INITIAL_ADDRESSES);
+  // Addresses state (isolated per user)
+  const [addresses, setAddresses] = useState<AddressItem[]>([]);
+  const [userOrders, setUserOrders] = useState<any[]>([]);
   const [isAddAddressOpen, setIsAddAddressOpen] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newRecipient, setNewRecipient] = useState('');
@@ -90,6 +103,68 @@ function ProfilePageContent() {
   const [newDistrict, setNewDistrict] = useState('');
   const [newAddress, setNewAddress] = useState('');
   const [newNote, setNewNote] = useState('');
+
+  // Synchronize state when user changes/loads from AuthContext
+  useEffect(() => {
+    if (isLoading) return;
+
+    if (user) {
+      setFullName(user.name || '');
+      setPhone(user.phone || '');
+      setEmail(user.email || '');
+      setBio(user.bio || (user.role === 'admin' ? 'Quản trị viên hệ sinh thái Nội thất Tinh hoa D2 LUXURY. Chuyên gia cố vấn chế tác gỗ óc chó & sồi Bắc Mỹ FAS.' : ''));
+      if (user.dob) {
+        const parsed = dayjs(user.dob, 'DD/MM/YYYY');
+        setDob(parsed.isValid() ? parsed : dayjs(user.dob));
+      } else {
+        setDob(null);
+      }
+
+      // Load isolated addresses for this user
+      try {
+        const userAddrKey = `d2_addresses_${user.id}`;
+        const saved = localStorage.getItem(userAddrKey);
+        if (saved) {
+          setAddresses(JSON.parse(saved));
+        } else if (user.role === 'admin') {
+          setAddresses(INITIAL_ADDRESSES);
+        } else {
+          setAddresses([]);
+        }
+      } catch {
+        setAddresses([]);
+      }
+
+      // Load isolated orders for this user
+      try {
+        const userOrderKey = `d2_orders_${user.id}`;
+        const savedOrders = localStorage.getItem(userOrderKey);
+        if (savedOrders) {
+          setUserOrders(JSON.parse(savedOrders));
+        } else if (user.role === 'admin') {
+          setUserOrders([
+            {
+              id: 'ord_admin_01',
+              orderCode: 'MG-2024-89240',
+              createdAt: '10/10/2026',
+              value: 148500000,
+              productName: 'Sofa Gỗ Óc Chó Kyoto (3 chỗ) + Bàn Trà Nami',
+              productSpec: 'Quy cách: Gỗ Walnut nhập khẩu hạng 1, hoàn thiện dầu thực vật hữu cơ Osmo Đức',
+              image:
+                'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?w=800&auto=format&fit=crop&q=80',
+              status: 'pending',
+            },
+          ]);
+        } else {
+          setUserOrders([]);
+        }
+      } catch {
+        setUserOrders([]);
+      }
+    } else {
+      router.push('/login');
+    }
+  }, [user, isLoading, router]);
 
   // Dynamic districts for Add Address modal
   const newDistricts = useMemo(() => {
@@ -108,31 +183,42 @@ function ProfilePageContent() {
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
 
-  // Save profile changes
-  const handleSaveProfile = (e: React.FormEvent) => {
+  // Save profile changes to database
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!fullName.trim()) {
       message.warning('Vui lòng nhập Họ và tên.');
       return;
     }
-    updateProfile({
-      name: fullName.trim(),
-      phone: phone.trim(),
-      email: email.trim(),
-      bio: bio.trim(),
-    });
-    message.success('Đã lưu thông tin gia chủ thành công!');
+    try {
+      setIsSavingProfile(true);
+      await updateProfile({
+        name: fullName.trim(),
+        phone: phone.trim(),
+        email: email.trim(),
+        bio: bio.trim(),
+        dob: dob ? dob.format('DD/MM/YYYY') : undefined,
+      });
+      message.success('Đã lưu thông tin gia chủ thành công!');
+    } catch (err: any) {
+      message.error(err?.message || 'Không thể lưu thông tin gia chủ.');
+    } finally {
+      setIsSavingProfile(false);
+    }
   };
 
   // Set default address
   const handleSetDefaultAddress = (id: string) => {
-    setAddresses((prev) =>
-      prev.map((a) => ({
-        ...a,
-        isDefault: a.id === id,
-      }))
-    );
+    const updated = addresses.map((a) => ({
+      ...a,
+      isDefault: a.id === id,
+    }));
+    setAddresses(updated);
+    if (user?.id) {
+      localStorage.setItem(`d2_addresses_${user.id}`, JSON.stringify(updated));
+    }
     message.success('Đã đặt làm địa chỉ bàn giao mặc định!');
   };
 
@@ -176,7 +262,11 @@ function ProfilePageContent() {
       tag: 'Công trình mới',
     };
 
-    setAddresses([...addresses, item]);
+    const updated = [...addresses, item];
+    setAddresses(updated);
+    if (user?.id) {
+      localStorage.setItem(`d2_addresses_${user.id}`, JSON.stringify(updated));
+    }
     setIsAddAddressOpen(false);
     setNewTitle('');
     setNewRecipient('');
@@ -190,16 +280,16 @@ function ProfilePageContent() {
 
   // Delete address
   const handleDeleteAddress = (id: string) => {
-    if (addresses.length <= 1) {
-      message.warning('Cần giữ ít nhất 1 địa chỉ nhận hàng.');
-      return;
+    const updated = addresses.filter((a) => a.id !== id);
+    setAddresses(updated);
+    if (user?.id) {
+      localStorage.setItem(`d2_addresses_${user.id}`, JSON.stringify(updated));
     }
-    setAddresses(addresses.filter((a) => a.id !== id));
     message.success('Đã xóa địa chỉ!');
   };
 
   // Handle Password Change
-  const handleChangePassword = () => {
+  const handleChangePassword = async () => {
     if (!oldPassword || !newPassword || !confirmPassword) {
       message.warning('Vui lòng điền đầy đủ các trường mật khẩu.');
       return;
@@ -208,18 +298,50 @@ function ProfilePageContent() {
       message.error('Mật khẩu xác nhận không khớp!');
       return;
     }
-    setIsPasswordModalOpen(false);
-    setOldPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
-    message.success('Đã cập nhật mật khẩu mới thành công!');
+    if (newPassword.length < 6) {
+      message.warning('Mật khẩu mới phải có tối thiểu 6 ký tự.');
+      return;
+    }
+
+    try {
+      setIsChangingPassword(true);
+      if (user?.id && user.id.includes('-')) {
+        await authApi.changePassword({
+          userId: user.id,
+          currentPassword: oldPassword,
+          newPassword: newPassword,
+        });
+      }
+      setIsPasswordModalOpen(false);
+      setOldPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      message.success('Đã cập nhật mật khẩu mới thành công!');
+    } catch (err: any) {
+      message.error(err?.message || 'Đổi mật khẩu thất bại. Vui lòng kiểm tra lại mật khẩu hiện tại.');
+    } finally {
+      setIsChangingPassword(false);
+    }
   };
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     message.info('Đã đăng xuất tài khoản.');
     router.push('/login');
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-[#fff8f5] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-9 h-9 border-2 border-[#5d371f] border-t-transparent rounded-full animate-spin" />
+          <span className="text-xs font-serif tracking-widest text-[#5d371f] uppercase font-semibold">
+            Đang tải dữ liệu gia chủ...
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-[#fff8f5] text-[#1f1b19] font-body-md selection:bg-[#ffdbc8] selection:text-[#311301]">
@@ -232,7 +354,7 @@ function ProfilePageContent() {
           <div className="absolute -top-40 -right-40 w-96 h-96 rounded-full bg-[#ffdbc8]/20 blur-3xl pointer-events-none" />
           <div className="absolute top-96 -left-32 w-80 h-80 rounded-full bg-[#efe6e3]/50 blur-2xl pointer-events-none" />
 
-          <div className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 pt-6">
+          <div className="max-w-[1720px] mx-auto px-4 sm:px-6 lg:px-10 xl:px-14 pt-6">
             {/* Breadcrumb */}
             <nav className="flex items-center gap-1.5 text-xs text-[#83746c] mb-6">
               <Link href="/" className="hover:text-[#5d371f] transition-colors">
@@ -254,39 +376,43 @@ function ProfilePageContent() {
                 <div className="bg-white border border-[#eae1dd] p-6 shadow-sm flex flex-col">
                   <div className="flex items-center gap-4">
                     <div className="relative">
-                      <img
-                        className="w-16 h-16 object-cover ring-2 ring-[#d5c3ba] shadow-sm"
-                        src={
-                          user?.avatar ||
-                          'https://lh3.googleusercontent.com/aida-public/AB6AXuCat_S6E8qhOpd0scj-6rD4LfY-vo8Z8BklqUwqxMQ7KmIIIgjWnFYxUX5fCgoVlCAAL_D8yl8U9ygJ0mEVG7YKDvo7gJ6zFOVjaKRNG_Cg0c2N5V8m5uiyP19HNH0NrH3dQdUC9VFMfNIe6EMKef3NZFvNCfCOWMVw2Q1X0zJcbXJvCdsvo8d1fnvyZGmzP2qJA0aHtNnpovE1Pk7M0kbgrh3_ATbB9f5cnwRYJTPAtz9HlOwVQrbq'
-                        }
-                        alt="Ảnh đại diện gia chủ"
-                      />
+                      <div className="w-16 h-16 bg-gradient-to-br from-[#5d371f] to-[#382012] text-[#ffdbb5] font-serif font-bold text-2xl flex items-center justify-center ring-2 ring-[#d5c3ba] shadow-sm select-none shrink-0">
+                        {(user?.name || fullName || 'G').trim().charAt(0).toUpperCase()}
+                      </div>
                       <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-[#5d371f] text-[#ffdbb5] flex items-center justify-center border border-white">
                         <span className="material-symbols-outlined text-[12px]">workspace_premium</span>
                       </div>
                     </div>
                     <div className="flex flex-col min-w-0">
                       <h3 className="font-serif text-lg font-bold text-[#1f1b19] truncate">
-                        {fullName}
+                        {user?.name || fullName || 'Khách hàng'}
                       </h3>
-                      <span className="text-[10px] uppercase tracking-wider text-[#5d371f] font-bold mt-0.5">
-                        {isAdmin ? 'Quản Trị Viên Cấp Cao' : 'Gia Chủ Hạng Tinh Hoa'}
-                      </span>
+                      {isAdmin && (
+                        <span className="text-[10px] uppercase tracking-wider text-[#5d371f] font-bold mt-0.5">
+                          Quản Trị Viên
+                        </span>
+                      )}
                       <span className="font-data-mono text-[11px] text-[#83746c] mt-0.5">
-                        Mã KH: #{user?.id ? user.id.replace('usr_', 'MG-') : 'MG-88910'}
+                        Mã KH: #{user?.id ? (user.id.length > 8 ? user.id.substring(0, 8).toUpperCase() : user.id.replace('usr_', 'MG-')) : 'MG-88910'}
                       </span>
                     </div>
                   </div>
 
                   <div className="mt-4 pt-4 border-t border-[#eae1dd] flex flex-col gap-2 text-xs">
-                    <div className="flex items-center gap-2.5 text-[#51443d]">
-                      <span className="material-symbols-outlined text-[18px] text-[#83746c]">mail</span>
-                      <span className="truncate font-data-mono">{email}</span>
-                    </div>
+                    {email ? (
+                      <div className="flex items-center gap-2.5 text-[#51443d]">
+                        <span className="material-symbols-outlined text-[18px] text-[#83746c]">mail</span>
+                        <span className="truncate font-data-mono">{email}</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2.5 text-[#83746c] italic">
+                        <span className="material-symbols-outlined text-[18px]">mail</span>
+                        <span>Chưa cập nhật email</span>
+                      </div>
+                    )}
                     <div className="flex items-center gap-2.5 text-[#51443d]">
                       <span className="material-symbols-outlined text-[18px] text-[#83746c]">call</span>
-                      <span className="font-data-mono">{phone}</span>
+                      <span className="font-data-mono">{phone || 'Chưa có số điện thoại'}</span>
                     </div>
                     <div className="flex items-center gap-2.5 text-[#51443d]">
                       <span className="material-symbols-outlined text-[18px] text-[#83746c]">verified_user</span>
@@ -344,18 +470,14 @@ function ProfilePageContent() {
                           <label className="font-semibold text-[#1f1b19] uppercase tracking-wider text-[11px]">
                             Họ và tên gia chủ *
                           </label>
-                          <div className="relative">
-                            <input
-                              className="w-full px-3.5 py-2.5 bg-[#fbf2ee] border border-[#eae1dd] text-[#1f1b19] font-medium focus:outline-none focus:border-[#5d371f] transition-colors"
-                              type="text"
-                              value={fullName}
-                              onChange={(e) => setFullName(e.target.value)}
-                              placeholder="Nhập họ và tên..."
-                            />
-                            <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[#83746c] text-[18px]">
-                              badge
-                            </span>
-                          </div>
+                          <Input
+                            size="large"
+                            value={fullName}
+                            onChange={(e) => setFullName(e.target.value)}
+                            placeholder="Nhập họ và tên..."
+                            suffix={<span className="material-symbols-outlined text-[#83746c] text-[18px]">badge</span>}
+                            className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2.5 !px-3.5"
+                          />
                         </div>
 
                         {/* Date of Birth */}
@@ -363,18 +485,16 @@ function ProfilePageContent() {
                           <label className="font-semibold text-[#1f1b19] uppercase tracking-wider text-[11px]">
                             Ngày sinh
                           </label>
-                          <div className="relative">
-                            <input
-                              className="w-full px-3.5 py-2.5 bg-[#fbf2ee] border border-[#eae1dd] text-[#1f1b19] font-medium focus:outline-none focus:border-[#5d371f] transition-colors"
-                              type="text"
-                              value={dob}
-                              onChange={(e) => setDob(e.target.value)}
-                              placeholder="DD/MM/YYYY"
-                            />
-                            <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[#83746c] text-[18px]">
-                              calendar_month
-                            </span>
-                          </div>
+                          <DatePicker
+                            size="large"
+                            format={['DD/MM/YYYY', 'D/M/YYYY', 'DD-MM-YYYY', 'D-M-YYYY', 'DDMMYYYY', 'YYYY-MM-DD', 'YYYY/MM/DD']}
+                            value={dob}
+                            onChange={(date) => setDob(date)}
+                            placeholder="DD/MM/YYYY"
+                            allowClear
+                            inputReadOnly={false}
+                            className="w-full !bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2.5 !px-3.5"
+                          />
                         </div>
 
                         {/* Phone */}
@@ -387,42 +507,42 @@ function ProfilePageContent() {
                               <CheckCircleFilled className="text-[10px]" /> Đã xác thực
                             </span>
                           </div>
-                          <div className="relative">
-                            <input
-                              className="w-full px-3.5 py-2.5 bg-[#fbf2ee] border border-[#eae1dd] text-[#1f1b19] font-data-mono font-medium focus:outline-none focus:border-[#5d371f] transition-colors"
-                              type="tel"
-                              value={phone}
-                              onChange={(e) => setPhone(e.target.value)}
-                              placeholder="0918 345 678"
-                            />
-                            <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[#83746c] text-[18px]">
-                              smartphone
-                            </span>
-                          </div>
+                          <Input
+                            size="large"
+                            type="tel"
+                            value={phone}
+                            onChange={(e) => setPhone(e.target.value)}
+                            placeholder="0918 345 678"
+                            suffix={<span className="material-symbols-outlined text-[#83746c] text-[18px]">smartphone</span>}
+                            className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-data-mono font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2.5 !px-3.5"
+                          />
                         </div>
 
                         {/* Email */}
                         <div className="flex flex-col gap-1.5">
                           <div className="flex items-center justify-between">
                             <label className="font-semibold text-[#1f1b19] uppercase tracking-wider text-[11px]">
-                              Hòm thư điện tử *
+                              Hòm thư điện tử
                             </label>
-                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-[#3f4332] bg-[#e1e5ce] px-2 py-0.5">
-                              <CheckCircleFilled className="text-[10px]" /> Đã xác thực
-                            </span>
+                            {email ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-[#3f4332] bg-[#e1e5ce] px-2 py-0.5">
+                                <CheckCircleFilled className="text-[10px]" /> Đã xác thực
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-[#83746c] bg-[#f0eae6] px-2 py-0.5">
+                                Chưa liên kết
+                              </span>
+                            )}
                           </div>
-                          <div className="relative">
-                            <input
-                              className="w-full px-3.5 py-2.5 bg-[#fbf2ee] border border-[#eae1dd] text-[#1f1b19] font-medium focus:outline-none focus:border-[#5d371f] transition-colors"
-                              type="email"
-                              value={email}
-                              onChange={(e) => setEmail(e.target.value)}
-                              placeholder="email@example.com"
-                            />
-                            <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[#83746c] text-[18px]">
-                              alternate_email
-                            </span>
-                          </div>
+                          <Input
+                            size="large"
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            placeholder="email@example.com (Không bắt buộc)"
+                            suffix={<span className="material-symbols-outlined text-[#83746c] text-[18px]">alternate_email</span>}
+                            className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2.5 !px-3.5"
+                          />
                         </div>
                       </div>
 
@@ -431,12 +551,12 @@ function ProfilePageContent() {
                         <label className="font-semibold text-[#1f1b19] uppercase tracking-wider text-[11px]">
                           Ghi chú gu thẩm mỹ &amp; phong cách kiến trúc
                         </label>
-                        <textarea
+                        <TextArea
                           rows={2}
-                          className="w-full px-3.5 py-2 bg-[#fbf2ee] border border-[#eae1dd] text-[#1f1b19] font-medium focus:outline-none focus:border-[#5d371f] transition-colors leading-relaxed"
                           value={bio}
                           onChange={(e) => setBio(e.target.value)}
                           placeholder="Ví dụ: Căn hộ phong cách Japandi tối giản, ưu tiên bàn ghế bo cong hữu cơ..."
+                          className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2.5 !px-3.5 leading-relaxed"
                         />
                       </div>
 
@@ -449,6 +569,12 @@ function ProfilePageContent() {
                             setPhone(user?.phone || '');
                             setEmail(user?.email || '');
                             setBio(user?.bio || '');
+                            if (user?.dob) {
+                              const parsed = dayjs(user.dob, 'DD/MM/YYYY');
+                              setDob(parsed.isValid() ? parsed : dayjs(user.dob));
+                            } else {
+                              setDob(null);
+                            }
                             message.info('Đã hoàn tác thay đổi.');
                           }}
                           className="px-4 py-2 text-[#51443d] hover:bg-[#f5ece8] font-semibold transition-colors cursor-pointer"
@@ -457,9 +583,10 @@ function ProfilePageContent() {
                         </button>
                         <button
                           type="submit"
-                          className="px-6 py-2 bg-[#5d371f] text-white hover:bg-[#784e34] font-semibold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+                          disabled={isSavingProfile}
+                          className="px-6 py-2 bg-[#5d371f] text-white hover:bg-[#784e34] font-semibold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-70"
                         >
-                          <SaveOutlined /> Lưu thay đổi
+                          <SaveOutlined /> {isSavingProfile ? 'Đang lưu...' : 'Lưu thay đổi'}
                         </button>
                       </div>
                     </form>
@@ -553,62 +680,92 @@ function ProfilePageContent() {
                       </div>
                       <div>
                         <h2 className="font-serif text-lg sm:text-xl font-bold text-[#5d371f]">
-                          Đơn Hàng Gần Nhất
+                          Đơn Hàng Gần Nhất {userOrders.length > 0 && `(${userOrders.length})`}
                         </h2>
                       </div>
                     </div>
                   </div>
 
-                  {/* Active Order Card */}
-                  <div className="bg-[#fbf2ee] border border-[#eae1dd] p-5">
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-[#eae1dd]">
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-data-mono font-bold text-sm text-[#5d371f]">
-                            #MG-2024-89240
-                          </span>
-                        </div>
-                      </div>
-                      <div className="text-left md:text-right">
-                        <span className="text-[10px] text-[#83746c] uppercase tracking-wider block">
-                          Tổng giá trị hợp đồng may đo
-                        </span>
-                        <span className="font-serif text-lg font-bold text-[#5d371f] font-data-mono">
-                          148.500.000₫
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="pt-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-                      <div className="flex items-center gap-3.5 w-full sm:w-auto">
-                        <img
-                          src="https://lh3.googleusercontent.com/aida-public/AB6AXuDQRsgCBkXk2ENFvYz1MIvU_LUcCG4-zF_TKp8yQCWu2qEXucWTkueS1S9rYlrjYAVmEdiu9vVFawmJ5igwK_qHnmxyyKsofyqVlCXuNphzYECqgVniDeVda96x74jNeCfJ-TT1q3XRvC44hrCcfeviKISqf9x1ybDmzEVo-mO56aOxr--k0fKaPXeeIQ-Vl8f_ebRuZZp3AKyfwnZ3gOad9HgP40QyVwfe6DwrQNzZoeKtQDjz03yc"
-                          alt="Sofa Kyoto"
-                          className="w-16 h-16 object-cover border border-[#eae1dd] shrink-0"
-                        />
-                        <div className="min-w-0">
-                          <h5 className="font-bold text-xs text-[#1f1b19] truncate">
-                            Sofa Gỗ Óc Chó Kyoto (3 chỗ) + Bàn Trà Nami
-                          </h5>
-                          <p className="text-[11px] text-[#51443d] mt-0.5">
-                            Quy cách: Gỗ Walnut nhập khẩu hạng 1, hoàn thiện dầu thực vật hữu cơ Osmo Đức
-                          </p>
-                        </div>
-                      </div>
-
+                  {userOrders.length === 0 ? (
+                    <div className="p-8 text-center bg-[#fbf2ee] border border-[#eae1dd] flex flex-col items-center justify-center">
+                      <span className="material-symbols-outlined text-[36px] text-[#83746c] mb-2">shopping_bag</span>
+                      <h4 className="font-bold text-sm text-[#1f1b19]">Quý khách chưa có đơn hàng nào</h4>
+                      <p className="text-xs text-[#83746c] mt-1 max-w-sm">
+                        Các đơn hàng mua sắm và tiến độ may đo gỗ tự nhiên của quý khách sẽ được lưu trữ và cập nhật tại đây.
+                      </p>
                       <Link
-                        href="/products/sofa-kyoto-01"
-                        className="w-full sm:w-auto text-center px-4 py-2 bg-white hover:bg-[#5d371f] hover:text-white border border-[#eae1dd] text-[#5d371f] font-bold text-xs transition-colors shrink-0 flex items-center justify-center gap-1"
+                        href="/products"
+                        className="mt-4 px-5 py-2 bg-[#5d371f] hover:bg-[#784e34] text-white text-xs font-bold transition-colors inline-flex items-center gap-1.5"
                       >
-                        Chi tiết sản phẩm <ArrowRightOutlined />
+                        <span>Khám phá bộ sưu tập</span>
+                        <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
                       </Link>
                     </div>
+                  ) : (
+                    <div className="flex flex-col gap-4">
+                      {userOrders.map((ord: any) => (
+                        <div key={ord.id || ord.orderCode} className="bg-[#fbf2ee] border border-[#eae1dd] p-5">
+                          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-[#eae1dd]">
+                            <div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-data-mono font-bold text-sm text-[#5d371f]">
+                                  #{ord.orderCode || 'D2-ORDER'}
+                                </span>
+                                <span className="text-[11px] text-[#83746c] font-data-mono">
+                                  Ngày đặt: {ord.createdAt || 'Gần đây'}
+                                </span>
+                                <span className="px-2 py-0.5 bg-[#e1e5ce] text-[#3f4332] text-[10px] font-bold uppercase">
+                                  {ord.status === 'completed' ? 'Đã hoàn thành' : 'Đang gia công'}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="text-left md:text-right">
+                              <span className="text-[10px] text-[#83746c] uppercase tracking-wider block">
+                                Tổng giá trị đơn hàng
+                              </span>
+                              <span className="font-serif text-lg font-bold text-[#5d371f] font-data-mono">
+                                {Number(ord.value || 0).toLocaleString('vi-VN')}₫
+                              </span>
+                            </div>
+                          </div>
 
-                    <div className="mt-4 pt-3 border-t border-[#eae1dd]/60 flex items-center gap-2 text-xs text-[#51443d]">
-                      <span className="material-symbols-outlined text-[#5d371f] text-[18px]">verified</span>
-                      <span>Bảo hành kết cấu mộng gỗ 5 năm • Bảo trì lớp dầu dưỡng gỗ miễn phí định kỳ hàng năm</span>
+                          <div className="pt-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+                            <div className="flex items-center gap-3.5 w-full sm:w-auto">
+                              <img
+                                src={
+                                  ord.image ||
+                                  ord.items?.[0]?.image ||
+                                  'https://images.unsplash.com/photo-1617806118233-18e1de247200?w=800&auto=format&fit=crop&q=80'
+                                }
+                                alt={ord.productName || 'Nội thất D2 Luxury'}
+                                className="w-16 h-16 object-cover border border-[#eae1dd] shrink-0"
+                              />
+                              <div className="min-w-0">
+                                <h5 className="font-bold text-xs text-[#1f1b19] truncate">
+                                  {ord.productName || 'Đơn hàng may đo D2 Luxury'}
+                                </h5>
+                                <p className="text-[11px] text-[#51443d] mt-0.5">
+                                  {ord.productSpec || 'Quy cách: Gỗ tự nhiên Bắc Mỹ cao cấp'}
+                                </p>
+                              </div>
+                            </div>
+
+                            <Link
+                              href="/products"
+                              className="w-full sm:w-auto text-center px-4 py-2 bg-white hover:bg-[#5d371f] hover:text-white border border-[#eae1dd] text-[#5d371f] font-bold text-xs transition-colors shrink-0 flex items-center justify-center gap-1"
+                            >
+                              Xem sản phẩm <ArrowRightOutlined />
+                            </Link>
+                          </div>
+
+                          <div className="mt-4 pt-3 border-t border-[#eae1dd]/60 flex items-center gap-2 text-xs text-[#51443d]">
+                            <span className="material-symbols-outlined text-[#5d371f] text-[18px]">verified</span>
+                            <span>Bảo hành kết cấu mộng gỗ 5 năm • Bảo trì lớp dầu dưỡng gỗ miễn phí định kỳ hàng năm</span>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  </div>
+                  )}
                 </section>
 
                 {/* SECTION 4: Đổi Mật Khẩu & Bảo Mật */}
@@ -638,12 +795,13 @@ function ProfilePageContent() {
                         <label className="font-semibold text-[#1f1b19] uppercase tracking-wider text-[11px]">
                           Mật khẩu hiện tại *
                         </label>
-                        <input
-                          type="password"
+                        <Input.Password
+                          size="large"
                           value={oldPassword}
                           onChange={(e) => setOldPassword(e.target.value)}
                           placeholder="••••••••"
-                          className="px-3.5 py-2.5 bg-[#fbf2ee] border border-[#eae1dd] text-[#1f1b19] font-medium focus:outline-none focus:border-[#5d371f] transition-colors"
+                          prefix={<LockOutlined className="text-[#83746c] mr-1" />}
+                          className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2.5 !px-3.5"
                         />
                       </div>
 
@@ -651,12 +809,13 @@ function ProfilePageContent() {
                         <label className="font-semibold text-[#1f1b19] uppercase tracking-wider text-[11px]">
                           Mật khẩu mới *
                         </label>
-                        <input
-                          type="password"
+                        <Input.Password
+                          size="large"
                           value={newPassword}
                           onChange={(e) => setNewPassword(e.target.value)}
                           placeholder="Tối thiểu 6 ký tự..."
-                          className="px-3.5 py-2.5 bg-[#fbf2ee] border border-[#eae1dd] text-[#1f1b19] font-medium focus:outline-none focus:border-[#5d371f] transition-colors"
+                          prefix={<LockOutlined className="text-[#83746c] mr-1" />}
+                          className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2.5 !px-3.5"
                         />
                       </div>
 
@@ -664,12 +823,13 @@ function ProfilePageContent() {
                         <label className="font-semibold text-[#1f1b19] uppercase tracking-wider text-[11px]">
                           Xác nhận mật khẩu mới *
                         </label>
-                        <input
-                          type="password"
+                        <Input.Password
+                          size="large"
                           value={confirmPassword}
                           onChange={(e) => setConfirmPassword(e.target.value)}
                           placeholder="Nhập lại mật khẩu mới..."
-                          className="px-3.5 py-2.5 bg-[#fbf2ee] border border-[#eae1dd] text-[#1f1b19] font-medium focus:outline-none focus:border-[#5d371f] transition-colors"
+                          prefix={<LockOutlined className="text-[#83746c] mr-1" />}
+                          className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2.5 !px-3.5"
                         />
                       </div>
                     </div>
@@ -719,7 +879,7 @@ function ProfilePageContent() {
         open={isAddAddressOpen}
         onCancel={() => setIsAddAddressOpen(false)}
         footer={null}
-        width={500}
+        width={520}
         centered
         styles={{
           body: {
@@ -735,38 +895,38 @@ function ProfilePageContent() {
             </h3>
           </div>
 
-          <div className="flex flex-col gap-3 text-xs">
+          <div className="flex flex-col gap-3.5 text-xs">
             <div className="flex flex-col gap-1">
               <label className="font-semibold text-[#1f1b19]">Tên gợi nhớ công trình *</label>
-              <input
-                type="text"
+              <Input
                 value={newTitle}
                 onChange={(e) => setNewTitle(e.target.value)}
                 placeholder="VD: Căn hộ Duplex Thảo Điền, Biệt thự Ecopark..."
-                className="px-3.5 py-2.5 bg-[#fbf2ee] border border-[#eae1dd] text-[#1f1b19] font-medium focus:outline-none focus:border-[#5d371f]"
+                prefix={<HomeOutlined className="text-[#83746c] mr-1" />}
+                className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2 !px-3"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1">
                 <label className="font-semibold text-[#1f1b19]">Người nhận *</label>
-                <input
-                  type="text"
+                <Input
                   value={newRecipient}
                   onChange={(e) => setNewRecipient(e.target.value)}
                   placeholder="Họ và tên..."
-                  className="px-3.5 py-2.5 bg-[#fbf2ee] border border-[#eae1dd] text-[#1f1b19] font-medium focus:outline-none focus:border-[#5d371f]"
+                  prefix={<UserOutlined className="text-[#83746c] mr-1" />}
+                  className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2 !px-3"
                 />
               </div>
 
               <div className="flex flex-col gap-1">
                 <label className="font-semibold text-[#1f1b19]">Số điện thoại *</label>
-                <input
-                  type="tel"
+                <Input
                   value={newPhone}
                   onChange={(e) => setNewPhone(e.target.value)}
                   placeholder="0918 345 678"
-                  className="px-3.5 py-2.5 bg-[#fbf2ee] border border-[#eae1dd] text-[#1f1b19] font-medium focus:outline-none focus:border-[#5d371f]"
+                  prefix={<PhoneOutlined className="text-[#83746c] mr-1" />}
+                  className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2 !px-3"
                 />
               </div>
             </div>
@@ -775,18 +935,19 @@ function ProfilePageContent() {
               {/* Province Select */}
               <div className="flex flex-col gap-1">
                 <label className="font-semibold text-[#1f1b19]">Tỉnh / Thành phố *</label>
-                <select
-                  value={newCity}
-                  onChange={(e) => handleNewCityChange(e.target.value)}
-                  className="px-3.5 py-2.5 bg-[#fbf2ee] border border-[#eae1dd] text-[#1f1b19] font-medium focus:outline-none focus:border-[#5d371f] transition-colors cursor-pointer"
-                >
-                  <option value="">-- Chọn Tỉnh / Thành phố --</option>
-                  {VIETNAM_PROVINCES.map((prov, idx) => (
-                    <option key={`${prov.code}-${idx}`} value={prov.name}>
-                      {prov.name}
-                    </option>
-                  ))}
-                </select>
+                <Select
+                  showSearch
+                  placeholder="-- Chọn Tỉnh / Thành phố --"
+                  optionFilterProp="label"
+                  value={newCity || undefined}
+                  onChange={(val) => handleNewCityChange(val)}
+                  options={VIETNAM_PROVINCES.map((prov) => ({
+                    value: prov.name,
+                    label: prov.name,
+                  }))}
+                  className="w-full !rounded-none"
+                  style={{ height: 38 }}
+                />
               </div>
 
               {/* District Select */}
@@ -797,51 +958,42 @@ function ProfilePageContent() {
                     <span className="text-[10px] text-[#83746c] italic">(Chọn Tỉnh trước)</span>
                   )}
                 </div>
-                <select
-                  value={newDistrict}
+                <Select
+                  showSearch
                   disabled={!newCity}
-                  onChange={(e) => setNewDistrict(e.target.value)}
-                  className={`px-3.5 py-2.5 border border-[#eae1dd] font-medium transition-colors ${
-                    !newCity
-                      ? 'bg-[#f3ece8] text-[#a89b93] cursor-not-allowed opacity-80'
-                      : 'bg-[#fbf2ee] text-[#1f1b19] focus:outline-none focus:border-[#5d371f] cursor-pointer'
-                  }`}
-                >
-                  {!newCity ? (
-                    <option value="">-- Chọn Tỉnh/Thành trước --</option>
-                  ) : (
-                    <>
-                      <option value="">-- Chọn Quận / Huyện --</option>
-                      {newDistricts.map((d, idx) => (
-                        <option key={`${d.code}-${idx}`} value={d.name}>
-                          {d.name}
-                        </option>
-                      ))}
-                    </>
-                  )}
-                </select>
+                  placeholder={!newCity ? '-- Chọn Tỉnh/Thành trước --' : '-- Chọn Quận / Huyện --'}
+                  optionFilterProp="label"
+                  value={newDistrict || undefined}
+                  onChange={(val) => setNewDistrict(val)}
+                  options={newDistricts.map((d) => ({
+                    value: d.name,
+                    label: d.name,
+                  }))}
+                  className="w-full !rounded-none"
+                  style={{ height: 38 }}
+                />
               </div>
             </div>
 
             <div className="flex flex-col gap-1">
               <label className="font-semibold text-[#1f1b19]">Địa chỉ chi tiết *</label>
-              <input
-                type="text"
+              <Input
                 value={newAddress}
                 onChange={(e) => setNewAddress(e.target.value)}
                 placeholder="Số nhà, tên đường, tòa tháp, căn hộ..."
-                className="px-3.5 py-2.5 bg-[#fbf2ee] border border-[#eae1dd] text-[#1f1b19] font-medium focus:outline-none focus:border-[#5d371f]"
+                prefix={<EnvironmentOutlined className="text-[#83746c] mr-1" />}
+                className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2 !px-3"
               />
             </div>
 
             <div className="flex flex-col gap-1">
               <label className="font-semibold text-[#1f1b19]">Lưu ý đặc thù vận chuyển</label>
-              <input
-                type="text"
+              <Input
                 value={newNote}
                 onChange={(e) => setNewNote(e.target.value)}
                 placeholder="VD: Thang máy tải hàng 2.4m, hẹn bàn giao cuối tuần..."
-                className="px-3.5 py-2.5 bg-[#fbf2ee] border border-[#eae1dd] text-[#1f1b19] font-medium focus:outline-none focus:border-[#5d371f]"
+                prefix={<CarOutlined className="text-[#83746c] mr-1" />}
+                className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2 !px-3"
               />
             </div>
           </div>
@@ -889,34 +1041,34 @@ function ProfilePageContent() {
           <div className="flex flex-col gap-3 text-xs">
             <div className="flex flex-col gap-1">
               <label className="font-semibold text-[#1f1b19]">Mật khẩu hiện tại *</label>
-              <input
-                type="password"
+              <Input.Password
                 value={oldPassword}
                 onChange={(e) => setOldPassword(e.target.value)}
                 placeholder="••••••••"
-                className="px-3.5 py-2.5 bg-[#fbf2ee] border border-[#eae1dd] text-[#1f1b19] font-medium focus:outline-none focus:border-[#5d371f]"
+                prefix={<LockOutlined className="text-[#83746c] mr-1" />}
+                className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2 !px-3"
               />
             </div>
 
             <div className="flex flex-col gap-1">
               <label className="font-semibold text-[#1f1b19]">Mật khẩu mới *</label>
-              <input
-                type="password"
+              <Input.Password
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 placeholder="Tối thiểu 6 ký tự..."
-                className="px-3.5 py-2.5 bg-[#fbf2ee] border border-[#eae1dd] text-[#1f1b19] font-medium focus:outline-none focus:border-[#5d371f]"
+                prefix={<LockOutlined className="text-[#83746c] mr-1" />}
+                className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2 !px-3"
               />
             </div>
 
             <div className="flex flex-col gap-1">
               <label className="font-semibold text-[#1f1b19]">Xác nhận mật khẩu mới *</label>
-              <input
-                type="password"
+              <Input.Password
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="Nhập lại mật khẩu mới..."
-                className="px-3.5 py-2.5 bg-[#fbf2ee] border border-[#eae1dd] text-[#1f1b19] font-medium focus:outline-none focus:border-[#5d371f]"
+                prefix={<LockOutlined className="text-[#83746c] mr-1" />}
+                className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2 !px-3"
               />
             </div>
           </div>
@@ -932,9 +1084,10 @@ function ProfilePageContent() {
             <button
               type="button"
               onClick={handleChangePassword}
-              className="px-5 py-2 bg-[#5d371f] hover:bg-[#784e34] text-white font-semibold text-xs transition-colors cursor-pointer"
+              disabled={isChangingPassword}
+              className="px-5 py-2 bg-[#5d371f] hover:bg-[#784e34] text-white font-semibold text-xs transition-colors cursor-pointer disabled:opacity-70"
             >
-              Cập Nhật Mật Khẩu
+              {isChangingPassword ? 'Đang cập nhật...' : 'Cập Nhật Mật Khẩu'}
             </button>
           </div>
         </div>

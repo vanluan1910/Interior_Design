@@ -10,6 +10,8 @@ public interface IInteriorRepository
     Task<PagedResult<Product>> GetProductsAsync(int page, int pageSize, string? search, string? space, Guid? categoryId, ProductStatus? status, CancellationToken cancellationToken);
     Task<Product?> GetProductByIdAsync(Guid id, CancellationToken cancellationToken);
     Task<Product?> GetProductBySlugAsync(string slug, CancellationToken cancellationToken);
+    Task<Product?> GetProductByIdentifierAsync(string identifier, CancellationToken cancellationToken);
+    Task<IReadOnlyList<Product>> GetRelatedProductsAsync(Guid productId, string? space, Guid? categoryId, int limit, CancellationToken cancellationToken);
     Task<IReadOnlyList<Product>> GetFeaturedProductsAsync(int limit, CancellationToken cancellationToken);
     Task<Product> AddProductAsync(Product product, CancellationToken cancellationToken);
     Task<Product?> UpdateProductAsync(Product product, CancellationToken cancellationToken);

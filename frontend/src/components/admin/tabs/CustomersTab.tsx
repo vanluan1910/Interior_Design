@@ -40,8 +40,9 @@ import {
   AdminSearchInput,
 } from '@/components/admin';
 import type { AdminCustomer } from '@/types/admin';
-import { INITIAL_ORDERS } from '@/data/admin/mockData';
+import { customerApi } from '@/api/customerApi';
 import { isMatchBranch } from '@/utils/branchHelper';
+
 
 export interface CustomersTabProps {
   customersList: AdminCustomer[];
@@ -134,15 +135,18 @@ export function CustomersTab({
     }
     setEditingCustomer(null);
     setCustomerTypeChoice('individual');
-    form.resetFields();
     const autoCode = `KH-${(customersList.length + 1).toString().padStart(3, '0')}`;
-    form.setFieldsValue({
-      code: autoCode,
-      customerType: 'individual',
-      status: 'active',
-      country: 'Việt Nam',
-    });
     setDrawerOpen(true);
+
+    setTimeout(() => {
+      form.resetFields();
+      form.setFieldsValue({
+        code: autoCode,
+        customerType: 'individual',
+        status: 'active',
+        country: 'Việt Nam',
+      });
+    }, 0);
   };
 
   // Open Edit Customer Drawer
@@ -153,32 +157,46 @@ export function CustomersTab({
     }
     setEditingCustomer(customer);
     setCustomerTypeChoice(customer.customerType || 'individual');
-    form.resetFields();
-    form.setFieldsValue({
-      code: customer.code,
-      name: customer.name,
-      phone: customer.phone,
-      phone2: customer.phone2,
-      email: customer.email,
-      facebook: customer.facebook,
-      zalo: customer.zalo,
-      gender: customer.gender,
-      birthday: customer.birthday ? dayjs(customer.birthday) : null,
-      address: customer.address,
-      status: customer.status || 'active',
-      customerType: customer.customerType || 'individual',
-      companyName: customer.companyName,
-      buyerName: customer.buyerName,
-      taxId: customer.taxId,
-      invoiceAddress: customer.invoiceAddress || customer.address,
-      idNumber: customer.idNumber,
-      passport: customer.passport,
-      bankName: customer.bankName,
-      bankAccount: customer.bankAccount,
-      preferredStyle: customer.preferredStyle,
-      projectLocation: customer.projectLocation,
-    });
     setDrawerOpen(true);
+
+    setTimeout(() => {
+      form.resetFields();
+      form.setFieldsValue({
+        code: customer.code,
+        name: customer.name,
+        phone: customer.phone,
+        phone2: customer.phone2,
+        email: customer.email,
+        facebook: customer.facebook,
+        zalo: customer.zalo,
+        gender: customer.gender,
+        birthday: customer.birthday ? dayjs(customer.birthday) : null,
+        address: customer.address,
+        status: customer.status || 'active',
+        customerType: customer.customerType || 'individual',
+        companyName: customer.companyName,
+        buyerName: customer.buyerName,
+        taxId: customer.taxId,
+        invoiceAddress: customer.invoiceAddress || customer.address,
+        idNumber: customer.idNumber,
+        passport: customer.passport,
+        bankName: customer.bankName,
+        bankAccount: customer.bankAccount,
+        preferredStyle: customer.preferredStyle,
+        projectLocation: customer.projectLocation,
+      });
+    }, 0);
+  };
+
+  const refreshCustomers = async () => {
+    try {
+      const data = await customerApi.getCustomers();
+      if (Array.isArray(data)) {
+        setCustomersList(data);
+      }
+    } catch (err: any) {
+      console.warn('Could not refresh customers:', err);
+    }
   };
 
   // Save Customer (Create / Update)
@@ -188,51 +206,39 @@ export function CustomersTab({
       const trimmedCode = (values.code || '').trim().toUpperCase();
       const trimmedName = (values.name || '').trim();
 
+      const payload: Partial<AdminCustomer> = {
+        ...values,
+        code: trimmedCode || undefined,
+        name: trimmedName,
+        birthday: values.birthday ? values.birthday.format('YYYY-MM-DD') : undefined,
+      };
+
       if (editingCustomer) {
-        setCustomersList((prev) =>
-          prev.map((c) =>
-            c.id === editingCustomer.id
-              ? {
-                  ...c,
-                  ...values,
-                  code: trimmedCode || c.code,
-                  name: trimmedName,
-                  birthday: values.birthday ? values.birthday.format('YYYY-MM-DD') : undefined,
-                }
-              : c
-          )
-        );
+        await customerApi.updateCustomer(editingCustomer.id, payload);
         message.success(`Đã cập nhật thông tin khách hàng ${trimmedName}!`);
       } else {
-        const newCustomer: AdminCustomer = {
-          id: `cust_${Date.now()}`,
-          ...values,
-          code: trimmedCode || `KH-${(customersList.length + 1).toString().padStart(3, '0')}`,
-          name: trimmedName,
-          type: 'retail',
-          birthday: values.birthday ? values.birthday.format('YYYY-MM-DD') : undefined,
-          totalSpent: 0,
-          debt: 0,
-          rewardPoints: 0,
-          totalOrders: 0,
-          createdAt: dayjs().format('YYYY-MM-DD'),
-        };
-        setCustomersList((prev) => [newCustomer, ...prev]);
+        await customerApi.createCustomer(payload);
         message.success(`Đã thêm khách hàng mới ${trimmedName}!`);
       }
       setDrawerOpen(false);
-    } catch (err) {
-      message.error('Vui lòng kiểm tra lại các trường thông tin bắt buộc.');
+      await refreshCustomers();
+    } catch (err: any) {
+      message.error(err?.message || 'Vui lòng kiểm tra lại các trường thông tin bắt buộc.');
     }
   };
 
   // Delete Customer
-  const handleDeleteCustomer = (id: string) => {
+  const handleDeleteCustomer = async (id: string) => {
     const target = customersList.find((c) => c.id === id);
-    setCustomersList((prev) => prev.filter((c) => c.id !== id));
-    setSelectedRowKeys((prev) => prev.filter((k) => k !== id));
-    if (expandedCustomerId === id) setExpandedCustomerId(null);
-    message.success(`Đã xóa khách hàng ${target?.name || ''}!`);
+    try {
+      await customerApi.deleteCustomer(id);
+      setSelectedRowKeys((prev) => prev.filter((k) => k !== id));
+      if (expandedCustomerId === id) setExpandedCustomerId(null);
+      message.success(`Đã xóa khách hàng ${target?.name || ''}!`);
+      await refreshCustomers();
+    } catch (err: any) {
+      message.error(err?.message || 'Xóa khách hàng thất bại.');
+    }
   };
 
   // Batch Delete
@@ -243,27 +249,35 @@ export function CustomersTab({
       okText: 'Xóa đã chọn',
       okButtonProps: { danger: true },
       cancelText: 'Hủy',
-      onOk: () => {
-        setCustomersList((prev) => prev.filter((c) => !selectedRowKeys.includes(c.id)));
-        message.success(`Đã xóa thành công ${selectedRowKeys.length} khách hàng!`);
-        setSelectedRowKeys([]);
+      onOk: async () => {
+        try {
+          await Promise.all(selectedRowKeys.map((k) => customerApi.deleteCustomer(String(k))));
+          message.success(`Đã xóa thành công ${selectedRowKeys.length} khách hàng!`);
+          setSelectedRowKeys([]);
+          await refreshCustomers();
+        } catch (err: any) {
+          message.error(err?.message || 'Xóa hàng loạt thất bại.');
+        }
       },
     });
   };
 
   // Batch Toggle Status
-  const handleBatchToggleStatus = (targetStatus: 'active' | 'inactive') => {
-    setCustomersList((prev) =>
-      prev.map((c) =>
-        selectedRowKeys.includes(c.id) ? { ...c, status: targetStatus } : c
-      )
-    );
-    message.success(
-      `Đã chuyển trạng thái ${selectedRowKeys.length} khách hàng sang ${
-        targetStatus === 'active' ? 'Đang hoạt động' : 'Ngừng hoạt động'
-      }!`
-    );
-    setSelectedRowKeys([]);
+  const handleBatchToggleStatus = async (targetStatus: 'active' | 'inactive') => {
+    try {
+      await Promise.all(
+        selectedRowKeys.map((k) => customerApi.updateCustomer(String(k), { status: targetStatus }))
+      );
+      message.success(
+        `Đã chuyển trạng thái ${selectedRowKeys.length} khách hàng sang ${
+          targetStatus === 'active' ? 'Đang hoạt động' : 'Ngừng hoạt động'
+        }!`
+      );
+      setSelectedRowKeys([]);
+      await refreshCustomers();
+    } catch (err: any) {
+      message.error(err?.message || 'Chuyển trạng thái thất bại.');
+    }
   };
 
   // Export to CSV / Excel
@@ -303,24 +317,28 @@ export function CustomersTab({
   };
 
   // Quick Debt Collection Submission
-  const handleConfirmCollectDebt = () => {
+  const handleConfirmCollectDebt = async () => {
     if (!collectDebtCustomer) return;
     if (collectAmount <= 0) {
       message.error('Số tiền thu nợ phải lớn hơn 0 đ!');
       return;
     }
-    const oldDebt = Number(collectDebtCustomer.debt || 0);
-    const newDebt = Math.max(0, oldDebt - collectAmount);
-
-    setCustomersList((prev) =>
-      prev.map((c) => (c.id === collectDebtCustomer.id ? { ...c, debt: newDebt } : c))
-    );
-    message.success(
-      `Đã thu thành công ${collectAmount.toLocaleString('vi-VN')} đ cho khách hàng ${
-        collectDebtCustomer.name
-      }. Nợ còn lại: ${newDebt.toLocaleString('vi-VN')} đ.`
-    );
-    setCollectDebtCustomer(null);
+    try {
+      await customerApi.collectDebt(collectDebtCustomer.id, {
+        amount: collectAmount,
+        paymentMethod: collectMethod,
+        note: collectNote,
+      });
+      message.success(
+        `Đã thu thành công ${collectAmount.toLocaleString('vi-VN')} đ cho khách hàng ${
+          collectDebtCustomer.name
+        }!`
+      );
+      setCollectDebtCustomer(null);
+      await refreshCustomers();
+    } catch (err: any) {
+      message.error(err?.message || 'Thu nợ thất bại.');
+    }
   };
 
   // Lookup Tax Code Mock (Domaco POS Spec)
@@ -357,11 +375,12 @@ export function CustomersTab({
         <div className="flex items-center gap-2 flex-wrap">
           <Button
             icon={<ReloadOutlined />}
-            onClick={() => {
+            onClick={async () => {
               setCustomerSearchQuery('');
               setDebtFilter('all');
               setStatusFilter('all');
-              message.success('Đã làm mới danh sách khách hàng!');
+              await refreshCustomers();
+              message.success('Đã làm mới danh sách khách hàng từ Database!');
             }}
             className="h-10 rounded-none text-sm font-normal text-slate-700 hover:text-[#784e34]"
           >
@@ -510,6 +529,8 @@ export function CustomersTab({
             titleText="Danh Sách Khách Hàng & Đối Tác Mộc Gia Atelier"
             titleIcon={<span className="w-2.5 h-2.5 rounded-full bg-[#784e34] inline-block" />}
             countTag={`${filteredCustomers.length} khách hàng`}
+            totalCount={filteredCustomers.length}
+            countUnit="khách hàng"
             dataSource={filteredCustomers}
             rowKey="id"
             rowSelection={{
@@ -720,7 +741,7 @@ export function CustomersTab({
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         styles={{ wrapper: { width: 720, maxWidth: '100vw' } }}
-        destroyOnHidden
+        forceRender
         className="[&_.ant-drawer-header]:px-6 [&_.ant-drawer-header]:py-4 [&_.ant-drawer-header]:border-b [&_.ant-drawer-header]:border-slate-200 [&_.ant-drawer-body]:px-6 [&_.ant-drawer-body]:py-5 [&_.ant-drawer-footer]:px-6 [&_.ant-drawer-footer]:py-3 [&_.ant-drawer-footer]:border-t [&_.ant-drawer-footer]:border-slate-200"
         footer={
           <div className="flex items-center justify-between">
@@ -1172,14 +1193,9 @@ function CustomerExpandedDetailRow({
 }: CustomerExpandedDetailRowProps) {
   const [activeTab, setActiveTab] = useState<'info' | 'orders' | 'payments' | 'rewards'>('info');
 
-  // Related Orders from INITIAL_ORDERS
-  const relatedOrders = useMemo(() => {
-    return INITIAL_ORDERS.filter(
-      (o) =>
-        (o.customerName && customer.name && o.customerName.toLowerCase().includes(customer.name.toLowerCase())) ||
-        (o.customerPhone && customer.phone && o.customerPhone.includes(customer.phone))
-    );
-  }, [customer]);
+  // Related Orders
+  const relatedOrders: any[] = [];
+
 
   return (
     <div className="bg-[#fbf9f8] border-y border-slate-200 p-4 sm:p-5 -mx-4 space-y-4">

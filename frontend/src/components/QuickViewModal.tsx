@@ -84,11 +84,6 @@ export default function QuickViewModal({
               <span className="font-title-lg text-2xl text-[#5d371f] font-bold">
                 {formatPrice(product.price)}
               </span>
-              {product.originalPrice && (
-                <span className="font-data-mono text-xs text-[#83746c] line-through">
-                  {formatPrice(product.originalPrice)}
-                </span>
-              )}
             </div>
 
             <p className="font-body-sm text-xs sm:text-sm text-[#51443d] mt-1 leading-relaxed">

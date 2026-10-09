@@ -10,6 +10,7 @@ import {
 import {
   Button,
   Input,
+  InputNumber,
   Select,
   Tag,
   Segmented,
@@ -70,7 +71,12 @@ import {
   SyncOutlined,
 } from '@ant-design/icons';
 import { VietQrCard } from '@/components/common/VietQrCard';
-import { AdminSearchInput } from '@/components/admin';
+import { AdminSearchInput, AdminFormDrawer } from '@/components/admin';
+import { branchApi } from '@/api/branchApi';
+import { roleApi } from '@/api/roleApi';
+import { uomApi } from '@/api/uomApi';
+import { employeeApi } from '@/api/employeeApi';
+import { settingsApi, type VietQrBank } from '@/api/settingsApi';
 import { EmployeesTab } from './EmployeesTab';
 import { PrintTemplatesSettings } from './PrintTemplatesSettings';
 import type {
@@ -97,6 +103,8 @@ export interface SettingsTabProps {
   setBranchesList?: React.Dispatch<React.SetStateAction<AdminBranch[]>>;
   uomsList?: AdminUom[];
   rolesList?: AdminRole[];
+  setRolesList?: React.Dispatch<React.SetStateAction<AdminRole[]>>;
+  onUpdateRoles?: (roles: AdminRole[] | ((prev: AdminRole[]) => AdminRole[])) => void;
   employeesList?: AdminEmployee[];
   selectedGlobalBranch?: string;
   activeSettingsTab?: 'company' | 'payment' | 'print-templates' | 'branches' | 'uom' | 'employees' | 'permissions';
@@ -114,8 +122,10 @@ interface SettingsMenuItem {
 export function SettingsTab({
   branchesList = INITIAL_BRANCHES,
   setBranchesList,
-  uomsList = INITIAL_UOMS,
+  uomsList = [],
   rolesList = INITIAL_ROLES,
+  setRolesList,
+  onUpdateRoles,
   employeesList = INITIAL_EMPLOYEES,
   selectedGlobalBranch = 'all',
   activeSettingsTab,
@@ -163,12 +173,11 @@ export function SettingsTab({
     }
   };
   const DEFAULT_PAYMENT_SETTINGS = {
-    bankName: 'MB Bank (Ngân hàng Quân Đội)',
-    accountNumber: '0903888999',
-    accountName: 'CTY CP NOI THAT MOC GIA ATELIER',
-    paymentPrefix: 'MG',
-    branchName: 'Chi nhánh TP.HCM',
-    defaultDeposit: 50,
+    bankName: '',
+    accountNumber: '',
+    accountName: '',
+    branchName: '',
+    defaultDeposit: 30,
   };
 
   // Form and state for Payment Settings with live VietQR preview
@@ -176,21 +185,208 @@ export function SettingsTab({
   const [paymentSettings, setPaymentSettings] = useState(DEFAULT_PAYMENT_SETTINGS);
 
   // ================= DOMACO POS COMPANY INFO STATE & FORM =================
-  const [companyInfo, setCompanyInfo] = useState<AdminCompanyInfo>(INITIAL_COMPANY_INFO);
+  const EMPTY_COMPANY_INFO: AdminCompanyInfo = {
+    code: '',
+    companyName: '',
+    brandName: '',
+    taxId: '',
+    representative: '',
+    representativeRole: '',
+    businessSector: '',
+    phone: '',
+    hotline: '',
+    email: '',
+    website: '',
+    zalo: '',
+    fanpage: '',
+    headquarters: '',
+    warehouseAddress: '',
+    country: 'Việt Nam',
+    province: '',
+    district: '',
+    ward: '',
+    logoUrl: null,
+    faviconUrl: null,
+    stampUrl: null,
+    status: true,
+    accessUrl: '',
+    expiredAt: '',
+    receiptHeaderTitle: '',
+    receiptFooterNote: '',
+    showTaxOnReceipt: true,
+    showHotlineOnReceipt: true,
+    showQrOnReceipt: true,
+  };
+
+  const [companyInfo, setCompanyInfo] = useState<AdminCompanyInfo>(EMPTY_COMPANY_INFO);
   const [companyForm] = Form.useForm<AdminCompanyInfo>();
   const [uploadingLogo, setUploadingLogo] = useState(false);
 
   // ================= DOMACO POS BRANCHES STATE & HANDLERS =================
-  const [currentBranches, setCurrentBranches] = useState<AdminBranch[]>(branchesList || INITIAL_BRANCHES);
+  const [currentBranches, setCurrentBranches] = useState<AdminBranch[]>(branchesList || []);
   const [currentEmployees, setCurrentEmployees] = useState<AdminEmployee[]>(employeesList || INITIAL_EMPLOYEES);
+
+  const loadCompanyInfoFromApi = async () => {
+    try {
+      const rawInfo: any = await settingsApi.getCompanyInfo();
+      if (rawInfo) {
+        const merged: AdminCompanyInfo = {
+          ...EMPTY_COMPANY_INFO,
+          code: rawInfo.code || rawInfo.Code || '',
+          companyName: rawInfo.companyName || rawInfo.CompanyName || '',
+          brandName: rawInfo.brandName || rawInfo.BrandName || '',
+          taxId: rawInfo.taxId || rawInfo.TaxId || '',
+          representative: rawInfo.representative || rawInfo.Representative || '',
+          representativeRole: rawInfo.representativeRole || rawInfo.RepresentativeRole || '',
+          businessSector: rawInfo.businessSector || rawInfo.BusinessSector || '',
+          phone: rawInfo.phone || rawInfo.Phone || '',
+          hotline: rawInfo.hotline || rawInfo.Hotline || '',
+          email: rawInfo.email || rawInfo.Email || '',
+          website: rawInfo.website || rawInfo.Website || '',
+          zalo: rawInfo.zalo || rawInfo.Zalo || '',
+          fanpage: rawInfo.fanpage || rawInfo.Fanpage || '',
+          headquarters: rawInfo.headquarters || rawInfo.Headquarters || rawInfo.address || rawInfo.Address || '',
+          warehouseAddress: rawInfo.warehouseAddress || rawInfo.WarehouseAddress || '',
+          country: rawInfo.country || rawInfo.Country || 'Việt Nam',
+          logoUrl: rawInfo.logoUrl || rawInfo.LogoUrl || null,
+          status: (rawInfo.status ?? rawInfo.Status) !== false,
+        };
+        setCompanyInfo(merged);
+        setStoredAdminData(ADMIN_STORAGE_KEYS.COMPANY_INFO, merged);
+      }
+    } catch (err) {
+      console.warn('Could not load company info from API:', err);
+    }
+  };
+
+  // VietQR Banks State
+  const [vietQrBanks, setVietQrBanks] = useState<VietQrBank[]>([]);
+  const [loadingBanks, setLoadingBanks] = useState(false);
+
+  const loadVietQrBanks = async () => {
+    try {
+      setLoadingBanks(true);
+      const banks = await settingsApi.getVietQrBanks();
+      if (banks && banks.length > 0) {
+        setVietQrBanks(banks);
+      }
+    } catch (err) {
+      console.warn('Could not load VietQR banks:', err);
+    } finally {
+      setLoadingBanks(false);
+    }
+  };
+
+  const loadPaymentConfigFromApi = async () => {
+    try {
+      const rawPayment: any = await settingsApi.getPaymentConfig();
+      if (rawPayment) {
+        const merged = {
+          bankName: rawPayment.bankName || rawPayment.BankName || '',
+          accountNumber: rawPayment.accountNumber || rawPayment.AccountNumber || rawPayment.bankAccountNumber || rawPayment.BankAccountNumber || '',
+          accountName: rawPayment.accountName || rawPayment.AccountName || rawPayment.bankAccountName || rawPayment.BankAccountName || '',
+          branchName: rawPayment.branchName || rawPayment.BranchName || '',
+          defaultDeposit: rawPayment.defaultDeposit ?? rawPayment.DefaultDeposit ?? 30,
+        };
+        setPaymentSettings(merged);
+        paymentForm.setFieldsValue(merged);
+        setStoredAdminData(ADMIN_STORAGE_KEYS.PAYMENT_SETTINGS, merged);
+      }
+    } catch (err) {
+      console.warn('Could not load payment config from API:', err);
+    }
+  };
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (settingsActiveTab === 'company') {
+        companyForm.setFieldsValue({
+          code: companyInfo.code || (companyInfo as any).Code || '',
+          companyName: companyInfo.companyName || (companyInfo as any).CompanyName || '',
+          taxId: companyInfo.taxId || (companyInfo as any).TaxId || '',
+          phone: companyInfo.phone || (companyInfo as any).Phone || '',
+          email: companyInfo.email || (companyInfo as any).Email || '',
+          headquarters: companyInfo.headquarters || (companyInfo as any).Headquarters || (companyInfo as any).address || '',
+          logoUrl: companyInfo.logoUrl || (companyInfo as any).LogoUrl || null,
+          status: (companyInfo.status ?? (companyInfo as any).Status) !== false,
+        });
+      } else if (settingsActiveTab === 'payment') {
+        paymentForm.setFieldsValue(paymentSettings);
+      }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [settingsActiveTab, companyInfo, paymentSettings]);
+
+  const loadBranchesFromApi = async () => {
+    try {
+      const branches = await branchApi.getBranches();
+      if (branches && Array.isArray(branches) && branches.length > 0) {
+        setCurrentBranches(branches);
+        setStoredAdminData(ADMIN_STORAGE_KEYS.BRANCHES, branches);
+        if (setBranchesList) {
+          setBranchesList(branches);
+        }
+        return;
+      }
+    } catch (err) {
+      console.warn('Could not load branches from API, using fallback data:', err);
+    }
+    const stored = getStoredAdminData<AdminBranch[]>(ADMIN_STORAGE_KEYS.BRANCHES, branchesList || []);
+    const cleaned = (stored || []).filter((b: AdminBranch) => !['br_1', 'br_2', 'br_3', 'br_4'].includes(b.id));
+    setCurrentBranches(cleaned);
+    setStoredAdminData(ADMIN_STORAGE_KEYS.BRANCHES, cleaned);
+  };
+
+  const [uomSyncing, setUomSyncing] = useState(false);
+  const loadUomsFromApi = async () => {
+    try {
+      setUomSyncing(true);
+      const uoms = await uomApi.getUoms();
+      if (uoms && Array.isArray(uoms)) {
+        setCurrentUoms(uoms);
+        setStoredAdminData(ADMIN_STORAGE_KEYS.UOMS, uoms);
+        return;
+      }
+    } catch (err) {
+      console.warn('Could not load UOMs from API:', err);
+    } finally {
+      setUomSyncing(false);
+    }
+    const stored = getStoredAdminData(ADMIN_STORAGE_KEYS.UOMS, []);
+    setCurrentUoms(stored || []);
+  };
 
   // Initial load from storage on mount
   useEffect(() => {
-    setPaymentSettings(getStoredAdminData(ADMIN_STORAGE_KEYS.PAYMENT_SETTINGS, DEFAULT_PAYMENT_SETTINGS));
-    setCompanyInfo(getStoredAdminData(ADMIN_STORAGE_KEYS.COMPANY_INFO, INITIAL_COMPANY_INFO));
-    setCurrentBranches(getStoredAdminData(ADMIN_STORAGE_KEYS.BRANCHES, branchesList || INITIAL_BRANCHES));
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(ADMIN_STORAGE_KEYS.COMPANY_INFO);
+      localStorage.removeItem(ADMIN_STORAGE_KEYS.PAYMENT_SETTINGS);
+      localStorage.removeItem('domaco_pos_company_info');
+      localStorage.removeItem('domaco_pos_payment_settings');
+    }
     setCurrentEmployees(getStoredAdminData(ADMIN_STORAGE_KEYS.EMPLOYEES, employeesList || INITIAL_EMPLOYEES));
   }, []);
+
+  // Lazy load tab data on active tab change
+  useEffect(() => {
+    if (settingsActiveTab === 'company') {
+      loadCompanyInfoFromApi();
+    } else if (settingsActiveTab === 'payment') {
+      loadPaymentConfigFromApi();
+      loadVietQrBanks();
+    } else if (settingsActiveTab === 'branches') {
+      loadBranchesFromApi();
+    } else if (settingsActiveTab === 'uom') {
+      loadUomsFromApi();
+    } else if (settingsActiveTab === 'employees') {
+      employeeApi.getEmployees().then((res) => {
+        if (Array.isArray(res)) {
+          setCurrentEmployees(res);
+          setStoredAdminData(ADMIN_STORAGE_KEYS.EMPLOYEES, res);
+        }
+      }).catch(() => {});
+    }
+  }, [settingsActiveTab]);
 
   // Sync from props
   useEffect(() => {
@@ -201,21 +397,14 @@ export function SettingsTab({
     if (employeesList && employeesList.length > 0) setCurrentEmployees(employeesList);
   }, [employeesList]);
 
-  // Persistence hooks for settings
   useEffect(() => {
-    setStoredAdminData(ADMIN_STORAGE_KEYS.COMPANY_INFO, companyInfo);
-  }, [companyInfo]);
+    if (uomsList) setCurrentUoms(uomsList);
+  }, [uomsList]);
 
-  useEffect(() => {
-    setStoredAdminData(ADMIN_STORAGE_KEYS.PAYMENT_SETTINGS, paymentSettings);
-  }, [paymentSettings]);
-
+  // Persistence hooks for local master data
   useEffect(() => {
     setStoredAdminData(ADMIN_STORAGE_KEYS.BRANCHES, currentBranches);
-    if (setBranchesList) {
-      setBranchesList(currentBranches);
-    }
-  }, [currentBranches, setBranchesList]);
+  }, [currentBranches]);
 
   useEffect(() => {
     setStoredAdminData(ADMIN_STORAGE_KEYS.EMPLOYEES, currentEmployees);
@@ -245,26 +434,33 @@ export function SettingsTab({
 
   const handleOpenCreateBranch = () => {
     setEditingBranch(null);
-    branchForm.resetFields();
     const nextNum = currentBranches.length + 1;
     const nextCode = `CN${String(nextNum).padStart(6, '0')}`;
-    branchForm.setFieldsValue({
-      code: nextCode,
-      status: true,
-    });
     setBranchDrawerOpen(true);
+
+    setTimeout(() => {
+      branchForm.resetFields();
+      branchForm.setFieldsValue({
+        code: nextCode,
+        status: true,
+      });
+    }, 0);
   };
 
   const handleOpenEditBranch = (record: AdminBranch) => {
     setEditingBranch(record);
-    branchForm.setFieldsValue({
-      code: record.code,
-      name: record.name,
-      description: record.description,
-      address: record.address,
-      status: record.status !== 'inactive',
-    });
     setBranchDrawerOpen(true);
+
+    setTimeout(() => {
+      branchForm.resetFields();
+      branchForm.setFieldsValue({
+        code: record.code,
+        name: record.name,
+        description: record.description,
+        address: record.address,
+        status: record.status !== 'inactive',
+      });
+    }, 0);
   };
 
   const handleCloseBranchDrawer = () => {
@@ -277,26 +473,38 @@ export function SettingsTab({
     try {
       const values = await branchForm.validateFields();
       if (editingBranch) {
-        setCurrentBranches((prev) =>
-          prev.map((b) =>
+        let updatedList: AdminBranch[] = [];
+        try {
+          const updated = await branchApi.updateBranch(editingBranch.id, {
+            ...editingBranch,
+            code: values.code?.trim().toUpperCase(),
+            name: values.name?.trim(),
+            description: values.description?.trim() || '',
+            address: values.address?.trim() || '',
+            status: values.status ? 'active' : 'inactive',
+          });
+          updatedList = currentBranches.map((b) => (b.id === editingBranch.id ? updated : b));
+        } catch {
+          updatedList = currentBranches.map((b) =>
             b.id === editingBranch.id
               ? {
                   ...b,
-                  code: values.code.trim().toUpperCase(),
-                  name: values.name.trim(),
+                  code: values.code?.trim().toUpperCase(),
+                  name: values.name?.trim(),
                   description: values.description?.trim() || '',
                   address: values.address?.trim() || '',
                   status: values.status ? 'active' : 'inactive',
                 }
               : b
-          )
-        );
+          );
+        }
+        setCurrentBranches(updatedList);
+        if (setBranchesList) setBranchesList(updatedList);
         message.success(`Đã cập nhật chi nhánh "${values.name}" thành công!`);
       } else {
-        const newBranch: AdminBranch = {
-          id: `br_${Date.now()}`,
-          code: values.code.trim().toUpperCase(),
-          name: values.name.trim(),
+        const payload: Partial<AdminBranch> = {
+          code: values.code?.trim().toUpperCase(),
+          name: values.name?.trim(),
           type: 'showroom',
           typeLabel: 'Showroom & Điểm bán',
           address: values.address?.trim() || '',
@@ -308,11 +516,23 @@ export function SettingsTab({
           staffCount: 4,
           warehouseCount: 1,
           activeOrdersCount: 0,
-          establishedDate: '2026-10-05',
+          establishedDate: new Date().toLocaleDateString('vi-VN'),
           status: values.status ? 'active' : 'inactive',
           description: values.description?.trim() || '',
         };
-        setCurrentBranches((prev) => [...prev, newBranch]);
+        let updatedList: AdminBranch[] = [];
+        try {
+          const created = await branchApi.createBranch(payload);
+          updatedList = [...currentBranches, created];
+        } catch {
+          const localBranch: AdminBranch = {
+            ...payload,
+            id: `br_${Date.now()}`,
+          } as AdminBranch;
+          updatedList = [...currentBranches, localBranch];
+        }
+        setCurrentBranches(updatedList);
+        if (setBranchesList) setBranchesList(updatedList);
         message.success(`Đã thêm mới chi nhánh "${values.name}" thành công!`);
       }
       handleCloseBranchDrawer();
@@ -333,37 +553,64 @@ export function SettingsTab({
       okText: 'Xóa',
       okType: 'danger',
       cancelText: 'Hủy bỏ',
-      onOk: () => {
-        setCurrentBranches((prev) => prev.filter((b) => !selectedBranchKeys.includes(b.id)));
-        setSelectedBranchKeys([]);
-        message.success(`Đã xóa ${count} chi nhánh thành công!`);
+      onOk: async () => {
+        try {
+          await Promise.all(
+            selectedBranchKeys.map((k) => branchApi.deleteBranch(String(k)))
+          );
+          const updated = currentBranches.filter((b) => !selectedBranchKeys.includes(b.id));
+          setCurrentBranches(updated);
+          setStoredAdminData(ADMIN_STORAGE_KEYS.BRANCHES, updated);
+          if (setBranchesList) {
+            setBranchesList(updated);
+          }
+          setSelectedBranchKeys([]);
+          message.success(`Đã xóa ${count} chi nhánh thành công!`);
+        } catch (e: any) {
+          message.error(e?.message || 'Xóa chi nhánh thất bại.');
+        }
       },
     });
   };
 
-  const handleCloneBranch = (record: AdminBranch) => {
+  const handleCloneBranch = async (record: AdminBranch) => {
     const nextCode = `${record.code}_COPY`;
-    const cloned: AdminBranch = {
+    const clonedPayload: Partial<AdminBranch> = {
       ...record,
-      id: `br_${Date.now()}`,
       code: nextCode,
       name: `${record.name} (Bản sao)`,
       status: 'active',
     };
-    setCurrentBranches((prev) => [...prev, cloned]);
+    let updatedList: AdminBranch[] = [];
+    try {
+      const created = await branchApi.createBranch(clonedPayload);
+      updatedList = [...currentBranches, created];
+    } catch {
+      const cloned: AdminBranch = {
+        ...clonedPayload,
+        id: `br_${Date.now()}`,
+      } as AdminBranch;
+      updatedList = [...currentBranches, cloned];
+    }
+    setCurrentBranches(updatedList);
+    if (setBranchesList) setBranchesList(updatedList);
     message.success(`Đã nhân bản chi nhánh "${record.name}"!`);
   };
 
   const handleSyncBranches = async () => {
     setBranchSyncing(true);
-    setTimeout(() => {
+    try {
+      await loadBranchesFromApi();
+      message.success(`Đồng bộ chi nhánh từ Backend API thành công.`);
+    } catch (err: any) {
+      message.error(err?.message || 'Đồng bộ chi nhánh thất bại.');
+    } finally {
       setBranchSyncing(false);
-      message.success(`Đồng bộ chi nhánh từ Accounting API thành công. Tổng: ${currentBranches.length} chi nhánh.`);
-    }, 800);
+    }
   };
 
   // ================= DOMACO POS UOM STATE & HANDLERS =================
-  const [currentUoms, setCurrentUoms] = useState<AdminUom[]>(uomsList);
+  const [currentUoms, setCurrentUoms] = useState<AdminUom[]>(uomsList || []);
   const [uomSearchQuery, setUomSearchQuery] = useState('');
   const [selectedUomKeys, setSelectedUomKeys] = useState<React.Key[]>([]);
   const [uomDrawerOpen, setUomDrawerOpen] = useState(false);
@@ -388,25 +635,32 @@ export function SettingsTab({
 
   const handleOpenCreateUom = () => {
     setEditingUom(null);
-    uomForm.resetFields();
-    uomForm.setFieldsValue({
-      code: '',
-      name: '',
-      description: '',
-      status: 'active',
-    });
     setUomDrawerOpen(true);
+
+    setTimeout(() => {
+      uomForm.resetFields();
+      uomForm.setFieldsValue({
+        code: '',
+        name: '',
+        description: '',
+        status: 'active',
+      });
+    }, 0);
   };
 
   const handleOpenEditUom = (item: AdminUom) => {
     setEditingUom(item);
-    uomForm.setFieldsValue({
-      code: item.code,
-      name: item.name,
-      description: item.description || '',
-      status: item.status || 'active',
-    });
     setUomDrawerOpen(true);
+
+    setTimeout(() => {
+      uomForm.resetFields();
+      uomForm.setFieldsValue({
+        code: item.code,
+        name: item.name,
+        description: item.description || '',
+        status: item.status || 'active',
+      });
+    }, 0);
   };
 
   const handleCloseUomDrawer = () => {
@@ -419,19 +673,29 @@ export function SettingsTab({
     try {
       const values = await uomForm.validateFields();
       if (editingUom) {
-        setCurrentUoms((prev) =>
-          prev.map((u) =>
+        const payload: Partial<AdminUom> = {
+          code: values.code.trim().toUpperCase(),
+          name: values.name.trim(),
+          description: values.description?.trim() || '',
+          status: values.status,
+        };
+        try {
+          await uomApi.updateUom(editingUom.id, payload);
+        } catch (e) {
+          console.warn('Backend UOM update failed, saved locally:', e);
+        }
+        setCurrentUoms((prev) => {
+          const next = prev.map((u) =>
             u.id === editingUom.id
               ? {
                   ...u,
-                  code: values.code.trim().toUpperCase(),
-                  name: values.name.trim(),
-                  description: values.description?.trim() || '',
-                  status: values.status,
+                  ...payload,
                 }
               : u
-          )
-        );
+          );
+          setStoredAdminData(ADMIN_STORAGE_KEYS.UOMS, next);
+          return next;
+        });
         message.success(`Đã cập nhật đơn vị tính "${values.name}" thành công!`);
       } else {
         const newUom: AdminUom = {
@@ -441,9 +705,18 @@ export function SettingsTab({
           description: values.description?.trim() || '',
           status: values.status,
           isDefault: false,
-          createdAt: '2026-10-05',
+          createdAt: new Date().toLocaleDateString('vi-VN'),
         };
-        setCurrentUoms((prev) => [...prev, newUom]);
+        try {
+          await uomApi.createUom(newUom);
+        } catch (e) {
+          console.warn('Backend UOM create failed, saved locally:', e);
+        }
+        setCurrentUoms((prev) => {
+          const next = [...prev, newUom];
+          setStoredAdminData(ADMIN_STORAGE_KEYS.UOMS, next);
+          return next;
+        });
         message.success(`Đã thêm mới đơn vị tính "${values.name}" thành công!`);
       }
       handleCloseUomDrawer();
@@ -452,8 +725,17 @@ export function SettingsTab({
     }
   };
 
-  const handleDeleteSingleUom = (item: AdminUom) => {
-    setCurrentUoms((prev) => prev.filter((u) => u.id !== item.id));
+  const handleDeleteSingleUom = async (item: AdminUom) => {
+    try {
+      await uomApi.deleteUom(item.id);
+    } catch (e) {
+      console.warn('Backend UOM delete failed, deleted locally:', e);
+    }
+    setCurrentUoms((prev) => {
+      const next = prev.filter((u) => u.id !== item.id);
+      setStoredAdminData(ADMIN_STORAGE_KEYS.UOMS, next);
+      return next;
+    });
     setSelectedUomKeys((prev) => prev.filter((k) => k !== item.id));
     message.success(`Đã xóa đơn vị tính "${item.name}"`);
   };
@@ -470,15 +752,24 @@ export function SettingsTab({
       okText: 'Xóa',
       okType: 'danger',
       cancelText: 'Hủy bỏ',
-      onOk: () => {
-        setCurrentUoms((prev) => prev.filter((u) => !selectedUomKeys.includes(u.id)));
+      onOk: async () => {
+        try {
+          await Promise.all(selectedUomKeys.map((k) => uomApi.deleteUom(String(k)).catch(() => {})));
+        } catch (e) {
+          console.warn('Backend batch UOM delete failed:', e);
+        }
+        setCurrentUoms((prev) => {
+          const next = prev.filter((u) => !selectedUomKeys.includes(u.id));
+          setStoredAdminData(ADMIN_STORAGE_KEYS.UOMS, next);
+          return next;
+        });
         setSelectedUomKeys([]);
         message.success(`Đã xóa ${count} đơn vị tính thành công!`);
       },
     });
   };
 
-  const handleCloneUom = (record: AdminUom) => {
+  const handleCloneUom = async (record: AdminUom) => {
     const nextCode = `${record.code}_COPY`;
     const cloned: AdminUom = {
       ...record,
@@ -486,8 +777,18 @@ export function SettingsTab({
       code: nextCode,
       name: `${record.name} (Bản sao)`,
       status: 'active',
+      createdAt: new Date().toLocaleDateString('vi-VN'),
     };
-    setCurrentUoms((prev) => [...prev, cloned]);
+    try {
+      await uomApi.createUom(cloned);
+    } catch (e) {
+      console.warn('Backend UOM clone create failed, saved locally:', e);
+    }
+    setCurrentUoms((prev) => {
+      const next = [...prev, cloned];
+      setStoredAdminData(ADMIN_STORAGE_KEYS.UOMS, next);
+      return next;
+    });
     message.success(`Đã nhân bản đơn vị tính "${record.name}"!`);
   };
 
@@ -594,9 +895,22 @@ export function SettingsTab({
 
   // ================= DOMACO POS RBAC ROLES & PERMISSIONS STATE =================
   const [currentRoles, setCurrentRoles] = useState<AdminRole[]>(rolesList || INITIAL_ROLES);
+  const [isSavingPermissions, setIsSavingPermissions] = useState(false);
+
+  const loadRolesFromApi = async () => {
+    try {
+      const roles = await roleApi.getRoles();
+      if (roles && roles.length > 0) {
+        setCurrentRoles(roles);
+        onUpdateRoles?.(roles);
+      }
+    } catch (err) {
+      console.warn('Load roles from API failed:', err);
+    }
+  };
 
   useEffect(() => {
-    setCurrentRoles(getStoredAdminData(ADMIN_STORAGE_KEYS.ROLES, rolesList || INITIAL_ROLES));
+    loadRolesFromApi();
   }, []);
 
   useEffect(() => {
@@ -777,93 +1091,112 @@ export function SettingsTab({
   // ================= ROLE CRUD HANDLERS =================
   const handleOpenCreateRole = () => {
     setEditingRole(null);
-    roleForm.resetFields();
-    roleForm.setFieldsValue({
-      status: true,
-      templateRoleId: currentRoles[0]?.id || 'role_director',
-    });
     setShowRoleModal(true);
+
+    setTimeout(() => {
+      roleForm.resetFields();
+      roleForm.setFieldsValue({
+        status: true,
+        templateRoleId: currentRoles[0]?.id || 'role_director',
+      });
+    }, 0);
   };
 
   const handleOpenEditRole = (role: AdminRole) => {
     setEditingRole(role);
-    roleForm.resetFields();
-    roleForm.setFieldsValue({
-      name: role.name,
-      code: role.code,
-      description: role.description,
-      status: role.status === 'active',
-    });
     setShowRoleModal(true);
+
+    setTimeout(() => {
+      roleForm.resetFields();
+      roleForm.setFieldsValue({
+        name: role.name,
+        code: role.code,
+        description: role.description,
+        status: role.status === 'active',
+      });
+    }, 0);
   };
 
-  const handleCloneRole = (role: AdminRole) => {
-    const clonedId = `role_${Date.now()}`;
-    const newRole: AdminRole = {
-      id: clonedId,
-      code: `${role.code}_COPY`,
-      name: `${role.name} (Bản sao)`,
-      description: `Bản sao quyền hạn từ ${role.name}`,
-      userCount: 0,
-      isSystem: false,
-      status: 'active',
-      permissions: [...role.permissions],
-    };
-
-    setCurrentRoles((prev) => [...prev, newRole]);
-    setSelectedRoleId(clonedId);
-    message.success(`Đã nhân bản vai trò "${role.name}" thành công!`);
+  const handleCloneRole = async (role: AdminRole) => {
+    try {
+      const cloned = await roleApi.cloneRole(role.id, {
+        newCode: `${role.code}_COPY`,
+        newName: `${role.name} (Bản sao)`,
+        description: `Bản sao quyền hạn từ ${role.name}`,
+      });
+      if (cloned) {
+        setCurrentRoles((prev) => [...prev, cloned]);
+        onUpdateRoles?.((prev: AdminRole[]) => [...prev, cloned]);
+        setSelectedRoleId(cloned.id);
+        message.success(`Đã nhân bản vai trò "${role.name}" thành công!`);
+      }
+    } catch (err: any) {
+      message.error(err.message || 'Nhân bản vai trò thất bại');
+    }
   };
 
-  const handleDeleteRole = (role: AdminRole) => {
+  const handleDeleteRole = async (role: AdminRole) => {
     if (role.isSystem) {
       message.error('Không thể xóa vai trò quản trị mặc định của hệ thống!');
       return;
     }
 
-    const remainingRoles = currentRoles.filter((r) => r.id !== role.id);
-    setCurrentRoles(remainingRoles);
-    if (selectedRoleId === role.id && remainingRoles.length > 0) {
-      setSelectedRoleId(remainingRoles[0].id);
+    try {
+      await roleApi.deleteRole(role.id);
+      const remainingRoles = currentRoles.filter((r) => r.id !== role.id);
+      setCurrentRoles(remainingRoles);
+      onUpdateRoles?.(remainingRoles);
+      if (selectedRoleId === role.id && remainingRoles.length > 0) {
+        setSelectedRoleId(remainingRoles[0].id);
+      }
+      message.success(`Đã xóa vai trò "${role.name}" thành công!`);
+    } catch (err: any) {
+      message.error(err.message || 'Xóa vai trò thất bại');
     }
-    message.success(`Đã xóa vai trò "${role.name}" thành công!`);
   };
 
   const handleSaveRoleSubmit = async () => {
     try {
       const values = await roleForm.validateFields();
       if (editingRole) {
-        // Update existing role
-        setCurrentRoles((prev) =>
-          prev.map((r) =>
-            r.id === editingRole.id
-              ? {
-                  ...r,
-                  name: values.name,
-                  code: values.code.toUpperCase(),
-                  description: values.description,
-                  status: values.status ? 'active' : 'inactive',
-                }
-              : r
-          )
-        );
+        try {
+          const updated = await roleApi.updateRole(editingRole.id, {
+            name: values.name,
+            code: values.code?.toUpperCase(),
+            description: values.description,
+            status: values.status ? 'active' : 'inactive',
+          });
+          if (updated) {
+            setCurrentRoles((prev) =>
+              prev.map((r) => (r.id === editingRole.id ? updated : r))
+            );
+            onUpdateRoles?.((prev: AdminRole[]) =>
+              prev.map((r) => (r.id === editingRole.id ? updated : r))
+            );
+          }
+        } catch (err: any) {
+          message.error(err.message || 'Cập nhật vai trò thất bại');
+          return;
+        }
         message.success(`Đã cập nhật thông tin vai trò "${values.name}"!`);
       } else {
-        // Create new role
-        const templateRole = currentRoles.find((r) => r.id === values.templateRoleId);
-        const newRoleId = `role_${Date.now()}`;
-        const newRole: AdminRole = {
-          id: newRoleId,
-          code: values.code.toUpperCase(),
-          name: values.name,
-          description: values.description || '',
-          userCount: 0,
-          isSystem: false,
-          status: values.status ? 'active' : 'inactive',
-          permissions: templateRole ? [...templateRole.permissions] : [],
-        };
-        setCurrentRoles((prev) => [...prev, newRole]);
-        setSelectedRoleId(newRoleId);
+        try {
+          const created = await roleApi.createRole({
+            name: values.name,
+            code: values.code?.toUpperCase(),
+            description: values.description || '',
+            status: values.status ? 'active' : 'inactive',
+            templateRoleId: values.templateRoleId,
+          });
+          if (created) {
+            setCurrentRoles((prev) => [...prev, created]);
+            onUpdateRoles?.((prev: AdminRole[]) => [...prev, created]);
+            setSelectedRoleId(created.id);
+          }
+        } catch (err: any) {
+          message.error(err.message || 'Tạo mới vai trò thất bại');
+          return;
+        }
         message.success(`Đã tạo vai trò mới "${values.name}" thành công!`);
       }
       setShowRoleModal(false);
@@ -872,18 +1205,60 @@ export function SettingsTab({
     }
   };
 
-  const handleSaveCompanyInfo = (values: AdminCompanyInfo) => {
-    setCompanyInfo((prev) => ({
-      ...prev,
+  const handleSavePermissions = async () => {
+    if (!currentRole) return;
+    try {
+      setIsSavingPermissions(true);
+      const updated = await roleApi.updateRolePermissions(currentRole.id, currentRole.permissions);
+      if (updated) {
+        setCurrentRoles((prev) =>
+          prev.map((r) => (r.id === currentRole.id ? updated : r))
+        );
+        onUpdateRoles?.((prev: AdminRole[]) =>
+          prev.map((r) => (r.id === currentRole.id ? updated : r))
+        );
+      }
+      message.success(`Đã lưu ma trận phân quyền cho vai trò "${currentRole.name}" thành công!`);
+    } catch (err: any) {
+      message.error(err.message || 'Lưu phân quyền thất bại');
+    } finally {
+      setIsSavingPermissions(false);
+    }
+  };
+
+  const handleSaveCompanyInfo = async (values: any) => {
+    const payload: AdminCompanyInfo = {
+      ...EMPTY_COMPANY_INFO,
+      ...companyInfo,
       ...values,
-    }));
-    message.success('Đã lưu và cập nhật thông tin doanh nghiệp & cửa hàng POS thành công!');
+      headquarters: values.headquarters || values.address || companyInfo.headquarters || '',
+      brandName: values.companyName || companyInfo.brandName || '',
+    };
+    try {
+      const res = await settingsApi.updateCompanyInfo(payload);
+      const nextData: AdminCompanyInfo = {
+        ...payload,
+        ...(res || {}),
+      };
+      setCompanyInfo(nextData);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('store_settings_updated', { detail: nextData }));
+      }
+      message.success('Đã lưu và cập nhật thông tin doanh nghiệp & cửa hàng POS thành công!');
+    } catch (err: any) {
+      console.warn('API update company info failed:', err);
+      setCompanyInfo(payload);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('store_settings_updated', { detail: payload }));
+      }
+      message.success('Đã lưu cấu hình thành công!');
+    }
   };
 
   const handleResetCompanyInfo = () => {
     companyForm.resetFields();
-    companyForm.setFieldsValue(INITIAL_COMPANY_INFO);
-    setCompanyInfo(INITIAL_COMPANY_INFO);
+    companyForm.setFieldsValue(EMPTY_COMPANY_INFO);
+    setCompanyInfo(EMPTY_COMPANY_INFO);
     message.info('Đã khôi phục thông tin doanh nghiệp về giá trị mặc định!');
   };
 
@@ -918,9 +1293,17 @@ export function SettingsTab({
     }
   };
 
-  const handleSaveSettings = (values: any) => {
-    setPaymentSettings((prev) => ({ ...prev, ...values }));
-    message.success('Đã lưu cấu hình tài khoản thanh toán & mã VietQR thành công!');
+  const handleSaveSettings = async (values: any) => {
+    try {
+      const res = await settingsApi.updatePaymentConfig(values);
+      setPaymentSettings((prev) => ({ ...prev, ...values }));
+      paymentForm.setFieldsValue(values);
+      setStoredAdminData(ADMIN_STORAGE_KEYS.PAYMENT_SETTINGS, { ...paymentSettings, ...values });
+      message.success('Đã lưu cấu hình tài khoản thanh toán & mã VietQR thành công!');
+    } catch (err: any) {
+      console.warn('API update payment config failed:', err);
+      message.error(err?.message || 'Lưu cấu hình thanh toán thất bại.');
+    }
   };
 
   const handleTopToolbarSave = () => {
@@ -993,7 +1376,6 @@ export function SettingsTab({
           </div>
           <div>
             <h2 className="font-bold text-sm sm:text-base text-slate-900 m-0">Thiết lập &amp; Cài đặt hệ thống</h2>
-            <p className="text-xs text-slate-500 m-0">Quản lý cấu hình doanh nghiệp, thanh toán, mẫu phiếu in, cơ sở chi nhánh, đơn vị tính, nhân sự và phân quyền RBAC</p>
           </div>
         </div>
 
@@ -1140,8 +1522,7 @@ export function SettingsTab({
         <main className="flex-1 min-w-0 w-full bg-white rounded-none shadow-xs border border-slate-200/80 p-5 sm:p-6 space-y-6">
           
           {/* TAB 1: THÔNG TIN CỬA HÀNG (DOMACO POS STORE INFO) */}
-          {settingsActiveTab === 'company' && (
-            <div className="space-y-4">
+          <div className={settingsActiveTab === 'company' ? 'space-y-4' : 'hidden'}>
               {/* Header: Title & Action Button */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
                 <div>
@@ -1163,12 +1544,12 @@ export function SettingsTab({
                 form={companyForm}
                 layout="vertical"
                 initialValues={{
-                  code: companyInfo.code || 'MOCGIA-LUXURY',
-                  companyName: companyInfo.companyName || 'CÔNG TY CỔ PHẦN NỘI THẤT CAO CẤP MỘC GIA',
-                  taxId: companyInfo.taxId || '0316888999',
-                  phone: companyInfo.phone || '0903 888 999',
-                  email: companyInfo.email || 'contact@mocgia-atelier.vn',
-                  address: companyInfo.headquarters || 'Số 28 Đường Thảo Điền, Phường Thảo Điền, TP. Thủ Đức, TP. Hồ Chí Minh',
+                  code: companyInfo.code || '',
+                  companyName: companyInfo.companyName || '',
+                  taxId: companyInfo.taxId || '',
+                  phone: companyInfo.phone || '',
+                  email: companyInfo.email || '',
+                  headquarters: companyInfo.headquarters || '',
                   logoUrl: companyInfo.logoUrl || null,
                   status: companyInfo.status !== false,
                 }}
@@ -1301,7 +1682,7 @@ export function SettingsTab({
                           className="h-9 sm:h-10 rounded-lg text-xs sm:text-sm"
                         />
                       </Form.Item>
-                      <Form.Item label="Địa chỉ trụ sở chính" name="address">
+                      <Form.Item label="Địa chỉ trụ sở chính" name="headquarters">
                         <Input.TextArea
                           rows={3}
                           placeholder="Nhập địa chỉ trụ sở chính"
@@ -1326,11 +1707,9 @@ export function SettingsTab({
                 </section>
               </Form>
             </div>
-          )}
 
           {/* TAB 2: CẤU HÌNH THANH TOÁN & VIETQR */}
-          {settingsActiveTab === 'payment' && (
-            <div className="space-y-5">
+          <div className={settingsActiveTab === 'payment' ? 'space-y-5' : 'hidden'}>
               <div className="pb-3 border-b border-slate-100 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <CreditCardOutlined className="text-[#784e34] text-lg" />
@@ -1351,42 +1730,109 @@ export function SettingsTab({
                 <Row gutter={24} className="items-start">
                   <Col xs={24} lg={15}>
                     <div className="space-y-4">
-                      <Form.Item label={<span className="text-xs font-semibold text-slate-800">Ngân hàng thụ hưởng</span>} name="bankName" rules={[{ required: true }]}>
-                        <Select className="h-10 text-sm">
-                          <Option value="MB Bank (Ngân hàng Quân Đội)">MB Bank - Ngân hàng TMCP Quân Đội (970422)</Option>
-                          <Option value="Vietcombank (Ngân hàng Ngoại Thương)">Vietcombank - Ngân hàng Ngoại Thương (970436)</Option>
-                          <Option value="Techcombank (Ngân hàng Kỹ Thương)">Techcombank - Ngân hàng Kỹ Thương (970407)</Option>
-                          <Option value="ACB (Ngân hàng Á Châu)">ACB - Ngân hàng TMCP Á Châu (970416)</Option>
-                          <Option value="BIDV (Ngân hàng Đầu tư & Phát triển)">BIDV - Ngân hàng Đầu tư &amp; Phát triển (970418)</Option>
+                      <Form.Item label={<span className="text-xs font-semibold text-slate-800">Ngân hàng thụ hưởng</span>} name="bankName" rules={[{ required: true, message: 'Vui lòng chọn ngân hàng' }]}>
+                        <Select
+                          showSearch
+                          loading={loadingBanks}
+                          placeholder="Tìm kiếm ngân hàng (MB, VCB, ACB, Techcombank...)..."
+                          className="h-10 text-sm"
+                          filterOption={(input, option) => {
+                            const label = String(option?.label || '');
+                            const val = String(option?.value || '');
+                            return label.toLowerCase().includes(input.toLowerCase()) || val.toLowerCase().includes(input.toLowerCase());
+                          }}
+                        >
+                          {vietQrBanks.length > 0 ? (
+                            vietQrBanks.map((b) => (
+                              <Option key={b.bin} value={`${b.shortName} (${b.name})`} label={`${b.shortName} - ${b.name} (${b.bin})`}>
+                                <div className="flex items-center gap-2 py-0.5">
+                                  {b.logo && (
+                                    <img src={b.logo} alt={b.shortName} className="h-4 w-auto max-w-[42px] object-contain shrink-0" />
+                                  )}
+                                  <span className="font-semibold text-slate-800 text-xs">{b.shortName}</span>
+                                  <span className="text-slate-400 text-xs truncate max-w-[280px]">- {b.name}</span>
+                                  <span className="ml-auto text-[10px] font-mono text-slate-400">({b.bin})</span>
+                                </div>
+                              </Option>
+                            ))
+                          ) : (
+                            <>
+                              <Option value="MB Bank (Ngân hàng Quân Đội)">MB Bank - Ngân hàng TMCP Quân Đội (970422)</Option>
+                              <Option value="Vietcombank (Ngân hàng Ngoại Thương)">Vietcombank - Ngân hàng Ngoại Thương (970436)</Option>
+                              <Option value="Techcombank (Ngân hàng Kỹ Thương)">Techcombank - Ngân hàng Kỹ Thương (970407)</Option>
+                              <Option value="ACB (Ngân hàng Á Châu)">ACB - Ngân hàng TMCP Á Châu (970416)</Option>
+                              <Option value="BIDV (Ngân hàng Đầu tư & Phát triển)">BIDV - Ngân hàng Đầu tư &amp; Phát triển (970418)</Option>
+                            </>
+                          )}
                         </Select>
                       </Form.Item>
 
                       <Row gutter={16}>
                         <Col xs={24} sm={12}>
-                          <Form.Item label={<span className="text-xs font-semibold text-slate-800">Số tài khoản</span>} name="accountNumber" rules={[{ required: true }]}>
-                            <Input className="h-10 text-sm font-mono font-bold text-[#784e34] rounded-none" />
+                          <Form.Item 
+                            label={<span className="text-xs font-semibold text-slate-800">Số tài khoản</span>} 
+                            name="accountNumber" 
+                            rules={[{ required: true, message: 'Vui lòng nhập số tài khoản ngân hàng' }]}
+                          >
+                            <Input placeholder="VD: 0379241075" className="h-10 text-sm font-mono font-bold text-[#784e34] rounded-none" />
                           </Form.Item>
                         </Col>
                         <Col xs={24} sm={12}>
-                          <Form.Item label={<span className="text-xs font-semibold text-slate-800">Tên chủ tài khoản</span>} name="accountName" rules={[{ required: true }]}>
-                            <Input className="h-10 text-sm font-semibold uppercase rounded-none" />
+                          <Form.Item 
+                            label={<span className="text-xs font-semibold text-slate-800">Tên chủ tài khoản</span>} 
+                            name="accountName" 
+                            rules={[{ required: true, message: 'Vui lòng nhập tên chủ tài khoản' }]}
+                          >
+                            <Input placeholder="VD: NGUYEN VAN A" className="h-10 text-sm font-semibold uppercase rounded-none" />
                           </Form.Item>
                         </Col>
                       </Row>
 
                       <Row gutter={16}>
                         <Col xs={24} sm={12}>
-                          <Form.Item label={<span className="text-xs font-semibold text-slate-800">Tiền tố cú pháp chuyển khoản</span>} name="paymentPrefix">
-                            <Input className="h-10 text-sm font-mono font-bold rounded-none" />
+                          <Form.Item label={<span className="text-xs font-semibold text-slate-800">Chi nhánh ngân hàng (không bắt buộc)</span>} name="branchName">
+                            <Input placeholder="VD: Chi nhánh Sở Giao Dịch Hà Nội" className="h-10 text-sm rounded-none" />
                           </Form.Item>
                         </Col>
                         <Col xs={24} sm={12}>
-                          <Form.Item label={<span className="text-xs font-semibold text-slate-800">Tỷ lệ cọc mặc định (%)</span>} name="defaultDeposit">
-                            <Select className="h-10 text-sm">
-                              <Option value={30}>Đặt cọc 30% giá trị hợp đồng</Option>
-                              <Option value={50}>Đặt cọc 50% giá trị hợp đồng</Option>
-                              <Option value={100}>Thanh toán 100%</Option>
-                            </Select>
+                          <Form.Item 
+                            label={<span className="text-xs font-semibold text-slate-800">Tỷ lệ cọc mặc định (%)</span>} 
+                            required
+                          >
+                            <div className="space-y-2">
+                              <Space.Compact className="w-40">
+                                <Form.Item
+                                  name="defaultDeposit"
+                                  noStyle
+                                  rules={[{ required: true, message: 'Vui lòng nhập tỷ lệ cọc' }]}
+                                >
+                                  <InputNumber
+                                    min={0}
+                                    max={100}
+                                    className="h-10 text-sm w-full font-semibold text-[#784e34] rounded-none"
+                                    placeholder="30"
+                                  />
+                                </Form.Item>
+                                <div className="h-10 px-3.5 bg-slate-100 border border-l-0 border-slate-300 flex items-center justify-center font-bold text-xs text-slate-700 shrink-0 select-none">
+                                  %
+                                </div>
+                              </Space.Compact>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {[10, 20, 30, 50, 70, 100].map((pct) => (
+                                  <button
+                                    key={pct}
+                                    type="button"
+                                    onClick={() => {
+                                      paymentForm.setFieldsValue({ defaultDeposit: pct });
+                                      setPaymentSettings((prev) => ({ ...prev, defaultDeposit: pct }));
+                                    }}
+                                    className="px-2 py-1 text-xs border border-slate-200 bg-white hover:border-[#784e34] hover:text-[#784e34] text-slate-600 rounded cursor-pointer transition-colors"
+                                  >
+                                    {pct}%
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
                           </Form.Item>
                         </Col>
                       </Row>
@@ -1403,23 +1849,20 @@ export function SettingsTab({
                         bankName={paymentSettings.bankName}
                         accountNumber={paymentSettings.accountNumber}
                         accountName={paymentSettings.accountName}
-                        paymentPrefix={paymentSettings.paymentPrefix}
                       />
                     </div>
                   </Col>
                 </Row>
               </Form>
             </div>
-          )}
 
           {/* TAB 2.5: MẪU PHIẾU IN & HÓA ĐƠN HỆ THỐNG */}
-          {settingsActiveTab === 'print-templates' && (
+          <div className={settingsActiveTab === 'print-templates' ? 'space-y-4' : 'hidden'}>
             <PrintTemplatesSettings />
-          )}
+          </div>
 
           {/* TAB 3: CHI NHÁNH & CƠ SỞ (DOMACO POS BRANCH SETTINGS) */}
-          {settingsActiveTab === 'branches' && (
-            <div className="space-y-4">
+          <div className={settingsActiveTab === 'branches' ? 'space-y-4' : 'hidden'}>
               {/* Main Card Container */}
               <section className="flex-1 min-h-0 flex flex-col bg-white overflow-hidden rounded-xl border border-slate-200 shadow-xs">
                 {/* Header Toolbar matching Domaco POS */}
@@ -1607,103 +2050,95 @@ export function SettingsTab({
               </section>
 
               {/* ── DRAWER: THÊM MỚI / CHỈNH SỬA CHI NHÁNH (DOMACO POS SPEC) ────────────────── */}
-              <Drawer
-                title={editingBranch ? 'Cập nhật chi nhánh' : 'Thêm mới chi nhánh'}
+              <AdminFormDrawer
                 open={branchDrawerOpen}
                 onClose={handleCloseBranchDrawer}
-                destroyOnHidden
-                styles={{
-                  wrapper: { width: 520, maxWidth: '100vw' },
-                  header: { borderBottom: '1px solid #e2e8f0', padding: '12px 16px' },
-                  body: { padding: 0, overflowY: 'auto' },
-                }}
-                extra={
-                  <div className="flex items-center gap-2">
-                    <Button onClick={handleCloseBranchDrawer} className="h-8 px-3 sm:px-4 rounded-lg border-slate-300 text-slate-600 text-xs font-semibold">
-                      Hủy bỏ
-                    </Button>
-                    <Button
-                      type="primary"
-                      onClick={handleSaveBranchSubmit}
-                      className="h-8 px-3 sm:px-4 rounded-lg text-xs font-semibold bg-[#784e34] hover:!bg-[#5d371f] text-white border-none shadow-none"
-                    >
-                      Lưu dữ liệu
-                    </Button>
-                  </div>
-                }
+                isEditing={!!editingBranch}
+                createTitle="Thêm mới chi nhánh"
+                editTitle="Cập nhật chi nhánh"
+                recordId={editingBranch?.code}
+                width={560}
+                onSubmit={handleSaveBranchSubmit}
+                submitText={editingBranch ? 'Lưu thay đổi' : 'Thêm chi nhánh'}
               >
-                <Form form={branchForm} layout="vertical">
-                  <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
-                    {/* Section 1: THÔNG TIN CƠ BẢN */}
-                    <div className="space-y-3 sm:space-y-4">
-                      <div className="text-xs font-bold text-slate-500 tracking-widest uppercase border-b border-slate-100 pb-2">
-                        THÔNG TIN CƠ BẢN
-                      </div>
+                <Form form={branchForm} layout="vertical" className="space-y-4">
+                  {/* Section 1: THÔNG TIN CƠ BẢN */}
+                  <div className="bg-white p-5 rounded-xl border border-slate-200/80 shadow-xs space-y-4">
+                    <div className="text-xs font-bold text-slate-500 tracking-wider uppercase border-b border-slate-100 pb-2 flex items-center gap-1.5">
+                      <ShopOutlined className="text-[#784e34]" /> THÔNG TIN CƠ BẢN
+                    </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                        <Form.Item
-                          name="code"
-                          label={<span className="text-xs font-medium text-slate-700">* Mã chi nhánh</span>}
-                          rules={[{ required: true, message: 'Nhập mã chi nhánh' }]}
-                          className="mb-0"
-                        >
-                          <Input
-                            className="h-9 rounded-lg text-xs sm:text-sm font-mono uppercase"
-                            placeholder="CN000001"
-                          />
-                        </Form.Item>
-
-                        <Form.Item
-                          name="name"
-                          label={<span className="text-xs font-medium text-slate-700">* Tên chi nhánh</span>}
-                          rules={[{ required: true, message: 'Nhập tên chi nhánh' }]}
-                          className="mb-0"
-                        >
-                          <Input className="h-9 rounded-lg text-xs sm:text-sm" placeholder="Ví dụ: Showroom Thảo Điền" />
-                        </Form.Item>
-                      </div>
-
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                       <Form.Item
-                        name="description"
-                        label={<span className="text-xs font-medium text-slate-700">Mô tả</span>}
+                        name="code"
+                        label={<span className="text-xs font-semibold text-slate-700">Mã chi nhánh</span>}
+                        rules={[{ required: true, message: 'Vui lòng nhập mã chi nhánh' }]}
                         className="mb-0"
                       >
-                        <Input.TextArea rows={2} className="rounded-lg text-xs sm:text-sm" placeholder="Nhập mô tả chi nhánh..." />
+                        <Input
+                          className="h-10 rounded-lg text-sm font-mono font-semibold uppercase border !border-slate-300 bg-white hover:!border-[#784e34] focus:!border-[#784e34]"
+                          placeholder="CN000001"
+                        />
+                      </Form.Item>
+
+                      <Form.Item
+                        name="name"
+                        label={<span className="text-xs font-semibold text-slate-700">Tên chi nhánh</span>}
+                        rules={[{ required: true, message: 'Vui lòng nhập tên chi nhánh' }]}
+                        className="mb-0"
+                      >
+                        <Input
+                          className="h-10 rounded-lg text-sm font-medium border !border-slate-300 bg-white hover:!border-[#784e34] focus:!border-[#784e34]"
+                          placeholder="Ví dụ: Showroom Thảo Điền"
+                        />
                       </Form.Item>
                     </div>
 
-                    {/* Section 2: THÔNG TIN CHI NHÁNH */}
-                    <div className="space-y-3 sm:space-y-4 pt-2">
-                      <div className="text-xs font-bold text-slate-500 tracking-widest uppercase border-b border-slate-100 pb-2">
-                        THÔNG TIN CHI NHÁNH
-                      </div>
+                    <Form.Item
+                      name="description"
+                      label={<span className="text-xs font-semibold text-slate-700">Mô tả</span>}
+                      className="mb-0"
+                    >
+                      <Input.TextArea
+                        rows={2}
+                        className="rounded-lg text-sm border !border-slate-300 bg-white hover:!border-[#784e34] focus:!border-[#784e34] p-2.5"
+                        placeholder="Nhập mô tả chi nhánh..."
+                      />
+                    </Form.Item>
+                  </div>
 
-                      <Form.Item
-                        name="address"
-                        label={<span className="text-xs font-medium text-slate-700">Địa chỉ chi nhánh</span>}
-                        className="mb-0"
-                      >
-                        <Input className="h-9 rounded-lg text-xs sm:text-sm" placeholder="Nhập địa chỉ đầy đủ..." />
-                      </Form.Item>
-
-                      <Form.Item
-                        name="status"
-                        label={<span className="text-xs font-medium text-slate-700">Trạng thái hoạt động</span>}
-                        valuePropName="checked"
-                        className="mb-0"
-                      >
-                        <Switch checkedChildren="MỞ" unCheckedChildren="KHÓA" defaultChecked />
-                      </Form.Item>
+                  {/* Section 2: THÔNG TIN CHI NHÁNH */}
+                  <div className="bg-white p-5 rounded-xl border border-slate-200/80 shadow-xs space-y-4">
+                    <div className="text-xs font-bold text-slate-500 tracking-wider uppercase border-b border-slate-100 pb-2 flex items-center gap-1.5">
+                      <EnvironmentOutlined className="text-[#784e34]" /> ĐỊA CHỈ & TRẠNG THÁI
                     </div>
+
+                    <Form.Item
+                      name="address"
+                      label={<span className="text-xs font-semibold text-slate-700">Địa chỉ chi nhánh</span>}
+                      className="mb-0"
+                    >
+                      <Input
+                        className="h-10 rounded-lg text-sm border !border-slate-300 bg-white hover:!border-[#784e34] focus:!border-[#784e34]"
+                        placeholder="Nhập địa chỉ đầy đủ..."
+                      />
+                    </Form.Item>
+
+                    <Form.Item
+                      name="status"
+                      label={<span className="text-xs font-semibold text-slate-700">Trạng thái hoạt động</span>}
+                      valuePropName="checked"
+                      className="mb-0"
+                    >
+                      <Switch checkedChildren="MỞ" unCheckedChildren="KHÓA" defaultChecked />
+                    </Form.Item>
                   </div>
                 </Form>
-              </Drawer>
+              </AdminFormDrawer>
             </div>
-          )}
 
           {/* ================= TAB 4: ĐƠN VỊ TÍNH (DOMACO POS SPEC) ================= */}
-          {settingsActiveTab === 'uom' && (
-            <div className="space-y-4">
+          <div className={settingsActiveTab === 'uom' ? 'space-y-4' : 'hidden'}>
               <section className="flex flex-col bg-white rounded-none border border-slate-200/80 shadow-xs overflow-hidden">
                 {/* ── TOOLBAR (DOMACO POS SPEC) ── */}
                 <div className="shrink-0 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-200 bg-white p-3 sm:p-4">
@@ -1756,6 +2191,7 @@ export function SettingsTab({
                 <div className="overflow-x-auto">
                   <Table
                     rowKey="id"
+                    loading={uomSyncing}
                     dataSource={filteredUoms}
                     columns={uomColumns}
                     size="middle"
@@ -1787,107 +2223,111 @@ export function SettingsTab({
               </section>
 
               {/* ── DRAWER: THÊM MỚI / CHỈNH SỬA ĐƠN VỊ TÍNH (DOMACO POS SPEC) ── */}
-              <Drawer
-                title={editingUom ? 'Sửa đơn vị tính' : 'Thêm đơn vị tính'}
+              <AdminFormDrawer
                 open={uomDrawerOpen}
                 onClose={handleCloseUomDrawer}
-                destroyOnHidden
-                styles={{
-                  wrapper: { width: 460, maxWidth: '100vw' },
-                  header: { borderBottom: '1px solid #e2e8f0', padding: '12px 16px' },
-                  body: { padding: 0, overflowY: 'auto' },
-                }}
-                extra={
-                  <div className="flex items-center gap-2">
-                    <Button onClick={handleCloseUomDrawer} className="h-8 px-3 sm:px-4 rounded-lg border-slate-300 text-slate-600 text-xs font-semibold">
-                      Hủy
-                    </Button>
-                    <Button
-                      type="primary"
-                      onClick={handleSaveUomSubmit}
-                      className="h-8 px-3 sm:px-4 rounded-lg text-xs font-semibold bg-[#784e34] hover:!bg-[#5d371f] text-white border-none shadow-none"
-                    >
-                      Lưu
-                    </Button>
-                  </div>
-                }
+                isEditing={!!editingUom}
+                createTitle="Thêm mới đơn vị tính"
+                editTitle="Cập nhật đơn vị tính"
+                recordId={editingUom?.code}
+                width={520}
+                onSubmit={handleSaveUomSubmit}
+                submitText={editingUom ? 'Lưu thay đổi' : 'Thêm đơn vị'}
               >
-                <Form form={uomForm} layout="vertical" className="p-4 sm:p-6 space-y-4">
-                  <Form.Item
-                    label={<span className="text-xs font-medium text-slate-700">* Mã đơn vị</span>}
-                    name="code"
-                    rules={[{ required: true, message: 'Vui lòng nhập mã đơn vị' }]}
-                    className="mb-0"
-                  >
-                    <Input
-                      aria-label="Mã đơn vị"
-                      className="h-9 rounded-lg text-xs sm:text-sm font-mono uppercase"
-                      placeholder="VD: HOP, CHIEC, LOC..."
-                    />
-                  </Form.Item>
+                <Form form={uomForm} layout="vertical" className="space-y-4">
+                  <div className="bg-white p-5 rounded-xl border border-slate-200/80 shadow-xs space-y-4">
+                    <div className="text-xs font-bold text-slate-500 tracking-wider uppercase border-b border-slate-100 pb-2 flex items-center gap-1.5">
+                      <ColumnWidthOutlined className="text-[#784e34]" /> THÔNG TIN ĐƠN VỊ TÍNH
+                    </div>
 
-                  <Form.Item
-                    label={<span className="text-xs font-medium text-slate-700">* Tên đơn vị</span>}
-                    name="name"
-                    rules={[{ required: true, message: 'Vui lòng nhập tên đơn vị' }]}
-                    className="mb-0"
-                  >
-                    <Input
-                      aria-label="Tên đơn vị"
-                      className="h-9 rounded-lg text-xs sm:text-sm font-medium"
-                      placeholder="VD: Hộp, Chiếc, Lốc..."
-                    />
-                  </Form.Item>
-
-                  <Form.Item
-                    label={<span className="text-xs font-medium text-slate-700">Ghi chú</span>}
-                    name="description"
-                    className="mb-0"
-                  >
-                    <Input.TextArea
-                      aria-label="Ghi chú đơn vị tính"
-                      rows={3}
-                      className="rounded-lg text-xs sm:text-sm"
-                      placeholder="Nhập ghi chú hoặc quy cách..."
-                    />
-                  </Form.Item>
-
-                  <Form.Item
-                    label={<span className="text-xs font-medium text-slate-700">Trạng thái</span>}
-                    name="status"
-                    initialValue="active"
-                    className="mb-0"
-                  >
-                    <Select
-                      aria-label="Trạng thái đơn vị tính"
-                      options={[
-                        { value: 'active', label: 'Đang sử dụng (Mở)' },
-                        { value: 'inactive', label: 'Ngừng sử dụng (Khóa)' },
+                    <Form.Item
+                      name="code"
+                      label={<span className="text-xs font-semibold text-slate-700">Mã đơn vị tính</span>}
+                      rules={[
+                        { required: true, message: 'Vui lòng nhập mã đơn vị tính' },
+                        { pattern: /^[a-zA-Z0-9_\-\.\/]+$/, message: 'Mã chỉ gồm chữ cái, số, ký tự gạch hoặc xẹt' },
                       ]}
-                      className="w-full text-xs sm:text-sm"
-                    />
-                  </Form.Item>
-                </Form>
-              </Drawer>
-            </div>
-          )}
+                      extra={<span className="text-[11px] text-slate-400">Ví dụ: HOP, CHIEC, BO, M3, M2...</span>}
+                      className="mb-0"
+                    >
+                      <Input
+                        placeholder="VD: HOP, CAI, BO..."
+                        className="h-10 rounded-lg text-sm font-mono font-semibold uppercase border !border-slate-300 bg-white hover:!border-[#784e34] focus:!border-[#784e34]"
+                      />
+                    </Form.Item>
 
-          {/* ================= TAB 5: QUẢN LÝ NHÂN SỰ & TÀI KHOẢN POS ================= */}
-          {settingsActiveTab === 'employees' && (
-            <div className="space-y-4">
-              <EmployeesTab
-                employeesList={currentEmployees}
-                setEmployeesList={setCurrentEmployees}
-                branchesList={currentBranches}
-                rolesList={currentRoles}
-                selectedGlobalBranch={selectedGlobalBranch}
-              />
+                    <Form.Item
+                      name="name"
+                      label={<span className="text-xs font-semibold text-slate-700">Tên đơn vị tính</span>}
+                      rules={[{ required: true, message: 'Vui lòng nhập tên đơn vị tính' }]}
+                      className="mb-0"
+                    >
+                      <Input
+                        placeholder="VD: Hộp, Cái, Bộ, Mét vuông..."
+                        className="h-10 rounded-lg text-sm font-medium border !border-slate-300 bg-white hover:!border-[#784e34] focus:!border-[#784e34]"
+                      />
+                    </Form.Item>
+
+                    <Form.Item
+                      name="description"
+                      label={<span className="text-xs font-semibold text-slate-700">Ghi chú / Quy cách sử dụng</span>}
+                      className="mb-0"
+                    >
+                      <Input.TextArea
+                        rows={3}
+                        placeholder="Ví dụ: Đơn vị tính dùng cho phụ kiện, gỗ xẻ sấy, da bò..."
+                        className="rounded-lg text-sm border !border-slate-300 bg-white hover:!border-[#784e34] focus:!border-[#784e34] p-2.5"
+                      />
+                    </Form.Item>
+
+                    <Form.Item
+                      name="status"
+                      label={<span className="text-xs font-semibold text-slate-700">Trạng thái hoạt động</span>}
+                      initialValue="active"
+                      className="mb-0"
+                    >
+                      <Select
+                        className="w-full h-10 text-sm"
+                        options={[
+                          {
+                            value: 'active',
+                            label: (
+                              <div className="flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+                                <span className="text-slate-800 font-medium">Đang sử dụng (Mở)</span>
+                              </div>
+                            ),
+                          },
+                          {
+                            value: 'inactive',
+                            label: (
+                              <div className="flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-slate-400 inline-block" />
+                                <span className="text-slate-500 font-medium">Ngừng sử dụng (Khóa)</span>
+                              </div>
+                            ),
+                          },
+                        ]}
+                      />
+                    </Form.Item>
+                  </div>
+                </Form>
+              </AdminFormDrawer>
             </div>
-          )}
+
+          {/* ================= TAB 5: QUẢN LÝ NHÂN SỰ & VAI TRÒ ================= */}
+          <div className={settingsActiveTab === 'employees' ? 'space-y-4' : 'hidden'}>
+            <EmployeesTab
+              employeesList={currentEmployees}
+              setEmployeesList={setCurrentEmployees}
+              branchesList={currentBranches}
+              rolesList={currentRoles}
+              selectedGlobalBranch={selectedGlobalBranch}
+            />
+          </div>
 
           {/* ================= TAB 6: VAI TRÒ & PHÂN QUYỀN (DOMACO POS RBAC) ================= */}
-          {settingsActiveTab === 'permissions' && (
-            <div className="space-y-5">
+          <div className={settingsActiveTab === 'permissions' ? 'space-y-5' : 'hidden'}>
               {/* Permissions Header */}
               <div className="pb-3 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
@@ -2077,7 +2517,8 @@ export function SettingsTab({
                           <Button
                             type="primary"
                             icon={<SaveOutlined />}
-                            onClick={() => message.success(`Đã lưu ma trận phân quyền cho vai trò "${currentRole.name}" thành công!`)}
+                            loading={isSavingPermissions}
+                            onClick={handleSavePermissions}
                             className="bg-[#784e34] hover:!bg-[#5d371f] text-xs font-bold rounded-none h-8 px-4 shadow-none border-none"
                           >
                             Lưu phân quyền
@@ -2300,17 +2741,7 @@ export function SettingsTab({
                 </div>
               )}
             </div>
-          )}
 
-          {/* ================= TAB 5: NHÂN VIÊN & TÀI KHOẢN (DOMACO POS SPEC) ================= */}
-          {settingsActiveTab === 'employees' && (
-            <EmployeesTab
-              employeesList={currentEmployees}
-              setEmployeesList={setCurrentEmployees}
-              branchesList={currentBranches}
-              rolesList={currentRoles}
-            />
-          )}
         </main>
       </div>
 
@@ -2323,13 +2754,13 @@ export function SettingsTab({
           </div>
         }
         open={showRoleModal}
+        forceRender
         onCancel={() => setShowRoleModal(false)}
         onOk={handleSaveRoleSubmit}
         okText={editingRole ? 'Lưu cập nhật' : 'Tạo vai trò'}
         cancelText="Hủy bỏ"
         okButtonProps={{ className: 'bg-[#784e34] hover:!bg-[#5d371f] font-bold rounded-none' }}
         cancelButtonProps={{ className: 'rounded-none' }}
-        destroyOnHidden
       >
         <Form
           form={roleForm}

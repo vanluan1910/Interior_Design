@@ -1,0 +1,52 @@
+namespace InteriorDesign.Integration.Responses;
+
+public sealed record CustomerDto(
+    Guid Id,
+    string Code,
+    string Name,
+    string Phone,
+    string? Phone2,
+    string? Email,
+    string? Facebook,
+    string? Zalo,
+    string? Gender,
+    string? Birthday,
+    string? Address,
+    string? City,
+    string? Branch,
+    string? BranchName,
+    string CustomerType,
+    string Type,
+    string TypeLabel,
+    string Tier,
+    string? SalesRep,
+    string? Notes,
+    string? CompanyName,
+    string? BuyerName,
+    string? TaxId,
+    string? InvoiceAddress,
+    string? IdNumber,
+    string? Passport,
+    string? BankName,
+    string? BankAccount,
+    string? PreferredStyle,
+    string? ProjectLocation,
+    decimal TotalSpent,
+    decimal Debt,
+    int TotalOrders,
+    int OrdersCount,
+    int RewardPoints,
+    string? LastOrderDate,
+    string Status,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt
+);
+
+public sealed record CustomerStatsDto(
+    int TotalCustomers,
+    int ActiveCustomers,
+    int IndivualCount,
+    int OrganizationCount,
+    decimal TotalDebt,
+    decimal TotalRevenue
+);

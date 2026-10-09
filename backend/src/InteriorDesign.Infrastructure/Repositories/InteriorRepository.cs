@@ -12,31 +12,53 @@ public sealed class InteriorRepository(InteriorDbContext db) : IInteriorReposito
     // Products
     public async Task<PagedResult<Product>> GetProductsAsync(int page, int pageSize, string? search, string? space, Guid? categoryId, ProductStatus? status, CancellationToken cancellationToken)
     {
-        var query = db.Products.Include(p => p.Category).AsNoTracking().AsQueryable();
+        var baseQuery = db.Products.AsNoTracking().AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(search))
         {
-            var s = search.Trim().ToLower();
-            query = query.Where(p => p.Name.ToLower().Contains(s) || p.Sku.ToLower().Contains(s) || p.Description.ToLower().Contains(s));
+            var s = search.Trim();
+            baseQuery = baseQuery.Where(p => p.Name.Contains(s) || p.Sku.Contains(s) || p.Description.Contains(s));
         }
 
         if (!string.IsNullOrWhiteSpace(space) && !space.Equals("all", StringComparison.OrdinalIgnoreCase))
         {
-            query = query.Where(p => p.Space.ToLower() == space.ToLower());
+            var sp = space.Trim().ToLower();
+            if (sp == "living" || sp == "livingroom" || sp == "living-room" || sp.Contains("khách") || sp == "kg01")
+            {
+                baseQuery = baseQuery.Where(p => p.Space.Contains("khách") || p.Space.Contains("Living") || p.Space == "KG01");
+            }
+            else if (sp == "bedroom" || sp == "bed" || sp.Contains("ngủ") || sp == "kg02" || sp == "kg03")
+            {
+                baseQuery = baseQuery.Where(p => p.Space.Contains("ngủ") || p.Space.Contains("Bed") || p.Space == "KG02" || p.Space == "KG03");
+            }
+            else if (sp == "dining" || sp == "diningroom" || sp == "dining-room" || sp.Contains("ăn") || sp.Contains("bếp"))
+            {
+                baseQuery = baseQuery.Where(p => p.Space.Contains("ăn") || p.Space.Contains("bếp") || p.Space.Contains("Dining"));
+            }
+            else if (sp == "office" || sp == "work" || sp.Contains("việc") || sp.Contains("sách") || sp == "kg04")
+            {
+                baseQuery = baseQuery.Where(p => p.Space.Contains("việc") || p.Space.Contains("sách") || p.Space.Contains("Office") || p.Space == "KG04");
+            }
+            else
+            {
+                baseQuery = baseQuery.Where(p => p.Space == space || p.Space.Contains(space));
+            }
         }
 
         if (categoryId.HasValue && categoryId != Guid.Empty)
         {
-            query = query.Where(p => p.CategoryId == categoryId.Value);
+            baseQuery = baseQuery.Where(p => p.CategoryId == categoryId.Value);
         }
 
         if (status.HasValue)
         {
-            query = query.Where(p => p.Status == status.Value);
+            baseQuery = baseQuery.Where(p => p.Status == status.Value);
         }
 
-        var total = await query.CountAsync(cancellationToken);
-        var items = await query.OrderByDescending(p => p.CreatedAt)
+        var total = await baseQuery.CountAsync(cancellationToken);
+        var items = await baseQuery
+            .Include(p => p.Category)
+            .OrderByDescending(p => p.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(cancellationToken);
@@ -52,6 +74,44 @@ public sealed class InteriorRepository(InteriorDbContext db) : IInteriorReposito
     public async Task<Product?> GetProductBySlugAsync(string slug, CancellationToken cancellationToken)
     {
         return await db.Products.Include(p => p.Category).AsNoTracking().FirstOrDefaultAsync(p => p.Slug == slug, cancellationToken);
+    }
+
+    public async Task<Product?> GetProductByIdentifierAsync(string identifier, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(identifier)) return null;
+
+        var query = db.Products.Include(p => p.Category).AsNoTracking();
+
+        if (Guid.TryParse(identifier, out var guid))
+        {
+            var byId = await query.FirstOrDefaultAsync(p => p.Id == guid, cancellationToken);
+            if (byId != null) return byId;
+        }
+
+        var normalized = identifier.Trim();
+        return await query.FirstOrDefaultAsync(p =>
+            p.Slug == normalized ||
+            p.Sku == normalized ||
+            p.Name == normalized,
+            cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<Product>> GetRelatedProductsAsync(Guid productId, string? space, Guid? categoryId, int limit, CancellationToken cancellationToken)
+    {
+        var query = db.Products.Include(p => p.Category)
+            .AsNoTracking()
+            .Where(p => p.Id != productId && p.Status == ProductStatus.Active);
+
+        if (!string.IsNullOrWhiteSpace(space))
+        {
+            query = query.Where(p => p.Space == space);
+        }
+        else if (categoryId.HasValue && categoryId.Value != Guid.Empty)
+        {
+            query = query.Where(p => p.CategoryId == categoryId.Value);
+        }
+
+        return await query.Take(limit).ToListAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<Product>> GetFeaturedProductsAsync(int limit, CancellationToken cancellationToken)

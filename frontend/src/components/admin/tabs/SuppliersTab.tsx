@@ -8,7 +8,6 @@ import {
   Popconfirm,
   App,
   Drawer,
-  Modal,
   Form,
   Input,
   InputNumber,
@@ -36,21 +35,27 @@ import {
   FileTextOutlined,
   DollarOutlined,
   WalletOutlined,
-  EyeOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
   HistoryOutlined,
+  CopyOutlined,
+  SwapOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import * as XLSX from 'xlsx';
 import {
   AdminDataTable,
   AdminFilterSidebar,
   AdminSidebarSummary,
-  AdminSearchInput,
+  AdminFormDrawer,
+  AdminStatusBadge,
 } from '@/components/admin';
+import { VietQrCard } from '@/components/common/VietQrCard';
 import { exportToExcel } from '@/utils/exportExcel';
 import type { AdminSupplier } from '@/types/admin';
 import { INITIAL_SUPPLIERS } from '@/data/admin/mockData';
+import { supplierApi } from '@/api/supplierApi';
+import { isMatchBranch } from '@/utils/branchHelper';
 
 export interface SuppliersTabProps {
   suppliersList?: AdminSupplier[];
@@ -61,19 +66,26 @@ export interface SuppliersTabProps {
   onSelectSupplierDetail?: (supplier: AdminSupplier) => void;
 }
 
-// Danh sách ngân hàng phổ biến
+// Danh sách ngân hàng phổ biến hỗ trợ VietQR
 const BANK_OPTIONS = [
-  { label: 'Vietcombank - Ngân hàng Ngoại thương', value: 'Vietcombank' },
-  { label: 'Techcombank - Ngân hàng Kỹ thương', value: 'Techcombank' },
-  { label: 'MBBank - Ngân hàng Quân đội', value: 'MBBank' },
-  { label: 'ACB - Ngân hàng Á Châu', value: 'ACB' },
-  { label: 'BIDV - Ngân hàng Đầu tư & Phát triển', value: 'BIDV' },
-  { label: 'VietinBank - Ngân hàng Công thương', value: 'VietinBank' },
-  { label: 'VPBank - Ngân hàng Thịnh Vượng', value: 'VPBank' },
-  { label: 'TPBank - Ngân hàng Tiên Phong', value: 'TPBank' },
-  { label: 'JPMorgan Chase Bank (Quốc tế)', value: 'JPMorgan Chase Bank' },
-  { label: 'Deutsche Bank (Quốc tế)', value: 'Deutsche Bank' },
-  { label: 'UniCredit Bank (Quốc tế)', value: 'UniCredit Bank' },
+  { label: 'Vietcombank - Ngân hàng Ngoại thương (VCB)', value: 'Vietcombank' },
+  { label: 'Techcombank - Ngân hàng Kỹ thương (TCB)', value: 'Techcombank' },
+  { label: 'MBBank - Ngân hàng Quân đội (MB)', value: 'MBBank' },
+  { label: 'VietinBank - Ngân hàng Công thương (ICB)', value: 'VietinBank' },
+  { label: 'BIDV - Ngân hàng Đầu tư & Phát triển (BIDV)', value: 'BIDV' },
+  { label: 'ACB - Ngân hàng Á Châu (ACB)', value: 'ACB' },
+  { label: 'VPBank - Ngân hàng Thịnh Vượng (VPB)', value: 'VPBank' },
+  { label: 'TPBank - Ngân hàng Tiên Phong (TPB)', value: 'TPBank' },
+  { label: 'Agribank - Ngân hàng Nông nghiệp & PTNT (VBA)', value: 'Agribank' },
+  { label: 'HDBank - Ngân hàng Phát triển TP.HCM (HDB)', value: 'HDBank' },
+  { label: 'Sacombank - Ngân hàng Sài Gòn Thương Tín (STB)', value: 'Sacombank' },
+  { label: 'VIB - Ngân hàng Quốc tế (VIB)', value: 'VIB' },
+  { label: 'SHB - Ngân hàng Sài Gòn - Hà Nội (SHB)', value: 'SHB' },
+  { label: 'MSB - Ngân hàng Hàng Hải (MSB)', value: 'MSB' },
+  { label: 'OCB - Ngân hàng Phương Đông (OCB)', value: 'OCB' },
+  { label: 'LPBank - Ngân hàng Lộc Phát (LPB)', value: 'LPBank' },
+  { label: 'SeABank - Ngân hàng Đông Nam Á (SEAB)', value: 'SeABank' },
+  { label: 'Eximbank - Ngân hàng Xuất Nhập Khẩu (EIB)', value: 'Eximbank' },
 ];
 
 export function SuppliersTab({
@@ -84,7 +96,7 @@ export function SuppliersTab({
   onOpenEditSupplier,
   onSelectSupplierDetail,
 }: SuppliersTabProps) {
-  const { message, modal } = App.useApp();
+  const { message } = App.useApp();
 
   const [internalSuppliersList, setInternalSuppliersList] = useState<AdminSupplier[]>(initialSuppliers);
   const suppliersList = externalSetSuppliersList ? initialSuppliers : internalSuppliersList;
@@ -95,191 +107,32 @@ export function SuppliersTab({
   const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'active' | 'inactive'
   const [debtFilter, setDebtFilter] = useState('all'); // 'all' | 'has_debt' | 'no_debt'
 
-  // Selection state
+  // Selection & Accordion Detail Expansion State
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+  const [expandedSupplierId, setExpandedSupplierId] = useState<string | null>(null);
 
-  // Drawer Create / Edit States
+  // Form Drawer States
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<AdminSupplier | null>(null);
   const [form] = Form.useForm();
+  const watchedBankName = Form.useWatch('bankName', form);
+  const watchedBankAccount = Form.useWatch('bankAccount', form);
+  const watchedCompanyName = Form.useWatch('company', form) || Form.useWatch('name', form);
 
-  // Detail Drawer States
-  const [detailDrawerOpen, setDetailDrawerOpen] = useState(false);
-  const [selectedSupplier, setSelectedSupplier] = useState<AdminSupplier | null>(null);
-  const [detailTab, setDetailTab] = useState<'info' | 'orders' | 'debt'>('info');
-
-  // Quick Debt Payment Drawer States
+  // Quick Payment Drawer States
   const [paymentDrawerOpen, setPaymentDrawerOpen] = useState(false);
   const [payingSupplier, setPayingSupplier] = useState<AdminSupplier | null>(null);
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
   const [paymentMethod, setPaymentMethod] = useState<string>('transfer');
   const [paymentDate, setPaymentDate] = useState<string>(dayjs().format('YYYY-MM-DD HH:mm'));
   const [paymentNote, setPaymentNote] = useState<string>('');
+  const [paymentHistory, setPaymentHistory] = useState<any[]>([]);
 
-  // Import Modal State
-  const [importModalOpen, setImportModalOpen] = useState(false);
-
-  // Mock Payment History for Detail View
-  const [paymentHistory, setPaymentHistory] = useState<
-    Array<{
-      id: string;
-      code: string;
-      supplierId: string;
-      amount: number;
-      method: string;
-      date: string;
-      note: string;
-      creator: string;
-    }>
-  >([
-    {
-      id: 'pay_1',
-      code: 'PC-2026-001',
-      supplierId: 'sup_1',
-      amount: 500000000,
-      method: 'Chuyển khoản',
-      date: '2026-03-20 14:30',
-      note: 'Thanh toán đợt 1 tiền gỗ Óc Chó FAS',
-      creator: 'Hương - Kế Toán',
-    },
-    {
-      id: 'pay_2',
-      code: 'PC-2026-002',
-      supplierId: 'sup_1',
-      amount: 400000000,
-      method: 'Chuyển khoản',
-      date: '2026-04-10 10:15',
-      note: 'Thanh toán tiền hàng công nợ tháng 3',
-      creator: 'Nguyễn Văn Luân',
-    },
-    {
-      id: 'pay_3',
-      code: 'PC-2026-003',
-      supplierId: 'sup_3',
-      amount: 150000000,
-      method: 'Chuyển khoản',
-      date: '2026-04-05 16:00',
-      note: 'Thanh toán phụ kiện ray trượt Blum Legrabox',
-      creator: 'Hương - Kế Toán',
-    },
-    {
-      id: 'pay_4',
-      code: 'PC-2026-004',
-      supplierId: 'sup_4',
-      amount: 200000000,
-      method: 'Chuyển khoản',
-      date: '2026-04-12 09:45',
-      note: 'Thanh toán da Nappa nhập khẩu Mastrotto',
-      creator: 'Nguyễn Văn Luân',
-    },
-    {
-      id: 'pay_5',
-      code: 'PC-2026-005',
-      supplierId: 'sup_6',
-      amount: 100000000,
-      method: 'Tiền mặt',
-      date: '2026-04-18 11:20',
-      note: 'Thanh toán tiền phụ kiện tủ Hafele',
-      creator: 'Hương - Kế Toán',
-    },
-  ]);
-
-  // Mock Purchase History for Detail View
+  // Purchase History for Detail View (derived from real stock imports)
   const purchaseHistory = useMemo(() => {
-    return [
-      {
-        id: 'po_1',
-        code: 'PN000036',
-        supplierId: 'sup_1',
-        supplierName: 'Northwest Hardwoods (USA)',
-        warehouseName: 'Tổng Kho Phân Phối & Giao Vận Bình Chánh',
-        itemName: 'Khung Gỗ Óc Chó & Ghế Katakana Bắc Mỹ',
-        quantity: '45 bộ',
-        totalAmount: 1140000000,
-        importDate: '2026-03-15 09:30',
-        status: 'completed',
-        inspector: 'Phạm Văn Tuấn (KCS)',
-      },
-      {
-        id: 'po_2',
-        code: 'PN000032',
-        supplierId: 'sup_1',
-        supplierName: 'Northwest Hardwoods (USA)',
-        warehouseName: 'Tổng Kho Phân Phối & Giao Vận Bình Chánh',
-        itemName: 'Khung Bàn Ăn Komorebi Sồi Trắng',
-        quantity: '30 bộ',
-        totalAmount: 710000000,
-        importDate: '2026-02-28 14:15',
-        status: 'completed',
-        inspector: 'Phạm Văn Tuấn (KCS)',
-      },
-      {
-        id: 'po_3',
-        code: 'PN000028',
-        supplierId: 'sup_2',
-        supplierName: 'Pollmeier Furnierwerkstoffe (Đức)',
-        warehouseName: 'Tổng Kho Phân Phối & Giao Vận Bình Chánh',
-        itemName: 'Khung Giường Phản Tatami Gỗ Tự Nhiên',
-        quantity: '25 chiếc',
-        totalAmount: 980000000,
-        importDate: '2026-02-10 10:00',
-        status: 'completed',
-        inspector: 'Nguyễn Đình Bảo',
-      },
-      {
-        id: 'po_4',
-        code: 'PN000025',
-        supplierId: 'sup_3',
-        supplierName: 'Blum Eurolux Fittings (Austria)',
-        warehouseName: 'Kho Phụ Kiện & Vật Tư Kim Khí',
-        itemName: 'Bản lề Clip Top Blumotion 110 & Ray Legrabox',
-        quantity: '650 bộ',
-        totalAmount: 420000000,
-        importDate: '2026-03-05 11:30',
-        status: 'completed',
-        inspector: 'Trần Văn Mạnh',
-      },
-      {
-        id: 'po_5',
-        code: 'PN000022',
-        supplierId: 'sup_4',
-        supplierName: 'Gruppo Mastrotto (Italy)',
-        warehouseName: 'Kho Da Bọc & Vật Liệu Đệm Mút',
-        itemName: 'Da Bò Tự Nhiên Nappa Zen Full Grain',
-        quantity: '450 m²',
-        totalAmount: 560000000,
-        importDate: '2026-03-18 15:45',
-        status: 'completed',
-        inspector: 'Lê Hoàng Long',
-      },
-      {
-        id: 'po_6',
-        code: 'PN000019',
-        supplierId: 'sup_5',
-        supplierName: 'Osmo Holz und Color (Đức)',
-        warehouseName: 'Kho Sơn & Dầu Lau Hoàn Thiện',
-        itemName: 'Dầu lau gỗ Polyx-Oil Clear Satin 3032',
-        quantity: '120 thùng',
-        totalAmount: 210000000,
-        importDate: '2026-04-12 13:20',
-        status: 'completed',
-        inspector: 'Phạm Văn Tuấn (KCS)',
-      },
-      {
-        id: 'po_7',
-        code: 'PN000015',
-        supplierId: 'sup_6',
-        supplierName: 'Hafele Premium Furniture Systems',
-        warehouseName: 'Kho Phụ Kiện & Vật Tư Kim Khí',
-        itemName: 'Bộ tay nâng đôi Free fold & ray âm giảm chấn',
-        quantity: '180 bộ',
-        totalAmount: 340000000,
-        importDate: '2026-05-02 09:10',
-        status: 'completed',
-        inspector: 'Nguyễn Đình Bảo',
-      },
-    ];
+    return [];
   }, []);
+
 
   // Filtered Suppliers Logic
   const filteredSuppliers = useMemo(() => {
@@ -295,17 +148,39 @@ export function SuppliersTab({
         (s.taxCode || '').toLowerCase().includes(q) ||
         (s.address || '').toLowerCase().includes(q);
 
+      const matchBranch = !s.branch || isMatchBranch(s.branch || s.address, selectedGlobalBranch);
       const matchStatus = statusFilter === 'all' || s.status === statusFilter;
 
       let matchDebt = true;
       if (debtFilter === 'has_debt') matchDebt = Number(s.currentDebt || 0) > 0;
       if (debtFilter === 'no_debt') matchDebt = Number(s.currentDebt || 0) <= 0;
 
-      return matchSearch && matchStatus && matchDebt;
+      return matchSearch && matchBranch && matchStatus && matchDebt;
     });
-  }, [suppliersList, searchQuery, statusFilter, debtFilter]);
+  }, [suppliersList, searchQuery, statusFilter, debtFilter, selectedGlobalBranch]);
 
-  // Handle Open Create Supplier Drawer
+  const selectedSupplierRecord = useMemo(() => {
+    if (selectedRowKeys.length === 1) {
+      return suppliersList.find((s) => s.id === selectedRowKeys[0]);
+    }
+    return null;
+  }, [selectedRowKeys, suppliersList]);
+
+  // Handle Refresh from API
+  const handleRefreshSuppliers = async () => {
+    try {
+      const refreshed = await supplierApi.getSuppliers();
+      setSuppliersList(refreshed);
+      setSearchQuery('');
+      setStatusFilter('all');
+      setDebtFilter('all');
+      message.success('Đã làm mới danh sách nhà cung cấp từ hệ thống!');
+    } catch (err: any) {
+      message.error(err?.message || 'Làm mới thất bại.');
+    }
+  };
+
+  // Open Create Supplier Drawer
   const handleOpenCreate = () => {
     if (onOpenCreateSupplier) {
       onOpenCreateSupplier();
@@ -313,43 +188,59 @@ export function SuppliersTab({
     }
     setEditingSupplier(null);
     form.resetFields();
-    const nextNum = (suppliersList.length + 1).toString().padStart(2, '0');
+    const autoCode = `NCC${(suppliersList.length + 1).toString().padStart(2, '0')}`;
     form.setFieldsValue({
-      code: `NCC-${nextNum}`,
-      name: '',
-      contactPerson: '',
-      phone: '',
-      email: '',
-      address: '',
-      taxCode: '',
-      bankName: '',
-      bankAccount: '',
-      company: '',
+      code: autoCode,
       status: 'active',
-      note: '',
+      bankName: 'Vietcombank',
+      branch: selectedGlobalBranch !== 'all' ? selectedGlobalBranch : undefined,
     });
     setDrawerOpen(true);
   };
 
-  // Handle Open Edit Supplier Drawer
-  const handleOpenEdit = (sup: AdminSupplier) => {
+  // Open Edit Supplier Drawer
+  const handleOpenEdit = (supplier: AdminSupplier) => {
     if (onOpenEditSupplier) {
-      onOpenEditSupplier(sup);
+      onOpenEditSupplier(supplier);
       return;
     }
-    setEditingSupplier(sup);
+    setEditingSupplier(supplier);
     form.resetFields();
     form.setFieldsValue({
-      code: sup.code,
-      name: sup.name,
+      code: supplier.code,
+      name: supplier.name,
+      taxCode: supplier.taxCode || '',
+      contactPerson: supplier.contactPerson,
+      phone: supplier.phone,
+      email: supplier.email,
+      address: supplier.address,
+      branch: supplier.branch || (selectedGlobalBranch !== 'all' ? selectedGlobalBranch : undefined),
+      company: supplier.company || supplier.name,
+      bankName: supplier.bankName || '',
+      bankAccount: supplier.bankAccount || '',
+      status: supplier.status || 'active',
+      note: supplier.note || '',
+    });
+    setDrawerOpen(true);
+  };
+
+  // Handle Copy Supplier
+  const handleCopySupplier = (sup: AdminSupplier) => {
+    setEditingSupplier(null);
+    form.resetFields();
+    const autoCode = `NCC${(suppliersList.length + 1).toString().padStart(2, '0')}`;
+    form.setFieldsValue({
+      code: autoCode,
+      name: `${sup.name} (Bản sao)`,
+      taxCode: sup.taxCode || '',
       contactPerson: sup.contactPerson,
       phone: sup.phone,
       email: sup.email,
       address: sup.address,
-      taxCode: sup.taxCode || '',
+      branch: sup.branch || (selectedGlobalBranch !== 'all' ? selectedGlobalBranch : undefined),
+      company: sup.company || sup.name,
       bankName: sup.bankName || '',
       bankAccount: sup.bankAccount || '',
-      company: sup.company || sup.name,
       status: sup.status || 'active',
       note: sup.note || '',
     });
@@ -357,110 +248,121 @@ export function SuppliersTab({
   };
 
   // Handle Save Supplier (Create or Update)
-  const handleSaveSupplier = (values: any) => {
+  const handleSaveSupplier = async (values: any) => {
     const trimmedCode = (values.code || '').trim().toUpperCase();
     const trimmedName = (values.name || '').trim();
 
+    if (!trimmedName) {
+      message.error('Vui lòng nhập tên nhà cung cấp!');
+      return;
+    }
+
     if (editingSupplier) {
-      const updatedList = suppliersList.map((s) =>
-        s.id === editingSupplier.id
-          ? {
-              ...s,
-              code: trimmedCode,
-              name: trimmedName,
-              contactPerson: values.contactPerson || '',
-              phone: values.phone || '',
-              email: values.email || '',
-              address: values.address || '',
-              taxCode: values.taxCode || '',
-              bankName: values.bankName || '',
-              bankAccount: values.bankAccount || '',
-              company: values.company || trimmedName,
-              status: values.status || 'active',
-              note: values.note || '',
-            }
-          : s
-      );
-      setSuppliersList(updatedList);
-      if (selectedSupplier?.id === editingSupplier.id) {
-        setSelectedSupplier({
-          ...selectedSupplier,
-          code: trimmedCode,
-          name: trimmedName,
-          contactPerson: values.contactPerson || '',
-          phone: values.phone || '',
-          email: values.email || '',
-          address: values.address || '',
-          taxCode: values.taxCode || '',
-          bankName: values.bankName || '',
-          bankAccount: values.bankAccount || '',
-          company: values.company || trimmedName,
-          status: values.status || 'active',
-          note: values.note || '',
-        });
-      }
-      message.success(`Đã cập nhật thông tin nhà cung cấp "${trimmedName}" thành công!`);
-    } else {
-      const newSup: AdminSupplier = {
-        id: `sup_${Date.now()}`,
-        code: trimmedCode || `NCC-${(suppliersList.length + 1).toString().padStart(2, '0')}`,
+      const payload: Partial<AdminSupplier> = {
+        code: trimmedCode || editingSupplier.code,
         name: trimmedName,
         contactPerson: values.contactPerson || '',
         phone: values.phone || '',
         email: values.email || '',
         address: values.address || '',
-        totalPurchased: 0,
-        currentDebt: 0,
-        totalCollected: 0,
-        status: values.status || 'active',
+        branch: values.branch || editingSupplier.branch || (selectedGlobalBranch !== 'all' ? selectedGlobalBranch : undefined),
         taxCode: values.taxCode || '',
         bankName: values.bankName || '',
         bankAccount: values.bankAccount || '',
         company: values.company || trimmedName,
-        createdAt: dayjs().format('YYYY-MM-DD HH:mm'),
-        createdBy: 'Nguyễn Văn Luân',
+        status: values.status || 'active',
         note: values.note || '',
       };
-      setSuppliersList([newSup, ...suppliersList]);
-      message.success(`Đã thêm nhà cung cấp "${newSup.name}" thành công!`);
+      try {
+        const updated = await supplierApi.updateSupplier(editingSupplier.id, payload);
+        const updatedList = suppliersList.map((s) =>
+          s.id === editingSupplier.id ? { ...s, ...updated } : s
+        );
+        setSuppliersList(updatedList);
+        message.success(`Đã cập nhật thông tin nhà cung cấp "${trimmedName}" thành công!`);
+        setDrawerOpen(false);
+      } catch (err: any) {
+        message.error(err?.message || 'Cập nhật nhà cung cấp thất bại.');
+      }
+    } else {
+      const payload: Partial<AdminSupplier> = {
+        code: trimmedCode || undefined,
+        name: trimmedName,
+        contactPerson: values.contactPerson || '',
+        phone: values.phone || '',
+        email: values.email || '',
+        address: values.address || '',
+        branch: values.branch || (selectedGlobalBranch !== 'all' ? selectedGlobalBranch : undefined),
+        taxCode: values.taxCode || '',
+        bankName: values.bankName || '',
+        bankAccount: values.bankAccount || '',
+        company: values.company || trimmedName,
+        status: values.status || 'active',
+        note: values.note || '',
+        totalPurchased: 0,
+        currentDebt: 0,
+        totalCollected: 0,
+        createdBy: 'Quản trị viên',
+      };
+      try {
+        const created = await supplierApi.createSupplier(payload);
+        setSuppliersList([created, ...suppliersList]);
+        message.success(`Đã thêm nhà cung cấp "${created.name}" thành công!`);
+        setDrawerOpen(false);
+      } catch (err: any) {
+        message.error(err?.message || 'Thêm mới nhà cung cấp thất bại.');
+      }
     }
-    setDrawerOpen(false);
   };
 
   // Handle Delete Supplier
-  const handleDeleteSupplier = (id: string, name: string) => {
-    setSuppliersList(suppliersList.filter((s) => s.id !== id));
-    if (selectedSupplier?.id === id) {
-      setDetailDrawerOpen(false);
+  const handleDeleteSupplier = async (id: string, name: string) => {
+    try {
+      await supplierApi.deleteSupplier(id);
+      setSuppliersList((prev) => prev.filter((s) => s.id !== id));
+      setSelectedRowKeys((prev) => prev.filter((k) => k !== id));
+      if (expandedSupplierId === id) {
+        setExpandedSupplierId(null);
+      }
+      message.success(`Đã xóa nhà cung cấp "${name}" thành công!`);
+    } catch (err: any) {
+      message.error(err?.message || 'Xóa nhà cung cấp thất bại.');
     }
-    message.success(`Đã xóa nhà cung cấp "${name}" thành công!`);
+  };
+
+  // Handle Bulk Delete Selected Suppliers
+  const handleBulkDelete = async () => {
+    if (!selectedRowKeys.length) return;
+    const keysToDelete = [...selectedRowKeys];
+    try {
+      const count = await supplierApi.bulkDeleteSuppliers(keysToDelete as string[]);
+      setSuppliersList((prev) => prev.filter((s) => !keysToDelete.includes(s.id)));
+      setSelectedRowKeys([]);
+      if (expandedSupplierId && keysToDelete.includes(expandedSupplierId)) {
+        setExpandedSupplierId(null);
+      }
+      message.success(`Đã xóa thành công ${count} nhà cung cấp đã chọn!`);
+    } catch (err: any) {
+      message.error(err?.message || 'Xóa nhà cung cấp thất bại.');
+    }
   };
 
   // Handle Change Supplier Status
-  const handleChangeStatus = (id: string, newStatus: 'active' | 'inactive') => {
+  const handleChangeStatus = async (id: string, newStatus: 'active' | 'inactive') => {
     const target = suppliersList.find((s) => s.id === id);
-    setSuppliersList(
-      suppliersList.map((s) => (s.id === id ? { ...s, status: newStatus } : s))
-    );
-    if (selectedSupplier?.id === id) {
-      setSelectedSupplier({ ...selectedSupplier, status: newStatus });
+    try {
+      await supplierApi.updateSupplier(id, { status: newStatus });
+      setSuppliersList(
+        suppliersList.map((s) => (s.id === id ? { ...s, status: newStatus } : s))
+      );
+      message.success(
+        `Đã chuyển trạng thái nhà cung cấp "${target?.name || ''}" thành ${
+          newStatus === 'active' ? 'Đang hợp tác' : 'Tạm dừng'
+        }`
+      );
+    } catch (err: any) {
+      message.error(err?.message || 'Cập nhật trạng thái thất bại.');
     }
-    message.success(
-      `Đã chuyển trạng thái nhà cung cấp "${target?.name || ''}" thành ${
-        newStatus === 'active' ? 'Đang hợp tác' : 'Tạm dừng'
-      }`
-    );
-  };
-
-  // Handle Open Detail Drawer
-  const handleOpenDetail = (supplier: AdminSupplier) => {
-    if (onSelectSupplierDetail) {
-      onSelectSupplierDetail(supplier);
-      return;
-    }
-    setSelectedSupplier(supplier);
-    setDetailTab('info');
-    setDetailDrawerOpen(true);
   };
 
   // Handle Open Quick Payment Drawer
@@ -486,54 +388,48 @@ export function SuppliersTab({
       code: `PC-${dayjs().format('YYYYMMDD')}-${Math.floor(1000 + Math.random() * 9000)}`,
       supplierId: payingSupplier.id,
       amount: paymentAmount,
-      method: paymentMethod === 'transfer' ? 'Chuyển khoản' : paymentMethod === 'cash' ? 'Tiền mặt' : 'Cấn trừ công nợ',
+      method: paymentMethod === 'transfer' ? 'Chuyển khoản VietQR' : paymentMethod === 'cash' ? 'Tiền mặt' : 'Cấn trừ',
       date: paymentDate,
-      note: paymentNote,
+      note: paymentNote || `Thanh toán công nợ nhà cung cấp ${payingSupplier.name}`,
       creator: 'Nguyễn Văn Luân',
     };
 
     setPaymentHistory([newPaymentSlip, ...paymentHistory]);
 
-    // Update supplier debt & collected amount
-    const updatedDebt = Math.max(0, Number(payingSupplier.currentDebt || 0) - paymentAmount);
-    const updatedCollected = Number(payingSupplier.totalCollected || 0) + paymentAmount;
+    // Giảm công nợ nhà cung cấp
+    const updatedSuppliers = suppliersList.map((s) => {
+      if (s.id === payingSupplier.id) {
+        const oldDebt = Number(s.currentDebt || 0);
+        const oldPaid = Number(s.totalCollected || 0);
+        const newDebt = Math.max(0, oldDebt - paymentAmount);
+        const newPaid = oldPaid + paymentAmount;
+        return { ...s, currentDebt: newDebt, totalCollected: newPaid };
+      }
+      return s;
+    });
 
-    setSuppliersList((prev) =>
-      prev.map((s) =>
-        s.id === payingSupplier.id
-          ? { ...s, currentDebt: updatedDebt, totalCollected: updatedCollected }
-          : s
-      )
-    );
-
-    if (selectedSupplier?.id === payingSupplier.id) {
-      setSelectedSupplier((prev) =>
-        prev
-          ? { ...prev, currentDebt: updatedDebt, totalCollected: updatedCollected }
-          : null
-      );
-    }
-
+    setSuppliersList(updatedSuppliers);
     message.success(
-      `Đã ghi nhận thanh toán ${(paymentAmount || 0).toLocaleString('vi-VN')} đ cho "${payingSupplier.name}"!`
+      `Đã lập phiếu chi ${paymentAmount.toLocaleString('vi-VN')} đ cho nhà cung cấp "${payingSupplier.name}" thành công!`
     );
     setPaymentDrawerOpen(false);
   };
 
-  // Export to Excel
+  // Handle Excel Export
   const handleExportExcel = () => {
-    const data = filteredSuppliers.map((s) => ({
-      'Mã NCC': s.code,
+    const data = filteredSuppliers.map((s, idx) => ({
+      STT: idx + 1,
+      'Mã nhà cung cấp': s.code,
       'Tên nhà cung cấp': s.name,
-      'Mã số thuế': s.taxCode || '',
-      'Người liên hệ': s.contactPerson,
-      'Điện thoại': s.phone,
-      'Email': s.email,
-      'Địa chỉ': s.address,
-      'Ngân hàng': s.bankName || '',
+      'Mã số thuế (MST)': s.taxCode || '',
+      'Người đại diện': s.contactPerson || '',
+      'Số điện thoại': s.phone || '',
+      Email: s.email || '',
+      'Địa chỉ trụ sở / Kho': s.address || '',
+      'Tên ngân hàng': s.bankName || '',
       'Số tài khoản': s.bankAccount || '',
-      'Tổng mua hàng (VNĐ)': s.totalPurchased || 0,
-      'Nợ cần trả hiện tại (VNĐ)': s.currentDebt || 0,
+      'Tổng tiền mua (VNĐ)': s.totalPurchased || 0,
+      'Công nợ còn lại (VNĐ)': s.currentDebt || 0,
       'Đã thanh toán (VNĐ)': s.totalCollected || 0,
       'Trạng thái': s.status === 'active' ? 'Đang hợp tác' : 'Tạm dừng',
       'Ghi chú': s.note || '',
@@ -542,60 +438,51 @@ export function SuppliersTab({
     message.success('Đã xuất danh sách nhà cung cấp ra file Excel thành công!');
   };
 
+  // Handle Excel Import
+  const handleImportExcel = async (file: File) => {
+    const hideLoading = message.loading(`Đang đọc và nhập file ${file.name}...`, 0);
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const rawRows: any[] = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+
+      if (!rawRows || rawRows.length === 0) {
+        hideLoading();
+        message.error('File Excel không có dữ liệu nhà cung cấp.');
+        return false;
+      }
+
+      const importedSuppliers: Partial<AdminSupplier>[] = rawRows.map((r) => ({
+        code: String(r['Mã NCC'] || r['Mã nhà cung cấp'] || r['Mã đối tác'] || r['code'] || '').trim(),
+        name: String(r['Tên nhà cung cấp'] || r['Tên NCC'] || r['Tên'] || r['name'] || '').trim(),
+        taxCode: String(r['Mã số thuế'] || r['MST'] || r['taxCode'] || '').trim(),
+        contactPerson: String(r['Người liên hệ'] || r['Đại diện'] || r['contactPerson'] || '').trim(),
+        phone: String(r['Điện thoại'] || r['SĐT'] || r['Số điện thoại'] || r['phone'] || '').trim(),
+        email: String(r['Email'] || r['email'] || '').trim(),
+        address: String(r['Địa chỉ'] || r['address'] || '').trim(),
+        company: String(r['Công ty'] || r['Tên công ty'] || r['company'] || '').trim(),
+        bankName: String(r['Ngân hàng'] || r['bankName'] || '').trim(),
+        bankAccount: String(r['Số tài khoản'] || r['STK'] || r['bankAccount'] || '').trim(),
+        note: String(r['Ghi chú'] || r['note'] || '').trim(),
+        status: 'active' as const,
+      })).filter((s) => Boolean(s.name));
+
+      const res = await supplierApi.bulkImportSuppliers(importedSuppliers);
+      hideLoading();
+      message.success(`Đã xử lý nhập: Thêm mới ${res.added}, Cập nhật ${res.updated} nhà cung cấp!`);
+      const refreshed = await supplierApi.getSuppliers();
+      setSuppliersList(refreshed);
+    } catch (err: any) {
+      hideLoading();
+      message.error(err?.message || 'Có lỗi xảy ra khi nhập file Excel nhà cung cấp.');
+    }
+    return false;
+  };
+
   return (
     <div className="space-y-4 flex-1 flex flex-col h-full">
-      {/* 1. TOP ACTION TOOLBAR */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-none shadow-xs border border-slate-200/80">
-        <div className="flex flex-1 items-center gap-2.5 min-w-[280px] max-w-xl">
-          <AdminSearchInput
-            placeholder="Tìm theo tên nhà cung cấp, mã NCC, SĐT, MST, người đại diện..."
-            value={searchQuery}
-            onChange={(val) => setSearchQuery(val)}
-          />
-        </div>
-
-        <div className="flex items-center gap-2 flex-wrap">
-          <Button
-            icon={<ReloadOutlined />}
-            onClick={() => {
-              setSearchQuery('');
-              setStatusFilter('all');
-              setDebtFilter('all');
-              message.success('Đã làm mới danh sách nhà cung cấp!');
-            }}
-            className="h-10 rounded-none text-sm font-normal text-slate-700 hover:text-[#784e34]"
-          >
-            Làm mới
-          </Button>
-
-          <Button
-            icon={<DownloadOutlined />}
-            onClick={handleExportExcel}
-            className="h-10 rounded-none text-sm font-normal text-slate-700 hover:text-[#784e34]"
-          >
-            Xuất Excel
-          </Button>
-
-          <Button
-            icon={<UploadOutlined />}
-            onClick={() => setImportModalOpen(true)}
-            className="h-10 rounded-none text-sm font-normal text-slate-700 hover:text-[#784e34]"
-          >
-            Nhập Excel
-          </Button>
-
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={handleOpenCreate}
-            className="h-10 rounded-none bg-[#784e34] hover:!bg-[#5d371f] px-4 text-sm font-medium text-white shadow-none border-none flex items-center"
-          >
-            Thêm nhà cung cấp
-          </Button>
-        </div>
-      </div>
-
-      {/* 2. MAIN 2-COLUMN LAYOUT: FILTER SIDEBAR + DATA TABLE */}
+      {/* 2-COLUMN LAYOUT: FILTER SIDEBAR + DATA TABLE */}
       <div className="flex flex-col lg:flex-row gap-4 items-start flex-1">
         {/* Left Filter Sidebar */}
         <AdminFilterSidebar
@@ -652,22 +539,22 @@ export function SuppliersTab({
             </div>
           </div>
 
-          {/* Lọc theo công nợ */}
-          <div className="pt-2 border-t border-slate-100">
-            <div className="mb-2 text-xs font-semibold text-slate-600 uppercase tracking-wider">
-              Công nợ phải trả
+          {/* Tình trạng công nợ */}
+          <div>
+            <div className="mb-2 text-xs font-medium text-slate-700 uppercase tracking-wide">
+              Tình trạng công nợ
             </div>
             <div className="space-y-1">
               {[
-                { value: 'all', label: 'Tất cả nhà cung cấp' },
+                { value: 'all', label: 'Tất cả đối tác' },
                 {
                   value: 'has_debt',
-                  label: '🔴 Đang có nợ cần trả',
+                  label: '🔴 Còn nợ cần trả',
                   count: suppliersList.filter((s) => Number(s.currentDebt || 0) > 0).length,
                 },
                 {
                   value: 'no_debt',
-                  label: '🟢 Đã thanh toán hết (0đ)',
+                  label: '🟢 Đã thanh toán hết',
                   count: suppliersList.filter((s) => Number(s.currentDebt || 0) <= 0).length,
                 },
               ].map((opt) => {
@@ -727,16 +614,95 @@ export function SuppliersTab({
           />
         </AdminFilterSidebar>
 
-        {/* Right Suppliers Data Table */}
+        {/* Right Suppliers Data Table with Accordion Detail Expansion */}
         <div className="flex-1 w-full min-w-0">
           <AdminDataTable
-            titleText="Danh Sách Nhà Cung Cấp &amp; Đối Tác Vật Tư Gỗ Mộc"
-            titleIcon={<span className="w-2.5 h-2.5 rounded-full bg-[#784e34] inline-block" />}
-            countTag={`${filteredSuppliers.length} nhà cung cấp`}
+            enableSelectionToolbar
+            selectedRowKeys={selectedRowKeys}
+            onSelectionChange={(keys) => setSelectedRowKeys(keys)}
+            titleText="Nhà cung cấp & Đối tác vật tư"
+            totalCount={filteredSuppliers.length}
+            countUnit="nhà cung cấp"
+            onCopySelected={() => selectedSupplierRecord && handleCopySupplier(selectedSupplierRecord)}
+            onEditSelected={() => selectedSupplierRecord && handleOpenEdit(selectedSupplierRecord)}
+            onDeleteSelected={handleBulkDelete}
+            deleteConfirmTitle={`Xóa ${selectedRowKeys.length} nhà cung cấp đã chọn?`}
+            onCreateNew={handleOpenCreate}
+            createButtonText="Tạo mới"
+            searchValue={searchQuery}
+            onSearchChange={(val) => setSearchQuery(val)}
+            searchPlaceholder="Theo mã, tên nhà cung cấp, SĐT, MST, người liên hệ..."
+            extraHeaderActions={
+              <>
+                <Button
+                  icon={<ReloadOutlined />}
+                  onClick={handleRefreshSuppliers}
+                  className="!h-8 px-2.5 rounded-lg border-slate-300 bg-white text-slate-700 text-xs shadow-xs inline-flex items-center justify-center hover:text-[#784e34]"
+                  title="Làm mới"
+                >
+                  Làm mới
+                </Button>
+                <Upload
+                  accept=".xlsx,.xls"
+                  showUploadList={false}
+                  beforeUpload={handleImportExcel}
+                >
+                  <Button
+                    icon={<UploadOutlined />}
+                    className="!h-8 px-2.5 rounded-lg border-emerald-600/30 bg-emerald-50 text-emerald-700 text-xs shadow-xs inline-flex items-center justify-center hover:!bg-emerald-100 hover:!border-emerald-600 hover:!text-emerald-800"
+                    title="Nhập dữ liệu nhà cung cấp từ Excel"
+                  >
+                    Nhập Excel
+                  </Button>
+                </Upload>
+                <Button
+                  icon={<DownloadOutlined />}
+                  onClick={handleExportExcel}
+                  className="!h-8 px-2.5 rounded-lg border-slate-300 bg-white text-slate-700 text-xs shadow-xs inline-flex items-center justify-center hover:text-[#784e34]"
+                  title="Xuất Excel"
+                >
+                  Xuất Excel
+                </Button>
+              </>
+            }
             dataSource={filteredSuppliers}
             rowKey="id"
             pagination={{ pageSize: 10 }}
+            onRow={(record) => ({
+              onClick: () => {
+                setExpandedSupplierId((prev) => (prev === record.id ? null : record.id));
+              },
+              className: 'cursor-pointer hover:bg-[#fbf2ee]/40 transition-colors',
+            })}
+            expandable={{
+              expandedRowKeys: expandedSupplierId ? [expandedSupplierId] : [],
+              onExpand: (expanded, record) => {
+                setExpandedSupplierId(expanded ? record.id : null);
+              },
+              expandedRowRender: (supplier: AdminSupplier) => (
+                <SupplierExpandedDetailRow
+                  supplier={supplier}
+                  purchaseHistory={purchaseHistory}
+                  paymentHistory={paymentHistory}
+                  onEdit={() => handleOpenEdit(supplier)}
+                  onCopy={() => handleCopySupplier(supplier)}
+                  onDelete={() => handleDeleteSupplier(supplier.id, supplier.name)}
+                  onOpenPayment={() => handleOpenPayment(supplier)}
+                  onChangeStatus={(status) => handleChangeStatus(supplier.id, status)}
+                />
+              ),
+              showExpandColumn: false,
+            }}
             columns={[
+              {
+                title: 'STT',
+                key: 'stt',
+                width: 55,
+                align: 'center',
+                render: (_, __, index) => (
+                  <span className="font-mono text-xs text-slate-500 font-semibold">{index + 1}</span>
+                ),
+              },
               {
                 title: 'Mã NCC',
                 dataIndex: 'code',
@@ -745,8 +711,11 @@ export function SuppliersTab({
                 render: (code, record) => (
                   <button
                     type="button"
-                    onClick={() => handleOpenDetail(record)}
-                    className="font-mono text-xs text-[#784e34] bg-[#784e34]/10 hover:bg-[#784e34]/20 px-2.5 py-1 rounded font-semibold whitespace-nowrap border-none cursor-pointer text-left"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setExpandedSupplierId((prev) => (prev === record.id ? null : record.id));
+                    }}
+                    className="font-mono text-xs text-[#784e34] bg-[#784e34]/10 hover:bg-[#784e34]/20 px-2.5 py-1 rounded font-semibold whitespace-nowrap border-none cursor-pointer text-left inline-block"
                     title="Bấm để xem chi tiết nhà cung cấp"
                   >
                     {code}
@@ -755,23 +724,25 @@ export function SuppliersTab({
               },
               {
                 title: 'Tên nhà cung cấp / Doanh nghiệp',
+                dataIndex: 'name',
                 key: 'name',
-                render: (_, s) => (
-                  <div>
-                    <button
-                      type="button"
-                      onClick={() => handleOpenDetail(s)}
-                      className="font-semibold text-sm text-slate-900 hover:text-[#784e34] flex items-center gap-1.5 border-none bg-transparent p-0 cursor-pointer text-left"
+                render: (name, record) => (
+                  <div className="min-w-0">
+                    <div
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setExpandedSupplierId((prev) => (prev === record.id ? null : record.id));
+                      }}
+                      className="font-semibold text-sm text-slate-900 hover:text-[#784e34] cursor-pointer line-clamp-1 transition-colors"
                     >
-                      <ShopOutlined className="text-[#784e34]" />
-                      <span>{s.name}</span>
-                    </button>
-                    <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-500">
-                      {s.taxCode && <span className="font-mono">MST: {s.taxCode}</span>}
-                      {s.taxCode && <span>•</span>}
-                      <span className="truncate max-w-[260px]" title={s.address}>
-                        {s.address}
-                      </span>
+                      {name}
+                    </div>
+                    {record.company && record.company !== name && (
+                      <div className="text-xs text-slate-500 line-clamp-1">{record.company}</div>
+                    )}
+                    <div className="text-xs text-slate-400 line-clamp-1 mt-0.5 flex items-center gap-1">
+                      <EnvironmentOutlined className="text-[11px]" />
+                      <span>{record.address || 'Chưa cập nhật địa chỉ'}</span>
                     </div>
                   </div>
                 ),
@@ -784,11 +755,11 @@ export function SuppliersTab({
                   <div>
                     <div className="text-sm font-medium text-slate-800 flex items-center gap-1">
                       <UserOutlined className="text-slate-400 text-xs" />
-                      <span>{s.contactPerson}</span>
+                      <span>{s.contactPerson || '---'}</span>
                     </div>
-                    <div className="font-mono text-sm text-slate-600 mt-0.5">{s.phone}</div>
+                    <div className="font-mono text-xs text-slate-600 mt-0.5">{s.phone || '---'}</div>
                     <div className="text-xs text-slate-400 truncate max-w-[170px]" title={s.email}>
-                      {s.email}
+                      {s.email || ''}
                     </div>
                   </div>
                 ),
@@ -797,11 +768,11 @@ export function SuppliersTab({
                 title: 'Tổng mua hàng',
                 dataIndex: 'totalPurchased',
                 key: 'totalPurchased',
-                width: 150,
+                width: 145,
                 align: 'right',
                 render: (val) => (
                   <span className="font-mono font-semibold text-sm text-slate-900">
-                    {(val || 0).toLocaleString('vi-VN')} đ
+                    {(Number(val) || 0).toLocaleString('vi-VN')} đ
                   </span>
                 ),
               },
@@ -809,7 +780,7 @@ export function SuppliersTab({
                 title: 'Nợ cần trả hiện tại',
                 dataIndex: 'currentDebt',
                 key: 'currentDebt',
-                width: 160,
+                width: 155,
                 align: 'right',
                 render: (debt) => {
                   const num = Number(debt || 0);
@@ -828,12 +799,12 @@ export function SuppliersTab({
                 title: 'Đã thanh toán',
                 dataIndex: 'totalCollected',
                 key: 'totalCollected',
-                width: 150,
+                width: 145,
                 align: 'right',
                 render: (val, r) => {
                   const paid = val !== undefined ? Number(val) : Math.max(0, Number(r.totalPurchased || 0) - Number(r.currentDebt || 0));
                   return (
-                    <span className="font-mono text-sm text-emerald-700">
+                    <span className="font-mono text-sm text-emerald-700 font-semibold">
                       {paid.toLocaleString('vi-VN')} đ
                     </span>
                   );
@@ -846,40 +817,46 @@ export function SuppliersTab({
                 width: 130,
                 align: 'center',
                 render: (status: 'active' | 'inactive', s) => (
-                  <Tag
-                    color={status === 'active' ? 'emerald' : 'default'}
-                    className="cursor-pointer text-xs font-semibold px-2.5 py-0.5 rounded-full select-none"
-                    onClick={() => handleChangeStatus(s.id, status === 'active' ? 'inactive' : 'active')}
-                    title="Bấm để đổi trạng thái hợp tác"
+                  <span
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleChangeStatus(s.id, status === 'active' ? 'inactive' : 'active');
+                    }}
+                    className="cursor-pointer inline-block"
+                    title="Nhấn để đổi trạng thái"
                   >
-                    {status === 'active' ? '● Đang hợp tác' : '○ Tạm dừng'}
-                  </Tag>
+                    <AdminStatusBadge
+                      status={status === 'active' ? 'active' : 'inactive'}
+                      label={status === 'active' ? 'Đang hợp tác' : 'Tạm dừng'}
+                      dot
+                    />
+                  </span>
                 ),
               },
               {
                 title: 'Thao tác',
                 key: 'actions',
-                width: 130,
+                width: 125,
                 align: 'center',
                 render: (_, s) => (
                   <Space size={2} onClick={(e) => e.stopPropagation()}>
-                    <Tooltip title="Xem chi tiết & lịch sử">
-                      <Button
-                        size="small"
-                        type="text"
-                        icon={<EyeOutlined className="text-slate-600 hover:text-[#784e34]" />}
-                        onClick={() => handleOpenDetail(s)}
-                        className="w-8 h-8 flex items-center justify-center rounded hover:bg-slate-100"
-                      />
-                    </Tooltip>
-
                     <Tooltip title="Chỉnh sửa thông tin">
                       <Button
                         size="small"
                         type="text"
-                        icon={<EditOutlined className="text-slate-600 hover:text-[#784e34]" />}
+                        icon={<EditOutlined className="text-sm text-slate-600 hover:text-[#784e34]" />}
                         onClick={() => handleOpenEdit(s)}
-                        className="w-8 h-8 flex items-center justify-center rounded hover:bg-slate-100"
+                        className="text-slate-600 hover:text-[#784e34] hover:bg-slate-100"
+                      />
+                    </Tooltip>
+
+                    <Tooltip title="Sao chép NCC">
+                      <Button
+                        size="small"
+                        type="text"
+                        icon={<CopyOutlined className="text-sm text-slate-600 hover:text-[#784e34]" />}
+                        onClick={() => handleCopySupplier(s)}
+                        className="text-slate-600 hover:text-[#784e34] hover:bg-slate-100"
                       />
                     </Tooltip>
 
@@ -887,9 +864,9 @@ export function SuppliersTab({
                       <Button
                         size="small"
                         type="text"
-                        icon={<WalletOutlined className="text-emerald-600 hover:text-emerald-700" />}
+                        icon={<WalletOutlined className="text-sm text-emerald-600 hover:text-emerald-700" />}
                         onClick={() => handleOpenPayment(s)}
-                        className="w-8 h-8 flex items-center justify-center rounded hover:bg-emerald-50"
+                        className="hover:bg-emerald-50"
                       />
                     </Tooltip>
 
@@ -906,8 +883,8 @@ export function SuppliersTab({
                           size="small"
                           type="text"
                           danger
-                          icon={<DeleteOutlined className="text-rose-500 hover:text-rose-700" />}
-                          className="w-8 h-8 flex items-center justify-center rounded hover:bg-rose-50"
+                          icon={<DeleteOutlined className="text-sm text-slate-400 hover:text-rose-600" />}
+                          className="hover:bg-rose-50"
                         />
                       </Tooltip>
                     </Popconfirm>
@@ -919,325 +896,26 @@ export function SuppliersTab({
         </div>
       </div>
 
-      {/* 3. DRAWER CHI TIẾT NHÀ CUNG CẤP (DETAIL DRAWER - 3 TABS DOMACO POS) */}
-      <Drawer
-        title={
-          selectedSupplier ? (
-            <div className="flex items-center justify-between w-full pr-6">
-              <div className="flex items-center gap-3">
-                <span className="font-bold text-base text-slate-900">{selectedSupplier.name}</span>
-                <span className="font-mono text-xs font-bold text-[#784e34] bg-[#784e34]/10 px-2 py-0.5 rounded">
-                  {selectedSupplier.code}
-                </span>
-                <Tag color={selectedSupplier.status === 'active' ? 'emerald' : 'default'} className="font-semibold text-xs">
-                  {selectedSupplier.status === 'active' ? 'Đang hợp tác' : 'Tạm dừng'}
-                </Tag>
-              </div>
-              <Button
-                icon={<EditOutlined />}
-                onClick={() => {
-                  setDetailDrawerOpen(false);
-                  handleOpenEdit(selectedSupplier);
-                }}
-                className="text-xs font-semibold rounded-lg"
-              >
-                Chỉnh sửa
-              </Button>
-            </div>
-          ) : (
-            'Chi tiết nhà cung cấp'
-          )
-        }
-        open={detailDrawerOpen}
-        onClose={() => setDetailDrawerOpen(false)}
-        styles={{ wrapper: { width: 880, maxWidth: '100vw' } }}
-        destroyOnHidden
-      >
-        {selectedSupplier && (
-          <div className="space-y-5">
-            {/* Tabs Header */}
-            <Segmented
-              value={detailTab}
-              onChange={(val: any) => setDetailTab(val)}
-              options={[
-                { value: 'info', label: <span className="px-3 py-1 font-semibold text-xs sm:text-sm">🏢 Thông tin đối tác</span> },
-                { value: 'orders', label: <span className="px-3 py-1 font-semibold text-xs sm:text-sm">📦 Lịch sử nhập/trả hàng</span> },
-                { value: 'debt', label: <span className="px-3 py-1 font-semibold text-xs sm:text-sm">💳 Công nợ &amp; Thanh toán</span> },
-              ]}
-              className="w-full bg-slate-100 p-1 rounded-lg"
-              block
-            />
-
-            {/* TAB 1: THÔNG TIN CHI TIẾT */}
-            {detailTab === 'info' && (
-              <div className="space-y-4">
-                {/* Thông tin liên hệ & Pháp nhân */}
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200/80 space-y-3">
-                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-200 pb-2 m-0">
-                    <ShopOutlined className="text-[#784e34]" /> Thông tin doanh nghiệp &amp; Liên hệ
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <span className="text-slate-500 block">Tên nhà cung cấp / Công ty:</span>
-                      <strong className="text-slate-900 text-sm">{selectedSupplier.name}</strong>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 block">Mã số thuế / Tax ID:</span>
-                      <strong className="font-mono text-slate-900">{selectedSupplier.taxCode || '---'}</strong>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 block">Người đại diện liên hệ:</span>
-                      <span className="font-medium text-slate-900">{selectedSupplier.contactPerson || '---'}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 block">Số điện thoại:</span>
-                      <span className="font-mono font-medium text-slate-900">{selectedSupplier.phone || '---'}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 block">Email giao dịch:</span>
-                      <span className="text-slate-900">{selectedSupplier.email || '---'}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 block">Ngày bắt đầu hợp tác:</span>
-                      <span className="font-mono text-slate-700">{selectedSupplier.createdAt || '2026-01-15'}</span>
-                    </div>
-                    <div className="sm:col-span-2">
-                      <span className="text-slate-500 block">Địa chỉ trụ sở / Kho bãi:</span>
-                      <span className="text-slate-900">{selectedSupplier.address || '---'}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Tài khoản ngân hàng thụ hưởng */}
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200/80 space-y-3">
-                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-200 pb-2 m-0">
-                    <BankOutlined className="text-emerald-600" /> Tài khoản ngân hàng thụ hưởng
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <span className="text-slate-500 block">Tên ngân hàng:</span>
-                      <strong className="text-slate-900">{selectedSupplier.bankName || 'Chưa cập nhật'}</strong>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 block">Số tài khoản:</span>
-                      <strong className="font-mono text-slate-900 text-sm">{selectedSupplier.bankAccount || 'Chưa cập nhật'}</strong>
-                    </div>
-                    <div className="sm:col-span-2">
-                      <span className="text-slate-500 block">Chủ tài khoản thụ hưởng:</span>
-                      <span className="font-medium text-slate-900">{selectedSupplier.company || selectedSupplier.name}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Ghi chú & Đánh giá chất lượng hàng */}
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200/80 space-y-2 text-xs">
-                  <span className="text-slate-500 block font-semibold">Ghi chú đối tác &amp; Danh mục vật tư chính:</span>
-                  <div className="text-slate-800 bg-white p-3 rounded-lg border border-slate-200 italic">
-                    {selectedSupplier.note || 'Chưa có ghi chú đặc biệt cho đối tác này.'}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* TAB 2: LỊCH SỬ NHẬP & TRẢ HÀNG */}
-            {detailTab === 'orders' && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-800 uppercase tracking-wide">
-                    Chứng từ nhập hàng &amp; Trả hàng
-                  </span>
-                  <span className="text-xs text-slate-500">
-                    Tổng cộng:{' '}
-                    <strong>
-                      {purchaseHistory.filter((p) => p.supplierId === selectedSupplier.id).length} phiếu
-                    </strong>
-                  </span>
-                </div>
-
-                <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 font-semibold">
-                      <tr>
-                        <th className="py-2.5 px-3">Mã phiếu</th>
-                        <th className="py-2.5 px-3">Kho tiếp nhận</th>
-                        <th className="py-2.5 px-3">Hàng hóa / Vật tư</th>
-                        <th className="py-2.5 px-3 text-right">Tổng giá trị</th>
-                        <th className="py-2.5 px-3">Thời gian</th>
-                        <th className="py-2.5 px-3 text-center">Trạng thái</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {purchaseHistory
-                        .filter((p) => p.supplierId === selectedSupplier.id)
-                        .map((po) => (
-                          <tr key={po.id} className="hover:bg-slate-50/80 transition-colors">
-                            <td className="py-2.5 px-3 font-mono font-bold text-[#784e34]">{po.code}</td>
-                            <td className="py-2.5 px-3 text-slate-700">{po.warehouseName}</td>
-                            <td className="py-2.5 px-3 text-slate-900 font-medium">
-                              <div>{po.itemName}</div>
-                              <div className="text-[11px] text-slate-500">{po.quantity}</div>
-                            </td>
-                            <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900">
-                              {(po.totalAmount || 0).toLocaleString('vi-VN')} đ
-                            </td>
-                            <td className="py-2.5 px-3 font-mono text-slate-500">{po.importDate}</td>
-                            <td className="py-2.5 px-3 text-center">
-                              <Tag color="green" className="font-semibold text-xs">
-                                ✓ Đã nhập kho
-                              </Tag>
-                            </td>
-                          </tr>
-                        ))}
-                      {purchaseHistory.filter((p) => p.supplierId === selectedSupplier.id).length === 0 && (
-                        <tr>
-                          <td colSpan={6} className="py-8 text-center text-slate-400 italic">
-                            Chưa có lịch sử nhập hàng nào từ nhà cung cấp này.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* TAB 3: LỊCH SỬ THANH TOÁN & CÔNG NỢ */}
-            {detailTab === 'debt' && (
-              <div className="space-y-4">
-                {/* Prominent Debt Banner with Payment Button */}
-                <div className="bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 p-4 rounded-xl border border-amber-200/90 flex flex-wrap items-center justify-between gap-4">
-                  <div>
-                    <div className="text-xs font-semibold text-amber-900 uppercase tracking-wide">
-                      Tình trạng công nợ phải trả NCC
-                    </div>
-                    <div className="flex items-baseline gap-2 mt-1">
-                      <span className="font-mono text-2xl font-bold text-rose-600">
-                        {(Number(selectedSupplier.currentDebt) || 0).toLocaleString('vi-VN')} đ
-                      </span>
-                      {Number(selectedSupplier.currentDebt || 0) > 0 ? (
-                        <Tag color="error" className="font-semibold text-xs">
-                          Đang có nợ gối đầu
-                        </Tag>
-                      ) : (
-                        <Tag color="success" className="font-semibold text-xs">
-                          Đã thanh toán 100%
-                        </Tag>
-                      )}
-                    </div>
-                  </div>
-
-                  <Button
-                    type="primary"
-                    icon={<WalletOutlined />}
-                    onClick={() => handleOpenPayment(selectedSupplier)}
-                    className="h-10 px-5 bg-[#784e34] hover:!bg-[#5d371f] font-bold text-sm text-white rounded-lg shadow-none border-none flex items-center gap-1.5"
-                  >
-                    Thanh toán / Chi tiền hàng ngay
-                  </Button>
-                </div>
-
-                {/* Payment History Table */}
-                <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
-                  <div className="p-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-800 uppercase tracking-wide">
-                      Lịch sử chứng từ phiếu chi đã ghi nhận
-                    </span>
-                    <span className="text-xs text-slate-500">
-                      Tổng đã thanh toán:{' '}
-                      <strong className="text-emerald-700 font-mono">
-                        {(
-                          paymentHistory
-                            .filter((p) => p.supplierId === selectedSupplier.id)
-                            .reduce((acc, c) => acc + c.amount, 0) || 0
-                        ).toLocaleString('vi-VN')}{' '}
-                        đ
-                      </strong>
-                    </span>
-                  </div>
-
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead className="bg-slate-50/50 border-b border-slate-200 text-slate-600 font-semibold">
-                      <tr>
-                        <th className="py-2.5 px-3">Mã phiếu chi</th>
-                        <th className="py-2.5 px-3">Ngày chi</th>
-                        <th className="py-2.5 px-3 text-right">Số tiền chi</th>
-                        <th className="py-2.5 px-3">Hình thức</th>
-                        <th className="py-2.5 px-3">Người lập</th>
-                        <th className="py-2.5 px-3">Nội dung / Ghi chú</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {paymentHistory
-                        .filter((p) => p.supplierId === selectedSupplier.id)
-                        .map((pay) => (
-                          <tr key={pay.id} className="hover:bg-slate-50/80 transition-colors">
-                            <td className="py-2.5 px-3 font-mono font-bold text-emerald-700">{pay.code}</td>
-                            <td className="py-2.5 px-3 font-mono text-slate-600">{pay.date}</td>
-                            <td className="py-2.5 px-3 text-right font-mono font-bold text-emerald-700">
-                              {pay.amount.toLocaleString('vi-VN')} đ
-                            </td>
-                            <td className="py-2.5 px-3 text-slate-700">
-                              <Tag color="blue" className="text-xs font-medium">
-                                {pay.method}
-                              </Tag>
-                            </td>
-                            <td className="py-2.5 px-3 text-slate-800">{pay.creator}</td>
-                            <td className="py-2.5 px-3 text-slate-600">{pay.note}</td>
-                          </tr>
-                        ))}
-                      {paymentHistory.filter((p) => p.supplierId === selectedSupplier.id).length === 0 && (
-                        <tr>
-                          <td colSpan={6} className="py-8 text-center text-slate-400 italic">
-                            Chưa có chứng từ phiếu chi nào cho nhà cung cấp này.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </Drawer>
-
-      {/* 4. DRAWER TẠO MỚI / CHỈNH SỬA NHÀ CUNG CẤP (CREATE / EDIT DRAWER) */}
-      <Drawer
-        title={
-          <div className="flex items-center gap-2">
-            <span className="text-base font-bold text-slate-900">
-              {editingSupplier ? 'Chỉnh sửa nhà cung cấp' : 'Thêm mới nhà cung cấp'}
-            </span>
-          </div>
-        }
+      {/* FORM DRAWER SỬ DỤNG ADMIN FORM DRAWER CHUNG */}
+      <AdminFormDrawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        styles={{ wrapper: { width: 620, maxWidth: '100vw' } }}
-        destroyOnHidden
-        footer={
-          <div className="flex items-center justify-between">
-            <Button onClick={() => setDrawerOpen(false)} className="h-10 px-5 text-sm font-semibold rounded-lg">
-              Hủy bỏ
-            </Button>
-            <Button
-              type="primary"
-              onClick={() => form.submit()}
-              className="h-10 px-6 bg-[#784e34] hover:!bg-[#5d371f] text-sm font-bold text-white rounded-lg border-none shadow-none"
-            >
-              {editingSupplier ? 'Lưu thay đổi' : 'Tạo nhà cung cấp'}
-            </Button>
-          </div>
-        }
+        form={form}
+        isEditing={Boolean(editingSupplier)}
+        recordId={editingSupplier?.code || editingSupplier?.id}
+        editTitle="Chỉnh sửa thông tin nhà cung cấp"
+        createTitle="Thêm mới nhà cung cấp"
+        size="large"
       >
-        <Form form={form} layout="vertical" onFinish={handleSaveSupplier} className="space-y-4">
+        <Form form={form} layout="vertical" onFinish={handleSaveSupplier} requiredMark={false} className="space-y-4">
           {/* SECTION 1: THÔNG TIN CƠ BẢN */}
-          <div className="bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/80 space-y-3">
-            <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-200 pb-2 m-0">
+          <div className="bg-white p-4 rounded-xl border border-slate-200/80 space-y-3 shadow-xs">
+            <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-100 pb-2 m-0">
               <ShopOutlined className="text-[#784e34]" /> Thông tin cơ bản
             </h4>
 
             <Form.Item
-              label={<span className="text-xs font-semibold text-slate-800">Tên nhà cung cấp / Doanh nghiệp</span>}
+              label={<span className="text-xs font-semibold text-slate-800">Tên nhà cung cấp / Doanh nghiệp <span className="text-rose-500">*</span></span>}
               name="name"
               rules={[{ required: true, message: 'Vui lòng nhập tên nhà cung cấp' }]}
             >
@@ -1249,9 +927,8 @@ export function SuppliersTab({
                 <Form.Item
                   label={<span className="text-xs font-semibold text-slate-800">Mã nhà cung cấp</span>}
                   name="code"
-                  rules={[{ required: true, message: 'Vui lòng nhập mã NCC' }]}
                 >
-                  <Input placeholder="NCC-01" className="h-10 rounded-lg font-mono text-sm uppercase" />
+                  <Input placeholder="Tự động hoặc NCC01" className="h-10 rounded-lg font-mono text-sm uppercase" />
                 </Form.Item>
               </Col>
               <Col span={12}>
@@ -1269,7 +946,6 @@ export function SuppliersTab({
                 <Form.Item
                   label={<span className="text-xs font-semibold text-slate-800">Người liên hệ / Đại diện</span>}
                   name="contactPerson"
-                  rules={[{ required: true, message: 'Vui lòng nhập tên người liên hệ' }]}
                 >
                   <Input placeholder="VD: David Johnson" className="h-10 rounded-lg text-sm" />
                 </Form.Item>
@@ -1278,7 +954,6 @@ export function SuppliersTab({
                 <Form.Item
                   label={<span className="text-xs font-semibold text-slate-800">Số điện thoại liên hệ</span>}
                   name="phone"
-                  rules={[{ required: true, message: 'Vui lòng nhập SĐT' }]}
                 >
                   <Input placeholder="VD: 0908.123.456" className="h-10 rounded-lg font-mono text-sm" />
                 </Form.Item>
@@ -1292,7 +967,7 @@ export function SuppliersTab({
                 </Form.Item>
               </Col>
               <Col span={10}>
-                <Form.Item label={<span className="text-xs font-semibold text-slate-800">Trạng thái hợp tác</span>} name="status">
+                <Form.Item label={<span className="text-xs font-semibold text-slate-800">Trạng thái hợp tác</span>} name="status" initialValue="active">
                   <Select className="h-10 text-sm">
                     <Select.Option value="active">🟢 Đang hợp tác</Select.Option>
                     <Select.Option value="inactive">⚪ Tạm dừng</Select.Option>
@@ -1304,17 +979,21 @@ export function SuppliersTab({
             <Form.Item
               label={<span className="text-xs font-semibold text-slate-800">Địa chỉ trụ sở / Kho giao hàng</span>}
               name="address"
-              rules={[{ required: true, message: 'Vui lòng nhập địa chỉ' }]}
             >
               <Input placeholder="Số nhà, đường, KCN, quận/huyện, tỉnh/thành..." className="h-10 rounded-lg text-sm" />
             </Form.Item>
           </div>
 
           {/* SECTION 2: TÀI KHOẢN NGÂN HÀNG */}
-          <div className="bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/80 space-y-3">
-            <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-200 pb-2 m-0">
-              <BankOutlined className="text-emerald-600" /> Tài khoản ngân hàng thụ hưởng
-            </h4>
+          <div className="bg-white p-4 rounded-xl border border-slate-200/80 space-y-3 shadow-xs">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2 m-0">
+              <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 m-0">
+                <BankOutlined className="text-emerald-600" /> Tài khoản ngân hàng &amp; Mã VietQR thụ hưởng
+              </h4>
+              <Tag color="cyan" className="text-[10px] m-0 font-medium font-mono">
+                VietQR Chuẩn NAPAS 247
+              </Tag>
+            </div>
 
             <Row gutter={12}>
               <Col span={12}>
@@ -1334,16 +1013,48 @@ export function SuppliersTab({
                 </Form.Item>
               </Col>
             </Row>
+
+            {/* Live VietQR Preview */}
+            {watchedBankAccount && (
+              <div className="bg-slate-50 p-3.5 rounded-xl border border-dashed border-slate-300 flex flex-col sm:flex-row items-center gap-4">
+                <div className="shrink-0">
+                  <VietQrCard
+                    bankName={watchedBankName || 'MBBank'}
+                    accountNumber={watchedBankAccount}
+                    accountName={watchedCompanyName || 'NHÀ CUNG CẤP'}
+                    paymentPrefix="THANH TOAN"
+                    orderCode={form.getFieldValue('code') || 'NCC'}
+                    amount={0}
+                    showDetails={false}
+                    className="max-w-[140px] p-1.5 bg-white border-slate-200"
+                  />
+                </div>
+                <div className="text-xs space-y-1 text-slate-600 flex-1">
+                  <div className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
+                    <span>Mã VietQR Thanh Toán Động</span>
+                    <Tag color="success" className="text-[10px] m-0">Tự động tạo</Tag>
+                  </div>
+                  <p className="text-[11px] text-slate-500 m-0">
+                    Mã VietQR này sẽ được sử dụng trực tiếp khi lập phiếu chi, thanh toán tiền hàng hoặc quét QR chuyển khoản qua ứng dụng ngân hàng.
+                  </p>
+                  <div className="font-mono text-[11px] text-[#784e34] bg-white p-1.5 rounded border border-slate-200">
+                    Ngân hàng: <strong>{watchedBankName || '---'}</strong> • STK: <strong>{watchedBankAccount}</strong>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* SECTION 3: GHI CHÚ */}
-          <Form.Item label={<span className="text-xs font-semibold text-slate-800">Ghi chú &amp; Danh mục vật tư</span>} name="note">
-            <Input.TextArea rows={3} placeholder="VD: Cung ứng gỗ FAS, phụ kiện giảm chấn Blum..." className="rounded-lg text-sm" />
-          </Form.Item>
+          <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-xs">
+            <Form.Item label={<span className="text-xs font-semibold text-slate-800">Ghi chú &amp; Danh mục vật tư chính</span>} name="note" className="!mb-0">
+              <Input.TextArea rows={3} placeholder="VD: Cung ứng gỗ FAS, phụ kiện giảm chấn Blum..." className="rounded-lg text-sm" />
+            </Form.Item>
+          </div>
         </Form>
-      </Drawer>
+      </AdminFormDrawer>
 
-      {/* 5. DRAWER LẬP PHIẾU CHI / THANH TOÁN TIỀN HÀNG (QUICK DEBT PAYMENT DRAWER) */}
+      {/* DRAWER LẬP PHIẾU CHI / THANH TOÁN TIỀN HÀNG */}
       <Drawer
         title={
           <div className="flex items-center gap-2">
@@ -1431,80 +1142,482 @@ export function SuppliersTab({
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-slate-800 block">Nội dung phiếu chi / Ghi chú</label>
               <Input.TextArea
-                rows={3}
+                rows={2}
                 value={paymentNote}
                 onChange={(e) => setPaymentNote(e.target.value)}
                 placeholder="VD: Thanh toán tiền hàng đợt 2 theo hợp đồng..."
                 className="rounded-lg text-sm"
               />
             </div>
+
+            {/* VietQR Dynamic Card for Bank Transfer */}
+            {paymentMethod === 'transfer' && (
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <BankOutlined className="text-emerald-600" /> Quét mã VietQR Chuyển Khoản Nhanh
+                  </span>
+                  <Tag color="success" className="text-[10px] m-0 font-medium font-mono">
+                    VietQR Động NAPAS 247
+                  </Tag>
+                </div>
+
+                {payingSupplier.bankAccount ? (
+                  <div className="flex flex-col sm:flex-row items-center gap-4 bg-white p-3 rounded-lg border border-slate-200">
+                    <div className="shrink-0">
+                      <VietQrCard
+                        bankName={payingSupplier.bankName || 'MBBank'}
+                        accountNumber={payingSupplier.bankAccount}
+                        accountName={payingSupplier.company || payingSupplier.name}
+                        paymentPrefix="CHI"
+                        orderCode={payingSupplier.code || 'NCC'}
+                        amount={paymentAmount || 0}
+                        showDetails={false}
+                        className="max-w-[150px] p-1 bg-white border-slate-100"
+                      />
+                    </div>
+                    <div className="text-xs space-y-1.5 text-slate-700 flex-1">
+                      <div>
+                        <span className="text-slate-400 block text-[11px]">Ngân hàng nhận:</span>
+                        <strong className="text-slate-900">{payingSupplier.bankName || 'Chưa cập nhật'}</strong>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block text-[11px]">Số tài khoản:</span>
+                        <strong className="font-mono text-[#784e34] text-sm font-bold">{payingSupplier.bankAccount}</strong>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block text-[11px]">Chủ tài khoản:</span>
+                        <strong className="uppercase text-slate-900">{payingSupplier.company || payingSupplier.name}</strong>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block text-[11px]">Số tiền chi:</span>
+                        <strong className="font-mono text-emerald-700 text-sm font-bold">
+                          {(paymentAmount || 0).toLocaleString('vi-VN')} đ
+                        </strong>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3 text-center text-xs text-amber-700 bg-amber-50 rounded-lg border border-amber-200">
+                    Nhà cung cấp này chưa được thiết lập tài khoản ngân hàng. Bạn có thể cập nhật thông tin tài khoản trong mục chỉnh sửa NCC.
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </Drawer>
+    </div>
+  );
+}
 
-      {/* 6. MODAL NHẬP EXCEL NHÀ CUNG CẤP */}
-      <Modal
-        title={
-          <div className="flex items-center gap-2">
-            <UploadOutlined className="text-[#784e34]" />
-            <span className="font-bold text-slate-900">Nhập danh sách nhà cung cấp từ Excel</span>
+// -------------------------------------------------------------------------------------------------
+// SUBCOMPONENT: SUPPLIER EXPANDED ACCORDION DETAIL ROW (MATCHING CUSTOMER DETAIL PANEL PATTERN)
+// -------------------------------------------------------------------------------------------------
+interface SupplierExpandedDetailRowProps {
+  supplier: AdminSupplier;
+  purchaseHistory: any[];
+  paymentHistory: any[];
+  onEdit: () => void;
+  onCopy: () => void;
+  onDelete: () => void;
+  onOpenPayment: () => void;
+  onChangeStatus: (status: 'active' | 'inactive') => void;
+}
+
+function SupplierExpandedDetailRow({
+  supplier,
+  purchaseHistory,
+  paymentHistory,
+  onEdit,
+  onCopy,
+  onDelete,
+  onOpenPayment,
+  onChangeStatus,
+}: SupplierExpandedDetailRowProps) {
+  const [activeTab, setActiveTab] = useState<'info' | 'orders' | 'debt'>('info');
+
+  const relatedPurchases = useMemo(() => {
+    return purchaseHistory.filter((p) => p.supplierId === supplier.id);
+  }, [purchaseHistory, supplier.id]);
+
+  const relatedPayments = useMemo(() => {
+    return paymentHistory.filter((p) => p.supplierId === supplier.id);
+  }, [paymentHistory, supplier.id]);
+
+  return (
+    <div className="bg-[#fbf9f8] border-y border-slate-200 p-4 sm:p-5 -mx-4 space-y-4">
+      {/* Header Banner */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3.5 border border-slate-200">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-[#fbf2ee] border border-[#d8c3af] flex items-center justify-center font-bold text-sm text-[#5d371f] shrink-0">
+            {supplier.name ? supplier.name.charAt(0).toUpperCase() : 'N'}
           </div>
-        }
-        open={importModalOpen}
-        onCancel={() => setImportModalOpen(false)}
-        footer={[
-          <Button key="cancel" onClick={() => setImportModalOpen(false)}>
-            Đóng
-          </Button>,
-          <Button
-            key="download"
-            icon={<DownloadOutlined />}
-            onClick={() => {
-              const template = [
-                {
-                  'Mã NCC': 'NCC-99',
-                  'Tên nhà cung cấp': 'Công ty Gỗ Mẫu',
-                  'Mã số thuế': '0101234567',
-                  'Người liên hệ': 'Nguyễn Văn A',
-                  'Điện thoại': '0901234567',
-                  'Email': 'supplier@example.com',
-                  'Địa chỉ': 'Hà Nội',
-                  'Ngân hàng': 'Vietcombank',
-                  'Số tài khoản': '001100223344',
-                },
-              ];
-              exportToExcel(template, 'Mau_nhap_nha_cung_cap');
-              message.success('Đã tải file mẫu nhập nhà cung cấp!');
-            }}
-          >
-            Tải file mẫu
-          </Button>,
-        ]}
-      >
-        <div className="py-4 text-center space-y-3">
-          <p className="text-xs text-slate-600">
-            Kéo thả hoặc tải lên file Excel (.xlsx) chứa thông tin nhà cung cấp theo chuẩn biểu mẫu Domaco POS.
-          </p>
-          <Upload.Dragger
-            maxCount={1}
-            beforeUpload={(file) => {
-              message.success(`Đã nhận file ${file.name}, đang xử lý nhập dữ liệu...`);
-              setImportModalOpen(false);
-              return false;
-            }}
-          >
-            <p className="ant-upload-drag-icon text-3xl text-[#784e34]">
-              <UploadOutlined />
-            </p>
-            <p className="ant-upload-text text-sm font-semibold text-slate-800">
-              Nhấp hoặc kéo thả file Excel vào đây
-            </p>
-            <p className="ant-upload-hint text-xs text-slate-500">
-              Hỗ trợ định dạng .xlsx, .xls. Tối đa 10MB.
-            </p>
-          </Upload.Dragger>
+          <div>
+            <div className="font-bold text-slate-900 text-sm flex items-center gap-2">
+              <span>{supplier.name}</span>
+              <span className="font-mono text-xs font-semibold text-[#784e34] bg-[#784e34]/10 px-2 py-0.5">
+                #{supplier.code}
+              </span>
+              <AdminStatusBadge
+                status={supplier.status === 'active' ? 'active' : 'inactive'}
+                label={supplier.status === 'active' ? 'Đang hợp tác' : 'Tạm dừng'}
+                dot
+              />
+            </div>
+            <div className="text-xs text-slate-500 mt-0.5">
+              Đại diện: <strong className="text-slate-800">{supplier.contactPerson || '---'}</strong> • SĐT:{' '}
+              <span className="font-mono text-slate-800">{supplier.phone || '---'}</span> • Email:{' '}
+              <span className="text-slate-800">{supplier.email || '---'}</span>
+            </div>
+          </div>
         </div>
-      </Modal>
+
+        {/* Action Buttons */}
+        <div className="flex items-center gap-2">
+          <Button
+            size="small"
+            icon={<SwapOutlined />}
+            onClick={() => onChangeStatus(supplier.status === 'active' ? 'inactive' : 'active')}
+            className="text-xs h-7 rounded-none"
+          >
+            {supplier.status === 'active' ? 'Tạm dừng' : 'Kích hoạt'}
+          </Button>
+
+          {Number(supplier.currentDebt || 0) > 0 && (
+            <Button
+              type="primary"
+              size="small"
+              icon={<WalletOutlined />}
+              onClick={onOpenPayment}
+              className="bg-rose-600 hover:!bg-rose-700 text-white rounded-none text-xs font-semibold h-7 border-none shadow-none"
+            >
+              Chi trả nợ ({(Number(supplier.currentDebt) || 0).toLocaleString('vi-VN')} đ)
+            </Button>
+          )}
+
+          <Button
+            size="small"
+            icon={<CopyOutlined />}
+            onClick={onCopy}
+            className="rounded-none text-xs h-7"
+          >
+            Sao chép
+          </Button>
+
+          <Button
+            size="small"
+            icon={<EditOutlined />}
+            onClick={onEdit}
+            className="rounded-none text-xs h-7"
+          >
+            Chỉnh sửa
+          </Button>
+
+          <Popconfirm
+            title="Xóa nhà cung cấp"
+            description={`Bạn có chắc chắn muốn xóa nhà cung cấp "${supplier.name}"?`}
+            onConfirm={onDelete}
+            okText="Xóa"
+            cancelText="Hủy"
+            okButtonProps={{ danger: true }}
+          >
+            <Button size="small" danger icon={<DeleteOutlined />} className="rounded-none text-xs h-7">
+              Xóa
+            </Button>
+          </Popconfirm>
+        </div>
+      </div>
+
+      {/* Tabs Navigation */}
+      <div className="border-b border-slate-200">
+        <Segmented
+          value={activeTab}
+          onChange={(val: any) => setActiveTab(val)}
+          options={[
+            {
+              label: (
+                <span className="flex items-center gap-1.5 px-1 py-0.5 text-xs font-semibold">
+                  <UserOutlined /> Thông tin chi tiết
+                </span>
+              ),
+              value: 'info',
+            },
+            {
+              label: (
+                <span className="flex items-center gap-1.5 px-1 py-0.5 text-xs font-semibold">
+                  <FileTextOutlined /> Lịch sử nhập hàng ({relatedPurchases.length})
+                </span>
+              ),
+              value: 'orders',
+            },
+            {
+              label: (
+                <span className="flex items-center gap-1.5 px-1 py-0.5 text-xs font-semibold">
+                  <WalletOutlined /> Công nợ &amp; Thanh toán
+                </span>
+              ),
+              value: 'debt',
+            },
+          ]}
+          className="bg-slate-200/70 p-1 rounded-none"
+        />
+      </div>
+
+      {/* TAB 1: THÔNG TIN CHI TIẾT */}
+      {activeTab === 'info' && (
+        <div className="space-y-4">
+          <div className="bg-white p-4 border border-slate-200 grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-3 text-xs">
+            <div>
+              <span className="text-slate-400 block mb-0.5">Số điện thoại liên hệ</span>
+              <span className="font-semibold text-slate-800 font-mono">{supplier.phone || '—'}</span>
+            </div>
+            <div>
+              <span className="text-slate-400 block mb-0.5">Email giao dịch</span>
+              <span className="font-semibold text-slate-800">{supplier.email || '—'}</span>
+            </div>
+            <div>
+              <span className="text-slate-400 block mb-0.5">Mã số thuế (MST)</span>
+              <span className="font-semibold text-slate-800 font-mono">{supplier.taxCode || '—'}</span>
+            </div>
+            <div>
+              <span className="text-slate-400 block mb-0.5">Người đại diện liên hệ</span>
+              <span className="font-semibold text-slate-800">{supplier.contactPerson || '—'}</span>
+            </div>
+
+            <div>
+              <span className="text-slate-400 block mb-0.5">Tên doanh nghiệp / Công ty</span>
+              <span className="font-semibold text-slate-800">{supplier.company || supplier.name}</span>
+            </div>
+            <div>
+              <span className="text-slate-400 block mb-0.5">Trạng thái hợp tác</span>
+              <span className="font-semibold text-slate-800">
+                {supplier.status === 'active' ? '🟢 Đang hợp tác' : '⚪ Tạm dừng'}
+              </span>
+            </div>
+            <div>
+              <span className="text-slate-400 block mb-0.5">Ngân hàng thụ hưởng</span>
+              <span className="font-semibold text-slate-800">{supplier.bankName || '—'}</span>
+            </div>
+            <div>
+              <span className="text-slate-400 block mb-0.5">Số tài khoản thụ hưởng</span>
+              <span className="font-semibold text-slate-800 font-mono text-[#784e34]">{supplier.bankAccount || '—'}</span>
+            </div>
+
+            <div className="sm:col-span-2">
+              <span className="text-slate-400 block mb-0.5">Địa chỉ trụ sở / Kho bãi</span>
+              <span className="font-semibold text-slate-800">{supplier.address || '—'}</span>
+            </div>
+            <div className="sm:col-span-2">
+              <span className="text-slate-400 block mb-0.5">Ghi chú đối tác &amp; Danh mục vật tư chính</span>
+              <span className="text-slate-800 italic">{supplier.note || 'Chưa có ghi chú đặc biệt.'}</span>
+            </div>
+
+            <div className="sm:col-span-4 pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between text-xs">
+              <div>
+                <span className="text-slate-500">Tổng tiền mua tích lũy:</span>{' '}
+                <strong className="text-slate-900 font-mono font-bold">
+                  {(Number(supplier.totalPurchased) || 0).toLocaleString('vi-VN')} đ
+                </strong>
+              </div>
+              <div>
+                <span className="text-slate-500">Đã thanh toán:</span>{' '}
+                <strong className="text-emerald-700 font-mono font-bold">
+                  {(Number(supplier.totalCollected) || 0).toLocaleString('vi-VN')} đ
+                </strong>
+              </div>
+              <div>
+                <span className="text-slate-500">Công nợ cần trả hiện tại:</span>{' '}
+                <strong className="text-rose-600 font-mono font-bold">
+                  {(Number(supplier.currentDebt) || 0).toLocaleString('vi-VN')} đ
+                </strong>
+              </div>
+              <div>
+                <span className="text-slate-500">Ngày tạo hồ sơ / Hợp tác:</span>{' '}
+                <strong className="text-slate-800">{supplier.createdAt ? dayjs(supplier.createdAt).format('DD/MM/YYYY') : '15/01/2025'}</strong>
+              </div>
+            </div>
+          </div>
+
+          {/* Công nợ chưa thanh toán alert banner */}
+          {Number(supplier.currentDebt || 0) > 0 && (
+            <div className="bg-white p-4 border border-rose-200">
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-bold text-rose-700 text-xs flex items-center gap-1.5">
+                  <WalletOutlined /> Danh sách chứng từ / Phiếu nhập hàng còn nợ NCC
+                </span>
+                <Button
+                  size="small"
+                  type="primary"
+                  onClick={onOpenPayment}
+                  className="bg-rose-600 hover:!bg-rose-700 text-white rounded-none text-xs font-semibold h-7 border-none shadow-none"
+                >
+                  Lập phiếu chi ngay
+                </Button>
+              </div>
+
+              <div className="overflow-x-auto border border-slate-200">
+                <table className="min-w-full text-xs text-left">
+                  <thead className="bg-slate-50 text-slate-600">
+                    <tr>
+                      <th className="px-3 py-2 font-semibold">Mã phiếu nhập</th>
+                      <th className="px-3 py-2 font-semibold">Kho tiếp nhận</th>
+                      <th className="px-3 py-2 font-semibold">Vật tư &amp; Quy cách</th>
+                      <th className="px-3 py-2 font-semibold text-right">Tổng giá trị</th>
+                      <th className="px-3 py-2 font-semibold text-right text-rose-600">Nợ cần trả</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-t border-slate-100 hover:bg-slate-50/60">
+                      <td className="px-3 py-2 font-mono font-bold text-[#784e34]">#PN-2026-0036</td>
+                      <td className="px-3 py-2 text-slate-700">Tổng Kho Bình Chánh</td>
+                      <td className="px-3 py-2 text-slate-700">Khung Gỗ Óc Chó FAS &amp; Phụ kiện mộng chốt</td>
+                      <td className="px-3 py-2 text-right font-mono">1,140,000,000 đ</td>
+                      <td className="px-3 py-2 text-right font-mono font-bold text-rose-600">
+                        {(Number(supplier.currentDebt) || 0).toLocaleString('vi-VN')} đ
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 2: LỊCH SỬ NHẬP/TRẢ HÀNG */}
+      {activeTab === 'orders' && (
+        <div className="bg-white p-4 border border-slate-200 space-y-3">
+          {relatedPurchases.length === 0 ? (
+            <div className="text-center py-6 text-slate-400 text-xs">
+              <FileTextOutlined className="text-2xl mb-1 block" />
+              Chưa có chứng từ nhập hàng nào từ nhà cung cấp này.
+            </div>
+          ) : (
+            <div className="overflow-x-auto border border-slate-200">
+              <table className="min-w-full text-xs text-left">
+                <thead className="bg-slate-50 text-slate-600">
+                  <tr>
+                    <th className="px-3 py-2 font-semibold">Mã phiếu</th>
+                    <th className="px-3 py-2 font-semibold">Kho tiếp nhận</th>
+                    <th className="px-3 py-2 font-semibold">Hàng hóa / Vật tư</th>
+                    <th className="px-3 py-2 font-semibold text-right">Tổng giá trị</th>
+                    <th className="px-3 py-2 font-semibold">Thời gian</th>
+                    <th className="px-3 py-2 font-semibold text-center">Trạng thái</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {relatedPurchases.map((po) => (
+                    <tr key={po.id} className="hover:bg-slate-50/60">
+                      <td className="px-3 py-2 font-mono font-bold text-[#784e34]">{po.code}</td>
+                      <td className="px-3 py-2 text-slate-700">{po.warehouseName}</td>
+                      <td className="px-3 py-2">
+                        <div className="font-medium text-slate-900">{po.itemName}</div>
+                        <div className="text-[11px] text-slate-500">{po.quantity}</div>
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono font-bold text-slate-900">
+                        {po.totalAmount.toLocaleString('vi-VN')} đ
+                      </td>
+                      <td className="px-3 py-2 font-mono text-slate-600">{po.importDate}</td>
+                      <td className="px-3 py-2 text-center">
+                        <Tag color="success" className="text-[10px] m-0 font-medium">
+                          Đã nhập kho
+                        </Tag>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 3: CÔNG NỢ & THANH TOÁN (COMPACT & BALANCED) */}
+      {activeTab === 'debt' && (
+        <div className="space-y-3">
+          {/* Top Compact KPI Summary Bar */}
+          <div className="bg-white p-2.5 border border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <div className="flex items-center justify-between px-3 py-1.5 bg-slate-50 border border-slate-100">
+              <span className="text-xs text-slate-500 font-medium">Tổng mua tích lũy:</span>
+              <strong className="font-mono text-xs text-slate-900 font-bold">
+                {(Number(supplier.totalPurchased) || 0).toLocaleString('vi-VN')} đ
+              </strong>
+            </div>
+
+            <div className="flex items-center justify-between px-3 py-1.5 bg-emerald-50/50 border border-emerald-100">
+              <span className="text-xs text-emerald-700 font-medium">Đã thanh toán:</span>
+              <strong className="font-mono text-xs text-emerald-800 font-bold">
+                {(Number(supplier.totalCollected) || 0).toLocaleString('vi-VN')} đ
+              </strong>
+            </div>
+
+            <div className="flex items-center justify-between px-3 py-1.5 bg-rose-50/60 border border-rose-100">
+              <span className="text-xs text-rose-700 font-bold">Nợ cần trả hiện tại:</span>
+              <strong className="font-mono text-xs text-rose-700 font-bold">
+                {(Number(supplier.currentDebt) || 0).toLocaleString('vi-VN')} đ
+              </strong>
+            </div>
+          </div>
+
+          {/* Lịch sử phiếu chi & thanh toán tiền hàng */}
+          <div className="bg-white p-3.5 border border-slate-200 space-y-2.5">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <FileTextOutlined className="text-[#784e34]" /> Lịch sử phiếu chi &amp; Thanh toán ({relatedPayments.length})
+              </span>
+              <Button
+                size="small"
+                icon={<PlusOutlined />}
+                onClick={onOpenPayment}
+                className="rounded-none text-xs h-7 px-2.5"
+              >
+                Tạo phiếu chi
+              </Button>
+            </div>
+
+            <div className="overflow-x-auto border border-slate-100">
+              <table className="min-w-full text-xs text-left">
+                <thead className="bg-slate-50 text-slate-600 text-xs">
+                  <tr>
+                    <th className="px-3 py-2 font-semibold">Mã phiếu chi</th>
+                    <th className="px-3 py-2 font-semibold">Thời gian</th>
+                    <th className="px-3 py-2 font-semibold text-right">Số tiền chi</th>
+                    <th className="px-3 py-2 font-semibold text-center">Hình thức thanh toán</th>
+                    <th className="px-3 py-2 font-semibold">Người lập</th>
+                    <th className="px-3 py-2 font-semibold">Ghi chú</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-xs">
+                  {relatedPayments.map((pay) => (
+                    <tr key={pay.id} className="hover:bg-slate-50/60">
+                      <td className="px-3 py-2 font-mono font-bold text-[#784e34]">{pay.code}</td>
+                      <td className="px-3 py-2 font-mono text-slate-600">{pay.date}</td>
+                      <td className="px-3 py-2 text-right font-mono font-bold text-emerald-700">
+                        {pay.amount.toLocaleString('vi-VN')} đ
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        <Tag color="cyan" className="text-[11px] m-0 font-medium">
+                          {pay.method}
+                        </Tag>
+                      </td>
+                      <td className="px-3 py-2 text-slate-800">{pay.creator}</td>
+                      <td className="px-3 py-2 text-slate-600">{pay.note || '—'}</td>
+                    </tr>
+                  ))}
+                  {relatedPayments.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="py-6 text-center text-slate-400 italic text-xs">
+                        Chưa có chứng từ phiếu chi nào cho nhà cung cấp này.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
