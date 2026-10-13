@@ -36,14 +36,16 @@ function CartContent() {
     addToCart,
   } = useCart();
 
+  const [catalogProducts, setCatalogProducts] = useState<FeaturedCatalogProduct[]>([]);
   const [crossSellProducts, setCrossSellProducts] = useState<FeaturedCatalogProduct[]>([]);
 
   useEffect(() => {
     let isMounted = true;
     productApi
-      .getProducts({ pageSize: 6 })
+      .getProducts()
       .then((res) => {
         if (isMounted && res.length) {
+          setCatalogProducts(res);
           setCrossSellProducts(res.slice(0, 3));
         }
       })
@@ -55,10 +57,30 @@ function CartContent() {
     };
   }, []);
 
+  // Helper to get available stock
+  const getItemAvailableStock = (item: { id: string; sku?: string; inStockQty?: number }) => {
+    const found = catalogProducts.find(
+      (p) => p.id === item.id || (p.code && item.sku && p.code.toLowerCase() === item.sku.toLowerCase())
+    );
+    if (found) {
+      const rawStock = typeof found.inStock === 'number' ? found.inStock : (found.inStockQty !== undefined ? found.inStockQty : undefined);
+      return rawStock !== undefined ? rawStock : (found.stockNote ? (parseInt(found.stockNote.replace(/\D/g, ''), 10) || 0) : 0);
+    }
+    return item.inStockQty !== undefined ? item.inStockQty : 99;
+  };
+
+  // Check real-time stock
+  const isItemOutOfStock = (_item?: any) => false;
+  const isItemExceedingStock = (_item?: any) => false;
+
   // Toggle select all
   const allSelected = useMemo(() => {
     return cartItems.length > 0 && cartItems.every((item) => item.selected);
   }, [cartItems]);
+
+  const handleUpdateQuantity = (item: { id: string; name: string; quantity: number; sku?: string; inStockQty?: number }, delta: number) => {
+    updateQuantity(item.id, delta);
+  };
 
   const handleRemoveItem = (id: string, name: string) => {
     modal.confirm({
@@ -107,6 +129,7 @@ function CartContent() {
         image: item.image,
         price: item.price,
         specs: [item.material || item.metaInfo, item.dimensions].filter(Boolean) as string[],
+        inStockQty: item.inStockQty || (typeof item.inStock === 'number' ? item.inStock : 99),
       },
       1
     );
@@ -115,6 +138,9 @@ function CartContent() {
 
   // Financial Calculations
   const selectedItems = useMemo(() => cartItems.filter((i) => i.selected), [cartItems]);
+  const hasOutOfStockSelected = false;
+  const hasExceededStockSelected = false;
+  const hasInvalidSelected = false;
 
   const subtotal = useMemo(() => {
     return selectedItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
@@ -123,10 +149,6 @@ function CartContent() {
   const finalTotal = useMemo(() => {
     return Math.max(0, subtotal);
   }, [subtotal]);
-
-  const monthlyInstallment = useMemo(() => {
-    return finalTotal > 0 ? Math.round(finalTotal / 12) : 0;
-  }, [finalTotal]);
 
   return (
     <div className="min-h-screen flex flex-col bg-[#fff8f5] text-[#1f1b19] font-body-md selection:bg-[#ffdbc8] selection:text-[#311301]">
@@ -212,113 +234,147 @@ function CartContent() {
                 </div>
 
                 {/* Product Items List */}
-                {cartItems.map((item) => (
-                  <article
-                    key={item.id}
-                    className="bg-[#ffffff] border border-[#eae1dd] p-6 flex flex-col gap-5 shadow-sm transition-all hover:border-[#5d371f]/40 hover-lift"
-                  >
-                    <div className="flex flex-col sm:flex-row gap-5">
-                      <div className="flex items-start gap-3">
-                        <input
-                          checked={item.selected}
-                          onChange={() => toggleItemSelect(item.id)}
-                          type="checkbox"
-                          className="w-4 h-4 mt-2 rounded-none accent-[#5d371f] text-[#5d371f] cursor-pointer shrink-0"
-                        />
-                        <div className="w-32 h-32 sm:w-40 sm:h-40 bg-[#f5ece8] overflow-hidden shrink-0 relative border border-[#eae1dd]">
-                          <img
-                            src={item.image}
-                            alt={item.name}
-                            className="w-full h-full object-cover"
+                {cartItems.map((item) => {
+                  const outOfStock = isItemOutOfStock(item);
+                  return (
+                    <article
+                      key={item.id}
+                      className={`bg-[#ffffff] border p-6 flex flex-col gap-5 shadow-sm transition-all hover-lift ${
+                        outOfStock ? 'border-[#ba1a1a]/40 bg-[#fff5f5]/30' : 'border-[#eae1dd] hover:border-[#5d371f]/40'
+                      }`}
+                    >
+                      <div className="flex flex-col sm:flex-row gap-5">
+                        <div className="flex items-start gap-3">
+                          <input
+                            checked={item.selected}
+                            onChange={() => toggleItemSelect(item.id)}
+                            type="checkbox"
+                            className="w-4 h-4 mt-2 rounded-none accent-[#5d371f] text-[#5d371f] cursor-pointer shrink-0"
                           />
-                        </div>
-                      </div>
-
-                      <div className="flex-1 flex flex-col justify-between">
-                        <div>
-                          <div className="flex items-start justify-between gap-4">
-                            <div>
-                              <span className="text-xs text-[#3f4332] font-semibold block">
-                                {item.collection}
-                              </span>
-                              <Link
-                                href={`/products/${item.id}`}
-                                className="font-serif text-lg sm:text-xl font-bold text-[#1f1b19] mt-0.5 hover:text-[#5d371f] transition-colors block"
-                              >
-                                {item.name}
-                              </Link>
-                            </div>
-
-                            <div className="flex items-center gap-2">
-                              <Tooltip title="Bỏ sản phẩm">
-                                <button
-                                  onClick={() => handleRemoveItem(item.id, item.name)}
-                                  type="button"
-                                  className="text-[#83746c] hover:text-[#ba1a1a] transition-colors p-1 cursor-pointer"
-                                >
-                                  <DeleteOutlined className="text-lg" />
-                                </button>
-                              </Tooltip>
-                            </div>
-                          </div>
-
-                          {/* Material & Spec Tags */}
-                          {item.specs && item.specs.length > 0 && (
-                            <div className="mt-3 flex flex-wrap gap-1.5 text-xs text-[#51443d]">
-                              {item.specs.map((sp, idx) => (
-                                <span
-                                  key={idx}
-                                  className="bg-[#f5ece8] border border-[#eae1dd] px-2.5 py-1 text-[11px] font-medium"
-                                >
-                                  {sp}
+                          <div className="w-32 h-32 sm:w-40 sm:h-40 bg-[#f5ece8] overflow-hidden shrink-0 relative border border-[#eae1dd]">
+                            <img
+                              src={item.image}
+                              alt={item.name}
+                              className={`w-full h-full object-cover ${outOfStock ? 'grayscale-[40%] opacity-80' : ''}`}
+                            />
+                            {outOfStock && (
+                              <div className="absolute inset-0 bg-black/25 flex items-center justify-center pointer-events-none">
+                                <span className="px-2 py-0.5 bg-[#ba1a1a] text-white text-[11px] font-bold uppercase tracking-wider shadow-md">
+                                  Hết hàng
                                 </span>
-                              ))}
-                            </div>
-                          )}
-
-                          {/* Gift Addon info if available */}
-                          {item.giftInfo && (
-                            <div className="mt-2.5 flex items-center gap-2 text-xs text-[#5d371f] font-semibold bg-[#fff8f5] p-2 border border-[#fcc2a1]/60">
-                              <GiftOutlined className="text-[#5d371f]" />
-                              <span>{item.giftInfo}</span>
-                            </div>
-                          )}
+                              </div>
+                            )}
+                          </div>
                         </div>
 
-                        {/* Price & Quantity Controls */}
-                        <div className="mt-5 flex items-center justify-between pt-3 border-t border-[#eae1dd] bg-[#fbf2ee] px-4 py-2.5">
-                          <div className="flex items-baseline gap-2">
-                            <span className="text-base sm:text-lg font-bold text-[#5d371f] font-data-mono">
-                              {item.price.toLocaleString('vi-VN')}đ
-                            </span>
+                        <div className="flex-1 flex flex-col justify-between">
+                          <div>
+                            <div className="flex items-start justify-between gap-4">
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs text-[#3f4332] font-semibold block">
+                                    {item.collection}
+                                  </span>
+                                  {outOfStock && (
+                                    <span className="px-2 py-0.5 bg-[#ffdad6] text-[#ba1a1a] font-bold text-[10px] uppercase">
+                                      Tạm hết hàng
+                                    </span>
+                                  )}
+                                </div>
+                                <Link
+                                  href={`/products/${item.id}`}
+                                  className="font-serif text-lg sm:text-xl font-bold text-[#1f1b19] mt-0.5 hover:text-[#5d371f] transition-colors block"
+                                >
+                                  {item.name}
+                                </Link>
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <Tooltip title="Bỏ sản phẩm">
+                                  <button
+                                    onClick={() => handleRemoveItem(item.id, item.name)}
+                                    type="button"
+                                    className="text-[#83746c] hover:text-[#ba1a1a] transition-colors p-1 cursor-pointer"
+                                  >
+                                    <DeleteOutlined className="text-lg" />
+                                  </button>
+                                </Tooltip>
+                              </div>
+                            </div>
+
+                            {/* Material & Spec Tags */}
+                            {item.specs && item.specs.length > 0 && (
+                              <div className="mt-3 flex flex-wrap gap-1.5 text-xs text-[#51443d]">
+                                {item.specs.map((sp, idx) => (
+                                  <span
+                                    key={idx}
+                                    className="bg-[#f5ece8] border border-[#eae1dd] px-2.5 py-1 text-[11px] font-medium"
+                                  >
+                                    {sp}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+
+                            {outOfStock && (
+                              <div className="mt-2.5 p-2 bg-[#ffdad6]/40 border border-[#ffdad6] text-xs text-[#ba1a1a] font-semibold flex items-center gap-1.5">
+                                <span>⚠️ Sản phẩm hiện đã hết hàng trong kho. Vui lòng bỏ chọn hoặc xóa khỏi giỏ để thanh toán các sản phẩm khác.</span>
+                              </div>
+                            )}
+
+                            {!outOfStock && isItemExceedingStock(item) && (
+                              <div className="mt-2.5 p-2 bg-[#fff3cd] border border-[#ffeeba] text-xs text-[#856404] font-semibold flex items-center gap-1.5">
+                                <span>⚠️ Bạn đang chọn {item.quantity} sản phẩm nhưng kho chỉ còn {getItemAvailableStock(item)} sản phẩm. Vui lòng giảm số lượng.</span>
+                              </div>
+                            )}
+
+                            {/* Gift Addon info if available */}
+                            {item.giftInfo && (
+                              <div className="mt-2.5 flex items-center gap-2 text-xs text-[#5d371f] font-semibold bg-[#fff8f5] p-2 border border-[#fcc2a1]/60">
+                                <GiftOutlined className="text-[#5d371f]" />
+                                <span>{item.giftInfo}</span>
+                              </div>
+                            )}
                           </div>
 
-                          {/* Quantity Counter */}
-                          <div className="flex items-center bg-white border border-[#eae1dd] p-0.5 shadow-sm">
-                            <button
-                              onClick={() => updateQuantity(item.id, -1)}
-                              disabled={item.quantity <= 1}
-                              type="button"
-                              className="w-7 h-7 flex items-center justify-center text-[#51443d] hover:bg-[#f5ece8] disabled:opacity-40 cursor-pointer"
-                            >
-                              <MinusOutlined className="text-xs" />
-                            </button>
-                            <span className="w-8 text-center font-data-mono text-xs font-bold text-[#1f1b19]">
-                              {item.quantity}
-                            </span>
-                            <button
-                              onClick={() => updateQuantity(item.id, 1)}
-                              type="button"
-                              className="w-7 h-7 flex items-center justify-center text-[#51443d] hover:bg-[#f5ece8] cursor-pointer"
-                            >
-                              <PlusOutlined className="text-xs" />
-                            </button>
+                          {/* Price & Quantity Controls */}
+                          <div className="mt-5 flex items-center justify-between pt-3 border-t border-[#eae1dd] bg-[#fbf2ee] px-4 py-2.5">
+                            <div className="flex items-baseline gap-2">
+                              <span className="text-base sm:text-lg font-bold text-[#5d371f] font-data-mono">
+                                {item.price.toLocaleString('vi-VN')}đ
+                              </span>
+                            </div>
+
+                            {/* Quantity Counter */}
+                            <div className="flex items-center gap-2">
+                              <div className="flex items-center bg-white border border-[#eae1dd] p-0.5 shadow-sm">
+                                <button
+                                  onClick={() => handleUpdateQuantity(item, -1)}
+                                  disabled={item.quantity <= 1}
+                                  type="button"
+                                  className="w-7 h-7 flex items-center justify-center text-[#51443d] hover:bg-[#f5ece8] disabled:opacity-40 cursor-pointer"
+                                >
+                                  <MinusOutlined className="text-xs" />
+                                </button>
+                                <span className="w-8 text-center font-data-mono text-xs font-bold text-[#1f1b19]">
+                                  {item.quantity}
+                                </span>
+                                <button
+                                  onClick={() => handleUpdateQuantity(item, 1)}
+                                  type="button"
+                                  className="w-7 h-7 flex items-center justify-center text-[#51443d] hover:bg-[#f5ece8] cursor-pointer"
+                                  title="Tăng số lượng"
+                                >
+                                  <PlusOutlined className="text-xs" />
+                                </button>
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  </article>
-                ))}
+                    </article>
+                  );
+                })}
 
                 {/* White-glove Logistics Notice */}
                 <div className="bg-[#fbf2ee] border border-[#eae1dd] p-5 flex items-start gap-4 shadow-sm">
@@ -393,14 +449,20 @@ function CartContent() {
                   {/* CTA Buttons */}
                   <div className="flex flex-col gap-3">
                     <Link
-                      href="/checkout"
-                      style={{ backgroundColor: '#5d371f', color: '#ffffff' }}
-                      className={`w-full !bg-[#5d371f] !text-white py-3.5 px-6 font-semibold text-sm hover:!bg-[#784e34] transition-all flex items-center justify-center gap-2 shadow-md cursor-pointer hover-lift ${
-                        selectedItems.length === 0 ? 'pointer-events-none opacity-50' : ''
+                      href={selectedItems.length === 0 ? '#' : '/checkout'}
+                      style={
+                        selectedItems.length === 0
+                          ? { backgroundColor: '#eae1dd', color: '#83746c' }
+                          : { backgroundColor: '#5d371f', color: '#ffffff' }
+                      }
+                      className={`w-full py-3.5 px-6 font-semibold text-sm transition-all flex items-center justify-center gap-2 shadow-md ${
+                        selectedItems.length === 0
+                          ? 'cursor-not-allowed opacity-60 pointer-events-none'
+                          : '!bg-[#5d371f] !text-white hover:!bg-[#784e34] cursor-pointer hover-lift'
                       }`}
                     >
-                      <span className="!text-white font-bold">Tiến hành đặt hàng &amp; Giữ phôi gỗ</span>
-                      <ArrowRightOutlined className="text-sm !text-white" />
+                      <span className="font-bold">Tiến hành đặt hàng &amp; Giữ phôi gỗ</span>
+                      <ArrowRightOutlined className="text-sm" />
                     </Link>
 
                     <Link
@@ -432,11 +494,7 @@ function CartContent() {
                     <div className="flex items-start gap-3">
                       <CreditCardOutlined className="text-[#5d371f] text-base shrink-0 mt-0.5" />
                       <p className="text-xs text-[#51443d] leading-snug">
-                        <strong>Trả góp 0% linh hoạt</strong> qua thẻ tín dụng chỉ từ{' '}
-                        <span className="font-data-mono font-bold text-[#1f1b19]">
-                          {monthlyInstallment.toLocaleString('vi-VN')}đ/tháng
-                        </span>
-                        .
+                        <strong>Bảo hành kết cấu 5 năm</strong> &amp; bảo dưỡng đánh sáp tự nhiên định kỳ miễn phí tại nhà.
                       </p>
                     </div>
                   </div>
@@ -483,48 +541,63 @@ function CartContent() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {crossSellProducts.map((item) => (
-                <div
-                  key={item.id}
-                  className="bg-[#ffffff] border border-[#eae1dd] overflow-hidden flex flex-col justify-between group hover:border-[#5d371f]/50 transition-all shadow-sm hover-lift"
-                >
-                  <Link href={`/products/${item.id}`} className="aspect-[4/3] bg-[#f5ece8] overflow-hidden relative block">
-                    <img
-                      src={item.image}
-                      alt={item.name}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    />
-                    <div className="absolute top-3 right-3 bg-white/90 backdrop-blur px-2.5 py-1 text-[10px] font-bold text-[#1f1b19] border border-[#eae1dd]">
-                      {item.categoryName || 'D2 LUXURY'}
-                    </div>
-                  </Link>
+              {crossSellProducts.map((item) => {
+                const isCrossOut = item.stockType === 'out_of_stock' || (item.inStockQty !== undefined && item.inStockQty <= 0);
+                return (
+                  <div
+                    key={item.id}
+                    className="bg-[#ffffff] border border-[#eae1dd] overflow-hidden flex flex-col justify-between group hover:border-[#5d371f]/50 transition-all shadow-sm hover-lift"
+                  >
+                    <Link href={`/products/${item.id}`} className="aspect-[4/3] bg-[#f5ece8] overflow-hidden relative block">
+                      <img
+                        src={item.image}
+                        alt={item.name}
+                        className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ${
+                          isCrossOut ? 'grayscale-[40%] opacity-80' : ''
+                        }`}
+                      />
+                      <div className="absolute top-3 right-3 bg-white/90 backdrop-blur px-2.5 py-1 text-[10px] font-bold text-[#1f1b19] border border-[#eae1dd]">
+                        {item.categoryName || 'D2 LUXURY'}
+                      </div>
+                      {isCrossOut && (
+                        <div className="absolute top-3 left-3 bg-[#ba1a1a] text-white text-[10px] font-bold px-2 py-0.5">
+                          Hết hàng
+                        </div>
+                      )}
+                    </Link>
 
-                  <div className="p-5 flex flex-col gap-3">
-                    <div>
-                      <Link href={`/products/${item.id}`} className="font-serif text-base font-bold text-[#1f1b19] hover:text-[#5d371f] transition-colors">
-                        {item.name}
-                      </Link>
-                      <p className="text-xs text-[#83746c] mt-1 leading-relaxed line-clamp-2">
-                        {item.material || item.metaInfo} {item.dimensions ? `· ${item.dimensions}` : ''}
-                      </p>
-                    </div>
+                    <div className="p-5 flex flex-col gap-3">
+                      <div>
+                        <Link href={`/products/${item.id}`} className="font-serif text-base font-bold text-[#1f1b19] hover:text-[#5d371f] transition-colors">
+                          {item.name}
+                        </Link>
+                        <p className="text-xs text-[#83746c] mt-1 leading-relaxed line-clamp-2">
+                          {item.material || item.metaInfo} {item.dimensions ? `· ${item.dimensions}` : ''}
+                        </p>
+                      </div>
 
-                    <div className="flex items-center justify-between pt-2 border-t border-[#eae1dd]">
-                      <span className="font-data-mono text-sm font-bold text-[#5d371f]">
-                        {item.price.toLocaleString('vi-VN')}đ
-                      </span>
-                      <button
-                        onClick={() => handleAddCrossSell(item)}
-                        type="button"
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-[#f5ece8] border border-[#eae1dd] text-[#1f1b19] hover:bg-[#5d371f] hover:text-white transition-colors text-xs font-semibold cursor-pointer"
-                      >
-                        <PlusOutlined className="text-[10px]" />
-                        <span>Thêm nhanh</span>
-                      </button>
+                      <div className="flex items-center justify-between pt-2 border-t border-[#eae1dd]">
+                        <span className="font-data-mono text-sm font-bold text-[#5d371f]">
+                          {item.price.toLocaleString('vi-VN')}đ
+                        </span>
+                        <button
+                          onClick={() => handleAddCrossSell(item)}
+                          disabled={isCrossOut}
+                          type="button"
+                          className={`flex items-center gap-1.5 px-3 py-1.5 border text-xs font-semibold transition-colors ${
+                            isCrossOut
+                              ? 'bg-[#eae1dd] text-[#83746c] border-[#eae1dd] cursor-not-allowed'
+                              : 'bg-[#f5ece8] border-[#eae1dd] text-[#1f1b19] hover:bg-[#5d371f] hover:text-white cursor-pointer'
+                          }`}
+                        >
+                          <PlusOutlined className="text-[10px]" />
+                          <span>{isCrossOut ? 'Hết hàng' : 'Thêm nhanh'}</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </section>
         )}

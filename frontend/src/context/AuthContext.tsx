@@ -10,6 +10,12 @@ export interface User {
   phone: string;
   avatar: string;
   role: 'admin' | 'customer';
+  roleCode?: string;
+  roleId?: string;
+  roleName?: string;
+  branch?: string;
+  branchId?: string;
+  permissions?: string[];
   address?: string;
   joinDate?: string;
   dob?: string;
@@ -24,6 +30,9 @@ export const DEFAULT_ADMIN_USER: User = {
   avatar:
     'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=800&auto=format&fit=crop&q=80',
   role: 'admin',
+  roleCode: 'SUPER_ADMIN',
+  roleName: 'Quản trị viên tối cao',
+  permissions: ['*'],
   address: 'Văn phòng Điều hành D2 LUXURY, 68 Nguyễn Cơ Thạch, P. An Lợi Đông, TP. Thủ Đức, TP. HCM',
   joinDate: '10/2024',
   bio: 'Quản trị viên hệ sinh thái Nội thất Tinh hoa D2 LUXURY. Chuyên gia cố vấn chế tác gỗ óc chó & sồi Bắc Mỹ FAS.',
@@ -34,6 +43,8 @@ interface AuthContextType {
   isLoading: boolean;
   isLoggedIn: boolean;
   isAdmin: boolean;
+  hasPermission: (permissionKey: string) => boolean;
+  hasAnyPermission: (permissionKeys: string[]) => boolean;
   login: (identifier: string, password?: string) => Promise<boolean> | boolean;
   register: (data: { name: string; phone: string; email?: string; password?: string; preferences?: string[] }) => Promise<User> | User;
   loginWithGoogle: (credential: string) => Promise<boolean>;
@@ -53,7 +64,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const stored = authStorage.getUser<User>();
       if (stored && stored.id) {
+        if (stored.role === 'admin' && (!stored.permissions || stored.permissions.length === 0)) {
+          if (stored.roleCode === 'SUPER_ADMIN' || !stored.roleCode) {
+            stored.permissions = ['*'];
+          }
+        }
         setUser(stored);
+
+        // If employee has no branch saved in existing session, asynchronously resolve branch from backend
+        if (stored.role === 'admin' && stored.roleCode !== 'SUPER_ADMIN' && !stored.branch) {
+          const apiBase = process.env.NEXT_PUBLIC_API_URL || '';
+          fetch(`${apiBase}/api/employees`)
+            .then((r) => r.json())
+            .then((empRes) => {
+              const empList = empRes?.data?.items || empRes?.data || [];
+              const emp = empList.find((e: any) =>
+                (stored.email && e.email && e.email.toLowerCase() === stored.email.toLowerCase()) ||
+                (stored.phone && e.phone && e.phone === stored.phone) ||
+                (stored.name && e.name && e.name.toLowerCase() === stored.name.toLowerCase()) ||
+                (stored.id && e.id && e.id.toLowerCase() === stored.id.toLowerCase())
+              );
+              if (emp && emp.branch && emp.branch !== stored.branch) {
+                const updated: User = {
+                  ...stored,
+                  branch: emp.branch,
+                  branchId: emp.branchId || stored.branchId,
+                };
+                setUser(updated);
+                authStorage.setUser(updated);
+              }
+            })
+            .catch(() => {});
+        }
       } else {
         setUser(null);
       }
@@ -63,6 +105,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(false);
     }
   }, []);
+
+  const hasPermission = (permissionKey: string): boolean => {
+    if (!user) return false;
+    // Super admin or full system access has all permissions
+    if (user.roleCode === 'SUPER_ADMIN' || user.permissions?.includes('*')) {
+      return true;
+    }
+    if (!user.permissions || user.permissions.length === 0) {
+      return false;
+    }
+    return user.permissions.includes(permissionKey);
+  };
+
+  const hasAnyPermission = (permissionKeys: string[]): boolean => {
+    if (!user) return false;
+    if (user.roleCode === 'SUPER_ADMIN' || user.permissions?.includes('*')) {
+      return true;
+    }
+    if (!user.permissions || user.permissions.length === 0) {
+      return false;
+    }
+    return permissionKeys.some((k) => user.permissions?.includes(k));
+  };
 
   const login = async (identifier: string, password = ''): Promise<boolean> => {
     const trimmed = identifier.trim().toLowerCase();
@@ -76,13 +141,62 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (result && result.user) {
         const u = result.user;
+        const isUserAdmin = u.role?.toLowerCase() === 'admin' || u.role?.toUpperCase() === 'SUPER_ADMIN';
+
+        let userPermissions: string[] = isUserAdmin ? ['*'] : [];
+        let roleCode = u.role;
+        let roleName = isUserAdmin ? 'Quản trị viên tối cao' : 'Nhân viên';
+        let userBranch = '';
+        let userBranchId = '';
+
+        try {
+          // If staff/employee account, resolve their specific role permissions and branch assignment
+          if (!isUserAdmin) {
+            const apiBase = process.env.NEXT_PUBLIC_API_URL || '';
+            const empRes = await fetch(`${apiBase}/api/employees?search=${encodeURIComponent(trimmed || u.email || u.fullName || '')}`).then(r => r.json()).catch(() => null);
+            const empList = empRes?.data?.items || empRes?.data || [];
+            const emp = empList.find((e: any) =>
+              (e.login && e.login.toLowerCase() === trimmed) ||
+              (e.username && e.username.toLowerCase() === trimmed) ||
+              (e.email && e.email.toLowerCase() === trimmed) ||
+              (u.email && e.email && e.email.toLowerCase() === u.email.toLowerCase()) ||
+              (e.phone && (e.phone === u.phoneNumber || e.phone === trimmed)) ||
+              (e.code && e.code.toLowerCase() === trimmed) ||
+              (u.fullName && e.name && e.name.toLowerCase() === u.fullName.toLowerCase())
+            );
+
+            if (emp) {
+              if (emp.branch) userBranch = emp.branch;
+              if (emp.branchId) userBranchId = emp.branchId;
+
+              if (emp.role) {
+                const rolesRes = await fetch(`${apiBase}/api/roles`).then(r => r.json()).catch(() => null);
+                const rolesList = rolesRes?.data || [];
+                const matchedRole = rolesList.find((r: any) => r.id === emp.role || r.code === emp.role || r.name === emp.role);
+                if (matchedRole) {
+                  userPermissions = matchedRole.permissions || [];
+                  roleCode = matchedRole.code;
+                  roleName = matchedRole.name;
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to resolve role permissions & branch:', e);
+        }
+
         const mappedUser: User = {
           id: u.id,
           name: u.fullName || u.email.split('@')[0],
           email: u.email,
           phone: u.phoneNumber || '',
           avatar: u.avatarUrl || 'https://images.unsplash.com/photo-1533090161767-e6ffed986b88?w=800&auto=format&fit=crop&q=80',
-          role: (u.role?.toLowerCase() === 'admin' || u.role?.toLowerCase() === 'staff' ? 'admin' : 'customer'),
+          role: (isUserAdmin || u.role?.toLowerCase() === 'staff' || (userPermissions && userPermissions.length > 0) || (roleCode && roleCode !== 'Customer') ? 'admin' : 'customer'),
+          roleCode,
+          roleName,
+          branch: userBranch,
+          branchId: userBranchId,
+          permissions: userPermissions,
           joinDate: u.createdAt ? new Date(u.createdAt).toLocaleDateString('vi-VN') : new Date().toLocaleDateString('vi-VN'),
           bio: '',
         };
@@ -267,6 +381,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isLoading,
         isLoggedIn: !!user,
         isAdmin: user?.role === 'admin',
+        hasPermission,
+        hasAnyPermission,
         login,
         register,
         loginWithGoogle,

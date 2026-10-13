@@ -2,7 +2,7 @@ export interface CategoryProduct {
   id: string;
   sku: string;
   name: string;
-  space: 'living' | 'bedroom' | 'dining' | 'office';
+  space: 'living' | 'bedroom' | 'dining' | 'office' | 'other' | string;
   spaceName: string;
   categoryId?: string;
   categoryName?: string;
@@ -11,8 +11,10 @@ export interface CategoryProduct {
   colorTone: 'chestnut' | 'dark-brown' | 'light-oak' | 'beige' | 'grey';
   price: number;
   originalPrice?: number;
-  stockStatus: 'showroom' | 'custom';
+  stockStatus: 'showroom' | 'custom' | 'out_of_stock' | string;
   stockLabel: string;
+  inStock?: boolean;
+  inStockQty?: number;
   image: string;
   macroImage: string;
   tag?: string;

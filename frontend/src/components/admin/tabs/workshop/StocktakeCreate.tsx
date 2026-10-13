@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Button, Input, Select, InputNumber, Tag, Popconfirm, App } from 'antd';
 import { PrinterOutlined, DeleteOutlined, FileExcelOutlined } from '@ant-design/icons';
 import {
@@ -13,6 +13,7 @@ import type {
   AdminWarehouse,
   StockAuditItem,
 } from '@/types/admin';
+import { isProductInBranch, getProductStockForBranch } from '@/utils/branchHelper';
 
 const normalizeSearchText = (str?: string) => {
   if (!str) return '';
@@ -24,6 +25,8 @@ const normalizeSearchText = (str?: string) => {
     .replace(/Đ/g, 'd')
     .trim();
 };
+
+const COMMON_UOM_OPTIONS: Array<{ value: string; label: string }> = [];
 
 export interface StocktakeCreateProps {
   stocktakeViewMode: 'create' | 'edit';
@@ -44,6 +47,7 @@ export interface StocktakeCreateProps {
   allAuditableStock: StockAuditItem[];
   allProducts?: import('@/types/admin').FeaturedCatalogProduct[];
   availableBranchWarehouses: AdminWarehouse[];
+  uomSelectOptions?: Array<{ value: string; label: string }>;
   onNavigateToProduct?: (query: string) => void;
   onBack: () => void;
   onSaveDraft: () => void;
@@ -72,6 +76,7 @@ export function StocktakeCreate({
   allAuditableStock,
   allProducts = [],
   availableBranchWarehouses,
+  uomSelectOptions,
   onNavigateToProduct,
   onBack,
   onSaveDraft,
@@ -81,13 +86,37 @@ export function StocktakeCreate({
   user,
 }: StocktakeCreateProps) {
   const { message } = App.useApp();
+
+  const activeUomOptions = React.useMemo(() => {
+    if (uomSelectOptions && uomSelectOptions.length > 0) {
+      return uomSelectOptions;
+    }
+    return COMMON_UOM_OPTIONS;
+  }, [uomSelectOptions]);
+
+  // Auto-sync stocktake warehouse to currently available branch warehouses
+  useEffect(() => {
+    if (availableBranchWarehouses.length > 0) {
+      const isValid = availableBranchWarehouses.some((w) => w.name === stocktakeWarehouseName);
+      if (!isValid) {
+        setStocktakeWarehouseName(availableBranchWarehouses[0].name);
+      }
+    }
+  }, [availableBranchWarehouses, stocktakeWarehouseName, setStocktakeWarehouseName]);
+
+  const currentBranch = React.useMemo(() => {
+    return availableBranchWarehouses.find((w) => w.name === stocktakeWarehouseName)?.branch;
+  }, [availableBranchWarehouses, stocktakeWarehouseName]);
+
   const allSearchableProducts = React.useMemo(() => {
     const map = new Map<string, import('@/types/admin').FeaturedCatalogProduct>();
 
-    // 1. Catalog products
+    // 1. Catalog products - must strictly belong to current warehouse's branch
     (allProducts || []).forEach((p) => {
-      const key = p.code || p.id;
-      if (key) map.set(key, p);
+      if (isProductInBranch(p, currentBranch, availableBranchWarehouses)) {
+        const key = p.code || p.id;
+        if (key) map.set(key, p);
+      }
     });
 
     // 2. Auditable stock items
@@ -112,7 +141,7 @@ export function StocktakeCreate({
     });
 
     return Array.from(map.values());
-  }, [allProducts, allAuditableStock]);
+  }, [allProducts, allAuditableStock, currentBranch, availableBranchWarehouses]);
 
   const filteredProducts = React.useMemo(() => {
     const rawQuery = (stocktakeSearchProduct || '').trim().toLowerCase();
@@ -163,21 +192,28 @@ export function StocktakeCreate({
     const alreadyLine = stocktakeEntryLines.find((line) => line.code === pCode || line.id === product.id);
 
     if (!alreadyLine) {
+      const branchStock = getProductStockForBranch(product, currentBranch, availableBranchWarehouses);
+      const initialQty = (product as any).systemQty ?? (matchedAudit ? matchedAudit.systemQty : branchStock);
+      const defaultUnit =
+        product.unit ||
+        (product as any).uom ||
+        (activeUomOptions && activeUomOptions.length > 0 ? activeUomOptions[0].value : 'Bộ');
       const newItem: StockAuditItem = matchedAudit
-        ? { ...matchedAudit, actualQty: matchedAudit.systemQty, status: 'matched' }
+        ? { ...matchedAudit, productId: product.id, actualQty: matchedAudit.systemQty, status: 'matched', unit: matchedAudit.unit || defaultUnit }
         : {
             id: product.id || `audit_${Date.now()}`,
+            productId: product.id,
             code: pCode,
             name: product.name,
-            type: 'furniture',
+            type: 'product',
             location: product.location || stocktakeWarehouseName || 'Kho chính',
-            systemQty: (product as any).systemQty ?? 1,
-            actualQty: (product as any).systemQty ?? 1,
-            unit: (product as any).unit || (product as any).uom || 'Bộ',
-            systemMc: '10.5%',
-            actualMc: '10.5%',
+            systemQty: initialQty,
+            actualQty: initialQty,
+            unit: defaultUnit,
+            systemMc: 'Đạt chuẩn',
+            actualMc: 'Đạt chuẩn',
             status: 'matched',
-            qualityNote: 'Bình thường',
+            qualityNote: (product.collection || '') + ' • ' + (product.metaInfo || 'Hàng sẵn bán'),
             checked: true,
           };
       setStocktakeEntryLines((prev) => [...prev, newItem]);
@@ -264,7 +300,7 @@ export function StocktakeCreate({
       }
       sidebar={
         <PosEntrySidebar
-          creatorName={stocktakeStaffName || user?.name || 'Nguyễn Văn Nam (Thủ kho)'}
+          creatorName={stocktakeStaffName || user?.name || 'Thủ kho'}
           creatorRole="Người lập phiếu kiểm kho"
           createdDate={stocktakeDate || new Date().toLocaleDateString('vi-VN')}
           onCancel={onBack}
@@ -284,14 +320,18 @@ export function StocktakeCreate({
             </div>
             <div className="flex justify-between items-center">
               <span className="text-slate-500">Chi nhánh:</span>
-              <span className="font-medium text-slate-900 text-right">Xưởng Sản Xuất Bình Chánh</span>
+              <span className="font-medium text-slate-900 text-right">
+                {availableBranchWarehouses.find((w) => w.name === stocktakeWarehouseName)?.branch || availableBranchWarehouses[0]?.branch || 'Chi nhánh quản lý'}
+              </span>
             </div>
             <div className="space-y-1">
               <label className="text-slate-500 block">Kho kiểm kê:</label>
               <Select
-                value={stocktakeWarehouseName}
+                value={stocktakeWarehouseName || availableBranchWarehouses[0]?.name || undefined}
                 onChange={setStocktakeWarehouseName}
                 options={availableBranchWarehouses.map((w) => ({ value: w.name, label: `${w.name} (${w.branch})` }))}
+                placeholder={availableBranchWarehouses.length === 0 ? 'Chi nhánh chưa có kho lưu trữ' : 'Chọn kho kiểm kê...'}
+                notFoundContent={<span className="text-xs text-slate-500 p-2 block">Không có kho nào thuộc chi nhánh này</span>}
                 className="w-full text-xs font-normal"
               />
             </div>
@@ -496,16 +536,40 @@ export function StocktakeCreate({
                         </div>
                         <div className="text-[11px] text-slate-500">{line.qualityNote || line.location}</div>
                       </td>
-                      <td className="py-2 px-3 text-center text-slate-600">{line.unit}</td>
+                      <td className="py-2 px-3 text-center">
+                        <Select
+                          size="small"
+                          value={line.unit || (activeUomOptions[0]?.value ?? 'Bộ')}
+                          onChange={(u) => {
+                            setStocktakeEntryLines((prev) =>
+                              prev.map((l) =>
+                                l.id === line.id || (l.code && l.code === line.code)
+                                  ? { ...l, unit: u }
+                                  : l
+                              )
+                            );
+                          }}
+                          popupMatchSelectWidth={false}
+                          classNames={{ popup: { root: 'min-w-[120px]' } }}
+                          className="w-full min-w-[85px] text-xs [&_.ant-select-selector]:!h-8 [&_.ant-select-selector]:!px-2 [&_.ant-select-selection-item]:!text-xs [&_.ant-select-selection-item]:!leading-[30px] [&_.ant-select-selector]:!border-0 [&_.ant-select-selector]:!border-b [&_.ant-select-selector]:!border-slate-300 [&_.ant-select-selector]:!rounded-none [&_.ant-select-selector]:!shadow-none [&_.ant-select-selector]:!bg-transparent hover:[&_.ant-select-selector]:!border-slate-500"
+                          options={
+                            line.unit && !activeUomOptions.some((o) => o.value === line.unit)
+                              ? [{ value: line.unit, label: line.unit }, ...activeUomOptions]
+                              : activeUomOptions
+                          }
+                        />
+                      </td>
                       <td className="py-2 px-3 text-center font-mono text-slate-600">{line.actualMc || line.systemMc}</td>
                       <td className="py-2 px-3 text-right font-mono font-medium text-slate-900">{line.systemQty}</td>
                       <td className="py-2 px-3 text-center">
-                        <InputNumber
+                        <Input
+                          type="number"
                           min={0}
                           step={0.1}
-                          value={line.actualQty}
-                          onChange={(val) => {
-                            const newQty = val === null ? 0 : Number(val);
+                          value={line.actualQty !== undefined ? line.actualQty : ''}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            const newQty = raw === '' ? 0 : Number(raw) || 0;
                             setStocktakeEntryLines((prev) =>
                               prev.map((l) =>
                                 l.code === line.code
@@ -518,7 +582,7 @@ export function StocktakeCreate({
                               )
                             );
                           }}
-                          className="w-24 text-xs font-mono font-medium [&_.ant-input-number-input]:text-center !border-0 !border-b !border-slate-300 hover:!border-slate-500 focus-within:!border-[#784e34] !rounded-none !shadow-none !bg-transparent"
+                          className="w-24 text-xs font-mono font-medium text-center !border-0 !border-b !border-slate-300 hover:!border-slate-500 focus-within:!border-[#784e34] !rounded-none !shadow-none !bg-transparent [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                         />
                       </td>
                       <td className={`py-2 px-3 text-right font-mono font-medium ${diffColor}`}>

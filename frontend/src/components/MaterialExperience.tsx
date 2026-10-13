@@ -127,9 +127,9 @@ export default function MaterialExperience({ onOpenSampleModal, products = [] }:
   const displayImage = randomImage || current.defaultImage;
 
   return (
-    <section className="w-full py-16 md:py-24 bg-[#f5ece8]">
+    <section className="w-full py-7 md:py-9 bg-[#f5ece8] border-b border-[#ebdcd2]">
       <div className="w-full max-w-[1720px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-16">
-        <div className="max-w-2xl mx-auto text-center mb-10">
+        <div className="max-w-2xl mx-auto text-center mb-5 md:mb-6">
           <span className="font-label-sm text-xs uppercase tracking-widest text-[#5d371f] font-semibold">
             Tự Do Tuỳ Biến
           </span>

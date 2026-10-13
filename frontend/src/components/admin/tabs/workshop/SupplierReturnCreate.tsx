@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Button, Input, Select, InputNumber, Popconfirm, App } from 'antd';
 import { FileExcelOutlined, DeleteOutlined } from '@ant-design/icons';
 import {
@@ -14,22 +14,11 @@ import type {
   AdminWarehouse,
   StockImportSlip,
 } from '@/types/admin';
+import { isMatchBranch, isProductInBranch, getProductStockForBranch } from '@/utils/branchHelper';
 
 const { Option } = Select;
 
-const COMMON_UOM_OPTIONS = [
-  { value: 'Bộ', label: 'Bộ' },
-  { value: 'Chiếc', label: 'Chiếc' },
-  { value: 'Cái', label: 'Cái' },
-  { value: 'Tấm', label: 'Tấm' },
-  { value: 'Thanh', label: 'Thanh' },
-  { value: 'm3', label: 'm³ (Khối)' },
-  { value: 'm2', label: 'm²' },
-  { value: 'md', label: 'md (Mét dài)' },
-  { value: 'kg', label: 'kg' },
-  { value: 'Hộp', label: 'Hộp' },
-  { value: 'Gói', label: 'Gói' },
-];
+const COMMON_UOM_OPTIONS: Array<{ value: string; label: string }> = [];
 
 const formatInputMoney = (value: number | string | undefined): string => {
   if (value === undefined || value === null || value === '') return '';
@@ -99,6 +88,7 @@ export interface SupplierReturnCreateProps {
   importsList: StockImportSlip[];
   availableBranchSuppliers: AdminSupplier[];
   availableBranchWarehouses: AdminWarehouse[];
+  uomSelectOptions?: Array<{ value: string; label: string }>;
   isMatchGlobalBranch?: (name?: string) => boolean;
   onNavigateToProduct?: (query: string) => void;
   onBack: () => void;
@@ -140,6 +130,7 @@ export function SupplierReturnCreate({
   importsList,
   availableBranchSuppliers,
   availableBranchWarehouses,
+  uomSelectOptions,
   isMatchGlobalBranch = () => true,
   onNavigateToProduct,
   onBack,
@@ -151,17 +142,57 @@ export function SupplierReturnCreate({
 }: SupplierReturnCreateProps) {
   const { message } = App.useApp();
 
+  const activeUomOptions = React.useMemo(() => {
+    if (uomSelectOptions && uomSelectOptions.length > 0) {
+      return uomSelectOptions;
+    }
+    return COMMON_UOM_OPTIONS;
+  }, [uomSelectOptions]);
+
+  // Auto-sync return warehouse to currently available branch warehouses
+  useEffect(() => {
+    if (availableBranchWarehouses.length > 0) {
+      const isValid = availableBranchWarehouses.some((w) => w.name === returnWarehouse);
+      if (!isValid) {
+        setReturnWarehouse(availableBranchWarehouses[0].name);
+      }
+    }
+  }, [availableBranchWarehouses, returnWarehouse, setReturnWarehouse]);
+
+  const currentBranch = React.useMemo(() => {
+    if (returnWarehouse) {
+      const matched = availableBranchWarehouses.find((w) => w.name === returnWarehouse);
+      if (matched?.branch) return matched.branch;
+      return returnWarehouse;
+    }
+    return availableBranchWarehouses[0]?.branch || availableBranchWarehouses[0]?.name || '';
+  }, [returnWarehouse, availableBranchWarehouses]);
+
   const allSearchableProducts = React.useMemo(() => {
     const map = new Map<string, import('@/types/admin').FeaturedCatalogProduct>();
 
-    // 1. Catalog products
+    // 1. Catalog products belonging to this branch with available stock > 0
     (allProducts || []).forEach((p) => {
+      if (!isProductInBranch(p, currentBranch, availableBranchWarehouses)) return;
+      const stock = getProductStockForBranch(p, currentBranch, availableBranchWarehouses);
+      if (stock <= 0) return; // Cannot return items with 0 stock to supplier
       const key = p.code || p.id;
-      if (key) map.set(key, p);
+      if (key) {
+        map.set(key, {
+          ...p,
+          inStock: stock,
+          stockNote: `${stock} sản phẩm (tồn kho)`,
+        });
+      }
     });
 
-    // 2. Import slip items
+    // 2. Import slip items belonging to this warehouse/branch
     (importsList || []).forEach((imp) => {
+      const isSlipMatch =
+        (returnWarehouse && imp.warehouseName === returnWarehouse) ||
+        isMatchBranch(imp.warehouseName, currentBranch, availableBranchWarehouses);
+      if (!isSlipMatch) return;
+
       const key = imp.code || imp.id;
       if (key && !map.has(key)) {
         map.set(key, {
@@ -171,9 +202,10 @@ export function SupplierReturnCreate({
           price: imp.totalValue || imp.unitPrice || 0,
           originalPrice: imp.unitPrice || imp.totalValue || 0,
           costPrice: imp.unitPrice || imp.totalValue || 0,
-          collection: imp.warehouseName || 'Kho chính',
+          collection: imp.warehouseName || returnWarehouse || 'Kho chính',
           categoryName: `NCC: ${imp.supplier}`,
           stockNote: `${imp.quantity || 1} ${imp.unit || 'bộ'}`,
+          inStock: imp.quantity || 1,
           stockType: 'in_stock',
           image: 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=120&q=80',
           description: imp.spec || '',
@@ -182,7 +214,7 @@ export function SupplierReturnCreate({
     });
 
     return Array.from(map.values());
-  }, [allProducts, importsList]);
+  }, [allProducts, importsList, currentBranch, returnWarehouse, availableBranchWarehouses]);
 
   const filteredProducts = React.useMemo(() => {
     const rawQuery = (returnSearchProduct || '').trim().toLowerCase();
@@ -246,7 +278,10 @@ export function SupplierReturnCreate({
     }
 
     if (!alreadyLine) {
-      const defaultUnit = (product as any).unit || (product as any).uom || 'Bộ';
+      const defaultUnit =
+        (product as any).unit ||
+        (product as any).uom ||
+        (activeUomOptions && activeUomOptions.length > 0 ? activeUomOptions[0].value : 'Bộ');
       const newLine: SupplierReturnLine = {
         id: `line_ret_${Date.now()}_${product.id || pCode}`,
         code: pCode,
@@ -262,6 +297,11 @@ export function SupplierReturnCreate({
       setReturnEntryLines((prev) => [...prev, newLine]);
       message.success(`Đã thêm sản phẩm "${product.name}" vào phiếu trả hàng`);
     } else {
+      const currentStock = getProductStockForBranch(product, currentBranch, availableBranchWarehouses);
+      if (currentStock > 0 && alreadyLine.quantity >= currentStock) {
+        message.warning(`Số lượng trả hàng (${alreadyLine.quantity + 1}) vượt quá tồn kho hiện tại (${currentStock})`);
+        return;
+      }
       setReturnEntryLines((prev) =>
         prev.map((l) =>
           l.code === pCode || l.id === alreadyLine.id
@@ -333,7 +373,7 @@ export function SupplierReturnCreate({
       }
       sidebar={
         <PosEntrySidebar
-          creatorName={returnStaffName || user?.name || 'Nguyễn Văn Nam (KCS)'}
+          creatorName={returnStaffName || user?.name || 'Thủ kho / KCS'}
           createdDate={returnDate || new Date().toLocaleDateString('vi-VN')}
           avatarBg="bg-rose-700"
           onCancel={onBack}
@@ -373,7 +413,15 @@ export function SupplierReturnCreate({
               className="w-full h-9 text-xs"
               allowClear
             >
-              {importsList.filter((i) => isMatchGlobalBranch(i.warehouseName)).map((i) => (
+              {importsList
+                .filter(
+                  (i) =>
+                    (!returnWarehouse ||
+                      i.warehouseName === returnWarehouse ||
+                      isMatchBranch(i.warehouseName, currentBranch, availableBranchWarehouses)) &&
+                    isMatchGlobalBranch(i.warehouseName)
+                )
+                .map((i) => (
                 <Option key={i.id} value={i.code}>
                   <span className="font-mono">{i.code}</span> - {i.itemName} ({i.supplier})
                 </Option>
@@ -413,12 +461,13 @@ export function SupplierReturnCreate({
           <div>
             <label className="text-xs font-semibold text-slate-800 block mb-1">Kho xuất trả hàng</label>
             <Select
-              value={returnWarehouse}
+              value={returnWarehouse || availableBranchWarehouses[0]?.name || undefined}
               onChange={(val) => setReturnWarehouse(val)}
-              placeholder="Chọn kho xuất trả..."
+              placeholder={availableBranchWarehouses.length === 0 ? 'Chi nhánh chưa có kho lưu trữ' : 'Chọn kho xuất trả...'}
               className="w-full h-9 text-xs"
               showSearch
               optionFilterProp="children"
+              notFoundContent={<span className="text-xs text-slate-500 p-2 block">Không có kho nào thuộc chi nhánh này</span>}
             >
               {availableBranchWarehouses.map((w) => (
                 <Option key={w.id} value={w.name}>
@@ -463,9 +512,10 @@ export function SupplierReturnCreate({
           {/* Financial Calculations Box */}
           <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-2.5 text-xs">
             {(() => {
-              const totalGoods = returnEntryLines.reduce((sum, item) => sum + (item.total || (item.quantity * item.returnPrice)), 0);
+              const totalGoods = returnEntryLines.reduce((sum, item) => sum + ((Number(item.quantity) || 0) * (Number(item.returnPrice) || 0)), 0);
               const refund = Math.max(0, totalGoods - (returnDiscount || 0));
-              const paid = returnPaidAmount !== undefined ? Number(returnPaidAmount) : refund;
+              const isOffset = returnPaymentMethod === 'Cấn trừ công nợ';
+              const paid = isOffset ? 0 : (returnPaidAmount !== undefined ? Number(returnPaidAmount) : 0);
               const remaining = Math.max(0, refund - paid);
 
               return (
@@ -477,15 +527,11 @@ export function SupplierReturnCreate({
 
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-slate-600 font-medium shrink-0">Giảm giá / Phí hoàn hàng</span>
-                    <InputNumber
-                      min={0}
-                      controls={false}
-                      value={returnDiscount}
-                      formatter={formatInputMoney}
-                      parser={parseInputMoney}
-                      onChange={(val) => setReturnDiscount(val !== null && val !== undefined ? Number(String(val).replace(/\./g, '')) || 0 : 0)}
+                    <Input
+                      value={formatInputMoney(returnDiscount)}
+                      onChange={(e) => setReturnDiscount(parseInputMoney(e.target.value))}
                       style={{ width: 190, minWidth: 180 }}
-                      className="w-48 sm:w-52 min-w-[180px] h-8 text-xs font-mono [&_.ant-input-number-input]:text-right [&_.ant-input-number-input]:px-2.5 !border-0 !border-b !border-slate-300 hover:!border-slate-500 focus-within:!border-rose-600 !rounded-none !shadow-none !bg-transparent"
+                      className="w-48 sm:w-52 min-w-[180px] h-8 text-xs font-mono text-right px-2.5 !border-0 !border-b !border-slate-300 hover:!border-slate-500 focus-within:!border-rose-600 !rounded-none !shadow-none !bg-transparent"
                     />
                   </div>
 
@@ -494,25 +540,49 @@ export function SupplierReturnCreate({
                     <span className="font-mono font-bold text-rose-700 text-sm">{refund.toLocaleString('vi-VN')} đ</span>
                   </div>
 
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-slate-700 font-semibold shrink-0">Tiền NCC đã trả</span>
-                    <InputNumber
-                      min={0}
-                      controls={false}
-                      placeholder={refund ? formatInputMoney(refund) : '0'}
-                      value={returnPaidAmount}
-                      formatter={formatInputMoney}
-                      parser={parseInputMoney}
-                      onChange={(val) => setReturnPaidAmount(val !== null && val !== undefined ? Number(String(val).replace(/\./g, '')) || 0 : undefined)}
-                      style={{ width: 190, minWidth: 180 }}
-                      className="w-48 sm:w-52 min-w-[180px] h-8 text-xs font-mono font-bold text-emerald-700 [&_.ant-input-number-input]:text-right [&_.ant-input-number-input]:px-2.5 !border-0 !border-b !border-slate-300 hover:!border-slate-500 focus-within:!border-emerald-700 !rounded-none !shadow-none !bg-transparent"
-                    />
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="text-slate-700 font-semibold">Tiền NCC đã trả</span>
+                        {!isOffset && (
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setReturnPaidAmount(refund)}
+                              className="text-[10px] px-1.5 py-0.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded border border-emerald-200 cursor-pointer font-medium"
+                              title="Điền đủ số tiền NCC đã hoàn lại"
+                            >
+                              Đã thu đủ
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setReturnPaidAmount(0)}
+                              className="text-[10px] px-1.5 py-0.5 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded border border-rose-200 cursor-pointer font-medium"
+                              title="Chưa nhận lại tiền (0 đ)"
+                            >
+                              Chưa nhận
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      <Input
+                        disabled={isOffset}
+                        placeholder={isOffset ? '0 đ (Cấn trừ nợ)' : 'Nhập tiền NCC đã trả...'}
+                        value={isOffset ? '0' : (returnPaidAmount !== undefined ? formatInputMoney(returnPaidAmount) : '')}
+                        onChange={(e) => {
+                          const raw = e.target.value.trim();
+                          setReturnPaidAmount(raw ? parseInputMoney(raw) : 0);
+                        }}
+                        style={{ width: 190, minWidth: 180 }}
+                        className={`w-48 sm:w-52 min-w-[180px] h-8 text-xs font-mono font-bold text-right px-2.5 !border-0 !border-b !border-slate-300 hover:!border-slate-500 focus-within:!border-emerald-700 !rounded-none !shadow-none !bg-transparent ${isOffset ? 'text-slate-400 italic' : 'text-emerald-700'}`}
+                      />
+                    </div>
                   </div>
 
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-600 font-medium">Còn nợ hoàn tiền</span>
-                    <span className={`font-mono font-bold ${remaining > 0 ? 'text-rose-600' : 'text-slate-500'}`}>
-                      {remaining > 0 ? `${remaining.toLocaleString('vi-VN')} đ` : '0 đ'}
+                    <span className="text-slate-600 font-medium">{isOffset ? 'Cấn trừ giảm nợ NCC' : 'Còn nợ hoàn tiền'}</span>
+                    <span className={`font-mono font-bold ${isOffset ? 'text-emerald-700' : (remaining > 0 ? 'text-rose-600' : 'text-slate-500')}`}>
+                      {isOffset ? `-${refund.toLocaleString('vi-VN')} đ` : (remaining > 0 ? `${remaining.toLocaleString('vi-VN')} đ` : '0 đ')}
                     </span>
                   </div>
 
@@ -520,12 +590,19 @@ export function SupplierReturnCreate({
                     <label className="text-[11px] font-semibold text-slate-600 block mb-1">Hình thức hoàn tiền</label>
                     <Select
                       value={returnPaymentMethod}
-                      onChange={(m) => setReturnPaymentMethod(m)}
+                      onChange={(m) => {
+                        setReturnPaymentMethod(m);
+                        if (m === 'Cấn trừ công nợ') {
+                          setReturnPaidAmount(0);
+                        } else if (returnPaidAmount === 0 || returnPaidAmount === undefined) {
+                          setReturnPaidAmount(refund);
+                        }
+                      }}
                       className="w-full h-8 text-xs"
                       options={[
                         { value: 'Chuyển khoản', label: 'Chuyển khoản ngân hàng' },
                         { value: 'Tiền mặt', label: 'Tiền mặt' },
-                        { value: 'Cấn trừ công nợ', label: 'Cấn trừ vào công nợ tiếp theo' },
+                        { value: 'Cấn trừ công nợ', label: 'Cấn trừ vào công nợ NCC' },
                       ]}
                     />
                   </div>
@@ -556,7 +633,7 @@ export function SupplierReturnCreate({
         emptyTitle="Chưa có sản phẩm nào trong phiếu trả hàng"
         emptyDescription="Chọn phiếu nhập gốc hoặc tìm kiếm mặt hàng ở thanh tìm kiếm phía trên để lập phiếu xuất trả."
         footerTotalText="Tổng giá trị hoàn trả"
-        footerTotalValue={`${returnEntryLines.reduce((sum, item) => sum + (item.total || (item.quantity * item.returnPrice)), 0).toLocaleString('vi-VN')} đ`}
+        footerTotalValue={`${returnEntryLines.reduce((sum, item) => sum + ((Number(item.quantity) || 0) * (Number(item.returnPrice) || 0)), 0).toLocaleString('vi-VN')} đ`}
       >
         <div className="overflow-x-auto rounded-lg border border-slate-200">
           <table className="min-w-[860px] w-full text-xs">
@@ -607,7 +684,7 @@ export function SupplierReturnCreate({
                   <td className="px-3 py-2 text-center">
                     <Select
                       size="small"
-                      value={line.unit || 'Bộ'}
+                      value={line.unit || (activeUomOptions[0]?.value ?? 'Bộ')}
                       onChange={(u) => {
                         setReturnEntryLines((prev) =>
                           prev.map((l) => (l.id === line.id ? { ...l, unit: u } : l))
@@ -616,16 +693,32 @@ export function SupplierReturnCreate({
                       popupMatchSelectWidth={false}
                       classNames={{ popup: { root: 'min-w-[120px]' } }}
                       className="w-full min-w-[85px] text-xs [&_.ant-select-selector]:!h-8 [&_.ant-select-selector]:!px-2 [&_.ant-select-selection-item]:!text-xs [&_.ant-select-selection-item]:!leading-[30px] [&_.ant-select-selector]:!border-0 [&_.ant-select-selector]:!border-b [&_.ant-select-selector]:!border-slate-300 [&_.ant-select-selector]:!rounded-none [&_.ant-select-selector]:!shadow-none [&_.ant-select-selector]:!bg-transparent hover:[&_.ant-select-selector]:!border-slate-500"
-                      options={COMMON_UOM_OPTIONS}
+                      options={
+                        line.unit && !activeUomOptions.some((o) => o.value === line.unit)
+                          ? [{ value: line.unit, label: line.unit }, ...activeUomOptions]
+                          : activeUomOptions
+                      }
                     />
                   </td>
                   <td className="px-3 py-2 text-right w-28 min-w-[90px]">
-                    <InputNumber<number>
+                    <Input
+                      type="number"
                       min={1}
-                      controls={false}
-                      value={line.quantity}
-                      onChange={(q) => {
-                        const numQ = q !== null && q !== undefined ? Number(q) || 1 : 1;
+                      value={line.quantity || ''}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        const numQ = raw === '' ? 0 : Math.max(0, parseInt(raw, 10) || 0);
+                        setReturnEntryLines((prev) =>
+                          prev.map((l) =>
+                            l.id === line.id
+                              ? { ...l, quantity: numQ, total: numQ * l.returnPrice }
+                              : l
+                          )
+                        );
+                      }}
+                      onBlur={(e) => {
+                        const raw = e.target.value;
+                        const numQ = Math.max(1, parseInt(raw, 10) || 1);
                         setReturnEntryLines((prev) =>
                           prev.map((l) =>
                             l.id === line.id
@@ -635,32 +728,28 @@ export function SupplierReturnCreate({
                         );
                       }}
                       style={{ width: '100%', minWidth: 80 }}
-                      className="w-full min-w-[80px] h-8 text-xs font-mono font-bold [&_.ant-input-number-input]:!text-right [&_.ant-input-number-input]:!px-2 [&_.ant-input-number-handler-wrap]:!hidden !border-0 !border-b !border-slate-300 hover:!border-slate-500 focus-within:!border-rose-600 !rounded-none !shadow-none !bg-transparent"
+                      className="w-full min-w-[80px] h-8 text-xs font-mono font-bold text-right px-2 !border-0 !border-b !border-slate-300 hover:!border-slate-500 focus-within:!border-rose-600 !rounded-none !shadow-none !bg-transparent [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     />
                   </td>
                   <td className="px-3 py-2 text-right w-56 min-w-[200px]">
-                    <InputNumber<number>
-                      min={0}
-                      controls={false}
-                      value={line.returnPrice}
-                      formatter={formatInputMoney}
-                      parser={parseInputMoney}
-                      onChange={(p) => {
-                        const numP = p !== null && p !== undefined ? Number(String(p).replace(/\./g, '')) || 0 : 0;
+                    <Input
+                      value={formatInputMoney(line.returnPrice)}
+                      onChange={(e) => {
+                        const numP = parseInputMoney(e.target.value);
                         setReturnEntryLines((prev) =>
                           prev.map((l) =>
                             l.id === line.id
-                              ? { ...l, returnPrice: numP, total: line.quantity * numP }
+                              ? { ...l, returnPrice: numP, total: (l.quantity || 0) * numP }
                               : l
                           )
                         );
                       }}
                       style={{ width: '100%', minWidth: 180 }}
-                      className="w-full min-w-[180px] h-8 text-xs font-mono font-bold [&_.ant-input-number-input]:!text-right [&_.ant-input-number-input]:!px-2.5 [&_.ant-input-number-handler-wrap]:!hidden !border-0 !border-b !border-slate-300 hover:!border-slate-500 focus-within:!border-rose-600 !rounded-none !shadow-none !bg-transparent"
+                      className="w-full min-w-[180px] h-8 text-xs font-mono font-bold text-right px-2.5 !border-0 !border-b !border-slate-300 hover:!border-slate-500 focus-within:!border-rose-600 !rounded-none !shadow-none !bg-transparent"
                     />
                   </td>
                   <td className="px-3 py-2 text-right w-44 min-w-[160px] font-mono font-bold text-rose-700 whitespace-nowrap">
-                    {(line.total || line.quantity * line.returnPrice).toLocaleString('vi-VN')} đ
+                    {((Number(line.quantity) || 0) * (Number(line.returnPrice) || 0)).toLocaleString('vi-VN')} đ
                   </td>
                   <td className="px-3 py-2 text-center">
                     <Button

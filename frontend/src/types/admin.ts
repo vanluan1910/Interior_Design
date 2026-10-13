@@ -1,3 +1,16 @@
+export interface OrderItem {
+  id?: string;
+  productId?: string;
+  productName: string;
+  productSku?: string;
+  productImage?: string;
+  material?: string;
+  dimensions?: string;
+  unitPrice: number;
+  quantity: number;
+  totalPrice: number;
+}
+
 export interface OrderRow {
   id: string;
   orderCode: string;
@@ -11,6 +24,7 @@ export interface OrderRow {
   productName: string;
   productSpec: string;
   woodType?: string;
+  quantity?: number;
   orderDate: string;
   deadlineDate: string;
   value: number;
@@ -23,6 +37,7 @@ export interface OrderRow {
   spaceLabel?: string;
   branch?: string;
   showroom?: string;
+  items?: OrderItem[];
 }
 
 export interface AdminCustomer {
@@ -93,7 +108,7 @@ export interface FeaturedCatalogProduct {
   originalPrice?: number; // Giá gốc / Giá vốn / Giá nhập
   costPrice?: number; // Alias giá gốc
   stockNote: string;
-  stockType: 'in_stock' | 'low' | 'custom';
+  stockType: 'in_stock' | 'low' | 'custom' | 'out_of_stock';
   image: string;
   images?: string[];
   subImages?: string;
@@ -104,6 +119,9 @@ export interface FeaturedCatalogProduct {
   space?: string;
   unit?: string;
   branch?: string;
+  branchStocksJson?: string;
+  inStock?: number;
+  inStockQty?: number;
   location?: string;
   description?: string;
   dimensions?: string;
@@ -115,6 +133,7 @@ export interface FeaturedCatalogProduct {
 
 export interface StockAuditItem {
   id: string;
+  productId?: string;
   code: string;
   name: string;
   type: 'furniture' | 'product' | 'accessory' | string;
@@ -177,6 +196,7 @@ export interface StockImportSlipItem {
   id?: string;
   code: string;
   name: string;
+  spec?: string;
   unit: string;
   batch?: string;
   expiryDate?: string;
@@ -216,6 +236,7 @@ export interface StockImportSlip {
   discount?: number;
   paidAmount?: number;
   debtAmount?: number;
+  remainingDebt?: number;
   returnStatus?: string;
   paymentMethod?: string;
   invoiceNumber?: string;
@@ -225,6 +246,7 @@ export interface StockImportSlip {
   inspector: string;
   status: 'completed' | 'inspecting' | 'draft';
   statusLabel: string;
+  itemsJson?: string;
   items?: StockImportSlipItem[];
   payments?: StockImportPaymentHistory[];
 }

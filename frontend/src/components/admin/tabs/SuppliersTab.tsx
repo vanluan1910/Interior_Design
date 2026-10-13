@@ -52,14 +52,17 @@ import {
 } from '@/components/admin';
 import { VietQrCard } from '@/components/common/VietQrCard';
 import { exportToExcel } from '@/utils/exportExcel';
-import type { AdminSupplier } from '@/types/admin';
+import type { AdminSupplier, StockImportSlip, SupplierReturnSlip } from '@/types/admin';
 import { INITIAL_SUPPLIERS } from '@/data/admin/mockData';
 import { supplierApi } from '@/api/supplierApi';
+import { stockImportApi } from '@/api/stockImportApi';
 import { isMatchBranch } from '@/utils/branchHelper';
 
 export interface SuppliersTabProps {
   suppliersList?: AdminSupplier[];
   setSuppliersList?: React.Dispatch<React.SetStateAction<AdminSupplier[]>>;
+  importsList?: StockImportSlip[];
+  supplierReturnsList?: SupplierReturnSlip[];
   selectedGlobalBranch?: string;
   onOpenCreateSupplier?: () => void;
   onOpenEditSupplier?: (supplier: AdminSupplier) => void;
@@ -91,6 +94,8 @@ const BANK_OPTIONS = [
 export function SuppliersTab({
   suppliersList: initialSuppliers = INITIAL_SUPPLIERS,
   setSuppliersList: externalSetSuppliersList,
+  importsList: propImportsList,
+  supplierReturnsList: propReturnsList = [],
   selectedGlobalBranch = 'all',
   onOpenCreateSupplier,
   onOpenEditSupplier,
@@ -113,6 +118,7 @@ export function SuppliersTab({
 
   // Form Drawer States
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [isSavingSupplier, setIsSavingSupplier] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<AdminSupplier | null>(null);
   const [form] = Form.useForm();
   const watchedBankName = Form.useWatch('bankName', form);
@@ -128,15 +134,96 @@ export function SuppliersTab({
   const [paymentNote, setPaymentNote] = useState<string>('');
   const [paymentHistory, setPaymentHistory] = useState<any[]>([]);
 
+  // Load Real Stock Imports for Purchase & Debt History
+  const [apiImportsList, setApiImportsList] = useState<StockImportSlip[]>([]);
+
+  React.useEffect(() => {
+    if (propImportsList && propImportsList.length > 0) {
+      setApiImportsList(propImportsList);
+    } else {
+      stockImportApi.getStockImports().then((data) => {
+        if (data && Array.isArray(data)) {
+          setApiImportsList(data as any);
+        }
+      }).catch(() => {});
+    }
+  }, [propImportsList]);
+
   // Purchase History for Detail View (derived from real stock imports)
   const purchaseHistory = useMemo(() => {
-    return [];
-  }, []);
+    const source = propImportsList || apiImportsList;
+    return source.map((imp) => {
+      const totalAmount = Number(imp.totalValue) || 0;
+      const paidAmount = imp.paidAmount !== undefined ? Number(imp.paidAmount) : 0;
+      const remainingDebt = imp.remainingDebt !== undefined
+        ? Number(imp.remainingDebt)
+        : (imp.debtAmount !== undefined
+            ? Number(imp.debtAmount)
+            : Math.max(0, totalAmount - paidAmount));
 
+      return {
+        id: imp.id,
+        code: imp.code,
+        supplierId: (imp as any).supplierId || imp.supplierCode || imp.supplier,
+        supplierName: imp.supplier,
+        warehouseName: imp.warehouseName,
+        itemName: imp.itemName,
+        quantity: imp.quantity || 1,
+        unit: imp.unit || 'bộ',
+        totalAmount,
+        paidAmount,
+        remainingDebt,
+        importDate: imp.importDate,
+        status: imp.status,
+        statusLabel: imp.statusLabel,
+      };
+    });
+  }, [propImportsList, apiImportsList]);
+
+  // Enrich suppliers with real-time financial stats from stock imports & returns
+  const enrichedSuppliersList = useMemo(() => {
+    return suppliersList.map((sup) => {
+      // Find all import slips matching this supplier
+      const allSupplierPurchases = purchaseHistory.filter(
+        (p) =>
+          (p.supplierId && (p.supplierId === sup.id || p.supplierId === sup.code)) ||
+          (p.supplierName && sup.name && p.supplierName.trim().toLowerCase() === sup.name.trim().toLowerCase())
+      );
+
+      // Find all return slips matching this supplier
+      const returnsSource = propReturnsList || [];
+      const allSupplierReturns = returnsSource.filter(
+        (r) =>
+          ((r as any).supplierId && ((r as any).supplierId === sup.id || (r as any).supplierId === sup.code)) ||
+          (r.supplierName && sup.name && r.supplierName.trim().toLowerCase() === sup.name.trim().toLowerCase())
+      );
+
+      // Nếu NCC có phiếu trong hệ thống, tính toán lại dựa trên các phiếu thực tế đã nhập (loại trừ phiếu tạm draft)
+      if (allSupplierPurchases.length > 0 || allSupplierReturns.length > 0) {
+        const matchedPurchases = allSupplierPurchases.filter((p) => p.status !== 'draft');
+        const matchedReturns = allSupplierReturns.filter((r) => (r as any).status !== 'draft');
+
+        const returnDeduction = matchedReturns.reduce((sum, r) => sum + (Number(r.supplierRefund) || Number(r.totalValue) || 0), 0);
+        const totalPurchased = matchedPurchases.reduce((sum, p) => sum + (Number(p.totalAmount) || 0), 0);
+        const totalPaid = matchedPurchases.reduce((sum, p) => sum + (Number(p.paidAmount) || 0), 0);
+        const grossDebt = matchedPurchases.reduce((sum, p) => sum + (Number(p.remainingDebt) || 0), 0);
+        const netDebt = Math.max(0, grossDebt - returnDeduction);
+
+        return {
+          ...sup,
+          totalPurchased,
+          currentDebt: netDebt,
+          totalCollected: totalPaid,
+        };
+      }
+
+      return sup;
+    });
+  }, [suppliersList, purchaseHistory, propReturnsList]);
 
   // Filtered Suppliers Logic
   const filteredSuppliers = useMemo(() => {
-    return suppliersList.filter((s) => {
+    return enrichedSuppliersList.filter((s) => {
       const q = searchQuery.trim().toLowerCase();
       const matchSearch =
         !q ||
@@ -157,14 +244,14 @@ export function SuppliersTab({
 
       return matchSearch && matchBranch && matchStatus && matchDebt;
     });
-  }, [suppliersList, searchQuery, statusFilter, debtFilter, selectedGlobalBranch]);
+  }, [enrichedSuppliersList, searchQuery, statusFilter, debtFilter, selectedGlobalBranch]);
 
   const selectedSupplierRecord = useMemo(() => {
     if (selectedRowKeys.length === 1) {
-      return suppliersList.find((s) => s.id === selectedRowKeys[0]);
+      return enrichedSuppliersList.find((s) => s.id === selectedRowKeys[0]);
     }
     return null;
-  }, [selectedRowKeys, suppliersList]);
+  }, [selectedRowKeys, enrichedSuppliersList]);
 
   // Handle Refresh from API
   const handleRefreshSuppliers = async () => {
@@ -188,7 +275,14 @@ export function SuppliersTab({
     }
     setEditingSupplier(null);
     form.resetFields();
-    const autoCode = `NCC${(suppliersList.length + 1).toString().padStart(2, '0')}`;
+    const existingNums = suppliersList
+      .map((s) => {
+        const match = (s.code || '').match(/\d+/);
+        return match ? parseInt(match[0], 10) : 0;
+      })
+      .filter((n) => !isNaN(n));
+    const maxNum = existingNums.length > 0 ? Math.max(...existingNums, 0) : 0;
+    const autoCode = `NCC${(maxNum + 1).toString().padStart(2, '0')}`;
     form.setFieldsValue({
       code: autoCode,
       status: 'active',
@@ -228,7 +322,14 @@ export function SuppliersTab({
   const handleCopySupplier = (sup: AdminSupplier) => {
     setEditingSupplier(null);
     form.resetFields();
-    const autoCode = `NCC${(suppliersList.length + 1).toString().padStart(2, '0')}`;
+    const existingNums = suppliersList
+      .map((s) => {
+        const match = (s.code || '').match(/\d+/);
+        return match ? parseInt(match[0], 10) : 0;
+      })
+      .filter((n) => !isNaN(n));
+    const maxNum = existingNums.length > 0 ? Math.max(...existingNums, 0) : 0;
+    const autoCode = `NCC${(maxNum + 1).toString().padStart(2, '0')}`;
     form.setFieldsValue({
       code: autoCode,
       name: `${sup.name} (Bản sao)`,
@@ -257,23 +358,26 @@ export function SuppliersTab({
       return;
     }
 
-    if (editingSupplier) {
-      const payload: Partial<AdminSupplier> = {
-        code: trimmedCode || editingSupplier.code,
-        name: trimmedName,
-        contactPerson: values.contactPerson || '',
-        phone: values.phone || '',
-        email: values.email || '',
-        address: values.address || '',
-        branch: values.branch || editingSupplier.branch || (selectedGlobalBranch !== 'all' ? selectedGlobalBranch : undefined),
-        taxCode: values.taxCode || '',
-        bankName: values.bankName || '',
-        bankAccount: values.bankAccount || '',
-        company: values.company || trimmedName,
-        status: values.status || 'active',
-        note: values.note || '',
-      };
-      try {
+    if (isSavingSupplier) return;
+    setIsSavingSupplier(true);
+
+    try {
+      if (editingSupplier) {
+        const payload: Partial<AdminSupplier> = {
+          code: trimmedCode || editingSupplier.code,
+          name: trimmedName,
+          contactPerson: values.contactPerson || '',
+          phone: values.phone || '',
+          email: values.email || '',
+          address: values.address || '',
+          branch: values.branch || editingSupplier.branch || (selectedGlobalBranch !== 'all' ? selectedGlobalBranch : undefined),
+          taxCode: values.taxCode || '',
+          bankName: values.bankName || '',
+          bankAccount: values.bankAccount || '',
+          company: values.company || trimmedName,
+          status: values.status || 'active',
+          note: values.note || '',
+        };
         const updated = await supplierApi.updateSupplier(editingSupplier.id, payload);
         const updatedList = suppliersList.map((s) =>
           s.id === editingSupplier.id ? { ...s, ...updated } : s
@@ -281,37 +385,35 @@ export function SuppliersTab({
         setSuppliersList(updatedList);
         message.success(`Đã cập nhật thông tin nhà cung cấp "${trimmedName}" thành công!`);
         setDrawerOpen(false);
-      } catch (err: any) {
-        message.error(err?.message || 'Cập nhật nhà cung cấp thất bại.');
-      }
-    } else {
-      const payload: Partial<AdminSupplier> = {
-        code: trimmedCode || undefined,
-        name: trimmedName,
-        contactPerson: values.contactPerson || '',
-        phone: values.phone || '',
-        email: values.email || '',
-        address: values.address || '',
-        branch: values.branch || (selectedGlobalBranch !== 'all' ? selectedGlobalBranch : undefined),
-        taxCode: values.taxCode || '',
-        bankName: values.bankName || '',
-        bankAccount: values.bankAccount || '',
-        company: values.company || trimmedName,
-        status: values.status || 'active',
-        note: values.note || '',
-        totalPurchased: 0,
-        currentDebt: 0,
-        totalCollected: 0,
-        createdBy: 'Quản trị viên',
-      };
-      try {
+      } else {
+        const payload: Partial<AdminSupplier> = {
+          code: trimmedCode || undefined,
+          name: trimmedName,
+          contactPerson: values.contactPerson || '',
+          phone: values.phone || '',
+          email: values.email || '',
+          address: values.address || '',
+          branch: values.branch || (selectedGlobalBranch !== 'all' ? selectedGlobalBranch : undefined),
+          taxCode: values.taxCode || '',
+          bankName: values.bankName || '',
+          bankAccount: values.bankAccount || '',
+          company: values.company || trimmedName,
+          status: values.status || 'active',
+          note: values.note || '',
+          totalPurchased: 0,
+          currentDebt: 0,
+          totalCollected: 0,
+          createdBy: 'Quản trị viên',
+        };
         const created = await supplierApi.createSupplier(payload);
         setSuppliersList([created, ...suppliersList]);
         message.success(`Đã thêm nhà cung cấp "${created.name}" thành công!`);
         setDrawerOpen(false);
-      } catch (err: any) {
-        message.error(err?.message || 'Thêm mới nhà cung cấp thất bại.');
       }
+    } catch (err: any) {
+      message.error(err?.message || (editingSupplier ? 'Cập nhật nhà cung cấp thất bại.' : 'Thêm mới nhà cung cấp thất bại.'));
+    } finally {
+      setIsSavingSupplier(false);
     }
   };
 
@@ -550,12 +652,12 @@ export function SuppliersTab({
                 {
                   value: 'has_debt',
                   label: '🔴 Còn nợ cần trả',
-                  count: suppliersList.filter((s) => Number(s.currentDebt || 0) > 0).length,
+                  count: enrichedSuppliersList.filter((s) => Number(s.currentDebt || 0) > 0).length,
                 },
                 {
                   value: 'no_debt',
                   label: '🟢 Đã thanh toán hết',
-                  count: suppliersList.filter((s) => Number(s.currentDebt || 0) <= 0).length,
+                  count: enrichedSuppliersList.filter((s) => Number(s.currentDebt || 0) <= 0).length,
                 },
               ].map((opt) => {
                 const isSelected = debtFilter === opt.value;
@@ -590,23 +692,23 @@ export function SuppliersTab({
           <AdminSidebarSummary
             title="Thống kê đối tác NCC"
             items={[
-              { label: 'Tổng số nhà cung cấp', value: `${suppliersList.length} đối tác` },
+              { label: 'Tổng số nhà cung cấp', value: `${enrichedSuppliersList.length} đối tác` },
               {
                 label: 'Đang hợp tác',
-                value: `${suppliersList.filter((s) => s.status === 'active').length} đối tác`,
+                value: `${enrichedSuppliersList.filter((s) => s.status === 'active').length} đối tác`,
                 color: 'success',
               },
               {
                 label: 'Tổng nợ cần trả NCC',
                 value: `${(
-                  suppliersList.reduce((acc, s) => acc + (s.currentDebt || 0), 0) / 1000000
+                  enrichedSuppliersList.reduce((acc, s) => acc + (s.currentDebt || 0), 0) / 1000000
                 ).toLocaleString('vi-VN')} Tr`,
                 color: 'default',
               },
               {
                 label: 'Tổng tiền mua hàng',
                 value: `${(
-                  suppliersList.reduce((acc, s) => acc + (s.totalPurchased || 0), 0) / 1000000
+                  enrichedSuppliersList.reduce((acc, s) => acc + (s.totalPurchased || 0), 0) / 1000000
                 ).toLocaleString('vi-VN')} Tr`,
                 color: 'primary',
               },
@@ -667,7 +769,8 @@ export function SuppliersTab({
             }
             dataSource={filteredSuppliers}
             rowKey="id"
-            pagination={{ pageSize: 10 }}
+            scroll={{ x: 'max-content' }}
+            pagination={{ showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }}
             onRow={(record) => ({
               onClick: () => {
                 setExpandedSupplierId((prev) => (prev === record.id ? null : record.id));
@@ -727,52 +830,46 @@ export function SuppliersTab({
                 dataIndex: 'name',
                 key: 'name',
                 render: (name, record) => (
-                  <div className="min-w-0">
-                    <div
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setExpandedSupplierId((prev) => (prev === record.id ? null : record.id));
-                      }}
-                      className="font-semibold text-sm text-slate-900 hover:text-[#784e34] cursor-pointer line-clamp-1 transition-colors"
-                    >
-                      {name}
-                    </div>
-                    {record.company && record.company !== name && (
-                      <div className="text-xs text-slate-500 line-clamp-1">{record.company}</div>
-                    )}
-                    <div className="text-xs text-slate-400 line-clamp-1 mt-0.5 flex items-center gap-1">
-                      <EnvironmentOutlined className="text-[11px]" />
-                      <span>{record.address || 'Chưa cập nhật địa chỉ'}</span>
-                    </div>
+                  <div
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setExpandedSupplierId((prev) => (prev === record.id ? null : record.id));
+                    }}
+                    className="font-semibold text-sm text-slate-900 hover:text-[#784e34] cursor-pointer whitespace-nowrap truncate transition-colors"
+                    title={`${name}${record.company && record.company !== name ? ` (${record.company})` : ''}${record.address ? ` • ${record.address}` : ''}`}
+                  >
+                    {name}
                   </div>
                 ),
               },
               {
                 title: 'Người liên hệ & SĐT',
                 key: 'contact',
-                width: 190,
-                render: (_, s) => (
-                  <div>
-                    <div className="text-sm font-medium text-slate-800 flex items-center gap-1">
-                      <UserOutlined className="text-slate-400 text-xs" />
-                      <span>{s.contactPerson || '---'}</span>
+                width: 220,
+                render: (_, s) => {
+                  const title = `${s.contactPerson || '---'}${s.phone ? ` • ${s.phone}` : ''}${s.email ? ` • ${s.email}` : ''}`;
+                  return (
+                    <div className="whitespace-nowrap truncate text-sm text-slate-800 flex items-center gap-1.5" title={title}>
+                      <UserOutlined className="text-slate-400 text-xs shrink-0" />
+                      <span className="truncate">{s.contactPerson || '---'}</span>
+                      {s.phone && (
+                        <span className="font-mono text-slate-500 text-xs shrink-0 font-normal">
+                          ({s.phone})
+                        </span>
+                      )}
                     </div>
-                    <div className="font-mono text-xs text-slate-600 mt-0.5">{s.phone || '---'}</div>
-                    <div className="text-xs text-slate-400 truncate max-w-[170px]" title={s.email}>
-                      {s.email || ''}
-                    </div>
-                  </div>
-                ),
+                  );
+                },
               },
               {
                 title: 'Tổng mua hàng',
                 dataIndex: 'totalPurchased',
                 key: 'totalPurchased',
-                width: 145,
+                width: 170,
                 align: 'right',
                 render: (val) => (
-                  <span className="font-mono font-semibold text-sm text-slate-900">
-                    {(Number(val) || 0).toLocaleString('vi-VN')} đ
+                  <span className="font-mono font-semibold text-sm text-slate-900 whitespace-nowrap">
+                    {(Number(val) || 0).toLocaleString('vi-VN')}&nbsp;đ
                   </span>
                 ),
               },
@@ -780,17 +877,17 @@ export function SuppliersTab({
                 title: 'Nợ cần trả hiện tại',
                 dataIndex: 'currentDebt',
                 key: 'currentDebt',
-                width: 155,
+                width: 170,
                 align: 'right',
                 render: (debt) => {
                   const num = Number(debt || 0);
                   return (
                     <span
-                      className={`font-mono font-semibold text-sm ${
+                      className={`font-mono font-semibold text-sm whitespace-nowrap ${
                         num > 0 ? 'text-rose-600' : 'text-slate-400'
                       }`}
                     >
-                      {num.toLocaleString('vi-VN')} đ
+                      {num.toLocaleString('vi-VN')}&nbsp;đ
                     </span>
                   );
                 },
@@ -799,13 +896,13 @@ export function SuppliersTab({
                 title: 'Đã thanh toán',
                 dataIndex: 'totalCollected',
                 key: 'totalCollected',
-                width: 145,
+                width: 175,
                 align: 'right',
                 render: (val, r) => {
                   const paid = val !== undefined ? Number(val) : Math.max(0, Number(r.totalPurchased || 0) - Number(r.currentDebt || 0));
                   return (
-                    <span className="font-mono text-sm text-emerald-700 font-semibold">
-                      {paid.toLocaleString('vi-VN')} đ
+                    <span className="font-mono text-sm text-emerald-700 font-semibold whitespace-nowrap">
+                      {paid.toLocaleString('vi-VN')}&nbsp;đ
                     </span>
                   );
                 },
@@ -814,7 +911,7 @@ export function SuppliersTab({
                 title: 'Trạng thái',
                 dataIndex: 'status',
                 key: 'status',
-                width: 130,
+                width: 135,
                 align: 'center',
                 render: (status: 'active' | 'inactive', s) => (
                   <span
@@ -822,7 +919,7 @@ export function SuppliersTab({
                       e.stopPropagation();
                       handleChangeStatus(s.id, status === 'active' ? 'inactive' : 'active');
                     }}
-                    className="cursor-pointer inline-block"
+                    className="cursor-pointer inline-block whitespace-nowrap"
                     title="Nhấn để đổi trạng thái"
                   >
                     <AdminStatusBadge
@@ -831,64 +928,6 @@ export function SuppliersTab({
                       dot
                     />
                   </span>
-                ),
-              },
-              {
-                title: 'Thao tác',
-                key: 'actions',
-                width: 125,
-                align: 'center',
-                render: (_, s) => (
-                  <Space size={2} onClick={(e) => e.stopPropagation()}>
-                    <Tooltip title="Chỉnh sửa thông tin">
-                      <Button
-                        size="small"
-                        type="text"
-                        icon={<EditOutlined className="text-sm text-slate-600 hover:text-[#784e34]" />}
-                        onClick={() => handleOpenEdit(s)}
-                        className="text-slate-600 hover:text-[#784e34] hover:bg-slate-100"
-                      />
-                    </Tooltip>
-
-                    <Tooltip title="Sao chép NCC">
-                      <Button
-                        size="small"
-                        type="text"
-                        icon={<CopyOutlined className="text-sm text-slate-600 hover:text-[#784e34]" />}
-                        onClick={() => handleCopySupplier(s)}
-                        className="text-slate-600 hover:text-[#784e34] hover:bg-slate-100"
-                      />
-                    </Tooltip>
-
-                    <Tooltip title="Chi trả tiền hàng / Thanh toán nợ">
-                      <Button
-                        size="small"
-                        type="text"
-                        icon={<WalletOutlined className="text-sm text-emerald-600 hover:text-emerald-700" />}
-                        onClick={() => handleOpenPayment(s)}
-                        className="hover:bg-emerald-50"
-                      />
-                    </Tooltip>
-
-                    <Popconfirm
-                      title={`Xóa nhà cung cấp "${s.name}"?`}
-                      description="Thao tác này sẽ xóa hồ sơ NCC khỏi hệ thống."
-                      onConfirm={() => handleDeleteSupplier(s.id, s.name)}
-                      okText="Xóa"
-                      cancelText="Hủy"
-                      okButtonProps={{ danger: true }}
-                    >
-                      <Tooltip title="Xóa nhà cung cấp">
-                        <Button
-                          size="small"
-                          type="text"
-                          danger
-                          icon={<DeleteOutlined className="text-sm text-slate-400 hover:text-rose-600" />}
-                          className="hover:bg-rose-50"
-                        />
-                      </Tooltip>
-                    </Popconfirm>
-                  </Space>
                 ),
               },
             ]}
@@ -906,6 +945,7 @@ export function SuppliersTab({
         editTitle="Chỉnh sửa thông tin nhà cung cấp"
         createTitle="Thêm mới nhà cung cấp"
         size="large"
+        loading={isSavingSupplier}
       >
         <Form form={form} layout="vertical" onFinish={handleSaveSupplier} requiredMark={false} className="space-y-4">
           {/* SECTION 1: THÔNG TIN CƠ BẢN */}
@@ -1121,9 +1161,8 @@ export function SuppliersTab({
                   onChange={setPaymentMethod}
                   className="w-full h-10 text-sm"
                   options={[
-                    { value: 'transfer', label: '🏦 Chuyển khoản ngân hàng' },
-                    { value: 'cash', label: '💵 Tiền mặt' },
-                    { value: 'offset', label: '🔄 Cấn trừ công nợ' },
+                    { value: 'transfer', label: 'Chuyển khoản ngân hàng' },
+                    { value: 'cash', label: 'Tiền mặt' },
                   ]}
                 />
               </div>
@@ -1218,117 +1257,36 @@ interface SupplierExpandedDetailRowProps {
   supplier: AdminSupplier;
   purchaseHistory: any[];
   paymentHistory: any[];
-  onEdit: () => void;
-  onCopy: () => void;
-  onDelete: () => void;
+  onEdit?: () => void;
+  onCopy?: () => void;
+  onDelete?: () => void;
   onOpenPayment: () => void;
-  onChangeStatus: (status: 'active' | 'inactive') => void;
+  onChangeStatus?: (status: 'active' | 'inactive') => void;
 }
 
 function SupplierExpandedDetailRow({
   supplier,
   purchaseHistory,
   paymentHistory,
-  onEdit,
-  onCopy,
-  onDelete,
   onOpenPayment,
-  onChangeStatus,
 }: SupplierExpandedDetailRowProps) {
   const [activeTab, setActiveTab] = useState<'info' | 'orders' | 'debt'>('info');
 
   const relatedPurchases = useMemo(() => {
-    return purchaseHistory.filter((p) => p.supplierId === supplier.id);
-  }, [purchaseHistory, supplier.id]);
+    return purchaseHistory.filter(
+      (p) =>
+        (p.supplierId && (p.supplierId === supplier.id || p.supplierId === supplier.code)) ||
+        (p.supplierName && supplier.name && p.supplierName.trim().toLowerCase() === supplier.name.trim().toLowerCase())
+    );
+  }, [purchaseHistory, supplier.id, supplier.code, supplier.name]);
+
 
   const relatedPayments = useMemo(() => {
-    return paymentHistory.filter((p) => p.supplierId === supplier.id);
-  }, [paymentHistory, supplier.id]);
+    return paymentHistory.filter((p) => p.supplierId === supplier.id || p.supplierName === supplier.name);
+  }, [paymentHistory, supplier.id, supplier.name]);
 
   return (
     <div className="bg-[#fbf9f8] border-y border-slate-200 p-4 sm:p-5 -mx-4 space-y-4">
-      {/* Header Banner */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3.5 border border-slate-200">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-[#fbf2ee] border border-[#d8c3af] flex items-center justify-center font-bold text-sm text-[#5d371f] shrink-0">
-            {supplier.name ? supplier.name.charAt(0).toUpperCase() : 'N'}
-          </div>
-          <div>
-            <div className="font-bold text-slate-900 text-sm flex items-center gap-2">
-              <span>{supplier.name}</span>
-              <span className="font-mono text-xs font-semibold text-[#784e34] bg-[#784e34]/10 px-2 py-0.5">
-                #{supplier.code}
-              </span>
-              <AdminStatusBadge
-                status={supplier.status === 'active' ? 'active' : 'inactive'}
-                label={supplier.status === 'active' ? 'Đang hợp tác' : 'Tạm dừng'}
-                dot
-              />
-            </div>
-            <div className="text-xs text-slate-500 mt-0.5">
-              Đại diện: <strong className="text-slate-800">{supplier.contactPerson || '---'}</strong> • SĐT:{' '}
-              <span className="font-mono text-slate-800">{supplier.phone || '---'}</span> • Email:{' '}
-              <span className="text-slate-800">{supplier.email || '---'}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex items-center gap-2">
-          <Button
-            size="small"
-            icon={<SwapOutlined />}
-            onClick={() => onChangeStatus(supplier.status === 'active' ? 'inactive' : 'active')}
-            className="text-xs h-7 rounded-none"
-          >
-            {supplier.status === 'active' ? 'Tạm dừng' : 'Kích hoạt'}
-          </Button>
-
-          {Number(supplier.currentDebt || 0) > 0 && (
-            <Button
-              type="primary"
-              size="small"
-              icon={<WalletOutlined />}
-              onClick={onOpenPayment}
-              className="bg-rose-600 hover:!bg-rose-700 text-white rounded-none text-xs font-semibold h-7 border-none shadow-none"
-            >
-              Chi trả nợ ({(Number(supplier.currentDebt) || 0).toLocaleString('vi-VN')} đ)
-            </Button>
-          )}
-
-          <Button
-            size="small"
-            icon={<CopyOutlined />}
-            onClick={onCopy}
-            className="rounded-none text-xs h-7"
-          >
-            Sao chép
-          </Button>
-
-          <Button
-            size="small"
-            icon={<EditOutlined />}
-            onClick={onEdit}
-            className="rounded-none text-xs h-7"
-          >
-            Chỉnh sửa
-          </Button>
-
-          <Popconfirm
-            title="Xóa nhà cung cấp"
-            description={`Bạn có chắc chắn muốn xóa nhà cung cấp "${supplier.name}"?`}
-            onConfirm={onDelete}
-            okText="Xóa"
-            cancelText="Hủy"
-            okButtonProps={{ danger: true }}
-          >
-            <Button size="small" danger icon={<DeleteOutlined />} className="rounded-none text-xs h-7">
-              Xóa
-            </Button>
-          </Popconfirm>
-        </div>
-      </div>
-
       {/* Tabs Navigation */}
       <div className="border-b border-slate-200">
         <Segmented
@@ -1438,50 +1396,6 @@ function SupplierExpandedDetailRow({
               </div>
             </div>
           </div>
-
-          {/* Công nợ chưa thanh toán alert banner */}
-          {Number(supplier.currentDebt || 0) > 0 && (
-            <div className="bg-white p-4 border border-rose-200">
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-bold text-rose-700 text-xs flex items-center gap-1.5">
-                  <WalletOutlined /> Danh sách chứng từ / Phiếu nhập hàng còn nợ NCC
-                </span>
-                <Button
-                  size="small"
-                  type="primary"
-                  onClick={onOpenPayment}
-                  className="bg-rose-600 hover:!bg-rose-700 text-white rounded-none text-xs font-semibold h-7 border-none shadow-none"
-                >
-                  Lập phiếu chi ngay
-                </Button>
-              </div>
-
-              <div className="overflow-x-auto border border-slate-200">
-                <table className="min-w-full text-xs text-left">
-                  <thead className="bg-slate-50 text-slate-600">
-                    <tr>
-                      <th className="px-3 py-2 font-semibold">Mã phiếu nhập</th>
-                      <th className="px-3 py-2 font-semibold">Kho tiếp nhận</th>
-                      <th className="px-3 py-2 font-semibold">Vật tư &amp; Quy cách</th>
-                      <th className="px-3 py-2 font-semibold text-right">Tổng giá trị</th>
-                      <th className="px-3 py-2 font-semibold text-right text-rose-600">Nợ cần trả</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr className="border-t border-slate-100 hover:bg-slate-50/60">
-                      <td className="px-3 py-2 font-mono font-bold text-[#784e34]">#PN-2026-0036</td>
-                      <td className="px-3 py-2 text-slate-700">Tổng Kho Bình Chánh</td>
-                      <td className="px-3 py-2 text-slate-700">Khung Gỗ Óc Chó FAS &amp; Phụ kiện mộng chốt</td>
-                      <td className="px-3 py-2 text-right font-mono">1,140,000,000 đ</td>
-                      <td className="px-3 py-2 text-right font-mono font-bold text-rose-600">
-                        {(Number(supplier.currentDebt) || 0).toLocaleString('vi-VN')} đ
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
         </div>
       )}
 
@@ -1513,15 +1427,15 @@ function SupplierExpandedDetailRow({
                       <td className="px-3 py-2 text-slate-700">{po.warehouseName}</td>
                       <td className="px-3 py-2">
                         <div className="font-medium text-slate-900">{po.itemName}</div>
-                        <div className="text-[11px] text-slate-500">{po.quantity}</div>
+                        <div className="text-[11px] text-slate-500">{po.quantity} {po.unit}</div>
                       </td>
                       <td className="px-3 py-2 text-right font-mono font-bold text-slate-900">
-                        {po.totalAmount.toLocaleString('vi-VN')} đ
+                        {(po.totalAmount || 0).toLocaleString('vi-VN')} đ
                       </td>
                       <td className="px-3 py-2 font-mono text-slate-600">{po.importDate}</td>
                       <td className="px-3 py-2 text-center">
-                        <Tag color="success" className="text-[10px] m-0 font-medium">
-                          Đã nhập kho
+                        <Tag color={po.status === 'draft' ? 'gold' : 'success'} className="text-[10px] m-0 font-medium">
+                          {po.statusLabel || (po.status === 'draft' ? 'Lưu tạm' : 'Đã nhập kho')}
                         </Tag>
                       </td>
                     </tr>

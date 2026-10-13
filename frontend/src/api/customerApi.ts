@@ -1,4 +1,5 @@
 import { AdminCustomer } from '@/types/admin';
+import { cachedFetch, invalidateApiCache } from './shared/apiCache';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
@@ -20,7 +21,7 @@ export interface CustomerApiResponse<T> {
 
 export const customerApi = {
   /**
-   * Lấy danh sách khách hàng từ Backend API
+   * Lấy danh sách khách hàng từ Backend API (kèm bộ nhớ đệm chống trùng lặp request)
    */
   async getCustomers(params?: {
     search?: string;
@@ -42,16 +43,19 @@ export const customerApi = {
     if (params?.customerType && params.customerType !== 'all') query.append('customerType', params.customerType);
     if (params?.includeDeleted) query.append('includeDeleted', 'true');
 
-    const res = await fetch(`${API_BASE_URL}/api/customers?${query.toString()}`, {
-      headers: { Accept: 'application/json' },
-    });
+    const cacheKey = `customers:${query.toString()}`;
+    return cachedFetch(cacheKey, async () => {
+      const res = await fetch(`${API_BASE_URL}/api/customers?${query.toString()}`, {
+        headers: { Accept: 'application/json' },
+      });
 
-    if (!res.ok) {
-      throw new Error(`Failed to fetch customers (${res.status})`);
-    }
+      if (!res.ok) {
+        throw new Error(`Failed to fetch customers (${res.status})`);
+      }
 
-    const json: CustomerApiResponse<AdminCustomer[]> = await res.json();
-    return json.data || [];
+      const json: CustomerApiResponse<AdminCustomer[]> = await res.json();
+      return json.data || [];
+    }, 15000);
   },
 
   /**
@@ -109,6 +113,7 @@ export const customerApi = {
       throw new Error(json.message || 'Thêm khách hàng thất bại.');
     }
 
+    invalidateApiCache('customers');
     return json.data;
   },
 
@@ -135,6 +140,7 @@ export const customerApi = {
       throw new Error(json.message || 'Cập nhật khách hàng thất bại.');
     }
 
+    invalidateApiCache('customers');
     return json.data;
   },
 
@@ -153,6 +159,7 @@ export const customerApi = {
     }
 
     const json: CustomerApiResponse<boolean> = await res.json();
+    invalidateApiCache('customers');
     return Boolean(json.success);
   },
 
@@ -179,6 +186,7 @@ export const customerApi = {
       throw new Error(json.message || 'Thu nợ thất bại.');
     }
 
+    invalidateApiCache('customers');
     return json.data;
   },
 
@@ -201,6 +209,7 @@ export const customerApi = {
     }
 
     const json: CustomerApiResponse<number> = await res.json();
+    invalidateApiCache('customers');
     return json.data || customers.length;
   },
 };

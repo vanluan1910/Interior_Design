@@ -4,6 +4,7 @@ using InteriorDesign.Integration.Common;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Data.SqlClient;
 
 namespace InteriorDesign.Api.Controllers;
 
@@ -141,25 +142,42 @@ public sealed class SuppliersController : ApiControllerBase
         if (string.IsNullOrWhiteSpace(request.Name))
             return BadRequest(ApiResponse<Supplier>.Fail("Tên nhà cung cấp không được để trống."));
 
-        var existingCodes = await _context.Suppliers
+        var existingCodesList = await _context.Suppliers
             .IgnoreQueryFilters()
-            .Select(s => s.Code.ToUpper())
+            .AsNoTracking()
+            .Select(s => s.Code)
             .ToListAsync(cancellationToken);
 
-        var code = request.Code?.Trim().ToUpperInvariant();
-        if (string.IsNullOrWhiteSpace(code) || existingCodes.Contains(code))
+        var existingCodes = new HashSet<string>(
+            existingCodesList.Where(c => !string.IsNullOrWhiteSpace(c)).Select(c => c.Trim().ToUpperInvariant()),
+            StringComparer.OrdinalIgnoreCase
+        );
+
+        int maxNum = 0;
+        foreach (var c in existingCodes)
         {
-            var nextNum = existingCodes.Count + 1;
+            var digits = new string(c.Where(char.IsDigit).ToArray());
+            if (int.TryParse(digits, out var n) && n > maxNum)
+            {
+                maxNum = n;
+            }
+        }
+
+        var code = request.Code?.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(code) && existingCodes.Contains(code))
+        {
+            var suggestedCode = $"NCC{(maxNum + 1):D2}";
+            return BadRequest(ApiResponse<Supplier>.Fail($"Mã nhà cung cấp '{code}' đã tồn tại trong hệ thống. Vui lòng sử dụng mã gợi ý: '{suggestedCode}' hoặc mã khác."));
+        }
+
+        if (string.IsNullOrWhiteSpace(code))
+        {
+            var nextNum = maxNum + 1;
             var autoCode = $"NCC{nextNum:D2}";
             while (existingCodes.Contains(autoCode))
             {
                 nextNum++;
                 autoCode = $"NCC{nextNum:D2}";
-            }
-
-            if (!string.IsNullOrWhiteSpace(code) && existingCodes.Contains(code))
-            {
-                return BadRequest(ApiResponse<Supplier>.Fail($"Mã nhà cung cấp '{code}' đã tồn tại trong hệ thống. Vui lòng sử dụng mã gợi ý: '{autoCode}' hoặc mã khác."));
             }
             code = autoCode;
         }
@@ -191,8 +209,47 @@ public sealed class SuppliersController : ApiControllerBase
             CreatedAt = DateTimeOffset.UtcNow
         };
 
-        _context.Suppliers.Add(supplier);
-        await _context.SaveChangesAsync(cancellationToken);
+        try
+        {
+            _context.Suppliers.Add(supplier);
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex)
+        {
+            // Xử lý race condition do 2 request bấm cùng lúc (unique constraint index 'IX_suppliers_Code')
+            if (ex.InnerException is SqlException sqlEx && (sqlEx.Number == 2601 || sqlEx.Number == 2627))
+            {
+                var refreshedCodes = await _context.Suppliers
+                    .IgnoreQueryFilters()
+                    .AsNoTracking()
+                    .Select(s => s.Code)
+                    .ToListAsync(cancellationToken);
+
+                var refreshedSet = new HashSet<string>(
+                    refreshedCodes.Where(c => !string.IsNullOrWhiteSpace(c)).Select(c => c.Trim().ToUpperInvariant()),
+                    StringComparer.OrdinalIgnoreCase
+                );
+
+                var newMax = 0;
+                foreach (var c in refreshedSet)
+                {
+                    var digits = new string(c.Where(char.IsDigit).ToArray());
+                    if (int.TryParse(digits, out var n) && n > newMax) newMax = n;
+                }
+                var newAutoCode = $"NCC{(newMax + 1):D2}";
+
+                // Nếu là mã tự sinh hoặc người dùng để trống mã
+                if (string.IsNullOrWhiteSpace(request.Code) || request.Code.Trim().Equals(code, StringComparison.OrdinalIgnoreCase))
+                {
+                    supplier.Code = newAutoCode;
+                    await _context.SaveChangesAsync(cancellationToken);
+                    return Ok(ApiResponse<Supplier>.Ok(supplier, "Thêm nhà cung cấp thành công."));
+                }
+
+                return BadRequest(ApiResponse<Supplier>.Fail($"Mã nhà cung cấp '{code}' đã tồn tại trong hệ thống. Vui lòng sử dụng mã gợi ý: '{newAutoCode}'."));
+            }
+            throw;
+        }
 
         return Ok(ApiResponse<Supplier>.Ok(supplier, "Thêm nhà cung cấp thành công."));
     }
@@ -212,12 +269,21 @@ public sealed class SuppliersController : ApiControllerBase
             .IgnoreQueryFilters()
             .ToListAsync(cancellationToken);
 
-        var existingCodes = new HashSet<string>(existingSuppliers.Select(s => s.Code.ToUpperInvariant()));
+        var existingCodes = new HashSet<string>(existingSuppliers.Select(s => s.Code.ToUpperInvariant()), StringComparer.OrdinalIgnoreCase);
         var existingByName = existingSuppliers.ToDictionary(s => s.Name.Trim().ToLowerInvariant(), s => s);
 
         var addedList = new List<Supplier>();
         var updatedCount = 0;
+        
         var nextNum = 1;
+        foreach (var c in existingCodes)
+        {
+            var digits = new string(c.Where(char.IsDigit).ToArray());
+            if (int.TryParse(digits, out var n) && n >= nextNum)
+            {
+                nextNum = n + 1;
+            }
+        }
 
         foreach (var req in requests)
         {

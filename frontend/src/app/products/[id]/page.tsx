@@ -87,8 +87,18 @@ function mapCatalogToDetailProduct(item: FeaturedCatalogProduct): Product {
     subtitle: item.collection || item.material || 'Chế tác mộng mộc truyền thống',
     description: item.description || `Sản phẩm ${item.name} chế tác tỉ mỉ từ gỗ tự nhiên tuyển chọn bởi nghệ nhân D2 LUXURY.`,
     dimensions: item.dimensions || 'Theo thiết kế tiêu chuẩn',
-    stockStatus: item.stockType === 'custom' ? 'Đặt may đo (7-14 ngày)' : 'Sẵn tại Showroom',
-    inStock: item.stockType !== 'custom',
+    stockStatus: (() => {
+      const rawStock = typeof item.inStock === 'number' ? item.inStock : (item.inStockQty !== undefined ? item.inStockQty : undefined);
+      const stockQty = rawStock !== undefined ? rawStock : (item.stockNote ? (parseInt(item.stockNote.replace(/\D/g, ''), 10) || 0) : 0);
+      if (stockQty > 0) return `Còn ${stockQty} sản phẩm sẵn`;
+      if (item.stockType === 'custom') return 'Đặt may đo (7-14 ngày)';
+      return 'Sẵn sàng đặt hàng (Bán âm kho / May đo)';
+    })(),
+    inStock: true,
+    inStockQty: (() => {
+      const rawStock = typeof item.inStock === 'number' ? item.inStock : (item.inStockQty !== undefined ? item.inStockQty : undefined);
+      return rawStock !== undefined ? rawStock : (item.stockNote ? (parseInt(item.stockNote.replace(/\D/g, ''), 10) || 0) : 0);
+    })(),
     materialDetails: item.material || item.metaInfo || 'Gỗ tự nhiên sấy chân không đạt chuẩn',
     material: item.material || item.metaInfo,
     color: item.color || 'Nâu hạt dẻ / tự nhiên (Đa dạng)',
@@ -132,11 +142,10 @@ export default function ProductDetailPage({
             }
           } else {
             // Secondary fallback search if identifier is custom
-            const list = await productApi.getProducts({ pageSize: 100 });
-            const found = list.find((p) => p.id === id || p.code.toLowerCase() === id.toLowerCase() || p.name.toLowerCase() === id.toLowerCase()) || null;
+            const found = await productApi.getProductById(id);
             if (found) {
               setCurrentProduct(mapCatalogToDetailProduct(found));
-              const crossList = await productApi.getProducts({ space: found.space, pageSize: 6 });
+              const crossList = await productApi.getProducts({ space: found.space });
               const companions = crossList
                 .filter((p) => p.id !== found.id)
                 .slice(0, 3)
@@ -215,6 +224,7 @@ export default function ProductDetailPage({
 
   const handleAddToCart = () => {
     if (!currentProduct) return;
+    const availableStock = currentProduct.inStockQty !== undefined ? currentProduct.inStockQty : (currentProduct.inStock ? 99 : 0);
     addToCart({
       id: currentProduct.id,
       sku: currentProduct.sku,
@@ -229,13 +239,36 @@ export default function ProductDetailPage({
         currentProduct.dimensions,
       ].filter(Boolean),
       giftInfo: isUpholstered ? 'Tặng kèm 2 gối tựa cao cấp D2 LUXURY' : 'Tặng bộ dầu dưỡng gỗ tự nhiên D2 LUXURY',
+      inStockQty: availableStock,
     }, quantity);
     message.success(`Đã thêm ${quantity} "${currentProduct.name}" vào giỏ hàng!`);
   };
 
   const handleBuyNow = () => {
-    handleAddToCart();
-    router.push('/checkout');
+    if (!currentProduct) return;
+    const directItem = {
+      id: currentProduct.id,
+      sku: currentProduct.sku || `SKU-${currentProduct.id.toUpperCase()}`,
+      name: currentProduct.name,
+      collection: currentProduct.categoryName || 'Bộ sưu tập D2 LUXURY',
+      badge: 'Tuyệt phẩm mộc',
+      image: currentProduct.image,
+      price: calculatedPrice,
+      originalPrice: calculatedStrike || Math.round(calculatedPrice * 1.15),
+      quantity: Math.max(1, quantity),
+      selected: true,
+      isFavorite: false,
+      specs: [
+        currentProduct.woodType,
+        currentProduct.dimensions,
+      ].filter(Boolean),
+      giftInfo: isUpholstered ? 'Tặng kèm 2 gối tựa cao cấp D2 LUXURY' : 'Tặng bộ dầu dưỡng gỗ tự nhiên D2 LUXURY',
+      inStockQty: currentProduct.inStockQty,
+    };
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('d2_direct_checkout_item', JSON.stringify([directItem]));
+    }
+    router.push('/checkout?direct=1');
   };
 
   if (isLoading) {
@@ -406,8 +439,8 @@ export default function ProductDetailPage({
               <div className="flex flex-col gap-1.5">
                 <div className="flex items-center justify-between text-xs text-[#83746c] font-medium">
                   <span className="font-mono">{currentProduct.sku}</span>
-                  <span className="inline-flex items-center gap-1 text-[#3f4332] font-semibold">
-                    <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
+                  <span className={`inline-flex items-center gap-1.5 font-semibold ${!currentProduct.inStock ? 'text-[#ba1a1a]' : 'text-[#3f4332]'}`}>
+                    <span className={`w-2 h-2 rounded-full ${!currentProduct.inStock ? 'bg-[#ba1a1a]' : 'bg-emerald-600'}`}></span>
                     {currentProduct.stockStatus}
                   </span>
                 </div>
@@ -423,6 +456,11 @@ export default function ProductDetailPage({
                   <span className="font-headline-lg text-2xl sm:text-3xl text-[#5d371f] font-bold">
                     {formatPrice(calculatedPrice)}
                   </span>
+                  {!currentProduct.inStock && (
+                    <span className="px-2.5 py-0.5 bg-[#ba1a1a] text-white text-xs font-bold uppercase tracking-wide">
+                      Hết hàng
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -486,34 +524,38 @@ export default function ProductDetailPage({
                 <div className="flex flex-col gap-2.5 pt-2">
                   <div className="flex items-center gap-3">
                     {/* Stepper */}
-                    <div className="flex items-center bg-white border border-[#d5c3ba] shadow-sm">
-                      <button
-                        type="button"
-                        onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                        className="w-10 h-10 flex items-center justify-center text-[#51443d] hover:bg-[#f5ece8] cursor-pointer"
-                      >
-                        <MinusOutlined className="text-[12px]" />
-                      </button>
-                      <input
-                        type="text"
-                        readOnly
-                        value={quantity}
-                        className="w-12 text-center font-bold text-sm text-[#1f1b19] bg-transparent focus:outline-none"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setQuantity((q) => q + 1)}
-                        className="w-10 h-10 flex items-center justify-center text-[#51443d] hover:bg-[#f5ece8] cursor-pointer"
-                      >
-                        <PlusOutlined className="text-[12px]" />
-                      </button>
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center bg-white border border-[#d5c3ba] shadow-sm">
+                        <button
+                          type="button"
+                          disabled={quantity <= 1}
+                          onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                          className="w-10 h-10 flex items-center justify-center text-[#51443d] hover:bg-[#f5ece8] cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          <MinusOutlined className="text-[12px]" />
+                        </button>
+                        <input
+                          type="text"
+                          readOnly
+                          value={quantity}
+                          className="w-12 text-center font-bold text-sm text-[#1f1b19] bg-transparent focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setQuantity((q) => q + 1)}
+                          className="w-10 h-10 flex items-center justify-center text-[#51443d] hover:bg-[#f5ece8] cursor-pointer"
+                          title="Tăng số lượng"
+                        >
+                          <PlusOutlined className="text-[12px]" />
+                        </button>
+                      </div>
                     </div>
 
                     {/* Cart Button */}
                     <button
                       type="button"
                       onClick={handleAddToCart}
-                      className="flex-1 h-10 px-4 bg-[#f5ece8] hover:bg-[#eae1dd] text-[#5d371f] font-bold text-xs sm:text-sm flex items-center justify-center gap-2 border border-[#d5c3ba] transition-all cursor-pointer shadow-sm"
+                      className="flex-1 h-10 px-4 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 border border-[#d5c3ba] bg-[#f5ece8] hover:bg-[#eae1dd] text-[#5d371f] transition-all shadow-sm cursor-pointer"
                     >
                       <ShoppingCartOutlined className="text-[16px]" />
                       <span>Thêm vào giỏ hàng</span>
@@ -524,7 +566,7 @@ export default function ProductDetailPage({
                   <button
                     type="button"
                     onClick={handleBuyNow}
-                    className="w-full h-12 bg-[#5d371f] hover:bg-[#784e34] text-white font-bold text-sm flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer uppercase tracking-wider"
+                    className="w-full h-12 font-bold text-sm flex items-center justify-center gap-2 transition-all uppercase tracking-wider bg-[#5d371f] hover:bg-[#784e34] text-white shadow-md cursor-pointer"
                   >
                     <CarOutlined className="text-[18px]" />
                     <span>Mua ngay — Giao &amp; Lắp đặt tận nhà</span>

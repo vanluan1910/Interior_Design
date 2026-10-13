@@ -102,36 +102,36 @@ public sealed class EmployeesController : ApiControllerBase
             {
                 var s = search.Trim().ToLower();
                 query = query.Where(x =>
-                    x.Name.ToLower().Contains(s) ||
-                    x.Code.ToLower().Contains(s) ||
-                    x.Phone.ToLower().Contains(s) ||
-                    x.Email.ToLower().Contains(s) ||
-                    x.Username.ToLower().Contains(s) ||
-                    x.IdNumber.ToLower().Contains(s));
+                    (x.Name != null && x.Name.ToLower().Contains(s)) ||
+                    (x.Code != null && x.Code.ToLower().Contains(s)) ||
+                    (x.Phone != null && x.Phone.ToLower().Contains(s)) ||
+                    (x.Email != null && x.Email.ToLower().Contains(s)) ||
+                    (x.Username != null && x.Username.ToLower().Contains(s)) ||
+                    (x.IdNumber != null && x.IdNumber.ToLower().Contains(s)));
             }
 
             if (!string.IsNullOrWhiteSpace(department) && department != "all")
             {
                 var d = department.Trim().ToLower();
-                query = query.Where(x => x.Department.ToLower() == d);
+                query = query.Where(x => x.Department != null && x.Department.ToLower() == d);
             }
 
             if (!string.IsNullOrWhiteSpace(branch) && branch != "all")
             {
                 var b = branch.Trim().ToLower();
-                query = query.Where(x => x.Branch.ToLower().Contains(b));
+                query = query.Where(x => x.Branch != null && x.Branch.ToLower().Contains(b));
             }
 
             if (!string.IsNullOrWhiteSpace(role) && role != "all")
             {
                 var r = role.Trim().ToLower();
-                query = query.Where(x => x.Role.ToLower() == r);
+                query = query.Where(x => x.Role != null && x.Role.ToLower() == r);
             }
 
             if (!string.IsNullOrWhiteSpace(status) && status != "all")
             {
                 var st = status.Trim().ToLower();
-                query = query.Where(x => x.Status.ToLower() == st);
+                query = query.Where(x => x.Status != null && x.Status.ToLower() == st);
             }
 
             var totalCount = await query.CountAsync(cancellationToken);
@@ -245,6 +245,13 @@ public sealed class EmployeesController : ApiControllerBase
         if (string.IsNullOrWhiteSpace(request.Phone))
             return BadRequest(ApiResponse<string>.Fail("Số điện thoại không được để trống."));
 
+        var cleanName = request.Name.Trim();
+        var isDuplicateName = await _context.Employees.AnyAsync(
+            x => x.Name != null && x.Name.ToLower() == cleanName.ToLower(),
+            cancellationToken);
+        if (isDuplicateName)
+            return BadRequest(ApiResponse<string>.Fail($"Tên nhân viên '{cleanName}' đã tồn tại trên hệ thống. Vui lòng nhập tên khác hoặc thêm họ tên đệm để phân biệt."));
+
         // Auto-generate code if empty
         var code = request.Code?.Trim().ToUpper();
         if (string.IsNullOrWhiteSpace(code))
@@ -270,22 +277,132 @@ public sealed class EmployeesController : ApiControllerBase
             username = request.Login?.Trim();
         }
 
+        var targetEmail = !string.IsNullOrWhiteSpace(request.Email)
+            ? request.Email.Trim().ToLower()
+            : (!string.IsNullOrWhiteSpace(username) && username.Contains('@')
+                ? username.Trim().ToLower()
+                : $"{code.ToLower()}@d2luxury.vn");
+
+        var targetUsername = !string.IsNullOrWhiteSpace(username)
+            ? username.Trim()
+            : (!string.IsNullOrWhiteSpace(request.Email) ? request.Email.Split('@')[0] : code.ToLower());
+
+        // Validate duplicate email directly on Employees
+        if (!string.IsNullOrWhiteSpace(request.Email))
+        {
+            var cleanEmail = request.Email.Trim().ToLower();
+            var existingByEmail = await _context.Employees.FirstOrDefaultAsync(
+                x => x.Email != null && x.Email.ToLower() == cleanEmail,
+                cancellationToken);
+            if (existingByEmail != null)
+                return BadRequest(ApiResponse<string>.Fail($"Email đăng nhập '{request.Email.Trim()}' đã được sử dụng bởi nhân viên '{existingByEmail.Name}' ({existingByEmail.Code}). Vui lòng nhập email khác."));
+        }
+
+        // Validate duplicate username / login directly on Employees
+        if (!string.IsNullOrWhiteSpace(targetUsername))
+        {
+            var uLower = targetUsername.ToLower();
+            var existingByUsername = await _context.Employees.FirstOrDefaultAsync(
+                x => (x.Username != null && x.Username.ToLower() == uLower) ||
+                     (x.Login != null && x.Login.ToLower() == uLower),
+                cancellationToken);
+            if (existingByUsername != null)
+                return BadRequest(ApiResponse<string>.Fail($"Tên đăng nhập '{targetUsername}' đã được sử dụng bởi nhân viên '{existingByUsername.Name}' ({existingByUsername.Code}). Vui lòng chọn tên đăng nhập khác."));
+        }
+
+        // Validate duplicate phone directly on Employees
+        if (!string.IsNullOrWhiteSpace(request.Phone))
+        {
+            var cleanPhone = request.Phone.Trim();
+            var existingByPhone = await _context.Employees.FirstOrDefaultAsync(
+                x => x.Phone == cleanPhone,
+                cancellationToken);
+            if (existingByPhone != null)
+                return BadRequest(ApiResponse<string>.Fail($"Số điện thoại '{cleanPhone}' đã được sử dụng bởi nhân viên '{existingByPhone.Name}' ({existingByPhone.Code}). Vui lòng nhập số khác."));
+        }
+
+        // Check if a user account already exists by Email, Username, or Phone
+        var existingUser = await _context.Users.FirstOrDefaultAsync(
+            u => u.Email.ToLower() == targetEmail ||
+                 (!string.IsNullOrWhiteSpace(targetUsername) && u.Username.ToLower() == targetUsername.ToLower()) ||
+                 (!string.IsNullOrWhiteSpace(request.Phone) && u.PhoneNumber == request.Phone.Trim()),
+            cancellationToken);
+
+        var rawPassword = !string.IsNullOrWhiteSpace(request.Password) ? request.Password.Trim() : "D2Luxury@2026";
+        var userRole = (request.Role?.Trim().ToLower()) switch
+        {
+            "admin" or "role_admin" => "Admin",
+            "manager" or "role_manager" => "Admin",
+            _ => "Staff"
+        };
+
+        Guid assignedId;
+
+        if (existingUser != null)
+        {
+            // Check if this existing user is already attached to another employee
+            var otherEmployee = await _context.Employees.FirstOrDefaultAsync(
+                e => e.Id == existingUser.Id || (!string.IsNullOrWhiteSpace(e.Email) && e.Email.ToLower() == targetEmail),
+                cancellationToken);
+
+            if (otherEmployee != null)
+            {
+                return BadRequest(ApiResponse<string>.Fail($"Email hoặc Tên đăng nhập '{targetEmail}' đã được sử dụng bởi nhân viên '{otherEmployee.Name}' ({otherEmployee.Code}). Vui lòng chọn email hoặc tên đăng nhập khác."));
+            }
+
+            // Sync employee ID with existing user so both entities share the same ID
+            assignedId = existingUser.Id;
+
+            existingUser.FullName = request.Name.Trim();
+            existingUser.Username = targetUsername;
+            existingUser.Email = targetEmail;
+            existingUser.PhoneNumber = request.Phone.Trim();
+            existingUser.Role = userRole;
+            existingUser.IsActive = (request.Status?.Trim() ?? "working") == "working";
+            if (!string.IsNullOrWhiteSpace(request.Password))
+            {
+                existingUser.PasswordHash = BCrypt.Net.BCrypt.HashPassword(rawPassword);
+            }
+            existingUser.UpdatedAt = DateTimeOffset.UtcNow;
+            _context.Users.Update(existingUser);
+        }
+        else
+        {
+            assignedId = Guid.NewGuid();
+
+            var newUser = new User
+            {
+                Id = assignedId,
+                FullName = request.Name.Trim(),
+                Username = targetUsername,
+                Email = targetEmail,
+                PhoneNumber = request.Phone.Trim(),
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(rawPassword),
+                Role = userRole,
+                IsActive = (request.Status?.Trim() ?? "working") == "working",
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow
+            };
+            _context.Users.Add(newUser);
+        }
+
         var employee = new Employee
         {
+            Id = assignedId,
             Code = code,
             Name = request.Name.Trim(),
             Phone = request.Phone.Trim(),
             IdNumber = request.IdNumber?.Trim() ?? string.Empty,
             Gender = request.Gender?.Trim() ?? "Nam",
             Birthday = request.Birthday?.Trim() ?? string.Empty,
-            Email = request.Email?.Trim() ?? string.Empty,
+            Email = targetEmail,
             Address = request.Address?.Trim() ?? string.Empty,
             Department = request.Department?.Trim() ?? "Showroom Kinh Doanh",
             Title = request.Title?.Trim() ?? "Chuyên viên Tư vấn",
             Branch = request.Branch?.Trim() ?? "Showroom Quận 10 (HQ)",
             BranchId = request.BranchId,
-            Login = username ?? string.Empty,
-            Username = username ?? string.Empty,
+            Login = targetUsername,
+            Username = targetUsername,
             Role = request.Role?.Trim() ?? "Staff",
             Status = request.Status?.Trim() ?? "working",
             WorkingDate = request.WorkingDate?.Trim() ?? DateTime.Now.ToString("yyyy-MM-dd"),
@@ -303,58 +420,14 @@ public sealed class EmployeesController : ApiControllerBase
 
         _context.Employees.Add(employee);
 
-        // Sync or Create User account for employee authentication & login
-        var rawPassword = !string.IsNullOrWhiteSpace(request.Password) ? request.Password.Trim() : "D2Luxury@2026";
-        var userRole = (request.Role?.Trim().ToLower()) switch
+        try
         {
-            "admin" or "role_admin" => "Admin",
-            "manager" or "role_manager" => "Admin",
-            _ => "Staff"
-        };
-
-        var existingUser = await _context.Users.FirstOrDefaultAsync(
-            u => u.Id == employee.Id ||
-                 (!string.IsNullOrEmpty(employee.Email) && u.Email.ToLower() == employee.Email.ToLower()) ||
-                 (!string.IsNullOrEmpty(employee.Phone) && u.PhoneNumber == employee.Phone),
-            cancellationToken);
-
-        if (existingUser != null)
-        {
-            existingUser.FullName = employee.Name;
-            existingUser.Username = employee.Username;
-            existingUser.PhoneNumber = employee.Phone;
-            if (!string.IsNullOrWhiteSpace(employee.Email)) existingUser.Email = employee.Email;
-            existingUser.Role = userRole;
-            existingUser.IsActive = employee.Status == "working";
-            existingUser.PasswordHash = BCrypt.Net.BCrypt.HashPassword(rawPassword);
-            existingUser.UpdatedAt = DateTimeOffset.UtcNow;
-            _context.Users.Update(existingUser);
+            await _context.SaveChangesAsync(cancellationToken);
         }
-        else
+        catch (DbUpdateException)
         {
-            var email = !string.IsNullOrWhiteSpace(employee.Email)
-                ? employee.Email
-                : (!string.IsNullOrWhiteSpace(employee.Username) && employee.Username.Contains('@')
-                    ? employee.Username
-                    : $"{employee.Code.ToLower()}@d2luxury.vn");
-
-            var newUser = new User
-            {
-                Id = employee.Id,
-                FullName = employee.Name,
-                Username = employee.Username,
-                Email = email,
-                PhoneNumber = employee.Phone,
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword(rawPassword),
-                Role = userRole,
-                IsActive = employee.Status == "working",
-                CreatedAt = DateTimeOffset.UtcNow,
-                UpdatedAt = DateTimeOffset.UtcNow
-            };
-            _context.Users.Add(newUser);
+            return BadRequest(ApiResponse<string>.Fail($"Không thể tạo nhân viên do trùng lặp dữ liệu trong hệ thống (Email '{targetEmail}' hoặc Tên đăng nhập đã tồn tại). Vui lòng kiểm tra lại."));
         }
-
-        await _context.SaveChangesAsync(cancellationToken);
 
         return Ok(ApiResponse<Employee>.Ok(employee, "Thêm nhân viên thành công."));
     }
@@ -378,12 +451,32 @@ public sealed class EmployeesController : ApiControllerBase
             employee.Code = code;
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Name)) employee.Name = request.Name.Trim();
-        if (!string.IsNullOrWhiteSpace(request.Phone)) employee.Phone = request.Phone.Trim();
-        if (request.IdNumber != null) employee.IdNumber = request.IdNumber.Trim();
-        if (!string.IsNullOrWhiteSpace(request.Gender)) employee.Gender = request.Gender.Trim();
-        if (request.Birthday != null) employee.Birthday = request.Birthday.Trim();
-        if (request.Email != null) employee.Email = request.Email.Trim();
+        if (!string.IsNullOrWhiteSpace(request.Name))
+        {
+            var cleanName = request.Name.Trim();
+            var duplicateName = await _context.Employees.AnyAsync(x => x.Id != id && x.Name != null && x.Name.ToLower() == cleanName.ToLower(), cancellationToken);
+            if (duplicateName)
+                return BadRequest(ApiResponse<string>.Fail($"Tên nhân viên '{cleanName}' đã thuộc về nhân viên khác."));
+            employee.Name = cleanName;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Phone))
+        {
+            var cleanPhone = request.Phone.Trim();
+            var duplicatePhone = await _context.Employees.AnyAsync(x => x.Id != id && x.Phone == cleanPhone, cancellationToken);
+            if (duplicatePhone)
+                return BadRequest(ApiResponse<string>.Fail($"Số điện thoại '{cleanPhone}' đã thuộc về nhân viên khác."));
+            employee.Phone = cleanPhone;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Email))
+        {
+            var cleanEmail = request.Email.Trim().ToLower();
+            var duplicateEmail = await _context.Employees.AnyAsync(x => x.Id != id && x.Email != null && x.Email.ToLower() == cleanEmail, cancellationToken);
+            if (duplicateEmail)
+                return BadRequest(ApiResponse<string>.Fail($"Email '{request.Email.Trim()}' đã thuộc về nhân viên khác."));
+            employee.Email = request.Email.Trim();
+        }
         if (request.Address != null) employee.Address = request.Address.Trim();
         if (!string.IsNullOrWhiteSpace(request.Department)) employee.Department = request.Department.Trim();
         if (!string.IsNullOrWhiteSpace(request.Title)) employee.Title = request.Title.Trim();
@@ -404,6 +497,13 @@ public sealed class EmployeesController : ApiControllerBase
         var username = request.Username?.Trim() ?? request.Login?.Trim();
         if (!string.IsNullOrWhiteSpace(username))
         {
+            var uLower = username.ToLower();
+            var duplicateUsername = await _context.Employees.AnyAsync(
+                x => x.Id != id && ((x.Username != null && x.Username.ToLower() == uLower) || (x.Login != null && x.Login.ToLower() == uLower)),
+                cancellationToken);
+            if (duplicateUsername)
+                return BadRequest(ApiResponse<string>.Fail($"Tên đăng nhập '{username}' đã thuộc về nhân viên khác."));
+
             employee.Username = username;
             employee.Login = username;
         }
@@ -412,11 +512,25 @@ public sealed class EmployeesController : ApiControllerBase
         _context.Employees.Update(employee);
 
         // Sync corresponding User account
+        var targetEmail = !string.IsNullOrWhiteSpace(employee.Email)
+            ? employee.Email.Trim().ToLower()
+            : (!string.IsNullOrWhiteSpace(employee.Username) && employee.Username.Contains('@')
+                ? employee.Username.Trim().ToLower()
+                : $"{(employee.Code ?? "nv").ToLower()}@d2luxury.vn");
+
+        var targetUsername = !string.IsNullOrWhiteSpace(employee.Username)
+            ? employee.Username.Trim()
+            : (!string.IsNullOrWhiteSpace(employee.Email) ? employee.Email.Split('@')[0] : (employee.Code ?? "nv").ToLower());
+
+        employee.Email = targetEmail;
+        employee.Username = targetUsername;
+        employee.Login = targetUsername;
+
         var user = await _context.Users.FirstOrDefaultAsync(
             u => u.Id == employee.Id ||
-                 (!string.IsNullOrEmpty(employee.Username) && u.Username.ToLower() == employee.Username.ToLower()) ||
-                 (!string.IsNullOrEmpty(employee.Email) && u.Email.ToLower() == employee.Email.ToLower()) ||
-                 (!string.IsNullOrEmpty(employee.Phone) && u.PhoneNumber == employee.Phone),
+                 u.Email.ToLower() == targetEmail ||
+                 (!string.IsNullOrWhiteSpace(targetUsername) && u.Username.ToLower() == targetUsername.ToLower()) ||
+                 (!string.IsNullOrWhiteSpace(employee.Phone) && u.PhoneNumber == employee.Phone),
             cancellationToken);
 
         var userRole = (employee.Role?.Trim().ToLower()) switch
@@ -428,10 +542,10 @@ public sealed class EmployeesController : ApiControllerBase
 
         if (user != null)
         {
-            user.FullName = employee.Name;
-            user.PhoneNumber = employee.Phone;
-            if (!string.IsNullOrWhiteSpace(employee.Username)) user.Username = employee.Username.Trim();
-            if (!string.IsNullOrWhiteSpace(employee.Email)) user.Email = employee.Email;
+            user.FullName = employee.Name ?? "";
+            user.PhoneNumber = employee.Phone ?? "";
+            user.Username = targetUsername;
+            user.Email = targetEmail;
             user.Role = userRole;
             user.IsActive = employee.Status == "working";
             if (!string.IsNullOrWhiteSpace(request.Password))
@@ -443,19 +557,13 @@ public sealed class EmployeesController : ApiControllerBase
         }
         else
         {
-            var email = !string.IsNullOrWhiteSpace(employee.Email)
-                ? employee.Email
-                : (!string.IsNullOrWhiteSpace(employee.Username) && employee.Username.Contains('@')
-                    ? employee.Username
-                    : $"{employee.Code.ToLower()}@d2luxury.vn");
-
             var newUser = new User
             {
                 Id = employee.Id,
-                FullName = employee.Name,
-                Username = !string.IsNullOrWhiteSpace(employee.Username) ? employee.Username.Trim() : (!string.IsNullOrWhiteSpace(employee.Login) ? employee.Login.Trim() : ""),
-                Email = email,
-                PhoneNumber = employee.Phone,
+                FullName = employee.Name ?? "",
+                Username = targetUsername,
+                Email = targetEmail,
+                PhoneNumber = employee.Phone ?? "",
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword(!string.IsNullOrWhiteSpace(request.Password) ? request.Password.Trim() : "D2Luxury@2026"),
                 Role = userRole,
                 IsActive = employee.Status == "working",
@@ -465,7 +573,14 @@ public sealed class EmployeesController : ApiControllerBase
             _context.Users.Add(newUser);
         }
 
-        await _context.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            return BadRequest(ApiResponse<string>.Fail($"Không thể cập nhật nhân viên do Email '{targetEmail}' hoặc Tên đăng nhập đã thuộc về tài khoản khác."));
+        }
 
         return Ok(ApiResponse<Employee>.Ok(employee, "Cập nhật thông tin nhân viên thành công."));
     }
@@ -572,15 +687,15 @@ public sealed class EmployeesController : ApiControllerBase
                 ? employee.Email
                 : (!string.IsNullOrWhiteSpace(employee.Username) && employee.Username.Contains('@')
                     ? employee.Username
-                    : $"{employee.Code.ToLower()}@d2luxury.vn");
+                    : $"{(employee.Code ?? "nv").ToLower()}@d2luxury.vn");
 
             var newUser = new User
             {
                 Id = employee.Id,
-                FullName = employee.Name,
+                FullName = employee.Name ?? "",
                 Username = !string.IsNullOrWhiteSpace(employee.Username) ? employee.Username.Trim() : (!string.IsNullOrWhiteSpace(employee.Login) ? employee.Login.Trim() : ""),
                 Email = email,
-                PhoneNumber = employee.Phone,
+                PhoneNumber = employee.Phone ?? "",
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword.Trim()),
                 Role = userRole,
                 IsActive = employee.Status == "working",

@@ -15,6 +15,7 @@ import {
   Form,
   InputNumber,
   Switch,
+  Tooltip,
 } from 'antd';
 import {
   DownloadOutlined,
@@ -29,6 +30,7 @@ import {
   ReloadOutlined,
   UploadOutlined,
   CloseCircleFilled,
+  GlobalOutlined,
 } from '@ant-design/icons';
 import {
   Upload,
@@ -120,7 +122,7 @@ export function CategoriesTab({
   onOpenEditCategory,
   onExportCategoriesExcel,
 }: CategoriesTabProps) {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   
   // Tab Switcher: 'categories' (Danh mục nhóm hàng) vs 'spaces' (Không gian nội thất)
   const [activeSubTab, setActiveSubTab] = useState<'categories' | 'spaces'>('categories');
@@ -183,10 +185,9 @@ export function CategoriesTab({
 
   const handleRefreshCategories = async () => {
     try {
-      await categoryApi.cleanupCategories().catch(() => null);
       const refreshed = await categoryApi.getCategories();
       setCategoriesList(refreshed);
-      message.success('Đã làm mới và chuẩn hóa danh mục nhóm hàng!');
+      message.success('Đã làm mới danh mục nhóm hàng thành công!');
     } catch (err: any) {
       message.error(err?.message || 'Làm mới thất bại.');
     }
@@ -373,16 +374,89 @@ export function CategoriesTab({
 
   const handleDeleteSelectedCategories = async () => {
     if (!selectedCategoryKeys.length) return;
+    const categoriesWithProducts = categoriesList.filter(
+      (c) => selectedCategoryKeys.includes(c.id) && (c.productCount || 0) > 0
+    );
+    if (categoriesWithProducts.length > 0) {
+      modal.warning({
+        title: 'Không thể xóa các danh mục đang có sản phẩm',
+        centered: true,
+        okText: 'Đã hiểu',
+        okButtonProps: { className: '!bg-[#784e34] hover:!bg-[#5c3c28]' },
+        content: (
+          <div className="space-y-2 mt-2">
+            <p className="text-slate-700">
+              Phát hiện <b>{categoriesWithProducts.length} danh mục</b> đang có sản phẩm trực thuộc:
+            </p>
+            <div className="max-h-40 overflow-y-auto space-y-1.5 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+              {categoriesWithProducts.map((c) => (
+                <div key={c.id} className="flex justify-between items-center text-xs py-0.5 border-b border-slate-100 last:border-0">
+                  <span className="font-semibold text-slate-800">{c.name}</span>
+                  <span className="font-mono text-rose-600 font-bold bg-rose-50 px-2 py-0.5 rounded">{c.productCount} SP</span>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 p-2.5 rounded-lg mt-2">
+              ⚠️ <b>Quy định hệ thống:</b> Vui lòng chuyển các sản phẩm sang danh mục khác hoặc xóa sản phẩm trước khi thực hiện xóa danh mục!
+            </p>
+          </div>
+        ),
+      });
+      message.error(
+        `Không thể xóa ${categoriesWithProducts.length} danh mục đang có sản phẩm. Vui lòng chuyển hoặc xóa sản phẩm trước!`
+      );
+      return;
+    }
     try {
       await Promise.all(
-        selectedCategoryKeys.map((k) => categoryApi.deleteCategory(String(k)).catch(() => null))
+        selectedCategoryKeys.map((k) => categoryApi.deleteCategory(String(k)))
       );
       setCategoriesList((prev) => prev.filter((c) => !selectedCategoryKeys.includes(c.id)));
       message.success(`Đã xóa ${selectedCategoryKeys.length} danh mục đã chọn!`);
       setSelectedCategoryKeys([]);
     } catch (e: any) {
+      modal.error({
+        title: 'Xóa danh mục thất bại',
+        content: e?.message || 'Có lỗi xảy ra khi xóa danh mục.',
+        okText: 'Đóng',
+        centered: true,
+      });
       message.error(e?.message || 'Xóa danh mục thất bại.');
     }
+  };
+
+  const handleRequestDeleteCategory = (record: AdminCategory) => {
+    const pCount = record.productCount || 0;
+    if (pCount > 0) {
+      modal.warning({
+        title: 'Không thể xóa danh mục này',
+        centered: true,
+        okText: 'Đã hiểu',
+        okButtonProps: { className: '!bg-[#784e34] hover:!bg-[#5c3c28]' },
+        content: (
+          <div className="space-y-2 mt-2">
+            <p className="text-slate-700">
+              Danh mục <b>"{record.name}"</b> hiện đang có <b className="text-rose-600 font-bold">{pCount} sản phẩm</b> trực thuộc.
+            </p>
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 p-2.5 rounded-lg mt-2">
+              ⚠️ <b>Quy định hệ thống:</b> Để bảo đảm tính toàn vẹn dữ liệu hàng hóa, bạn không thể xóa danh mục khi vẫn còn sản phẩm. Vui lòng chuyển các sản phẩm sang danh mục khác hoặc xóa sản phẩm trước!
+            </p>
+          </div>
+        ),
+      });
+      message.error(`Không thể xóa danh mục "${record.name}" vì đang có ${pCount} sản phẩm thuộc danh mục này!`);
+      return;
+    }
+
+    modal.confirm({
+      title: 'Xác nhận xóa danh mục',
+      content: `Bạn có chắc muốn xóa danh mục "${record.name}"? Danh mục sẽ được chuyển vào thùng rác.`,
+      okText: 'Xóa',
+      cancelText: 'Hủy',
+      okButtonProps: { danger: true },
+      centered: true,
+      onOk: () => handleDeleteCategory(record.id, record.name),
+    });
   };
 
   const handleCategoryFormSubmit = async (values: any) => {
@@ -441,11 +515,31 @@ export function CategoriesTab({
   };
 
   const handleDeleteCategory = async (id: string, name?: string) => {
+    const cat = categoriesList.find((c) => c.id === id);
+    if (cat && (cat.productCount || 0) > 0) {
+      modal.warning({
+        title: 'Không thể xóa danh mục này',
+        centered: true,
+        okText: 'Đã hiểu',
+        okButtonProps: { className: '!bg-[#784e34] hover:!bg-[#5c3c28]' },
+        content: `Danh mục "${cat.name}" đang có ${cat.productCount} sản phẩm. Vui lòng chuyển hoặc xóa sản phẩm trước!`,
+      });
+      message.error(
+        `Không thể xóa danh mục "${cat.name}" vì đang có ${cat.productCount} sản phẩm thuộc danh mục này. Vui lòng chuyển hoặc xóa sản phẩm trước!`
+      );
+      return;
+    }
     try {
       await categoryApi.deleteCategory(id);
       setCategoriesList((prev) => prev.filter((c) => c.id !== id));
       message.success(`Đã xóa danh mục ${name ? `"${name}"` : ''} thành công!`);
     } catch (err: any) {
+      modal.error({
+        title: 'Xóa danh mục thất bại',
+        content: err?.message || 'Có lỗi xảy ra khi xóa danh mục.',
+        okText: 'Đóng',
+        centered: true,
+      });
       message.error(err?.message || 'Xóa danh mục thất bại.');
     }
   };
@@ -568,8 +662,57 @@ export function CategoriesTab({
     }
   };
 
+  const getSpaceProductCount = (space: AdminSpace) => {
+    const sName = (space.name || '').toLowerCase().trim();
+    const relatedCategories = categoriesList.filter((c) => {
+      if (c.spaceId && c.spaceId === space.id) return true;
+      if (!c.space) return false;
+      const cSpace = c.space.toLowerCase().trim();
+      return cSpace === sName || cSpace.includes(sName) || sName.includes(cSpace);
+    });
+    const totalProducts = relatedCategories.reduce((sum, c) => sum + (c.productCount || 0), 0);
+    return { totalProducts, categoryCount: relatedCategories.length };
+  };
+
   const handleDeleteSelectedSpaces = async () => {
     if (!selectedSpaceKeys.length) return;
+    const spacesWithProducts = currentSpacesList
+      .map((s) => ({ space: s, ...getSpaceProductCount(s) }))
+      .filter((s) => selectedSpaceKeys.includes(s.space.id) && (s.totalProducts > 0 || s.categoryCount > 0));
+
+    if (spacesWithProducts.length > 0) {
+      modal.warning({
+        title: 'Không thể xóa các không gian đang có dữ liệu',
+        centered: true,
+        okText: 'Đã hiểu',
+        okButtonProps: { className: '!bg-[#784e34] hover:!bg-[#5c3c28]' },
+        content: (
+          <div className="space-y-2 mt-2">
+            <p className="text-slate-700">
+              Phát hiện <b>{spacesWithProducts.length} không gian</b> đang có sản phẩm hoặc danh mục liên kết:
+            </p>
+            <div className="max-h-40 overflow-y-auto space-y-1.5 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+              {spacesWithProducts.map((s) => (
+                <div key={s.space.id} className="flex justify-between items-center text-xs py-0.5 border-b border-slate-100 last:border-0">
+                  <span className="font-semibold text-slate-800">{s.space.name}</span>
+                  <div className="flex items-center gap-1.5 font-mono">
+                    <span className="text-rose-600 font-bold bg-rose-50 px-1.5 py-0.5 rounded">{s.totalProducts} SP</span>
+                    <span className="text-amber-700 font-bold bg-amber-50 px-1.5 py-0.5 rounded">{s.categoryCount} DM</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 p-2.5 rounded-lg mt-2">
+              ⚠️ <b>Quy định hệ thống:</b> Vui lòng chuyển các sản phẩm và danh mục sang không gian khác trước khi xóa không gian!
+            </p>
+          </div>
+        ),
+      });
+      message.error(
+        `Không thể xóa ${spacesWithProducts.length} không gian đang có sản phẩm hoặc danh mục. Vui lòng chuyển dữ liệu trước!`
+      );
+      return;
+    }
     try {
       await Promise.all(
         selectedSpaceKeys.map((k) => spaceApi.deleteSpace(String(k)))
@@ -578,16 +721,85 @@ export function CategoriesTab({
       message.success(`Đã xóa ${selectedSpaceKeys.length} không gian đã chọn!`);
       setSelectedSpaceKeys([]);
     } catch (e: any) {
+      modal.error({
+        title: 'Xóa không gian thất bại',
+        content: e?.message || 'Có lỗi xảy ra khi xóa không gian.',
+        okText: 'Đóng',
+        centered: true,
+      });
       message.error(e?.message || 'Xóa không gian thất bại.');
     }
   };
 
+  const handleRequestDeleteSpace = (record: AdminSpace) => {
+    const { totalProducts, categoryCount } = getSpaceProductCount(record);
+    if (totalProducts > 0 || categoryCount > 0) {
+      modal.warning({
+        title: 'Không thể xóa không gian này',
+        centered: true,
+        okText: 'Đã hiểu',
+        okButtonProps: { className: '!bg-[#784e34] hover:!bg-[#5c3c28]' },
+        content: (
+          <div className="space-y-2 mt-2">
+            <p className="text-slate-700">
+              Không gian <b>"{record.name}"</b> hiện đang có{' '}
+              {totalProducts > 0 && <b className="text-rose-600 font-bold">{totalProducts} sản phẩm</b>}
+              {totalProducts > 0 && categoryCount > 0 && ' và '}
+              {categoryCount > 0 && <b className="text-amber-700 font-bold">{categoryCount} danh mục</b>}{' '}
+              liên kết.
+            </p>
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 p-2.5 rounded-lg mt-2">
+              ⚠️ <b>Quy định hệ thống:</b> Không thể xóa không gian khi vẫn còn sản phẩm hoặc danh mục. Vui lòng chuyển danh mục và sản phẩm sang không gian khác trước khi xóa!
+            </p>
+          </div>
+        ),
+      });
+      message.error(
+        `Không thể xóa không gian "${record.name}" vì đang có ${totalProducts} sản phẩm (${categoryCount} danh mục)!`
+      );
+      return;
+    }
+
+    modal.confirm({
+      title: 'Xác nhận xóa không gian',
+      content: `Bạn có chắc muốn xóa không gian "${record.name}"? Không gian sẽ được chuyển vào thùng rác.`,
+      okText: 'Xóa',
+      cancelText: 'Hủy',
+      okButtonProps: { danger: true },
+      centered: true,
+      onOk: () => handleDeleteSpace(record.id, record.name),
+    });
+  };
+
   const handleDeleteSpace = async (id: string, name?: string) => {
+    const space = currentSpacesList.find((s) => s.id === id);
+    if (space) {
+      const { totalProducts, categoryCount } = getSpaceProductCount(space);
+      if (totalProducts > 0 || categoryCount > 0) {
+        modal.warning({
+          title: 'Không thể xóa không gian này',
+          centered: true,
+          okText: 'Đã hiểu',
+          okButtonProps: { className: '!bg-[#784e34] hover:!bg-[#5c3c28]' },
+          content: `Không gian "${space.name}" đang có ${totalProducts} sản phẩm (${categoryCount} danh mục). Vui lòng chuyển hoặc xóa sản phẩm trước!`,
+        });
+        message.error(
+          `Không thể xóa không gian "${space.name}" vì đang có ${totalProducts} sản phẩm (${categoryCount} danh mục) thuộc không gian này. Vui lòng chuyển hoặc xóa sản phẩm trước!`
+        );
+        return;
+      }
+    }
     try {
       await spaceApi.deleteSpace(id);
       updateSpacesList((prev) => prev.filter((s) => s.id !== id));
       message.success(`Đã xóa không gian ${name ? `"${name}"` : ''} thành công!`);
     } catch (err: any) {
+      modal.error({
+        title: 'Xóa không gian thất bại',
+        content: err?.message || 'Có lỗi xảy ra khi xóa không gian.',
+        okText: 'Đóng',
+        centered: true,
+      });
       message.error(err?.message || 'Xóa không gian thất bại.');
     }
   };
@@ -724,6 +936,13 @@ export function CategoriesTab({
             ]}
             className="!bg-slate-100 p-1 rounded-lg"
           />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Tag color="blue" className="font-normal text-xs rounded-full px-3 py-1 border-blue-200 bg-blue-50 text-blue-700 flex items-center gap-1.5 select-none m-0">
+            <GlobalOutlined />
+            <span>Danh mục & Không gian dùng chung toàn hệ thống (không phân biệt chi nhánh)</span>
+          </Tag>
         </div>
       </div>
 
@@ -972,22 +1191,14 @@ export function CategoriesTab({
                             className="text-slate-600 hover:text-[#784e34] hover:bg-slate-100"
                             title="Sao chép"
                           />
-                          <Popconfirm
-                            title="Xóa danh mục này?"
-                            description={`Bạn có chắc muốn xóa "${record.name}"?`}
-                            onConfirm={() => handleDeleteCategory(record.id, record.name)}
-                            okText="Xóa"
-                            cancelText="Hủy"
-                            okButtonProps={{ danger: true }}
-                          >
-                            <Button
-                              size="small"
-                              type="text"
-                              icon={<DeleteOutlined className="text-sm" />}
-                              className="text-slate-400 hover:text-red-600 hover:bg-red-50"
-                              title="Xóa"
-                            />
-                          </Popconfirm>
+                          <Button
+                            size="small"
+                            type="text"
+                            icon={<DeleteOutlined className="text-sm" />}
+                            onClick={() => handleRequestDeleteCategory(record)}
+                            className="text-slate-400 hover:text-red-600 hover:bg-red-50"
+                            title="Xóa danh mục"
+                          />
                         </Space>
                       ),
                     },
@@ -1173,17 +1384,21 @@ export function CategoriesTab({
                       ),
                     },
                     {
-                      title: 'Số danh mục',
-                      dataIndex: 'categoryCount',
+                      title: 'Danh mục / SP',
                       key: 'categoryCount',
                       align: 'center',
-                      width: 110,
+                      width: 130,
                       render: (_, record) => {
-                        const count = categoriesList.filter((c) => c.space.toLowerCase() === record.name.toLowerCase()).length;
+                        const { totalProducts, categoryCount } = getSpaceProductCount(record);
                         return (
-                          <span className="font-mono font-semibold text-xs text-slate-800">
-                            {count} DM
-                          </span>
+                          <div className="flex flex-col items-center gap-0.5">
+                            <span className="font-mono font-semibold text-xs text-slate-800">
+                              {categoryCount} DM
+                            </span>
+                            <span className={`text-[11px] font-mono font-medium ${totalProducts > 0 ? 'text-[#784e34]' : 'text-slate-400'}`}>
+                              {totalProducts} SP
+                            </span>
+                          </div>
                         );
                       },
                     },
@@ -1199,42 +1414,38 @@ export function CategoriesTab({
                       key: 'action',
                       align: 'center',
                       width: 110,
-                      render: (_, record) => (
-                        <Space size={2} onClick={(e) => e.stopPropagation()}>
-                          <Button
-                            size="small"
-                            type="text"
-                            icon={<EditOutlined className="text-sm" />}
-                            onClick={() => handleOpenEditSpace(record)}
-                            className="text-slate-600 hover:text-[#784e34] hover:bg-slate-100"
-                            title="Chỉnh sửa"
-                          />
-                          <Button
-                            size="small"
-                            type="text"
-                            icon={<CopyOutlined className="text-sm" />}
-                            onClick={() => handleCopySpace(record)}
-                            className="text-slate-600 hover:text-[#784e34] hover:bg-slate-100"
-                            title="Sao chép"
-                          />
-                          <Popconfirm
-                            title="Xóa không gian này?"
-                            description={`Bạn có chắc muốn xóa "${record.name}"?`}
-                            onConfirm={() => handleDeleteSpace(record.id, record.name)}
-                            okText="Xóa"
-                            cancelText="Hủy"
-                            okButtonProps={{ danger: true }}
-                          >
+                      render: (_, record) => {
+                        const { totalProducts, categoryCount } = getSpaceProductCount(record);
+                        const hasProducts = totalProducts > 0;
+                        return (
+                          <Space size={2} onClick={(e) => e.stopPropagation()}>
+                            <Button
+                              size="small"
+                              type="text"
+                              icon={<EditOutlined className="text-sm" />}
+                              onClick={() => handleOpenEditSpace(record)}
+                              className="text-slate-600 hover:text-[#784e34] hover:bg-slate-100"
+                              title="Chỉnh sửa"
+                            />
+                            <Button
+                              size="small"
+                              type="text"
+                              icon={<CopyOutlined className="text-sm" />}
+                              onClick={() => handleCopySpace(record)}
+                              className="text-slate-600 hover:text-[#784e34] hover:bg-slate-100"
+                              title="Sao chép"
+                            />
                             <Button
                               size="small"
                               type="text"
                               icon={<DeleteOutlined className="text-sm" />}
+                              onClick={() => handleRequestDeleteSpace(record)}
                               className="text-slate-400 hover:text-red-600 hover:bg-red-50"
-                              title="Xóa"
+                              title="Xóa không gian"
                             />
-                          </Popconfirm>
-                        </Space>
-                      ),
+                          </Space>
+                        );
+                      },
                     },
                   ]}
                 />

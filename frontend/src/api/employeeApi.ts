@@ -1,4 +1,5 @@
 import type { AdminEmployee } from '@/types/admin';
+import { cachedFetch, invalidateApiCache } from './shared/apiCache';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
@@ -23,31 +24,36 @@ export interface EmployeesResponse {
 
 export const employeeApi = {
   getEmployees: async (params?: GetEmployeesParams): Promise<AdminEmployee[]> => {
-    try {
-      const sp = new URLSearchParams();
-      if (params?.search) sp.append('search', params.search);
-      if (params?.department && params.department !== 'all') sp.append('department', params.department);
-      if (params?.branch && params.branch !== 'all') sp.append('branch', params.branch);
-      if (params?.role && params.role !== 'all') sp.append('role', params.role);
-      if (params?.status && params.status !== 'all') sp.append('status', params.status);
-      if (params?.page) sp.append('page', params.page.toString());
-      if (params?.pageSize) sp.append('pageSize', params.pageSize.toString());
-      if (params?.includeDeleted) sp.append('includeDeleted', 'true');
+    const sp = new URLSearchParams();
+    if (params?.search) sp.append('search', params.search);
+    if (params?.department && params.department !== 'all') sp.append('department', params.department);
+    if (params?.branch && params.branch !== 'all') sp.append('branch', params.branch);
+    if (params?.role && params.role !== 'all') sp.append('role', params.role);
+    if (params?.status && params.status !== 'all') sp.append('status', params.status);
+    if (params?.page) sp.append('page', params.page.toString());
+    if (params?.pageSize) sp.append('pageSize', params.pageSize.toString());
+    if (params?.includeDeleted) sp.append('includeDeleted', 'true');
 
-      const url = `${API_BASE_URL}/api/employees${sp.toString() ? `?${sp.toString()}` : ''}`;
-      const res = await fetch(url, {
-        headers: { 'Content-Type': 'application/json' },
-      });
+    const queryString = sp.toString();
+    const cacheKey = `employees:${queryString}`;
 
-      if (!res.ok) return [];
-      const json = await res.json();
-      if (json?.data?.items) {
-        return json.data.items;
+    return cachedFetch(cacheKey, async () => {
+      try {
+        const url = `${API_BASE_URL}/api/employees${queryString ? `?${queryString}` : ''}`;
+        const res = await fetch(url, {
+          headers: { 'Content-Type': 'application/json' },
+        });
+
+        if (!res.ok) return [];
+        const json = await res.json();
+        if (json?.data?.items) {
+          return json.data.items;
+        }
+        return json.data || [];
+      } catch {
+        return [];
       }
-      return json.data || [];
-    } catch {
-      return [];
-    }
+    });
   },
 
   getEmployeeById: async (id: string): Promise<AdminEmployee | null> => {
@@ -74,6 +80,7 @@ export const employeeApi = {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.message || 'Thêm nhân viên thất bại');
       }
+      invalidateApiCache('employees');
       const json = await res.json();
       return json.data;
     } catch (error) {
@@ -93,6 +100,7 @@ export const employeeApi = {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.message || 'Cập nhật nhân viên thất bại');
       }
+      invalidateApiCache('employees');
       const json = await res.json();
       return json.data;
     } catch (error) {
@@ -108,6 +116,7 @@ export const employeeApi = {
         headers: { 'Content-Type': 'application/json' },
       });
       if (!res.ok) return false;
+      invalidateApiCache('employees');
       return true;
     } catch {
       return false;
@@ -122,6 +131,7 @@ export const employeeApi = {
         body: JSON.stringify({ status }),
       });
       if (!res.ok) return false;
+      invalidateApiCache('employees');
       return true;
     } catch {
       return false;

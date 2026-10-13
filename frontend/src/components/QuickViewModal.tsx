@@ -22,9 +22,13 @@ export default function QuickViewModal({
 
   if (!product) return null;
 
+  const isOutOfStock = false;
+
   const formatPrice = (val: number) => {
     return new Intl.NumberFormat('vi-VN').format(val) + ' ₫';
   };
+
+  const availableStock = product.inStockQty !== undefined ? product.inStockQty : (product.inStock ? 99 : 0);
 
   const handleAdd = () => {
     onAddToCart(product, quantity || 1);
@@ -52,14 +56,28 @@ export default function QuickViewModal({
         <div className="md:w-1/2 aspect-square rounded-none bg-[#eae1dd] overflow-hidden relative shadow-inner">
           <img
             alt={product.name}
-            className="w-full h-full object-cover"
+            className={`w-full h-full object-cover ${isOutOfStock ? 'grayscale-[40%] opacity-80' : ''}`}
             src={product.image}
           />
-          {product.tag && (
+          {isOutOfStock ? (
+            <div className="absolute top-3 left-3">
+              <Tag color="#ba1a1a" className="px-3 py-1 rounded-none font-bold text-xs border-0 shadow text-white">
+                Hết hàng
+              </Tag>
+            </div>
+          ) : product.tag ? (
             <div className="absolute top-3 left-3">
               <Tag color="#5d371f" className="px-3 py-1 rounded-none font-bold text-xs border-0 shadow">
                 {product.tag}
               </Tag>
+            </div>
+          ) : null}
+
+          {isOutOfStock && (
+            <div className="absolute inset-0 bg-black/20 flex items-center justify-center pointer-events-none">
+              <span className="px-3 py-1 bg-[#ba1a1a] text-white text-xs font-bold uppercase tracking-wider shadow-md">
+                Tạm hết hàng
+              </span>
             </div>
           )}
         </div>
@@ -67,9 +85,16 @@ export default function QuickViewModal({
         {/* Product Details */}
         <div className="md:w-1/2 flex flex-col justify-between">
           <div className="flex flex-col gap-2">
-            <span className="font-label-sm text-xs uppercase tracking-wider text-[#5d371f] font-bold">
-              Xem nhanh sản phẩm • {product.categoryName}
-            </span>
+            <div className="flex items-center justify-between">
+              <span className="font-label-sm text-xs uppercase tracking-wider text-[#5d371f] font-bold">
+                Xem nhanh sản phẩm • {product.categoryName}
+              </span>
+              <span className={`text-[11px] font-bold px-2 py-0.5 ${
+                isOutOfStock ? 'bg-[#ffdad6] text-[#ba1a1a]' : 'bg-[#e1e5ce]/60 text-[#3f4332]'
+              }`}>
+                {isOutOfStock ? 'Hết hàng' : (product.stockStatus || 'Còn hàng')}
+              </span>
+            </div>
 
             <h3 className="font-headline-md text-2xl text-[#1f1b19] font-bold leading-tight">
               {product.name}
@@ -123,10 +148,11 @@ export default function QuickViewModal({
           {/* Quantity and Actions */}
           <div className="flex flex-col gap-3 pt-4 border-t border-[#eae1dd]">
             <div className="flex items-center justify-between">
-              <span className="font-label-md text-xs text-[#1f1b19] font-semibold">Số lượng:</span>
+              <div className="flex items-center gap-2">
+                <span className="font-label-md text-xs text-[#1f1b19] font-semibold">Số lượng:</span>
+              </div>
               <InputNumber
                 min={1}
-                max={99}
                 value={quantity}
                 onChange={(val) => setQuantity(val || 1)}
                 className="rounded-none border-[#d5c3ba]"
@@ -138,7 +164,7 @@ export default function QuickViewModal({
               size="large"
               onClick={handleAdd}
               block
-              className="h-12 bg-[#5d371f] hover:!bg-[#784e34] font-title-md text-sm font-bold shadow-md rounded-none"
+              className="h-12 font-title-md text-sm font-bold shadow-md rounded-none bg-[#5d371f] hover:!bg-[#784e34]"
               icon={<ShoppingCartOutlined className="text-[18px]" />}
             >
               Thêm vào giỏ hàng ngay

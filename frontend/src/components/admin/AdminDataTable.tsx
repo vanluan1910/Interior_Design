@@ -74,16 +74,19 @@ export function AdminDataTable<T extends object = any>({
   const currentTotal = totalCount !== undefined ? totalCount : (Array.isArray(dataSource) ? dataSource.length : 0);
 
   // Domaco POS Pagination State Management
-  const isExternalPagination = typeof pagination === 'object';
-  const [currentPage, setCurrentPage] = useState(isExternalPagination && pagination?.current ? pagination.current : 1);
-  const [pageSize, setPageSize] = useState(isExternalPagination && pagination?.pageSize ? pagination.pageSize : 10);
+  const isExternalPagination = typeof pagination === 'object' && pagination !== null;
+  const externalCurrent = isExternalPagination ? pagination.current : undefined;
+  const externalPageSize = isExternalPagination ? pagination.pageSize : undefined;
+
+  const [currentPage, setCurrentPage] = useState(externalCurrent || 1);
+  const [pageSize, setPageSize] = useState(externalPageSize || 10);
 
   useEffect(() => {
-    if (isExternalPagination && pagination) {
-      if (pagination.current) setCurrentPage(pagination.current);
-      if (pagination.pageSize) setPageSize(pagination.pageSize);
+    if (isExternalPagination) {
+      if (externalCurrent && externalCurrent !== currentPage) setCurrentPage(externalCurrent);
+      if (externalPageSize && externalPageSize !== pageSize) setPageSize(externalPageSize);
     }
-  }, [pagination, isExternalPagination]);
+  }, [externalCurrent, externalPageSize, isExternalPagination, currentPage, pageSize]);
 
   const paginatedData = useMemo(() => {
     if (pagination === false) return dataSource;

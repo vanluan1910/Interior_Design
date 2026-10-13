@@ -1,4 +1,5 @@
 import type { AdminRole, PermissionGroup } from '@/types/admin';
+import { cachedFetch, invalidateApiCache } from './shared/apiCache';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
@@ -10,23 +11,28 @@ export interface GetRolesParams {
 
 export const roleApi = {
   getRoles: async (params?: GetRolesParams): Promise<AdminRole[]> => {
-    try {
-      const sp = new URLSearchParams();
-      if (params?.search) sp.append('search', params.search);
-      if (params?.status && params.status !== 'all') sp.append('status', params.status);
-      if (params?.includeDeleted) sp.append('includeDeleted', 'true');
+    const sp = new URLSearchParams();
+    if (params?.search) sp.append('search', params.search);
+    if (params?.status && params.status !== 'all') sp.append('status', params.status);
+    if (params?.includeDeleted) sp.append('includeDeleted', 'true');
 
-      const url = `${API_BASE_URL}/api/roles${sp.toString() ? `?${sp.toString()}` : ''}`;
-      const res = await fetch(url, {
-        headers: { 'Content-Type': 'application/json' },
-      });
+    const queryString = sp.toString();
+    const cacheKey = `roles:${queryString}`;
 
-      if (!res.ok) return [];
-      const json = await res.json();
-      return json.data || [];
-    } catch {
-      return [];
-    }
+    return cachedFetch(cacheKey, async () => {
+      try {
+        const url = `${API_BASE_URL}/api/roles${queryString ? `?${queryString}` : ''}`;
+        const res = await fetch(url, {
+          headers: { 'Content-Type': 'application/json' },
+        });
+
+        if (!res.ok) return [];
+        const json = await res.json();
+        return json.data || [];
+      } catch {
+        return [];
+      }
+    });
   },
 
   getRoleById: async (id: string): Promise<AdminRole | null> => {
@@ -43,16 +49,18 @@ export const roleApi = {
   },
 
   getPermissionsCatalog: async (): Promise<PermissionGroup[]> => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/roles/permissions`, {
-        headers: { 'Content-Type': 'application/json' },
-      });
-      if (!res.ok) return [];
-      const json = await res.json();
-      return json.data || [];
-    } catch {
-      return [];
-    }
+    return cachedFetch('permissions_catalog', async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/roles/permissions`, {
+          headers: { 'Content-Type': 'application/json' },
+        });
+        if (!res.ok) return [];
+        const json = await res.json();
+        return json.data || [];
+      } catch {
+        return [];
+      }
+    });
   },
 
   createRole: async (data: Partial<AdminRole> & { templateRoleId?: string }): Promise<AdminRole | null> => {
@@ -65,6 +73,7 @@ export const roleApi = {
     if (!res.ok) {
       throw new Error(json.message || 'Tạo mới vai trò thất bại');
     }
+    invalidateApiCache('roles');
     return json.data;
   },
 
@@ -78,6 +87,7 @@ export const roleApi = {
     if (!res.ok) {
       throw new Error(json.message || 'Cập nhật vai trò thất bại');
     }
+    invalidateApiCache('roles');
     return json.data;
   },
 
@@ -91,6 +101,8 @@ export const roleApi = {
     if (!res.ok) {
       throw new Error(json.message || 'Lưu phân quyền thất bại');
     }
+    invalidateApiCache('roles');
+    invalidateApiCache('permissions_catalog');
     return json.data;
   },
 
@@ -104,6 +116,7 @@ export const roleApi = {
     if (!res.ok) {
       throw new Error(json.message || 'Nhân bản vai trò thất bại');
     }
+    invalidateApiCache('roles');
     return json.data;
   },
 
@@ -115,6 +128,7 @@ export const roleApi = {
     if (!res.ok) {
       throw new Error(json.message || 'Xóa vai trò thất bại');
     }
+    invalidateApiCache('roles');
     return json.data === true;
   },
 };

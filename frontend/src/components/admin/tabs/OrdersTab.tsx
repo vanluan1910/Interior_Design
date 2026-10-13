@@ -68,6 +68,30 @@ export const formatWoodTypeName = (wood?: string): string => {
   return wood;
 };
 
+export function getCleanProductName(productName?: string): string {
+  if (!productName) return '';
+  return productName.replace(/\s*\(x\d+\)/gi, '').trim();
+}
+
+export function getOrderQuantity(order?: Partial<OrderRow> | null): number {
+  if (!order) return 1;
+  if (order.items && order.items.length > 0) {
+    const total = order.items.reduce((sum, item) => sum + (Number(item.quantity) || 1), 0);
+    if (total > 0) return total;
+  }
+  if (typeof order.quantity === 'number' && order.quantity > 0) {
+    return order.quantity;
+  }
+  if (order.productName) {
+    const matches = Array.from(order.productName.matchAll(/\(x(\d+)\)/gi));
+    if (matches.length > 0) {
+      const sum = matches.reduce((acc, m) => acc + (parseInt(m[1], 10) || 1), 0);
+      if (sum > 0) return sum;
+    }
+  }
+  return 1;
+}
+
 export function removeVietnameseTones(str: string): string {
   if (!str) return '';
   return str
@@ -89,12 +113,10 @@ export function matchVietnameseText(query: string, target: string): boolean {
   const t = target.trim();
   if (!q) return true;
 
-  // If user typed with specific Vietnamese diacritics (e.g. "tủ", "ghế", "bàn")
   if (hasVietnameseTone(q)) {
     return t.toLowerCase().includes(q.toLowerCase());
   }
 
-  // If user typed without diacritics (e.g. "tu", "ghe", "ban")
   return removeVietnameseTones(t).includes(removeVietnameseTones(q));
 }
 
@@ -144,22 +166,28 @@ export function OrdersTab({
     const materials = effectiveProducts
       .map((p) => p.material?.trim())
       .filter((m): m is string => Boolean(m));
-    return Array.from(new Set(materials));
+    const unique = Array.from(new Set(materials));
+    return unique.length > 0 ? unique : ['Gỗ Hương Đá', 'Gỗ Gõ Đỏ', 'Gỗ Mun Hoa', 'Gỗ Cẩm Lai', 'Gỗ Sồi Mỹ'];
   }, [effectiveProducts]);
 
+  // Lazy load customer and product options ONLY when the create/edit order drawer is opened
+  const hasFetchedDrawerDataRef = React.useRef(false);
   React.useEffect(() => {
-    if (customersList.length === 0) {
-      customerApi.getCustomers({ pageSize: 500 }).then((res) => {
-        if (Array.isArray(res)) setDbCustomers(res);
-      }).catch(() => {});
-    }
+    if (isOrderDrawerOpen && !hasFetchedDrawerDataRef.current) {
+      hasFetchedDrawerDataRef.current = true;
+      if (customersList.length === 0) {
+        customerApi.getCustomers().then((res) => {
+          if (Array.isArray(res) && res.length > 0) setDbCustomers(res);
+        }).catch(() => {});
+      }
 
-    if (catalogList.length === 0) {
-      productApi.getProducts({ pageSize: 500 }).then((res) => {
-        if (Array.isArray(res)) setDbProducts(res);
-      }).catch(() => {});
+      if (catalogList.length === 0) {
+        productApi.getProducts().then((res) => {
+          if (Array.isArray(res) && res.length > 0) setDbProducts(res);
+        }).catch(() => {});
+      }
     }
-  }, [customersList.length, catalogList.length]);
+  }, [isOrderDrawerOpen, customersList.length, catalogList.length]);
 
   // Branch-scoped orders
   const branchScopedOrders = useMemo(() => {
@@ -219,6 +247,18 @@ export function OrdersTab({
       .reduce((sum, o) => sum + o.value, 0);
   }, [ordersList, selectedOrderKeys]);
 
+  // Memoized real pagination config
+  const paginationConfig = useMemo(
+    () => ({
+      pageSize: 10,
+      showSizeChanger: true,
+      pageSizeOptions: ['10', '20', '50'],
+      total: filteredOrders.length,
+      showTotal: (total: number, range: [number, number]) => `${range[0]}-${range[1]} trên tổng số ${total} đơn hàng`,
+    }),
+    [filteredOrders.length]
+  );
+
   // Export & Action handlers
   const handleExportOrdersExcel = () => {
     const exportData = ordersList.map((o) => ({
@@ -226,7 +266,8 @@ export function OrdersTab({
       'Khách hàng': o.customerName,
       'Số điện thoại': o.customerPhone,
       'Địa chỉ': o.customerAddress,
-      'Sản phẩm chế tác': o.productName,
+      'Sản phẩm chế tác': getCleanProductName(o.productName),
+      'Số lượng': getOrderQuantity(o),
       'Quy cách kỹ thuật': o.productSpec,
       'Loại gỗ': formatWoodTypeName(o.woodType),
       'Ngày đặt': o.orderDate,
@@ -245,10 +286,10 @@ export function OrdersTab({
     const exportData = [
       {
         'Mã đơn': order.orderCode,
-        'Tên sản phẩm': order.productName,
+        'Tên sản phẩm': getCleanProductName(order.productName),
         'Quy cách': order.productSpec,
         'Chủng loại gỗ': formatWoodTypeName(order.woodType),
-        'Số lượng': 1,
+        'Số lượng': getOrderQuantity(order),
         'Đơn giá (VNĐ)': order.value,
         'Giảm giá': 0,
         'Thành tiền (VNĐ)': order.value,
@@ -584,7 +625,7 @@ export function OrdersTab({
                   countUnit="đơn hàng"
                   dataSource={filteredOrders}
                   rowKey="id"
-                  pagination={{ pageSize: 10 }}
+                  pagination={paginationConfig}
                   onRow={(record) => {
                     const isExp = expandedOrderRowKeys.includes(record.id);
                     return {
@@ -678,28 +719,55 @@ export function OrdersTab({
                                     </tr>
                                   </thead>
                                   <tbody className="divide-y divide-slate-100">
-                                    <tr className="hover:bg-slate-50/50">
-                                      <td className="py-2.5 px-3 font-mono font-medium text-[#784e34] whitespace-nowrap">{order.orderCode}</td>
-                                      <td className="py-2.5 px-3">
-                                        <div
-                                          className="font-medium text-[#784e34] hover:underline cursor-pointer inline-flex items-center gap-1 group"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            if (onNavigateToProduct) onNavigateToProduct(order.productName);
-                                          }}
-                                          title={`Xem chi tiết sản phẩm "${order.productName}" trong danh mục`}
-                                        >
-                                          <span>{order.productName}</span>
-                                          <span className="text-[10px] text-slate-400 group-hover:text-[#784e34]">↗</span>
-                                        </div>
-                                        <div className="text-[11px] text-slate-500 mt-0.5">{order.productSpec}</div>
-                                      </td>
-                                      <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap">Bộ / Chiếc</td>
-                                      <td className="py-2.5 px-3 text-slate-700 whitespace-nowrap">{formatWoodTypeName(order.woodType)}</td>
-                                      <td className="py-2.5 px-3 font-mono text-slate-700 whitespace-nowrap">{order.deadlineDate}</td>
-                                      <td className="py-2.5 px-3 text-center font-medium text-slate-900 whitespace-nowrap">1</td>
-                                      <td className="py-2.5 px-3 text-right font-mono font-medium text-slate-900 whitespace-nowrap">{order.value.toLocaleString('vi-VN')} đ</td>
-                                    </tr>
+                                    {order.items && order.items.length > 0 ? (
+                                      order.items.map((it, idx) => (
+                                        <tr key={it.id || idx} className="hover:bg-slate-50/50">
+                                          <td className="py-2.5 px-3 font-mono font-medium text-[#784e34] whitespace-nowrap">{it.productSku || order.orderCode}</td>
+                                          <td className="py-2.5 px-3">
+                                            <div
+                                              className="font-medium text-[#784e34] hover:underline cursor-pointer inline-flex items-center gap-1 group"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                if (onNavigateToProduct) onNavigateToProduct(it.productName);
+                                              }}
+                                              title={`Xem chi tiết sản phẩm "${it.productName}" trong danh mục`}
+                                            >
+                                              <span>{it.productName}</span>
+                                              <span className="text-[10px] text-slate-400 group-hover:text-[#784e34]">↗</span>
+                                            </div>
+                                            <div className="text-[11px] text-slate-500 mt-0.5">{it.dimensions || it.material || order.productSpec}</div>
+                                          </td>
+                                          <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap">Bộ / Chiếc</td>
+                                          <td className="py-2.5 px-3 text-slate-700 whitespace-nowrap">{it.material || formatWoodTypeName(order.woodType)}</td>
+                                          <td className="py-2.5 px-3 font-mono text-slate-700 whitespace-nowrap">{order.deadlineDate}</td>
+                                          <td className="py-2.5 px-3 text-center font-bold text-slate-900 whitespace-nowrap">{it.quantity || 1}</td>
+                                          <td className="py-2.5 px-3 text-right font-mono font-medium text-slate-900 whitespace-nowrap">{(it.totalPrice || (it.unitPrice * (it.quantity || 1)) || order.value).toLocaleString('vi-VN')} đ</td>
+                                        </tr>
+                                      ))
+                                    ) : (
+                                      <tr className="hover:bg-slate-50/50">
+                                        <td className="py-2.5 px-3 font-mono font-medium text-[#784e34] whitespace-nowrap">{order.orderCode}</td>
+                                        <td className="py-2.5 px-3">
+                                          <div
+                                            className="font-medium text-[#784e34] hover:underline cursor-pointer inline-flex items-center gap-1 group"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              if (onNavigateToProduct) onNavigateToProduct(getCleanProductName(order.productName));
+                                            }}
+                                            title={`Xem chi tiết sản phẩm "${getCleanProductName(order.productName)}" trong danh mục`}
+                                          >
+                                            <span>{getCleanProductName(order.productName)}</span>
+                                            <span className="text-[10px] text-slate-400 group-hover:text-[#784e34]">↗</span>
+                                          </div>
+                                          <div className="text-[11px] text-slate-500 mt-0.5">{order.productSpec}</div>
+                                        </td>
+                                        <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap">Bộ / Chiếc</td>
+                                        <td className="py-2.5 px-3 text-slate-700 whitespace-nowrap">{formatWoodTypeName(order.woodType)}</td>
+                                        <td className="py-2.5 px-3 font-mono text-slate-700 whitespace-nowrap">{order.deadlineDate}</td>
+                                        <td className="py-2.5 px-3 text-center font-bold text-slate-900 whitespace-nowrap">{getOrderQuantity(order)}</td>
+                                        <td className="py-2.5 px-3 text-right font-mono font-medium text-slate-900 whitespace-nowrap">{order.value.toLocaleString('vi-VN')} đ</td>
+                                      </tr>
+                                    )}
                                   </tbody>
                                 </table>
                               </div>
@@ -721,7 +789,7 @@ export function OrdersTab({
                                 <div className="md:col-span-5 p-3 bg-slate-50 border border-slate-200 space-y-1.5 text-xs flex flex-col justify-between">
                                   <div className="space-y-1.5">
                                     <div className="flex justify-between text-slate-600 py-0.5">
-                                      <span>Tổng tiền hàng (1 món)</span>
+                                      <span>Tổng tiền hàng ({getOrderQuantity(order)} món)</span>
                                       <span className="font-mono text-slate-900 font-medium">{order.value.toLocaleString('vi-VN')} đ</span>
                                     </div>
                                     <div className="flex justify-between text-emerald-700 py-0.5">
@@ -788,34 +856,58 @@ export function OrdersTab({
                                     </tr>
                                   </thead>
                                   <tbody className="divide-y divide-slate-100">
-                                    <tr className="hover:bg-slate-50/50">
-                                      <td className="py-2.5 px-3">
-                                        <div className="font-mono font-medium text-[#784e34]">PT-{order.orderCode}-01</div>
-                                        <div className="text-[11px] text-slate-500">{order.orderDate} 09:30</div>
-                                      </td>
-                                      <td className="py-2.5 px-3 text-slate-700">Chuyển khoản MBBank / QR</td>
-                                      <td className="py-2.5 px-3">
-                                        <div className="text-slate-900 font-medium">Đặt cọc sản xuất đợt 1 ({order.depositPercent}%)</div>
-                                        <div className="text-[11px] text-slate-500">Người lập: Kế toán bán hàng</div>
-                                      </td>
-                                      <td className="py-2.5 px-3 text-center">
-                                        <span className="inline-block px-2 py-0.5 text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                          Đã thu tiền
-                                        </span>
-                                      </td>
-                                      <td className="py-2.5 px-3 text-right font-mono font-medium text-emerald-700 whitespace-nowrap">
-                                        {order.depositAmount.toLocaleString('vi-VN')} đ
-                                      </td>
-                                    </tr>
-                                    {order.value - order.depositAmount > 0 && (
+                                    {order.depositAmount > 0 ? (
+                                      <>
+                                        <tr className="hover:bg-slate-50/50">
+                                          <td className="py-2.5 px-3">
+                                            <div className="font-mono font-medium text-[#784e34]">PT-{order.orderCode}-01</div>
+                                            <div className="text-[11px] text-slate-500">{order.orderDate} 09:30</div>
+                                          </td>
+                                          <td className="py-2.5 px-3 text-slate-700">Chuyển khoản VietQR / Ngân hàng</td>
+                                          <td className="py-2.5 px-3">
+                                            <div className="text-slate-900 font-medium">Đặt cọc sản xuất ({order.depositPercent}%)</div>
+                                            <div className="text-[11px] text-slate-500">Người lập: Kế toán bán hàng</div>
+                                          </td>
+                                          <td className="py-2.5 px-3 text-center">
+                                            <span className="inline-block px-2 py-0.5 text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                              Đã thu tiền
+                                            </span>
+                                          </td>
+                                          <td className="py-2.5 px-3 text-right font-mono font-medium text-emerald-700 whitespace-nowrap">
+                                            {order.depositAmount.toLocaleString('vi-VN')} đ
+                                          </td>
+                                        </tr>
+                                        {order.value - order.depositAmount > 0 && (
+                                          <tr className="hover:bg-slate-50/50">
+                                            <td className="py-2.5 px-3">
+                                              <div className="font-mono text-slate-400">PT-{order.orderCode}-02</div>
+                                              <div className="text-[11px] text-slate-500">{order.deadlineDate} (Dự kiến)</div>
+                                            </td>
+                                            <td className="py-2.5 px-3 text-slate-500">Tiền mặt / Chuyển khoản</td>
+                                            <td className="py-2.5 px-3">
+                                              <div className="text-slate-700">Tất toán đợt cuối khi nghiệm thu &amp; bàn giao</div>
+                                              <div className="text-[11px] text-slate-500">Người lập: NV Lắp đặt &amp; Giao hàng</div>
+                                            </td>
+                                            <td className="py-2.5 px-3 text-center">
+                                              <span className="inline-block px-2 py-0.5 text-[11px] font-medium bg-amber-50 text-[#784e34] border border-amber-200">
+                                                Chờ thu khi giao
+                                              </span>
+                                            </td>
+                                            <td className="py-2.5 px-3 text-right font-mono font-medium text-rose-600 whitespace-nowrap">
+                                              {(order.value - order.depositAmount).toLocaleString('vi-VN')} đ
+                                            </td>
+                                          </tr>
+                                        )}
+                                      </>
+                                    ) : (
                                       <tr className="hover:bg-slate-50/50">
                                         <td className="py-2.5 px-3">
-                                          <div className="font-mono text-slate-400">PT-{order.orderCode}-02</div>
-                                          <div className="text-[11px] text-slate-500">{order.deadlineDate} (Dự kiến)</div>
+                                          <div className="font-mono text-[#784e34]">COD-{order.orderCode}</div>
+                                          <div className="text-[11px] text-slate-500">{order.orderDate}</div>
                                         </td>
-                                        <td className="py-2.5 px-3 text-slate-500">Tiền mặt / Chuyển khoản</td>
+                                        <td className="py-2.5 px-3 text-slate-700">Thanh toán khi nhận hàng (COD)</td>
                                         <td className="py-2.5 px-3">
-                                          <div className="text-slate-700">Tất toán đợt cuối khi nghiệm thu &amp; bàn giao</div>
+                                          <div className="text-slate-900 font-medium">Thu toàn bộ 100% khi giao hàng</div>
                                           <div className="text-[11px] text-slate-500">Người lập: NV Lắp đặt &amp; Giao hàng</div>
                                         </td>
                                         <td className="py-2.5 px-3 text-center">
@@ -824,7 +916,7 @@ export function OrdersTab({
                                           </span>
                                         </td>
                                         <td className="py-2.5 px-3 text-right font-mono font-medium text-rose-600 whitespace-nowrap">
-                                          {(order.value - order.depositAmount).toLocaleString('vi-VN')} đ
+                                          {order.value.toLocaleString('vi-VN')} đ
                                         </td>
                                       </tr>
                                     )}
@@ -838,9 +930,9 @@ export function OrdersTab({
                                 <div className="md:col-span-7 space-y-1.5">
                                   <label className="font-medium text-slate-700 block text-xs">Thông tin &amp; Điều khoản thanh toán</label>
                                   <div className="p-3 bg-slate-50 border border-slate-200 text-xs text-slate-700 space-y-1">
-                                    <div><span className="text-slate-400">Tài khoản nhận tiền:</span> <span className="font-medium text-slate-900">MBBank - 0987654321</span> (CTCP Nội thất Mộc Gia)</div>
-                                    <div><span className="text-slate-400">Điều khoản cọc:</span> <span>Đặt cọc trước {order.depositPercent}% tổng giá trị để tiến hành sản xuất hoàn thiện.</span></div>
-                                    <div><span className="text-slate-400">Quy định thanh toán đợt cuối:</span> <span>Thanh toán 100% số tiền còn lại sau khi nghiệm thu lắp đặt tại công trình.</span></div>
+                                    <div><span className="text-slate-400">Phương thức thanh toán:</span> <span className="font-medium text-slate-900">{order.depositAmount === 0 ? 'Thanh toán khi nhận hàng & Nghiệm thu (COD)' : 'Chuyển khoản VietQR / MBBank'}</span></div>
+                                    <div><span className="text-slate-400">Điều khoản cọc:</span> <span>{order.depositAmount === 0 ? 'Không áp dụng cọc trước. Khách hàng thanh toán khi nghiệm thu bàn giao.' : `Đặt cọc trước ${order.depositPercent}% tổng giá trị để tiến hành sản xuất hoàn thiện.`}</span></div>
+                                    <div><span className="text-slate-400">Quy định thanh toán đợt cuối:</span> <span>{order.depositAmount === 0 ? 'Thu 100% giá trị đơn hàng sau khi nghiệm thu lắp đặt tại công trình.' : 'Thanh toán 100% số tiền còn lại sau khi nghiệm thu lắp đặt tại công trình.'}</span></div>
                                     <div><span className="text-slate-400">Xuất hóa đơn GTGT:</span> <span>Đã ghi nhận thông tin xuất hóa đơn điện tử theo hợp đồng.</span></div>
                                   </div>
                                 </div>
@@ -878,7 +970,7 @@ export function OrdersTab({
                       title: 'Mã đơn',
                       dataIndex: 'orderCode',
                       key: 'orderCode',
-                      width: 155,
+                      width: 145,
                       render: (text) => (
                         <span className="font-mono text-xs font-semibold text-[#784e34] bg-[#784e34]/10 px-2.5 py-1 whitespace-nowrap inline-block rounded">
                           {text}
@@ -889,35 +981,66 @@ export function OrdersTab({
                       title: 'Khách hàng',
                       dataIndex: 'customerName',
                       key: 'customerName',
-                      width: 200,
-                      render: (text) => (
-                        <span className="font-semibold text-slate-900 text-sm">{text}</span>
+                      width: 185,
+                      render: (text, record: OrderRow) => (
+                        <div className="flex flex-col">
+                          <span className="font-semibold text-slate-900 text-sm">
+                            {text || 'Khách lẻ'}
+                          </span>
+                          {record.customerPhone ? (
+                            <span className="font-mono text-xs text-slate-500 mt-0.5">
+                              {record.customerPhone}
+                            </span>
+                          ) : null}
+                          {record.showroom || record.branch ? (
+                            <span className="text-[10px] text-[#784e34] font-medium mt-0.5">
+                              {record.showroom || record.branch}
+                            </span>
+                          ) : null}
+                        </div>
                       ),
                     },
                     {
                       title: 'Sản phẩm may đo',
                       dataIndex: 'productName',
                       key: 'productName',
-                      render: (text) => (
-                        <span
-                          className="font-medium text-[#784e34] hover:underline cursor-pointer inline-flex items-center gap-1 group"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (onNavigateToProduct) onNavigateToProduct(text);
-                          }}
-                          title={`Xem chi tiết sản phẩm "${text}" trong danh mục`}
-                        >
-                          <span>{text}</span>
-                          <span className="text-[10px] text-slate-400 group-hover:text-[#784e34]">↗</span>
-                        </span>
-                      ),
+                      render: (text) => {
+                        const cleanName = getCleanProductName(text);
+                        return (
+                          <span
+                            className="font-medium text-[#784e34] hover:underline cursor-pointer inline-flex items-center gap-1 group"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (onNavigateToProduct) onNavigateToProduct(cleanName);
+                            }}
+                            title={`Xem chi tiết sản phẩm "${cleanName}" trong danh mục`}
+                          >
+                            <span>{cleanName}</span>
+                            <span className="text-[10px] text-slate-400 group-hover:text-[#784e34]">↗</span>
+                          </span>
+                        );
+                      },
+                    },
+                    {
+                      title: 'Số lượng',
+                      key: 'quantity',
+                      align: 'center',
+                      width: 95,
+                      render: (_, record) => {
+                        const qty = getOrderQuantity(record);
+                        return (
+                          <span className="font-mono font-bold text-xs text-slate-800 bg-slate-100 border border-slate-200 px-2.5 py-0.5 rounded inline-block">
+                            {qty}
+                          </span>
+                        );
+                      },
                     },
                     {
                       title: 'Tổng giá trị',
                       dataIndex: 'value',
                       key: 'value',
                       align: 'right',
-                      width: 160,
+                      width: 150,
                       render: (val) => (
                         <span className="font-mono font-semibold text-sm text-[#784e34]">
                           {val.toLocaleString('vi-VN')} đ
@@ -928,7 +1051,7 @@ export function OrdersTab({
                       title: 'Hạn bàn giao',
                       dataIndex: 'deadlineDate',
                       key: 'deadlineDate',
-                      width: 140,
+                      width: 130,
                       render: (d) => (
                         <span className="font-mono text-sm font-normal text-rose-700">
                           {d}

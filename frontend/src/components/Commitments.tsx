@@ -34,7 +34,7 @@ export default function Commitments({ commitments }: CommitmentsProps) {
           {displayItems.map((item, index) => (
             <div
               key={index}
-              className="flex items-start gap-3.5 p-4 sm:p-5 rounded-none bg-white/80 backdrop-blur-sm border border-[#d5c3ba]/40 hover:bg-white transition-all shadow-sm hover-lift cursor-default"
+              className="flex items-start gap-3.5 p-4 sm:p-5 rounded-none bg-white/80 backdrop-blur-sm border border-[#d5c3ba]/40 hover:bg-white transition-all shadow-sm cursor-default"
             >
               <div className="p-2.5 rounded-none bg-[#5d371f]/10 text-[#5d371f] shrink-0 flex items-center justify-center">
                 <span className="material-symbols-outlined text-[24px]">{item.icon}</span>

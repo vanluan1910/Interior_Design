@@ -39,14 +39,18 @@ import {
   AdminSidebarSummary,
   AdminSearchInput,
 } from '@/components/admin';
-import type { AdminCustomer } from '@/types/admin';
+import type { AdminCustomer, OrderRow } from '@/types/admin';
 import { customerApi } from '@/api/customerApi';
+import { orderApi } from '@/api/orderApi';
 import { isMatchBranch } from '@/utils/branchHelper';
+import { getCleanProductName, getOrderQuantity } from './OrdersTab';
 
 
 export interface CustomersTabProps {
   customersList: AdminCustomer[];
   setCustomersList: React.Dispatch<React.SetStateAction<AdminCustomer[]>>;
+  ordersList?: OrderRow[];
+  setOrdersList?: React.Dispatch<React.SetStateAction<OrderRow[]>>;
   selectedGlobalBranch?: string;
   onOpenCreateCustomer?: () => void;
   onOpenEditCustomer?: (customer: AdminCustomer) => void;
@@ -68,6 +72,8 @@ const BANK_OPTIONS = [
 export function CustomersTab({
   customersList,
   setCustomersList,
+  ordersList = [],
+  setOrdersList,
   selectedGlobalBranch = 'all',
   onOpenCreateCustomer,
   onOpenEditCustomer,
@@ -99,9 +105,46 @@ export function CustomersTab({
   // Import Excel Modal
   const [importModalOpen, setImportModalOpen] = useState(false);
 
+  // Merge orders customers so any customer who placed an order is always included
+  const allMergedCustomers = useMemo(() => {
+    const list = [...customersList];
+    const existingPhones = new Set(list.map((c) => (c.phone || '').replace(/\s+/g, '')));
+    const existingNames = new Set(list.map((c) => (c.name || '').trim().toLowerCase()));
+
+    ordersList.forEach((ord) => {
+      const cleanPhone = (ord.customerPhone || '').replace(/\s+/g, '');
+      const cleanName = (ord.customerName || '').trim().toLowerCase();
+      if (!cleanPhone && !cleanName) return;
+
+      const alreadyExists = (cleanPhone && existingPhones.has(cleanPhone)) || (cleanName && existingNames.has(cleanName));
+      if (!alreadyExists) {
+        if (cleanPhone) existingPhones.add(cleanPhone);
+        if (cleanName) existingNames.add(cleanName);
+
+        list.unshift({
+          id: (ord as any).customerId || `cust_${ord.id}`,
+          code: `KH-${(list.length + 1).toString().padStart(3, '0')}`,
+          name: ord.customerName || 'Khách hàng mới',
+          phone: ord.customerPhone || '',
+          email: (ord as any).customerEmail || '',
+          address: ord.customerAddress || (ord as any).shippingAddress || '',
+          customerType: 'individual',
+          status: 'active',
+          branch: ord.branch || ord.showroom || '',
+          totalSpent: ord.value || 0,
+          debt: Math.max(0, (ord.value || 0) - (ord.depositAmount || 0)),
+          rewardPoints: Math.floor((ord.value || 0) / 1000000) * 10,
+          createdAt: ord.orderDate || new Date().toLocaleDateString('vi-VN'),
+        } as AdminCustomer);
+      }
+    });
+
+    return list;
+  }, [customersList, ordersList]);
+
   // Filtered Customers Logic
   const filteredCustomers = useMemo(() => {
-    return customersList.filter((c) => {
+    return allMergedCustomers.filter((c) => {
       const q = customerSearchQuery.trim().toLowerCase();
       const matchSearch =
         !q ||
@@ -121,11 +164,25 @@ export function CustomersTab({
       if (debtFilter === 'has_debt') matchDebt = Number(c.debt || 0) > 0;
       if (debtFilter === 'no_debt') matchDebt = Number(c.debt || 0) <= 0;
 
-      const matchBranch = isMatchBranch(c.branch || c.branchName || c.salesRep || c.address, selectedGlobalBranch);
+      let matchBranch = true;
+      if (selectedGlobalBranch && selectedGlobalBranch !== 'all') {
+        const hasOrderInBranch = ordersList.some((o) => {
+          const isSameCustomer =
+            (c.phone && o.customerPhone && o.customerPhone.replace(/\s+/g, '') === c.phone.replace(/\s+/g, '')) ||
+            (c.name && o.customerName && o.customerName.trim().toLowerCase() === c.name.trim().toLowerCase()) ||
+            ((o as any).customerId && (o as any).customerId === c.id);
+          return isSameCustomer && isMatchBranch(o.branch || o.showroom, selectedGlobalBranch);
+        });
+
+        const hasBranchDirect = isMatchBranch(c.branch || c.branchName || c.salesRep || c.address, selectedGlobalBranch);
+        const isMasterCustomer = !c.branch && !c.branchName;
+
+        matchBranch = hasOrderInBranch || hasBranchDirect || isMasterCustomer;
+      }
 
       return matchSearch && matchStatus && matchDebt && matchBranch;
     });
-  }, [customersList, customerSearchQuery, debtFilter, statusFilter, selectedGlobalBranch]);
+  }, [allMergedCustomers, ordersList, customerSearchQuery, debtFilter, statusFilter, selectedGlobalBranch]);
 
   // Open Create Customer Drawer
   const handleOpenCreate = () => {
@@ -316,6 +373,19 @@ export function CustomersTab({
     message.success(`Đã xuất thành công danh sách ${filteredCustomers.length} khách hàng ra file Excel (CSV)!`);
   };
 
+  // Effective Debt of the customer currently being collected
+  const effectiveCollectDebt = useMemo(() => {
+    if (!collectDebtCustomer) return 0;
+    const custOrders = ordersList.filter((o) => {
+      const matchPhone = collectDebtCustomer.phone && o.customerPhone && o.customerPhone.replace(/\s+/g, '') === collectDebtCustomer.phone.replace(/\s+/g, '');
+      const matchName = collectDebtCustomer.name && o.customerName && o.customerName.trim().toLowerCase() === collectDebtCustomer.name.trim().toLowerCase();
+      const matchId = (o as any).customerId && (o as any).customerId === collectDebtCustomer.id;
+      return matchPhone || matchName || matchId;
+    });
+    const orderDebt = custOrders.reduce((sum, o) => sum + Math.max(0, (Number(o.value) || 0) - (Number(o.depositAmount) || 0)), 0);
+    return orderDebt > 0 ? orderDebt : Number(collectDebtCustomer.debt || 0);
+  }, [collectDebtCustomer, ordersList]);
+
   // Quick Debt Collection Submission
   const handleConfirmCollectDebt = async () => {
     if (!collectDebtCustomer) return;
@@ -324,11 +394,102 @@ export function CustomersTab({
       return;
     }
     try {
-      await customerApi.collectDebt(collectDebtCustomer.id, {
-        amount: collectAmount,
-        paymentMethod: collectMethod,
-        note: collectNote,
-      });
+      // 1. If customer exists in DB as GUID, call backend customer collect-debt API
+      const isCustomerGuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(collectDebtCustomer.id);
+      if (isCustomerGuid) {
+        try {
+          await customerApi.collectDebt(collectDebtCustomer.id, {
+            amount: collectAmount,
+            paymentMethod: collectMethod === 'transfer' ? 'Chuyển khoản VietQR' : 'Tiền mặt',
+            note: collectNote,
+          });
+        } catch (apiErr: any) {
+          console.warn('Customer API collect debt warning:', apiErr);
+        }
+      }
+
+      // 2. Update orders in ordersList & backend orderApi
+      let remainingToCollect = collectAmount;
+      const updatedOrders = [...ordersList];
+      const ordersToUpdateInBackend: Array<{ id: string; depositAmount: number; depositPercent: number; depositNote: string; paymentStatus: string }> = [];
+
+      for (let i = 0; i < updatedOrders.length; i++) {
+        if (remainingToCollect <= 0) break;
+        const ord = updatedOrders[i];
+        const matchPhone = collectDebtCustomer.phone && ord.customerPhone && ord.customerPhone.replace(/\s+/g, '') === collectDebtCustomer.phone.replace(/\s+/g, '');
+        const matchName = collectDebtCustomer.name && ord.customerName && ord.customerName.trim().toLowerCase() === collectDebtCustomer.name.trim().toLowerCase();
+        const matchId = (ord as any).customerId && (ord as any).customerId === collectDebtCustomer.id;
+
+        if (matchPhone || matchName || matchId) {
+          const ordVal = Number(ord.value || 0);
+          const currentDep = Number(ord.depositAmount || 0);
+          const unpaid = Math.max(0, ordVal - currentDep);
+
+          if (unpaid > 0) {
+            const payForThis = Math.min(remainingToCollect, unpaid);
+            const newDep = currentDep + payForThis;
+            const newPercent = ordVal > 0 ? Math.min(100, Math.round((newDep / ordVal) * 100)) : 100;
+            const isFull = newDep >= ordVal;
+            const methodLabel = collectMethod === 'transfer' ? 'Chuyển khoản VietQR' : 'Tiền mặt';
+            const noteText = isFull ? `${methodLabel} (Đã thu đủ 100%)` : `${methodLabel} (Đã thu ${newPercent}%)`;
+
+            updatedOrders[i] = {
+              ...ord,
+              depositAmount: newDep,
+              depositPercent: newPercent,
+              depositNote: noteText,
+            };
+
+            ordersToUpdateInBackend.push({
+              id: ord.id,
+              depositAmount: newDep,
+              depositPercent: newPercent,
+              depositNote: noteText,
+              paymentStatus: isFull ? 'paid' : 'partial',
+            });
+
+            remainingToCollect -= payForThis;
+          }
+        }
+      }
+
+      if (ordersToUpdateInBackend.length > 0) {
+        if (setOrdersList) {
+          setOrdersList(updatedOrders);
+        }
+        await Promise.allSettled(
+          ordersToUpdateInBackend.map((o) => {
+            const isOrderGuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(o.id);
+            if (isOrderGuid) {
+              return orderApi.updateOrder(o.id, {
+                depositAmount: o.depositAmount,
+                depositPercent: o.depositPercent,
+                depositNote: o.depositNote,
+                paymentStatus: o.paymentStatus,
+              });
+            }
+            return Promise.resolve();
+          })
+        );
+      }
+
+      // 3. Update customersList in state
+      setCustomersList((prevList) =>
+        prevList.map((c) => {
+          const matchPhone = c.phone && collectDebtCustomer.phone && c.phone.replace(/\s+/g, '') === collectDebtCustomer.phone.replace(/\s+/g, '');
+          const matchName = c.name && collectDebtCustomer.name && c.name.trim().toLowerCase() === collectDebtCustomer.name.trim().toLowerCase();
+          const matchId = c.id === collectDebtCustomer.id;
+          if (matchId || matchPhone || matchName) {
+            return {
+              ...c,
+              debt: Math.max(0, Number(c.debt || 0) - collectAmount),
+              totalSpent: Number(c.totalSpent || 0) + collectAmount,
+            };
+          }
+          return c;
+        })
+      );
+
       message.success(
         `Đã thu thành công ${collectAmount.toLocaleString('vi-VN')} đ cho khách hàng ${
           collectDebtCustomer.name
@@ -508,15 +669,15 @@ export function CustomersTab({
           <AdminSidebarSummary
             title="Thống kê khách hàng"
             items={[
-              { label: 'Tổng số khách hàng', value: `${customersList.length} khách` },
+              { label: 'Số khách hàng hiển thị', value: `${filteredCustomers.length} khách` },
               {
                 label: 'Tổng doanh số tích lũy',
-                value: `${(customersList.reduce((acc, c) => acc + (c.totalSpent || 0), 0) / 1000000).toLocaleString('vi-VN')} Tr`,
+                value: `${(filteredCustomers.reduce((acc, c) => acc + (c.totalSpent || 0), 0) / 1000000).toLocaleString('vi-VN')} Tr`,
                 color: 'success',
               },
               {
                 label: 'Tổng công nợ chưa thu',
-                value: `${(customersList.reduce((acc, c) => acc + (c.debt || 0), 0) / 1000000).toLocaleString('vi-VN')} Tr`,
+                value: `${(filteredCustomers.reduce((acc, c) => acc + (c.debt || 0), 0) / 1000000).toLocaleString('vi-VN')} Tr`,
                 color: 'danger',
               },
             ]}
@@ -551,12 +712,13 @@ export function CustomersTab({
               expandedRowRender: (customer: AdminCustomer) => (
                 <CustomerExpandedDetailRow
                   customer={customer}
+                  ordersList={ordersList}
                   onEdit={() => handleOpenEdit(customer)}
                   onDelete={() => handleDeleteCustomer(customer.id)}
-                  onCollectDebt={() => {
+                  onCollectDebt={(amt?: number, note?: string) => {
                     setCollectDebtCustomer(customer);
-                    setCollectAmount(Number(customer.debt || 0));
-                    setCollectNote(`Thu nợ đơn may đo KH ${customer.code}`);
+                    setCollectAmount(amt !== undefined ? amt : Number(customer.debt || 0));
+                    setCollectNote(note || `Thu nợ đơn may đo KH ${customer.code}`);
                   }}
                 />
               ),
@@ -1021,7 +1183,7 @@ export function CustomersTab({
               <div className="pt-2 border-t border-[#d8c3af] flex items-center justify-between">
                 <span className="text-slate-600 font-medium">Tổng công nợ còn lại:</span>
                 <span className="font-bold text-rose-600 text-base font-mono">
-                  {Number(collectDebtCustomer.debt || 0).toLocaleString('vi-VN')} đ
+                  {effectiveCollectDebt.toLocaleString('vi-VN')} đ
                 </span>
               </div>
             </div>
@@ -1035,21 +1197,21 @@ export function CustomersTab({
                 <div className="flex items-center gap-1.5">
                   <button
                     type="button"
-                    onClick={() => setCollectAmount(Number(collectDebtCustomer.debt || 0))}
+                    onClick={() => setCollectAmount(effectiveCollectDebt)}
                     className="text-[11px] px-2.5 py-1 bg-rose-50 text-rose-700 font-semibold border border-rose-200 hover:bg-rose-100 cursor-pointer rounded transition-colors"
                   >
                     100% Tất cả nợ
                   </button>
                   <button
                     type="button"
-                    onClick={() => setCollectAmount(Math.round(Number(collectDebtCustomer.debt || 0) * 0.5))}
+                    onClick={() => setCollectAmount(Math.round(effectiveCollectDebt * 0.5))}
                     className="text-[11px] px-2.5 py-1 bg-slate-100 text-slate-700 font-semibold border border-slate-200 hover:bg-slate-200 cursor-pointer rounded transition-colors"
                   >
                     50%
                   </button>
                   <button
                     type="button"
-                    onClick={() => setCollectAmount(Math.round(Number(collectDebtCustomer.debt || 0) * 0.3))}
+                    onClick={() => setCollectAmount(Math.round(effectiveCollectDebt * 0.3))}
                     className="text-[11px] px-2.5 py-1 bg-slate-100 text-slate-700 font-semibold border border-slate-200 hover:bg-slate-200 cursor-pointer rounded transition-colors"
                   >
                     30%
@@ -1067,16 +1229,16 @@ export function CustomersTab({
                 className="w-full !w-full text-base font-mono font-bold rounded-none h-11 [&_.ant-input-number-input]:h-11 [&_.ant-input-number-input]:text-base [&_.ant-input-number-input]:font-mono [&_.ant-input-number-input]:font-bold [&_.ant-input-number-input]:px-3.5"
                 size="large"
                 min={0}
-                max={Number(collectDebtCustomer.debt || 0)}
+                max={effectiveCollectDebt || 10000000000}
               />
               <div className="text-[11px] text-slate-500 mt-1.5 flex items-center justify-between">
                 <span>
                   Công nợ sau khi thu:{' '}
                   <strong className="font-mono text-slate-800 font-bold">
-                    {Math.max(0, Number(collectDebtCustomer.debt || 0) - collectAmount).toLocaleString('vi-VN')} đ
+                    {Math.max(0, effectiveCollectDebt - collectAmount).toLocaleString('vi-VN')} đ
                   </strong>
                 </span>
-                {collectAmount >= Number(collectDebtCustomer.debt || 0) && (
+                {collectAmount >= effectiveCollectDebt && effectiveCollectDebt > 0 && (
                   <span className="text-emerald-600 font-semibold">✅ Thanh toán hết 100% nợ</span>
                 )}
               </div>
@@ -1180,61 +1342,163 @@ export function CustomersTab({
 // ── SUB-COMPONENT: CUSTOMER EXPANDED DETAIL ROW (MATCHING DOMACO POS) ───────────
 interface CustomerExpandedDetailRowProps {
   customer: AdminCustomer;
+  ordersList?: OrderRow[];
   onEdit: () => void;
   onDelete: () => void;
-  onCollectDebt: () => void;
+  onCollectDebt: (amount?: number, note?: string) => void;
 }
 
 function CustomerExpandedDetailRow({
   customer,
+  ordersList = [],
   onEdit,
   onDelete,
   onCollectDebt,
 }: CustomerExpandedDetailRowProps) {
-  const [activeTab, setActiveTab] = useState<'info' | 'orders' | 'payments' | 'rewards'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'orders' | 'payments'>('info');
 
-  // Related Orders
-  const relatedOrders: any[] = [];
+  // Related Orders filtered by phone, name, or customer ID
+  const relatedOrders = useMemo(() => {
+    if (!ordersList || ordersList.length === 0) return [];
+    return ordersList.filter((o) => {
+      const matchPhone = customer.phone && o.customerPhone && o.customerPhone.replace(/\s+/g, '') === customer.phone.replace(/\s+/g, '');
+      const matchName = customer.name && o.customerName && o.customerName.trim().toLowerCase() === customer.name.trim().toLowerCase();
+      const matchId = (o as any).customerId && (o as any).customerId === customer.id;
+      return matchPhone || matchName || matchId;
+    });
+  }, [ordersList, customer]);
 
+  // Debt orders (orders where value > depositAmount)
+  const debtOrders = useMemo(() => {
+    return relatedOrders.filter((o) => (Number(o.value) || 0) - (Number(o.depositAmount) || 0) > 0);
+  }, [relatedOrders]);
+
+  // Total debt calculated
+  const totalCalculatedDebt = useMemo(() => {
+    if (debtOrders.length > 0) {
+      return debtOrders.reduce((sum, o) => sum + Math.max(0, (Number(o.value) || 0) - (Number(o.depositAmount) || 0)), 0);
+    }
+    return Number(customer.debt || 0);
+  }, [debtOrders, customer.debt]);
+
+  // Payment receipts generated from real order transactions
+  const paymentReceipts = useMemo(() => {
+    const list: Array<{
+      id: string;
+      receiptCode: string;
+      orderCode: string;
+      date: string;
+      method: string;
+      amount: number;
+      status: 'recorded' | 'pending';
+      statusLabel: string;
+      note: string;
+    }> = [];
+
+    relatedOrders.forEach((ord, index) => {
+      const deposit = Number(ord.depositAmount || 0);
+      const totalVal = Number(ord.value || 0);
+      const cleanCode = (ord.orderCode || `DH${index + 1}`).replace(/^#/, '');
+
+      if (deposit > 0) {
+        const percent = totalVal > 0 ? Math.round((deposit / totalVal) * 100) : 100;
+        const isFull = deposit >= totalVal;
+        list.push({
+          id: `rcpt-deposit-${ord.id || index}`,
+          receiptCode: `PT-${cleanCode}-01`,
+          orderCode: ord.orderCode,
+          date: ord.orderDate || dayjs().format('DD/MM/YYYY'),
+          method: ord.depositNote || (isFull ? 'Chuyển khoản VietQR (100%)' : `Tạm ứng ${percent}%`),
+          amount: deposit,
+          status: 'recorded',
+          statusLabel: 'Đã ghi sổ',
+          note: isFull
+            ? `Thanh toán 100% đơn hàng ${ord.orderCode} (${getCleanProductName(ord.productName)})`
+            : `Tạm ứng ${percent}% đơn may đo ${ord.orderCode} (${getCleanProductName(ord.productName)})`,
+        });
+      }
+
+      // If COD or unpaid balance
+      if (deposit === 0) {
+        list.push({
+          id: `rcpt-cod-${ord.id || index}`,
+          receiptCode: `COD-${cleanCode}`,
+          orderCode: ord.orderCode,
+          date: ord.orderDate || dayjs().format('DD/MM/YYYY'),
+          method: 'Thanh toán khi nhận hàng (COD)',
+          amount: totalVal,
+          status: ord.status === 'completed' ? 'recorded' : 'pending',
+          statusLabel: ord.status === 'completed' ? 'Đã thu khi giao' : 'Chờ thu khi giao',
+          note: `Đơn ${ord.orderCode} (${getCleanProductName(ord.productName)}) - Thu tiền khi giao hàng`,
+        });
+      }
+    });
+
+    // If customer has spent total money but no related order receipts (e.g. historical customer data)
+    if (list.length === 0 && Number(customer.totalSpent || 0) > 0) {
+      list.push({
+        id: `rcpt-hist-${customer.id}`,
+        receiptCode: `PT-${customer.code || 'KH001'}`,
+        orderCode: 'Lịch sử tích lũy',
+        date: customer.lastOrderDate || customer.createdAt || dayjs().format('DD/MM/YYYY'),
+        method: 'Chuyển khoản / Tiền mặt',
+        amount: Number(customer.totalSpent || 0),
+        status: 'recorded',
+        statusLabel: 'Đã ghi sổ',
+        note: `Tổng tiền tích lũy các giao dịch đã hoàn tất của khách hàng`,
+      });
+    }
+
+    return list;
+  }, [relatedOrders, customer]);
 
   return (
-    <div className="bg-[#fbf9f8] border-y border-slate-200 p-4 sm:p-5 -mx-4 space-y-4">
-      {/* Header Banner */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3.5 border border-slate-200">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-[#fbf2ee] border border-[#d8c3af] flex items-center justify-center font-bold text-sm text-[#5d371f] shrink-0">
-            {customer.name ? customer.name.charAt(0).toUpperCase() : 'K'}
-          </div>
-          <div>
-            <div className="font-bold text-slate-900 text-sm flex items-center gap-2">
-              {customer.name}
-              <span className="font-mono text-xs font-normal text-slate-500">#{customer.code}</span>
-            </div>
-            <div className="text-xs text-slate-500 mt-0.5">
-              SĐT: <strong className="text-slate-800">{customer.phone}</strong> • Email:{' '}
-              <span className="text-slate-800">{customer.email || '—'}</span>
-            </div>
-          </div>
+    <div
+      className="bg-white p-4 border-t border-b border-slate-200 shadow-inner space-y-4 text-left text-xs w-full max-w-full overflow-hidden"
+      onClick={(e) => e.stopPropagation()}
+    >
+      {/* Tab Navigation: Pill active style without icons + Action Buttons */}
+      <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-200 flex-wrap">
+        <div className="flex items-center gap-2">
+          {[
+            { key: 'info', label: 'Thông tin' },
+            { key: 'orders', label: `Lịch sử đơn may đo (${relatedOrders.length})` },
+            { key: 'payments', label: `Lịch sử thanh toán (${paymentReceipts.length})` },
+          ].map((tab) => {
+            const isActive = activeTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setActiveTab(tab.key as any)}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer border ${
+                  isActive
+                    ? 'bg-amber-50 text-[#784e34] border-[#784e34]/40 shadow-xs'
+                    : 'bg-transparent text-slate-600 border-transparent hover:bg-slate-100 hover:text-slate-900'
+                }`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
         </div>
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2">
-          {Number(customer.debt || 0) > 0 && (
+          {totalCalculatedDebt > 0 && (
             <Button
               type="primary"
-              size="small"
               icon={<WalletOutlined />}
-              onClick={onCollectDebt}
-              className="bg-rose-600 hover:!bg-rose-700 text-white rounded-none text-xs font-semibold h-7 border-none shadow-none"
+              onClick={() => onCollectDebt(totalCalculatedDebt, `Thu nợ khách hàng ${customer.code}`)}
+              className="h-8 px-3 text-xs font-semibold rounded-lg bg-rose-600 hover:!bg-rose-700 text-white border-none shadow-xs flex items-center gap-1.5"
             >
-              Thu tiền nợ ({Number(customer.debt).toLocaleString('vi-VN')} đ)
+              Thu nợ ({totalCalculatedDebt.toLocaleString('vi-VN')} đ)
             </Button>
           )}
           <Button
-            size="small"
             icon={<EditOutlined />}
             onClick={onEdit}
-            className="rounded-none text-xs h-7"
+            className="h-8 px-3 text-xs font-semibold rounded-lg bg-white border border-slate-200 text-slate-700 hover:text-[#784e34] hover:border-[#784e34] shadow-xs flex items-center gap-1.5"
           >
             Chỉnh sửa
           </Button>
@@ -1246,199 +1510,94 @@ function CustomerExpandedDetailRow({
             cancelText="Hủy"
             okButtonProps={{ danger: true }}
           >
-            <Button size="small" danger icon={<DeleteOutlined />} className="rounded-none text-xs h-7">
+            <Button
+              danger
+              icon={<DeleteOutlined />}
+              className="h-8 px-3 text-xs font-semibold rounded-lg bg-white border border-rose-200 text-rose-600 hover:bg-rose-50 shadow-xs flex items-center gap-1.5"
+            >
               Xóa
             </Button>
           </Popconfirm>
         </div>
       </div>
 
-      {/* Tabs Navigation */}
-      <div className="border-b border-slate-200">
-        <Segmented
-          value={activeTab}
-          onChange={(val: any) => setActiveTab(val)}
-          options={[
-            {
-              label: (
-                <span className="flex items-center gap-1.5 px-1 py-0.5 text-xs font-semibold">
-                  <UserOutlined /> Thông tin chi tiết
-                </span>
-              ),
-              value: 'info',
-            },
-            {
-              label: (
-                <span className="flex items-center gap-1.5 px-1 py-0.5 text-xs font-semibold">
-                  <ShoppingCartOutlined /> Lịch sử đơn may đo ({relatedOrders.length})
-                </span>
-              ),
-              value: 'orders',
-            },
-            {
-              label: (
-                <span className="flex items-center gap-1.5 px-1 py-0.5 text-xs font-semibold">
-                  <DollarOutlined /> Lịch sử thanh toán & Thu nợ
-                </span>
-              ),
-              value: 'payments',
-            },
-            {
-              label: (
-                <span className="flex items-center gap-1.5 px-1 py-0.5 text-xs font-semibold">
-                  <GiftOutlined /> Điểm tích lũy & Ưu đãi ({customer.rewardPoints || 0} pts)
-                </span>
-              ),
-              value: 'rewards',
-            },
-          ]}
-          className="bg-slate-200/70 p-1 rounded-none"
-        />
-      </div>
-
-      {/* TAB 1: THÔNG TIN CHI TIẾT (DOMACO POS SPEC) */}
+      {/* Tab 1: Thông tin chi tiết */}
       {activeTab === 'info' && (
         <div className="space-y-4">
-          <div className="bg-white p-4 border border-slate-200 grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-3 text-xs">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 bg-white p-4 border border-slate-200 text-xs">
             <div>
-              <span className="text-slate-400 block mb-0.5">Điện thoại chính</span>
-              <span className="font-semibold text-slate-800 font-mono">{customer.phone}</span>
+              <span className="text-slate-400 block mb-0.5">Khách hàng:</span>
+              <span className="font-medium text-slate-900 text-sm flex items-center gap-1.5">
+                {customer.name}
+                <span className="font-mono text-xs font-normal text-[#784e34]">#{customer.code}</span>
+              </span>
             </div>
             <div>
-              <span className="text-slate-400 block mb-0.5">Điện thoại 2 / Zalo</span>
-              <span className="font-semibold text-slate-800 font-mono">{customer.phone2 || '—'}</span>
+              <span className="text-slate-400 block mb-0.5">Số điện thoại:</span>
+              <span className="font-mono font-medium text-slate-900 text-sm">{customer.phone}</span>
             </div>
             <div>
-              <span className="text-slate-400 block mb-0.5">Email</span>
-              <span className="font-semibold text-slate-800">{customer.email || '—'}</span>
+              <span className="text-slate-400 block mb-0.5">Điện thoại 2 / Zalo:</span>
+              <span className="font-mono text-slate-700">{customer.phone2 || '—'}</span>
             </div>
             <div>
-              <span className="text-slate-400 block mb-0.5">Ngày sinh</span>
-              <span className="font-semibold text-slate-800">
+              <span className="text-slate-400 block mb-0.5">Email:</span>
+              <span className="font-medium text-slate-900">{customer.email || '—'}</span>
+            </div>
+
+            <div>
+              <span className="text-slate-400 block mb-0.5">Ngày sinh:</span>
+              <span className="font-mono text-slate-700">
                 {customer.birthday ? dayjs(customer.birthday).format('DD/MM/YYYY') : '—'}
               </span>
             </div>
-
             <div>
-              <span className="text-slate-400 block mb-0.5">Loại khách hàng</span>
-              <span className="font-semibold text-slate-800">
+              <span className="text-slate-400 block mb-0.5">Loại khách hàng:</span>
+              <span className="font-medium text-slate-900">
                 {customer.customerType === 'organization' ? 'Doanh nghiệp / Tổ chức' : 'Cá nhân'}
               </span>
             </div>
             <div>
-              <span className="text-slate-400 block mb-0.5">Mã số thuế (MST)</span>
-              <span className="font-semibold text-slate-800 font-mono">{customer.taxId || '—'}</span>
+              <span className="text-slate-400 block mb-0.5">Mã số thuế (MST):</span>
+              <span className="font-mono text-slate-700">{customer.taxId || '—'}</span>
             </div>
             <div>
-              <span className="text-slate-400 block mb-0.5">Tên công ty</span>
-              <span className="font-semibold text-slate-800">{customer.companyName || '—'}</span>
-            </div>
-            <div>
-              <span className="text-slate-400 block mb-0.5">Người đại diện / Mua</span>
-              <span className="font-semibold text-slate-800">{customer.buyerName || customer.name}</span>
+              <span className="text-slate-400 block mb-0.5">Tên công ty:</span>
+              <span className="font-medium text-slate-900">{customer.companyName || '—'}</span>
             </div>
 
-            <div className="sm:col-span-2">
-              <span className="text-slate-400 block mb-0.5">Địa chỉ công trình</span>
-              <span className="font-semibold text-slate-800">{customer.address || '—'}</span>
+            <div className="lg:col-span-2">
+              <span className="text-slate-400 block mb-0.5">Địa chỉ công trình:</span>
+              <span className="font-normal text-slate-800">{customer.address || '—'}</span>
             </div>
-            <div className="sm:col-span-2">
-              <span className="text-slate-400 block mb-0.5">Địa chỉ xuất hóa đơn</span>
-              <span className="font-semibold text-slate-800">{customer.invoiceAddress || customer.address || '—'}</span>
+            <div className="lg:col-span-2">
+              <span className="text-slate-400 block mb-0.5">Địa chỉ xuất hóa đơn:</span>
+              <span className="font-normal text-slate-800">{customer.invoiceAddress || customer.address || '—'}</span>
             </div>
 
             <div>
-              <span className="text-slate-400 block mb-0.5">Ngân hàng</span>
-              <span className="font-semibold text-slate-800">{customer.bankName || '—'}</span>
+              <span className="text-slate-400 block mb-0.5">Ngân hàng:</span>
+              <span className="font-medium text-slate-800">{customer.bankName || '—'}</span>
             </div>
             <div>
-              <span className="text-slate-400 block mb-0.5">Số tài khoản</span>
-              <span className="font-semibold text-slate-800 font-mono">{customer.bankAccount || '—'}</span>
+              <span className="text-slate-400 block mb-0.5">Số tài khoản:</span>
+              <span className="font-mono text-slate-800">{customer.bankAccount || '—'}</span>
             </div>
             <div>
-              <span className="text-slate-400 block mb-0.5">Số CCCD / CMND</span>
-              <span className="font-semibold text-slate-800 font-mono">{customer.idNumber || customer.passport || '—'}</span>
+              <span className="text-slate-400 block mb-0.5">Số CCCD / CMND:</span>
+              <span className="font-mono text-slate-800">{customer.idNumber || customer.passport || '—'}</span>
             </div>
             <div>
-              <span className="text-slate-400 block mb-0.5">Phong cách ưa thích</span>
-              <span className="font-semibold text-[#784e34]">{customer.preferredStyle || '—'}</span>
-            </div>
-
-            <div className="sm:col-span-4 pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between text-xs">
-              <div>
-                <span className="text-slate-500">Tổng chi tiêu tích lũy:</span>{' '}
-                <strong className="text-emerald-700 font-mono font-bold">
-                  {Number(customer.totalSpent || 0).toLocaleString('vi-VN')} đ
-                </strong>
-              </div>
-              <div>
-                <span className="text-slate-500">Công nợ hiện tại:</span>{' '}
-                <strong className="text-rose-600 font-mono font-bold">
-                  {Number(customer.debt || 0).toLocaleString('vi-VN')} đ
-                </strong>
-              </div>
-              <div>
-                <span className="text-slate-500">Điểm thưởng thành viên:</span>{' '}
-                <strong className="text-purple-700 font-mono font-bold">
-                  {Number(customer.rewardPoints || 0).toLocaleString('vi-VN')} điểm
-                </strong>
-              </div>
-              <div>
-                <span className="text-slate-500">Ngày tạo hồ sơ:</span>{' '}
-                <strong className="text-slate-800">{customer.createdAt || '10/01/2025'}</strong>
-              </div>
+              <span className="text-slate-400 block mb-0.5">Phong cách ưa thích:</span>
+              <span className="font-medium text-[#784e34]">{customer.preferredStyle || '—'}</span>
             </div>
           </div>
-
-          {/* Công nợ chưa thu (Domaco POS Accordion feature) */}
-          {Number(customer.debt || 0) > 0 && (
-            <div className="bg-white p-4 border border-rose-200">
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-bold text-rose-700 text-xs flex items-center gap-1.5">
-                  <WalletOutlined /> Danh sách chứng từ / Đơn may đo còn nợ
-                </span>
-                <Button
-                  size="small"
-                  type="primary"
-                  onClick={onCollectDebt}
-                  className="bg-rose-600 hover:!bg-rose-700 text-white rounded-none text-xs font-semibold h-7 border-none"
-                >
-                  Thu tiền ngay
-                </Button>
-              </div>
-
-              <div className="overflow-x-auto border border-slate-200">
-                <table className="min-w-full text-xs text-left">
-                  <thead className="bg-slate-50 text-slate-600">
-                    <tr>
-                      <th className="px-3 py-2 font-semibold">Mã chứng từ</th>
-                      <th className="px-3 py-2 font-semibold">Nội dung sản phẩm may đo</th>
-                      <th className="px-3 py-2 font-semibold text-right">Tổng giá trị</th>
-                      <th className="px-3 py-2 font-semibold text-right">Đã thanh toán</th>
-                      <th className="px-3 py-2 font-semibold text-right text-rose-600">Còn nợ</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr className="border-t border-slate-100 hover:bg-slate-50/60">
-                      <td className="px-3 py-2 font-mono font-bold text-[#784e34]">#DH-2026-8890</td>
-                      <td className="px-3 py-2 text-slate-700">Hệ Sofa Kyoto Chữ L + Kệ Tivi Zen Minimal</td>
-                      <td className="px-3 py-2 text-right font-mono">145,000,000 đ</td>
-                      <td className="px-3 py-2 text-right font-mono text-emerald-600">72,500,000 đ (50%)</td>
-                      <td className="px-3 py-2 text-right font-mono font-bold text-rose-600">
-                        {Number(customer.debt).toLocaleString('vi-VN')} đ
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
         </div>
       )}
 
-      {/* TAB 2: LỊCH SỬ ĐƠN MAY ĐO & HÓA ĐƠN */}
+      {/* Tab 2: Lịch sử đơn may đo */}
       {activeTab === 'orders' && (
-        <div className="bg-white p-4 border border-slate-200 space-y-3">
+        <div className="space-y-4">
           {relatedOrders.length === 0 ? (
             <div className="text-center py-6 text-slate-400 text-xs">
               <ShoppingCartOutlined className="text-2xl mb-1 block" />
@@ -1446,36 +1605,34 @@ function CustomerExpandedDetailRow({
             </div>
           ) : (
             <div className="overflow-x-auto border border-slate-200">
-              <table className="min-w-full text-xs text-left">
-                <thead className="bg-slate-50 text-slate-600">
-                  <tr>
-                    <th className="px-3 py-2 font-semibold">Mã đơn may đo</th>
-                    <th className="px-3 py-2 font-semibold">Ngày đặt</th>
-                    <th className="px-3 py-2 font-semibold">Sản phẩm & Quy cách vật liệu</th>
-                    <th className="px-3 py-2 font-semibold text-right">Tổng giá trị</th>
-                    <th className="px-3 py-2 font-semibold text-right">Đã thanh toán</th>
-                    <th className="px-3 py-2 font-semibold text-center">Trạng thái</th>
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-50 text-slate-700 border-b border-slate-200">
+                    <th className="py-2 px-3 font-medium whitespace-nowrap">Mã đơn</th>
+                    <th className="py-2 px-3 font-medium whitespace-nowrap">Ngày đặt</th>
+                    <th className="py-2 px-3 font-medium">Sản phẩm &amp; Quy cách vật liệu</th>
+                    <th className="py-2 px-3 font-medium text-center whitespace-nowrap">Số lượng</th>
+                    <th className="py-2 px-3 font-medium text-right whitespace-nowrap">Tổng giá trị</th>
+                    <th className="py-2 px-3 font-medium text-right whitespace-nowrap">Đã thanh toán</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {relatedOrders.map((ord) => (
-                    <tr key={ord.id} className="hover:bg-slate-50/60">
-                      <td className="px-3 py-2 font-mono font-bold text-[#784e34]">{ord.orderCode}</td>
-                      <td className="px-3 py-2 text-slate-600">{ord.orderDate}</td>
-                      <td className="px-3 py-2">
-                        <div className="font-medium text-slate-900">{ord.productName}</div>
-                        <div className="text-[11px] text-slate-500 truncate max-w-xs">{ord.productSpec}</div>
+                    <tr key={ord.id} className="hover:bg-slate-50/50">
+                      <td className="py-2.5 px-3 font-mono font-medium text-[#784e34] whitespace-nowrap">{ord.orderCode}</td>
+                      <td className="py-2.5 px-3 font-mono text-slate-700 whitespace-nowrap">{ord.orderDate}</td>
+                      <td className="py-2.5 px-3">
+                        <div className="font-medium text-slate-900">{getCleanProductName(ord.productName)}</div>
+                        <div className="text-[11px] text-slate-500 mt-0.5">{ord.productSpec}</div>
                       </td>
-                      <td className="px-3 py-2 text-right font-mono font-semibold">
-                        {ord.value.toLocaleString('vi-VN')} đ
+                      <td className="py-2.5 px-3 text-center font-bold text-slate-900 whitespace-nowrap">
+                        {getOrderQuantity(ord)}
                       </td>
-                      <td className="px-3 py-2 text-right font-mono text-emerald-600 font-semibold">
-                        {ord.depositAmount.toLocaleString('vi-VN')} đ
+                      <td className="py-2.5 px-3 text-right font-mono font-medium text-slate-900 whitespace-nowrap">
+                        {(Number(ord.value) || 0).toLocaleString('vi-VN')} đ
                       </td>
-                      <td className="px-3 py-2 text-center">
-                        <Tag color="blue" className="text-[10px] m-0">
-                          {ord.statusLabel}
-                        </Tag>
+                      <td className="py-2.5 px-3 text-right font-mono font-medium text-emerald-700 whitespace-nowrap">
+                        {(Number(ord.depositAmount) || 0).toLocaleString('vi-VN')} đ
                       </td>
                     </tr>
                   ))}
@@ -1486,144 +1643,58 @@ function CustomerExpandedDetailRow({
         </div>
       )}
 
-      {/* TAB 3: LỊCH SỬ THANH TOÁN & THU NỢ */}
+      {/* Tab 3: Lịch sử thanh toán */}
       {activeTab === 'payments' && (
         <div className="space-y-4">
-          {/* CÔNG NỢ ALERT BANNER (IF CUSTOMER HAS DEBT) */}
-          {Number(customer.debt || 0) > 0 ? (
-            <div className="bg-rose-50 border border-rose-200 p-4 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-rose-100 flex items-center justify-center text-rose-600 shrink-0">
-                  <WalletOutlined className="text-lg" />
-                </div>
-                <div>
-                  <div className="font-bold text-rose-900 text-xs flex items-center gap-2">
-                    <span>Công nợ chưa thanh toán:</span>
-                    <span className="font-mono text-sm text-rose-600 font-bold bg-white px-2 py-0.5 border border-rose-300">
-                      {Number(customer.debt).toLocaleString('vi-VN')} đ
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-rose-700 mt-0.5">
-                    Đơn may đo #DH-2026-8890 (Hệ Sofa Kyoto Chữ L) còn nợ đợt 2. Bấm nút bên cạnh để mở phiếu thu tiền.
-                  </div>
-                </div>
-              </div>
-
-              <Button
-                type="primary"
-                icon={<WalletOutlined />}
-                onClick={onCollectDebt}
-                className="bg-rose-600 hover:!bg-rose-700 text-white rounded-none text-xs font-semibold h-8 border-none shadow-none flex items-center gap-1.5"
-              >
-                Thanh toán / Thu nợ ngay
-              </Button>
-            </div>
-          ) : null}
-
-          {/* CÔNG NỢ CHỨNG TỪ CHI TIẾT (NẾU CÓ) */}
-          {Number(customer.debt || 0) > 0 && (
-            <div className="bg-white p-4 border border-slate-200 space-y-2">
-              <div className="font-bold text-slate-800 text-xs flex items-center justify-between">
-                <span>Chứng từ &amp; Đơn may đo đang nợ</span>
-                <span className="text-slate-500 font-normal">1 đơn hàng chưa hoàn tất thanh toán</span>
-              </div>
-              <div className="overflow-x-auto border border-slate-200">
-                <table className="min-w-full text-xs text-left">
-                  <thead className="bg-slate-50 text-slate-600">
-                    <tr>
-                      <th className="px-3 py-2 font-semibold">Mã chứng từ</th>
-                      <th className="px-3 py-2 font-semibold">Nội dung sản phẩm</th>
-                      <th className="px-3 py-2 font-semibold text-right">Tổng giá trị</th>
-                      <th className="px-3 py-2 font-semibold text-right">Đã thanh toán</th>
-                      <th className="px-3 py-2 font-semibold text-right text-rose-600">Còn nợ</th>
-                      <th className="px-3 py-2 font-semibold text-center">Thao tác</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr className="border-t border-slate-100 hover:bg-slate-50/60">
-                      <td className="px-3 py-2 font-mono font-bold text-[#784e34]">#DH-2026-8890</td>
-                      <td className="px-3 py-2 text-slate-700">Hệ Sofa Kyoto Chữ L + Kệ Tivi Zen Minimal</td>
-                      <td className="px-3 py-2 text-right font-mono">145,000,000 đ</td>
-                      <td className="px-3 py-2 text-right font-mono text-emerald-600">72,500,000 đ (50%)</td>
-                      <td className="px-3 py-2 text-right font-mono font-bold text-rose-600">
-                        {Number(customer.debt).toLocaleString('vi-VN')} đ
-                      </td>
-                      <td className="px-3 py-2 text-center">
-                        <Button
-                          size="small"
-                          type="link"
-                          onClick={onCollectDebt}
-                          className="p-0 text-rose-600 font-bold hover:underline text-xs"
-                        >
-                          Thu tiền
-                        </Button>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* LỊCH SỬ CÁC PHIẾU THU ĐÃ GHI SỔ */}
-          <div className="bg-white p-4 border border-slate-200 space-y-2">
-            <div className="overflow-x-auto border border-slate-200">
-              <table className="min-w-full text-xs text-left">
-                <thead className="bg-slate-50 text-slate-600">
+          {/* Sub-table Lịch sử thanh toán */}
+          <div className="overflow-x-auto border border-slate-200">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-50 text-slate-700 border-b border-slate-200">
+                  <th className="py-2 px-3 font-medium whitespace-nowrap">Mã phiếu / Thời gian</th>
+                  <th className="py-2 px-3 font-medium whitespace-nowrap">Phương thức</th>
+                  <th className="py-2 px-3 font-medium">Nội dung đợt thu</th>
+                  <th className="py-2 px-3 font-medium text-center whitespace-nowrap">Trạng thái</th>
+                  <th className="py-2 px-3 font-medium text-right whitespace-nowrap">Số tiền</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {paymentReceipts.length === 0 ? (
                   <tr>
-                    <th className="px-3 py-2 font-semibold">Mã chứng từ / Phiếu thu</th>
-                    <th className="px-3 py-2 font-semibold">Ngày thu</th>
-                    <th className="px-3 py-2 font-semibold">Phương thức</th>
-                    <th className="px-3 py-2 font-semibold text-right">Số tiền thu</th>
-                    <th className="px-3 py-2 font-semibold text-center">Trạng thái</th>
-                    <th className="px-3 py-2 font-semibold">Ghi chú</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  <tr className="hover:bg-slate-50/60">
-                    <td className="px-3 py-2 font-mono font-bold text-[#784e34]">PT-2026-0912</td>
-                    <td className="px-3 py-2 text-slate-600">14/11/2026</td>
-                    <td className="px-3 py-2 text-slate-700">Chuyển khoản VietQR (MBBank)</td>
-                    <td className="px-3 py-2 text-right font-mono font-bold text-emerald-600">
-                      72,500,000 đ
+                    <td colSpan={5} className="py-6 text-center text-slate-400">
+                      Chưa có lịch sử giao dịch thanh toán nào cho khách hàng này.
                     </td>
-                    <td className="px-3 py-2 text-center">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                        Đã ghi sổ
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-slate-500">Tạm ứng 50% đơn may đo Sofa Kyoto</td>
                   </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 4: ĐIỂM TÍCH LŨY & LOYALTY */}
-      {activeTab === 'rewards' && (
-        <div className="bg-white p-4 border border-slate-200 space-y-4 text-xs">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="bg-[#fbf2ee] p-3 border border-[#d8c3af]">
-              <div className="text-slate-500 text-[11px]">Số dư điểm hiện tại</div>
-              <div className="text-xl font-bold text-[#5d371f] font-mono mt-1">
-                {Number(customer.rewardPoints || 0).toLocaleString('vi-VN')} điểm
-              </div>
-              <div className="text-[10px] text-slate-500 mt-1">Tương đương {(Number(customer.rewardPoints || 0) * 1000).toLocaleString('vi-VN')} đ</div>
-            </div>
-            <div className="bg-emerald-50 p-3 border border-emerald-200">
-              <div className="text-slate-500 text-[11px]">Tổng điểm đã nhận</div>
-              <div className="text-xl font-bold text-emerald-700 font-mono mt-1">
-                {Number(customer.rewardPoints || 0).toLocaleString('vi-VN')} điểm
-              </div>
-              <div className="text-[10px] text-slate-500 mt-1">Tích lũy từ đơn may đo</div>
-            </div>
-            <div className="bg-slate-50 p-3 border border-slate-200">
-              <div className="text-slate-500 text-[11px]">Tổng điểm đã đổi thưởng</div>
-              <div className="text-xl font-bold text-slate-700 font-mono mt-1">0 điểm</div>
-              <div className="text-[10px] text-slate-500 mt-1">Chưa sử dụng</div>
-            </div>
+                ) : (
+                  paymentReceipts.map((rcpt) => (
+                    <tr key={rcpt.id} className="hover:bg-slate-50/50">
+                      <td className="py-2.5 px-3">
+                        <div className="font-mono font-medium text-[#784e34]">{rcpt.receiptCode}</div>
+                        <div className="text-[11px] text-slate-500">{rcpt.date}</div>
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-700">{rcpt.method}</td>
+                      <td className="py-2.5 px-3">
+                        <div className="text-slate-900 font-medium">{rcpt.note}</div>
+                      </td>
+                      <td className="py-2.5 px-3 text-center">
+                        <span
+                          className={`inline-block px-2 py-0.5 text-[11px] font-medium ${
+                            rcpt.status === 'recorded'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : 'bg-amber-50 text-[#784e34] border border-amber-200'
+                          }`}
+                        >
+                          {rcpt.statusLabel}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono font-medium text-emerald-700 whitespace-nowrap">
+                        {rcpt.amount.toLocaleString('vi-VN')} đ
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

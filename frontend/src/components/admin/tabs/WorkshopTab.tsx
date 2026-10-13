@@ -137,6 +137,7 @@ import {
   FeaturedCatalogProduct,
   AdminSupplier,
   AdminBranch,
+  AdminUom,
   StockTransferSlip,
 } from '@/types/admin';
 import {
@@ -157,7 +158,7 @@ import {
   SupplierReturnCreate,
   StocktakeCreate,
 } from './workshop';
-import { isMatchBranch } from '@/utils/branchHelper';
+import { isMatchBranch, isProductInBranch, getProductStockForBranch } from '@/utils/branchHelper';
 import {
   printElementById,
   printStocktakeSlip,
@@ -170,6 +171,8 @@ import { stockImportApi } from '@/api/stockImportApi';
 import { supplierReturnApi } from '@/api/supplierReturnApi';
 import { stockAuditApi } from '@/api/stockAuditApi';
 import { productApi } from '@/api/productApi';
+import { uomApi } from '@/api/uomApi';
+import { invalidateApiCache } from '@/api/shared/apiCache';
 import {
   ADMIN_STORAGE_KEYS,
   getStoredAdminData,
@@ -191,28 +194,18 @@ const parseInputMoney = (value: string | undefined | null) => {
   return String(value).replace(/\./g, '').replace(/,/g, '') as unknown as number;
 };
 
-const COMMON_UOM_OPTIONS = [
-  { value: 'Bộ', label: 'Bộ' },
-  { value: 'Chiếc', label: 'Chiếc' },
-  { value: 'Cái', label: 'Cái' },
-  { value: 'Sản phẩm', label: 'Sản phẩm' },
-  { value: 'm²', label: 'm²' },
-  { value: 'md', label: 'md' },
-  { value: 'm³', label: 'm³' },
-  { value: 'Hộp', label: 'Hộp' },
-  { value: 'Thùng', label: 'Thùng' },
-  { value: 'Set', label: 'Set' },
-  { value: 'Combo', label: 'Combo' },
-];
-
 export interface WorkshopTabProps {
   catalogList?: FeaturedCatalogProduct[];
   setCatalogList?: React.Dispatch<React.SetStateAction<FeaturedCatalogProduct[]>>;
   suppliersList?: AdminSupplier[];
   setSuppliersList?: React.Dispatch<React.SetStateAction<AdminSupplier[]>>;
+  uomsList?: AdminUom[];
   branchesList?: AdminBranch[];
   selectedGlobalBranch?: string;
   initialSubTab?: 'warehouses' | 'imports' | 'returns' | 'stocktake' | 'suppliers';
+  initialImportMode?: 'list' | 'create';
+  initialImportProduct?: FeaturedCatalogProduct | null;
+  onClearInitialImportProduct?: () => void;
   onNavigateToProduct?: (productCodeOrName: string) => void;
 }
 
@@ -221,13 +214,49 @@ export function WorkshopTab({
   setCatalogList,
   suppliersList = INITIAL_SUPPLIERS,
   setSuppliersList,
+  uomsList = [],
   branchesList = INITIAL_BRANCHES,
   selectedGlobalBranch = 'all',
   initialSubTab = 'warehouses',
+  initialImportMode = 'list',
+  initialImportProduct = null,
+  onClearInitialImportProduct,
   onNavigateToProduct,
 }: WorkshopTabProps) {
   const { message } = App.useApp();
   const { user } = useAuth();
+
+  // UOM Data State & Options
+  const [currentUoms, setCurrentUoms] = useState<AdminUom[]>(uomsList || []);
+
+  useEffect(() => {
+    if (uomsList && uomsList.length > 0) {
+      setCurrentUoms(uomsList);
+    } else {
+      const stored = getStoredAdminData<AdminUom[]>(ADMIN_STORAGE_KEYS.UOMS, []);
+      if (stored && stored.length > 0) {
+        setCurrentUoms(stored);
+      }
+      uomApi.getUoms().then((uoms) => {
+        if (uoms && Array.isArray(uoms) && uoms.length > 0) {
+          setCurrentUoms(uoms);
+          setStoredAdminData(ADMIN_STORAGE_KEYS.UOMS, uoms);
+        }
+      }).catch(() => {});
+    }
+  }, [uomsList]);
+
+  const uomSelectOptions = useMemo(() => {
+    if (currentUoms && currentUoms.length > 0) {
+      return currentUoms
+        .filter((u) => u.status !== 'inactive')
+        .map((u) => ({
+          value: u.name,
+          label: u.name,
+        }));
+    }
+    return [];
+  }, [currentUoms]);
 
   // Sub-Tab Switcher State
   const [warehouseSubTab, setWarehouseSubTab] = useState<'warehouses' | 'imports' | 'returns' | 'stocktake' | 'suppliers'>(initialSubTab);
@@ -318,19 +347,27 @@ export function WorkshopTab({
     }
   };
 
-  const refreshCatalogProducts = async () => {
+  const refreshCatalogProducts = useCallback(async () => {
     try {
-      const prods = await productApi.getProducts();
-      if (prods && Array.isArray(prods) && prods.length > 0) {
-        setDbProducts(prods);
+      invalidateApiCache('products');
+      const targetBranch = selectedGlobalBranch !== 'all' ? selectedGlobalBranch : undefined;
+      const prods = await productApi.getProducts({
+        branch: targetBranch,
+        pageSize: 100,
+      });
+      if (prods && Array.isArray(prods)) {
+        const filtered = targetBranch
+          ? prods.filter((p) => isProductInBranch(p, targetBranch, warehousesList))
+          : prods;
+        setDbProducts(filtered);
         if (setCatalogList) {
-          setCatalogList(prods);
+          setCatalogList(filtered);
         }
       }
     } catch (e) {
       console.warn('Could not refresh catalog products:', e);
     }
-  };
+  }, [selectedGlobalBranch, warehousesList, setCatalogList]);
 
   const loadImportsFromApi = async () => {
     try {
@@ -528,6 +565,13 @@ export function WorkshopTab({
   const [importPanelTabs, setImportPanelTabs] = useState<Record<string, 'items' | 'info' | 'payments'>>({});
   const [importRowTabs, setImportRowTabs] = useState<Record<string, 'items' | 'info' | 'payments'>>({});
   const [selectedImportSlipForPrint, setSelectedImportSlipForPrint] = useState<StockImportSlip | null>(null);
+  const [editingImportSlipId, setEditingImportSlipId] = useState<string | null>(null);
+  const [importRowNotes, setImportRowNotes] = useState<Record<string, string>>({});
+  const [paymentModalVisible, setPaymentModalVisible] = useState(false);
+  const [paymentSlipTarget, setPaymentSlipTarget] = useState<StockImportSlip | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState<number>(0);
+  const [paymentMethodSelect, setPaymentMethodSelect] = useState<'Chuyển khoản (VietQR)' | 'Tiền mặt'>('Chuyển khoản (VietQR)');
+  const [paymentNoteText, setPaymentNoteText] = useState('');
 
   const selectedImportRecord = importsList.find((i) => selectedImportKeys.includes(i.id));
 
@@ -592,11 +636,15 @@ export function WorkshopTab({
   }>>([]);
   const [dbProducts, setDbProducts] = useState<FeaturedCatalogProduct[]>([]);
   const [importSearchProduct, setImportSearchProduct] = useState('');
+  const [returnSearchProduct, setReturnSearchProduct] = useState('');
+  const [stocktakeSearchProduct, setStocktakeSearchProduct] = useState('');
   const [showImportProductPopover, setShowImportProductPopover] = useState(false);
   const [importCode, setImportCode] = useState('');
   const [importDate, setImportDate] = useState('');
   const [importSupplier, setImportSupplier] = useState<string | undefined>(undefined);
   const [importWarehouse, setImportWarehouse] = useState<string | undefined>(undefined);
+  const [returnWarehouse, setReturnWarehouse] = useState<string | undefined>(undefined);
+  const [stocktakeWarehouseName, setStocktakeWarehouseName] = useState('');
   const [importInvoiceNumber, setImportInvoiceNumber] = useState('');
   const [importInspector, setImportInspector] = useState('');
   const [importDiscount, setImportDiscount] = useState<number>(0);
@@ -604,6 +652,108 @@ export function WorkshopTab({
   const [importPaymentMethod, setImportPaymentMethod] = useState('Chuyển khoản');
   const [importNote, setImportNote] = useState('');
   const importSearchInputRef = React.useRef<any>(null);
+
+  const isMatchGlobalBranch = useCallback((targetNameOrBranch?: string) => {
+    return isMatchBranch(targetNameOrBranch, selectedGlobalBranch, warehousesList);
+  }, [selectedGlobalBranch, warehousesList]);
+
+  const activeBranch = useMemo(() => {
+    if (selectedGlobalBranch && selectedGlobalBranch !== 'all') {
+      return selectedGlobalBranch;
+    }
+    const currentWhName =
+      warehouseSubTab === 'imports'
+        ? importWarehouse
+        : warehouseSubTab === 'returns'
+        ? returnWarehouse
+        : warehouseSubTab === 'stocktake'
+        ? stocktakeWarehouseName
+        : undefined;
+    if (currentWhName) {
+      const wh = warehousesList.find((w) => w.name === currentWhName);
+      if (wh?.branch) return wh.branch;
+      return currentWhName;
+    }
+    return selectedGlobalBranch;
+  }, [selectedGlobalBranch, warehouseSubTab, importWarehouse, returnWarehouse, stocktakeWarehouseName, warehousesList]);
+
+  const availableBranchWarehouses = useMemo(() => {
+    if (!selectedGlobalBranch || selectedGlobalBranch === 'all') {
+      return warehousesList;
+    }
+    return warehousesList.filter((w) => isMatchGlobalBranch(w.branch) || isMatchGlobalBranch(w.name));
+  }, [warehousesList, selectedGlobalBranch, isMatchGlobalBranch]);
+
+  const availableBranchSuppliers = useMemo(() => {
+    if (!selectedGlobalBranch || selectedGlobalBranch === 'all') {
+      return suppliersList;
+    }
+    const matched = suppliersList.filter((s) => isMatchGlobalBranch(s.branch || s.address || s.name));
+    return matched.length > 0 ? matched : suppliersList;
+  }, [suppliersList, selectedGlobalBranch, isMatchGlobalBranch]);
+
+  useEffect(() => {
+    if (warehousesList.length > 0) {
+      const targetWh = availableBranchWarehouses[0]?.name || warehousesList[0]?.name;
+      if (targetWh) {
+        setImportWarehouse((prev) => {
+          if (!prev) return targetWh;
+          const currentMatches = availableBranchWarehouses.some((w) => w.name === prev);
+          return currentMatches ? prev : targetWh;
+        });
+        setReturnWarehouse((prev) => {
+          if (!prev) return targetWh;
+          const currentMatches = availableBranchWarehouses.some((w) => w.name === prev);
+          return currentMatches ? prev : targetWh;
+        });
+        setStocktakeWarehouseName((prev) => {
+          if (!prev) return targetWh;
+          const currentMatches = availableBranchWarehouses.some((w) => w.name === prev);
+          return currentMatches ? prev : targetWh;
+        });
+      }
+    }
+  }, [selectedGlobalBranch, warehousesList, availableBranchWarehouses]);
+
+  // Auto-switch to create stock import mode and prefill product when navigating from product detail
+  useEffect(() => {
+    if (initialImportMode === 'create' || initialImportProduct) {
+      setWarehouseSubTab('imports');
+      setImportViewMode('create');
+      if (!importCode) {
+        const nextNum = (importsList.length + 91).toString().padStart(3, '0');
+        const nowStr = new Date().toLocaleDateString('vi-VN') + ' ' + new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+        setImportCode(`#PN-2026-${nextNum}`);
+        setImportDate(nowStr);
+        setImportInspector(user?.name || 'Nguyễn Văn Nam (KCS)');
+        const defaultWh = availableBranchWarehouses[0]?.name || warehousesList[0]?.name || '';
+        setImportWarehouse(defaultWh);
+      }
+      if (initialImportProduct) {
+        const unitPrice = initialImportProduct.costPrice || (initialImportProduct.price ? Math.round(initialImportProduct.price * 0.6) : 0);
+        const newLine = {
+          id: `line_${Date.now()}`,
+          code: initialImportProduct.code || '',
+          name: initialImportProduct.name,
+          spec: initialImportProduct.dimensions || initialImportProduct.material || initialImportProduct.metaInfo || '',
+          unit: initialImportProduct.unit || 'Bộ',
+          quantity: 1,
+          unitPrice: unitPrice,
+          discount: 0,
+          total: unitPrice,
+        };
+        setImportEntryLines((prev) => {
+          const exists = prev.some((l) => (newLine.code && l.code === newLine.code) || l.name === newLine.name);
+          if (exists) return prev;
+          return [newLine, ...prev];
+        });
+        message.success(`Đã chuyển tới tạo phiếu nhập hàng cho sản phẩm "${initialImportProduct.name}"`);
+        if (onClearInitialImportProduct) {
+          onClearInitialImportProduct();
+        }
+      }
+    }
+  }, [initialImportMode, initialImportProduct, warehousesList, importsList.length, user?.name, onClearInitialImportProduct, availableBranchWarehouses]);
 
   const normalizeSearchText = (str?: string) => {
     if (!str) return '';
@@ -618,16 +768,22 @@ export function WorkshopTab({
 
   const allAvailableProducts = useMemo(() => {
     const map = new Map<string, FeaturedCatalogProduct>();
+    const targetBranch = activeBranch !== 'all' ? activeBranch : undefined;
+
     (catalogList || []).forEach((p) => {
-      const key = p.code || p.id;
-      if (key) map.set(key, p);
+      if (!targetBranch || isProductInBranch(p, targetBranch, warehousesList)) {
+        const key = p.code || p.id;
+        if (key) map.set(key, p);
+      }
     });
     dbProducts.forEach((p) => {
-      const key = p.code || p.id;
-      if (key) map.set(key, p);
+      if (!targetBranch || isProductInBranch(p, targetBranch, warehousesList)) {
+        const key = p.code || p.id;
+        if (key) map.set(key, p);
+      }
     });
     return Array.from(map.values());
-  }, [catalogList, dbProducts]);
+  }, [catalogList, dbProducts, activeBranch, warehousesList]);
 
   const filteredImportProducts = useMemo(() => {
     const rawQuery = importSearchProduct.trim().toLowerCase();
@@ -683,29 +839,39 @@ export function WorkshopTab({
 
   // Real-time backend search when typing in product search box
   useEffect(() => {
-    const term = importSearchProduct.trim();
+    const term = (importSearchProduct || returnSearchProduct || stocktakeSearchProduct).trim();
     if (!term) return;
     const timer = setTimeout(async () => {
       try {
-        const res = await productApi.getProducts({ search: term, pageSize: 100 });
+        const targetBranch = activeBranch !== 'all' ? activeBranch : undefined;
+        const res = await productApi.getProducts({
+          search: term,
+          branch: targetBranch,
+          pageSize: 50,
+        });
         if (res && res.length > 0) {
-          setDbProducts((prev) => {
-            const map = new Map<string, FeaturedCatalogProduct>();
-            prev.forEach((p) => map.set(p.code || p.id, p));
-            res.forEach((p) => map.set(p.code || p.id, p));
-            return Array.from(map.values());
-          });
+          const filtered = targetBranch
+            ? res.filter((p) => isProductInBranch(p, targetBranch, warehousesList))
+            : res;
+          if (filtered.length > 0) {
+            setDbProducts((prev) => {
+              const map = new Map<string, FeaturedCatalogProduct>();
+              prev.forEach((p) => map.set(p.code || p.id, p));
+              filtered.forEach((p) => map.set(p.code || p.id, p));
+              return Array.from(map.values());
+            });
+          }
         }
       } catch (e) {
         // ignore
       }
     }, 200);
     return () => clearTimeout(timer);
-  }, [importSearchProduct]);
+  }, [importSearchProduct, returnSearchProduct, stocktakeSearchProduct, activeBranch, warehousesList]);
 
   useEffect(() => {
     refreshCatalogProducts();
-  }, []);
+  }, [refreshCatalogProducts]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -779,13 +945,11 @@ export function WorkshopTab({
     total: number;
     reason?: string;
   }>>([]);
-  const [returnSearchProduct, setReturnSearchProduct] = useState('');
   const [showReturnProductPopover, setShowReturnProductPopover] = useState(false);
   const [returnCode, setReturnCode] = useState('');
   const [returnDate, setReturnDate] = useState('');
   const [returnSourceCode, setReturnSourceCode] = useState<string | undefined>(undefined);
   const [returnSupplier, setReturnSupplier] = useState<string | undefined>(undefined);
-  const [returnWarehouse, setReturnWarehouse] = useState<string | undefined>(undefined);
   const [returnStaffName, setReturnStaffName] = useState('');
   const [returnReason, setReturnReason] = useState('Lỗi quy cách / Kiểm định không đạt tiêu chuẩn');
   const [returnSolution, setReturnSolution] = useState('Đã hoàn bù lô mới');
@@ -799,13 +963,11 @@ export function WorkshopTab({
   const [selectedAuditKeys, setSelectedAuditKeys] = useState<React.Key[]>([]);
   const [stocktakeTabFilter, setStocktakeTabFilter] = useState<'all' | 'matched' | 'diff' | 'increase' | 'decrease'>('all');
   const [stocktakeEntryLines, setStocktakeEntryLines] = useState<StockAuditItem[]>([]);
-  const [stocktakeSearchProduct, setStocktakeSearchProduct] = useState('');
   const [showStocktakeProductPopover, setShowStocktakeProductPopover] = useState(false);
   const [stocktakeCode, setStocktakeCode] = useState('');
   const [stocktakeSlipCode, setStocktakeSlipCode] = useState('');
   const [stocktakeDate, setStocktakeDate] = useState('');
   const [stocktakeWarehouse, setStocktakeWarehouse] = useState<string | undefined>(undefined);
-  const [stocktakeWarehouseName, setStocktakeWarehouseName] = useState('Kho Phôi Gỗ Nguyên Khối FAS');
   const [stocktakeStaffName, setStocktakeStaffName] = useState('');
   const [stocktakeNote, setStocktakeNote] = useState('');
   const [auditSlips, setAuditSlips] = useState<AuditSlip[]>([]);
@@ -893,64 +1055,25 @@ export function WorkshopTab({
   const [showSupplierDrawer, setShowSupplierDrawer] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<AdminSupplier | null>(null);
 
-  const isMatchGlobalBranch = useCallback((targetNameOrBranch?: string) => {
-    return isMatchBranch(targetNameOrBranch, selectedGlobalBranch, warehousesList);
-  }, [selectedGlobalBranch, warehousesList]);
-
-  const availableBranchWarehouses = useMemo(() => {
-    if (!selectedGlobalBranch || selectedGlobalBranch === 'all') {
-      return warehousesList;
-    }
-    const matched = warehousesList.filter((w) => isMatchGlobalBranch(w.branch) || isMatchGlobalBranch(w.name));
-    return matched.length > 0 ? matched : warehousesList;
-  }, [warehousesList, selectedGlobalBranch, isMatchGlobalBranch]);
-
-  const availableBranchSuppliers = useMemo(() => {
-    if (!selectedGlobalBranch || selectedGlobalBranch === 'all') {
-      return suppliersList;
-    }
-    const matched = suppliersList.filter((s) => isMatchGlobalBranch(s.branch || s.address || s.name));
-    return matched.length > 0 ? matched : suppliersList;
-  }, [suppliersList, selectedGlobalBranch, isMatchGlobalBranch]);
-
-  useEffect(() => {
-    if (warehousesList.length > 0) {
-      const matched = selectedGlobalBranch !== 'all'
-        ? warehousesList.filter((w) => isMatchGlobalBranch(w.branch) || isMatchGlobalBranch(w.name))
-        : warehousesList;
-      const targetWh = matched[0]?.name || warehousesList[0]?.name;
-      if (targetWh) {
-        setImportWarehouse((prev) => {
-          if (!prev) return targetWh;
-          const currentMatches = matched.some((w) => w.name === prev);
-          return currentMatches ? prev : targetWh;
-        });
-        setReturnWarehouse((prev) => {
-          if (!prev) return targetWh;
-          const currentMatches = matched.some((w) => w.name === prev);
-          return currentMatches ? prev : targetWh;
-        });
-        setStocktakeWarehouseName((prev) => {
-          if (!prev) return targetWh;
-          const currentMatches = matched.some((w) => w.name === prev);
-          return currentMatches ? prev : targetWh;
-        });
-      }
-    }
-  }, [selectedGlobalBranch, warehousesList, isMatchGlobalBranch]);
-
   const allAuditableStock: StockAuditItem[] = useMemo(() => {
-    const catalogItems: StockAuditItem[] = allAvailableProducts.map((prod, idx) => {
-      const parsedStock = parseInt(prod.stockNote?.replace(/\D/g, '') || '5', 10) || 5;
+    const targetBranch = activeBranch !== 'all' ? activeBranch : undefined;
+    const branchProds = targetBranch
+      ? allAvailableProducts.filter((p) => isProductInBranch(p, targetBranch, warehousesList))
+      : allAvailableProducts;
+
+    const catalogItems: StockAuditItem[] = branchProds.map((prod, idx) => {
+      const parsedStock = getProductStockForBranch(prod, targetBranch, warehousesList);
+      const defaultLoc = stocktakeWarehouseName || 'Kho chi nhánh';
       return {
-        id: 'prod_' + prod.code,
+        id: prod.id || ('prod_' + prod.code),
+        productId: prod.id,
         code: prod.code,
         name: prod.name,
         type: 'product' as const,
-        location: 'Showroom Thảo Điền - Khu ' + String.fromCharCode(65 + (idx % 4)),
+        location: `${defaultLoc} - Khu ` + String.fromCharCode(65 + (idx % 4)),
         systemQty: parsedStock,
         actualQty: parsedStock,
-        unit: prod.name.toLowerCase().includes('bàn ăn') || prod.name.toLowerCase().includes('sofa') ? 'bộ' : 'chiếc',
+        unit: prod.unit || (prod.name.toLowerCase().includes('bàn ăn') || prod.name.toLowerCase().includes('sofa') ? 'bộ' : 'chiếc'),
         systemMc: 'Đạt chuẩn',
         actualMc: 'Đạt chuẩn',
         status: 'matched' as const,
@@ -960,7 +1083,7 @@ export function WorkshopTab({
     });
 
     return catalogItems;
-  }, [catalogList]);
+  }, [allAvailableProducts, activeBranch, warehousesList, stocktakeWarehouseName]);
 
 
   const handleOpenCreateWarehouse = () => {
@@ -1146,20 +1269,21 @@ export function WorkshopTab({
 
 
   const handleOpenCreateImport = () => {
-    if (!importCode) {
-      const nextNum = (importsList.length + 91).toString().padStart(3, '0');
-      const nowStr = new Date().toLocaleDateString('vi-VN') + ' ' + new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-      setImportCode(`#PN-2026-${nextNum}`);
-      setImportDate(nowStr);
-      setImportInspector(user?.name || 'Nguyễn Văn Nam (KCS)');
-      setImportSupplier(undefined);
-      setImportWarehouse(warehousesList[0]?.name || 'Tổng Kho Bình Chánh');
-      setImportInvoiceNumber('');
-      setImportDiscount(0);
-      setImportPaidAmount(undefined);
-      setImportPaymentMethod('Chuyển khoản');
-      setImportNote('');
-    }
+    setEditingImportSlipId(null);
+    const nextNum = (importsList.length + 91).toString().padStart(3, '0');
+    const nowStr = new Date().toLocaleDateString('vi-VN') + ' ' + new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+    setImportCode(`#PN-2026-${nextNum}`);
+    setImportDate(nowStr);
+    setImportInspector(user?.name || 'Nguyễn Văn Nam (KCS)');
+    setImportSupplier(undefined);
+    const defaultWh = availableBranchWarehouses[0]?.name || warehousesList[0]?.name || '';
+    setImportWarehouse(defaultWh);
+    setImportInvoiceNumber('');
+    setImportDiscount(0);
+    setImportPaidAmount(undefined);
+    setImportPaymentMethod('Chuyển khoản');
+    setImportNote('');
+    setImportEntryLines([]);
     setImportViewMode('create');
   };
 
@@ -1170,7 +1294,8 @@ export function WorkshopTab({
     }
     const totalGoods = importEntryLines.reduce((sum, item) => sum + (item.total || (item.quantity * item.unitPrice)), 0);
     const payable = Math.max(0, totalGoods - (importDiscount || 0));
-    const paid = importPaidAmount !== undefined ? Number(importPaidAmount) : (targetStatus === 'draft' ? 0 : payable);
+    const isUnpaid = importPaymentMethod === 'Chưa thanh toán';
+    const paid = isUnpaid ? 0 : (importPaidAmount !== undefined ? Math.max(0, Number(importPaidAmount)) : 0);
     const debt = Math.max(0, payable - paid);
     const currentCode = importCode || `#PN-2026-${(importsList.length + 91).toString().padStart(3, '0')}`;
     const firstItem = importEntryLines[0];
@@ -1204,16 +1329,52 @@ export function WorkshopTab({
     };
 
     try {
-      await stockImportApi.createStockImport(payload);
+      if (editingImportSlipId && editingImportSlipId.includes('-')) {
+        await stockImportApi.updateStockImport(editingImportSlipId, payload);
+      } else if (!editingImportSlipId) {
+        await stockImportApi.createStockImport(payload);
+      }
+
+      setImportsList((prev) => {
+        if (editingImportSlipId) {
+          const nextList = prev.map((item) => {
+            if (item.id === editingImportSlipId) {
+              return {
+                ...item,
+                ...payload,
+                items: importEntryLines.map((it) => ({
+                  id: it.id,
+                  code: it.code,
+                  name: it.name,
+                  unit: it.unit,
+                  batch: '---',
+                  expiryDate: '---',
+                  quantity: it.quantity,
+                  unitPrice: it.unitPrice,
+                  discount: it.discount || 0,
+                  importPrice: it.unitPrice,
+                  total: it.total,
+                })),
+              } as StockImportSlip;
+            }
+            return item;
+          });
+          setStoredAdminData(ADMIN_STORAGE_KEYS.STOCK_IMPORTS, nextList);
+          return nextList;
+        }
+        return prev;
+      });
+
       await loadImportsFromApi();
       await refreshCatalogProducts();
 
       if (targetStatus === 'draft') {
-        message.success(`Đã lưu tạm phiếu nhập kho "${payload.code}" vào Database thành công!`);
+        message.success(editingImportSlipId ? `Đã lưu cập nhật bản nháp phiếu "${payload.code}"!` : `Đã lưu tạm phiếu nhập kho "${payload.code}" thành công!`);
       } else {
-        message.success(`Đã lập phiếu nhập kho "${payload.code}" và lưu vào Database thành công!`);
+        message.success(editingImportSlipId ? `Đã hoàn thành và duyệt phiếu nhập kho "${payload.code}"!` : `Đã lập phiếu nhập kho "${payload.code}" và lưu vào Database thành công!`);
       }
 
+      setEditingImportSlipId(null);
       setImportEntryLines([]);
       setImportCode('');
       setImportSearchProduct('');
@@ -1221,6 +1382,284 @@ export function WorkshopTab({
     } catch (err: any) {
       console.error('Error saving import slip:', err);
       message.error(err?.message || 'Không thể lưu phiếu nhập kho vào Database!');
+    }
+  };
+
+  const handleOpenImportSlip = (imp: StockImportSlip, itemsList?: StockImportSlipItem[]) => {
+    setEditingImportSlipId(imp.id);
+    setImportCode(imp.code);
+    setImportDate(imp.importDate || new Date().toLocaleDateString('vi-VN'));
+    setImportSupplier(imp.supplier);
+    setImportWarehouse(imp.warehouseName);
+    setImportInvoiceNumber(imp.invoiceNumber || '');
+    setImportInspector(imp.inspector || imp.creator || user?.name || 'KCS');
+    setImportDiscount(imp.discount || 0);
+    setImportPaidAmount(imp.paidAmount);
+    setImportPaymentMethod(imp.paymentMethod || 'Chuyển khoản');
+    setImportNote(importRowNotes[imp.id] !== undefined ? importRowNotes[imp.id] : (imp.note || ''));
+
+    let linesSource = (itemsList && itemsList.length > 0) ? itemsList : (imp.items || []);
+    if (linesSource.length === 0 && imp.itemsJson) {
+      try {
+        linesSource = JSON.parse(imp.itemsJson);
+      } catch {
+        linesSource = [];
+      }
+    }
+    if (linesSource.length === 0) {
+      linesSource = [
+        {
+          id: `line_${imp.id}`,
+          code: imp.code || 'SP0001',
+          name: imp.itemName || 'Sản phẩm nhập khẩu',
+          unit: imp.unit || 'bộ',
+          batch: '---',
+          expiryDate: '---',
+          quantity: imp.quantity || 1,
+          unitPrice: imp.unitPrice || 0,
+          discount: imp.discount || 0,
+          importPrice: imp.unitPrice || 0,
+          total: imp.totalValue || ((imp.quantity || 1) * (imp.unitPrice || 0)),
+        },
+      ];
+    }
+
+    setImportEntryLines(
+      linesSource.map((it, idx) => ({
+        id: it.id || `edit_line_${Date.now()}_${idx}`,
+        code: it.code || `SP${idx + 1}`,
+        name: it.name || 'Sản phẩm',
+        spec: it.spec || '',
+        unit: it.unit || 'bộ',
+        quantity: it.quantity || 1,
+        unitPrice: it.unitPrice || 0,
+        discount: it.discount || 0,
+        total: it.total || ((it.quantity || 1) * (it.unitPrice || 0)),
+      }))
+    );
+
+    setImportViewMode('create');
+    message.info(`Đang mở phiếu nhập ${imp.code} để kiểm tra và cập nhật.`);
+  };
+
+  const handleSaveImportNote = async (imp: StockImportSlip) => {
+    const currentNote = importRowNotes[imp.id] !== undefined ? importRowNotes[imp.id] : (imp.note || '');
+    try {
+      if (imp.id && imp.id.includes('-')) {
+        await stockImportApi.updateStockImport(imp.id, { note: currentNote });
+      }
+      setImportsList((prev) => {
+        const nextList = prev.map((item) => (item.id === imp.id ? { ...item, note: currentNote } : item));
+        setStoredAdminData(ADMIN_STORAGE_KEYS.STOCK_IMPORTS, nextList);
+        return nextList;
+      });
+      message.success(`Đã lưu ghi chú và thông tin phiếu nhập ${imp.code} thành công!`);
+    } catch (e: any) {
+      message.error(e?.message || 'Lỗi khi lưu ghi chú phiếu nhập.');
+    }
+  };
+
+  const handleCopyImportSlip = (imp: StockImportSlip, itemsList?: StockImportSlipItem[]) => {
+    const nextNum = (importsList.length + 91).toString().padStart(3, '0');
+    const nowStr = new Date().toLocaleDateString('vi-VN') + ' ' + new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+
+    setEditingImportSlipId(null);
+    setImportCode(`#PN-2026-${nextNum}`);
+    setImportDate(nowStr);
+    setImportSupplier(imp.supplier);
+    setImportWarehouse(imp.warehouseName);
+    setImportInvoiceNumber(imp.invoiceNumber ? `${imp.invoiceNumber}-COPY` : '');
+    setImportInspector(user?.name || imp.inspector || 'KCS');
+    setImportDiscount(imp.discount || 0);
+    setImportPaidAmount(undefined);
+    setImportPaymentMethod(imp.paymentMethod || 'Chuyển khoản');
+    setImportNote(`Sao chép từ phiếu ${imp.code}. ${importRowNotes[imp.id] ?? imp.note ?? ''}`.trim());
+
+    let linesSource = (itemsList && itemsList.length > 0) ? itemsList : (imp.items || []);
+    if (linesSource.length === 0 && imp.itemsJson) {
+      try {
+        linesSource = JSON.parse(imp.itemsJson);
+      } catch {
+        linesSource = [];
+      }
+    }
+    if (linesSource.length === 0) {
+      linesSource = [
+        {
+          id: `line_${imp.id}`,
+          code: imp.code || 'SP0001',
+          name: imp.itemName || 'Sản phẩm',
+          unit: imp.unit || 'bộ',
+          quantity: imp.quantity || 1,
+          unitPrice: imp.unitPrice || 0,
+          discount: 0,
+          total: imp.totalValue || ((imp.quantity || 1) * (imp.unitPrice || 0)),
+        },
+      ];
+    }
+
+    setImportEntryLines(
+      linesSource.map((it, idx) => ({
+        id: `copy_line_${Date.now()}_${idx}`,
+        code: it.code || `SP${idx + 1}`,
+        name: it.name || 'Sản phẩm',
+        spec: it.spec || '',
+        unit: it.unit || 'bộ',
+        quantity: it.quantity || 1,
+        unitPrice: it.unitPrice || 0,
+        discount: it.discount || 0,
+        total: it.total || ((it.quantity || 1) * (it.unitPrice || 0)),
+      }))
+    );
+
+    setImportViewMode('create');
+    message.success(`Đã sao chép các mặt hàng từ ${imp.code} sang phiếu mới #PN-2026-${nextNum}!`);
+  };
+
+  const handleReturnFromImportSlip = (imp: StockImportSlip, itemsList?: StockImportSlipItem[]) => {
+    const nextNum = (supplierReturnsList.length + 91).toString().padStart(3, '0');
+    const nowStr = new Date().toLocaleDateString('vi-VN') + ' ' + new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+
+    setWarehouseSubTab('returns');
+    setReturnViewMode('create');
+    setReturnCode(`#TH-2026-${nextNum}`);
+    setReturnDate(nowStr);
+    setReturnSourceCode(imp.code);
+    setReturnSupplier(imp.supplier);
+    setReturnWarehouse(imp.warehouseName);
+    setReturnStaffName(user?.name || imp.inspector || 'Admin');
+    setReturnReason(`Trả hàng từ phiếu nhập ${imp.code}`);
+    setReturnSolution('Nhà cung cấp hoàn lại tiền / Cấn trừ công nợ');
+
+    let linesSource = (itemsList && itemsList.length > 0) ? itemsList : (imp.items || []);
+    if (linesSource.length === 0 && imp.itemsJson) {
+      try {
+        linesSource = JSON.parse(imp.itemsJson);
+      } catch {
+        linesSource = [];
+      }
+    }
+
+    if (linesSource.length > 0) {
+      setReturnEntryLines(
+        linesSource.map((it, i) => ({
+          id: `ret_line_${Date.now()}_${i}`,
+          code: it.code,
+          name: it.name,
+          spec: it.spec || '',
+          unit: it.unit,
+          quantity: it.quantity,
+          purchasePrice: it.unitPrice || 0,
+          returnPrice: it.unitPrice || 0,
+          total: it.total || (it.quantity * (it.unitPrice || 0)),
+        }))
+      );
+    }
+    message.info(`Đã mở giao diện lập phiếu trả hàng NCC cho phiếu nhập ${imp.code}`);
+  };
+
+  const handlePrintImportSlip = (imp: StockImportSlip, itemsList?: StockImportSlipItem[]) => {
+    let itemsToPrint = (itemsList && itemsList.length > 0) ? itemsList : (imp.items || []);
+    if (itemsToPrint.length === 0 && imp.itemsJson) {
+      try {
+        itemsToPrint = JSON.parse(imp.itemsJson);
+      } catch {
+        itemsToPrint = [];
+      }
+    }
+    if (itemsToPrint.length === 0) {
+      itemsToPrint = [
+        {
+          id: `line_${imp.id}`,
+          code: imp.code,
+          name: imp.itemName || 'Sản phẩm nội thất',
+          unit: imp.unit || 'bộ',
+          quantity: imp.quantity || 1,
+          unitPrice: imp.unitPrice || 0,
+          discount: imp.discount || 0,
+          total: imp.totalValue || ((imp.quantity || 1) * (imp.unitPrice || 0)),
+        },
+      ];
+    }
+    const slipForPrint = {
+      ...imp,
+      note: importRowNotes[imp.id] !== undefined ? importRowNotes[imp.id] : (imp.note || ''),
+      items: itemsToPrint,
+    };
+    printGoodsReceiptSlip(slipForPrint);
+  };
+
+  const handleConfirmPaySupplier = async () => {
+    if (!paymentSlipTarget) return;
+    if (paymentAmount <= 0) {
+      message.warning('Vui lòng nhập số tiền chi lớn hơn 0!');
+      return;
+    }
+    const currentDebt = Math.max(0, (paymentSlipTarget.totalValue || 0) - (paymentSlipTarget.paidAmount || 0));
+    if (paymentAmount > currentDebt) {
+      message.warning(`Số tiền chi không thể vượt quá công nợ còn lại (${currentDebt.toLocaleString('vi-VN')} đ)!`);
+      return;
+    }
+
+    const newPaymentRecord = {
+      id: `pay_${Date.now()}`,
+      code: `PC${Date.now().toString().slice(-6)}`,
+      date: new Date().toLocaleDateString('vi-VN') + ' ' + new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+      amount: paymentAmount,
+      method: paymentMethodSelect,
+      creator: user?.name || 'Admin',
+      status: 'Đã chi tiền',
+      note: paymentNoteText || `Thanh toán tiền hàng phiếu ${paymentSlipTarget.code}`,
+    };
+
+    const newPaid = (paymentSlipTarget.paidAmount || 0) + paymentAmount;
+    const newDebt = Math.max(0, currentDebt - paymentAmount);
+    const updatedPayments = [...(paymentSlipTarget.payments || []), newPaymentRecord];
+
+    try {
+      if (paymentSlipTarget.id && paymentSlipTarget.id.includes('-')) {
+        await stockImportApi.updateStockImport(paymentSlipTarget.id, {
+          paidAmount: newPaid,
+          remainingDebt: newDebt,
+        });
+      }
+      setImportsList((prev) => {
+        const nextList = prev.map((s) => {
+          if (s.id === paymentSlipTarget.id) {
+            return {
+              ...s,
+              paidAmount: newPaid,
+              debtAmount: newDebt,
+              payments: updatedPayments,
+            };
+          }
+          return s;
+        });
+        setStoredAdminData(ADMIN_STORAGE_KEYS.STOCK_IMPORTS, nextList);
+        return nextList;
+      });
+      if (setSuppliersList) {
+        setSuppliersList((prev) =>
+          prev.map((s) => {
+            if (s.name === paymentSlipTarget.supplier || s.id === (paymentSlipTarget as any).supplierId) {
+              const oldDebt = Number(s.currentDebt || 0);
+              const oldPaid = Number(s.totalCollected || 0);
+              return {
+                ...s,
+                currentDebt: Math.max(0, oldDebt - paymentAmount),
+                totalCollected: oldPaid + paymentAmount,
+              };
+            }
+            return s;
+          })
+        );
+      }
+      await loadImportsFromApi();
+      message.success(`Đã ghi nhận chi ${paymentAmount.toLocaleString('vi-VN')} đ cho nhà cung cấp ${paymentSlipTarget.supplier}!`);
+      setPaymentModalVisible(false);
+      setPaymentSlipTarget(null);
+    } catch (e: any) {
+      message.error(e?.message || 'Không thể cập nhật thanh toán vào hệ thống!');
     }
   };
 
@@ -1255,7 +1694,8 @@ export function WorkshopTab({
   const handleOpenCreateStocktake = () => {
     const nextCode = `#KK-2026-${(auditSlips.length + 1).toString().padStart(2, '0')}`;
     setStocktakeSlipCode(nextCode);
-    setStocktakeWarehouseName(warehousesList[0]?.name || 'Kho Phôi Gỗ Nguyên Khối FAS');
+    const defaultWh = availableBranchWarehouses[0]?.name || warehousesList[0]?.name || '';
+    setStocktakeWarehouseName(defaultWh);
     setStocktakeNote('');
     setEditingSlipId(null);
     setStocktakeTabFilter('all');
@@ -1266,7 +1706,8 @@ export function WorkshopTab({
 
   const handleOpenEditStocktake = (slip: AuditSlip) => {
     setStocktakeSlipCode(slip.code);
-    setStocktakeWarehouseName(slip.scopeLabel || warehousesList[0]?.name || 'Kho Phôi Gỗ Nguyên Khối FAS');
+    const defaultWh = availableBranchWarehouses[0]?.name || warehousesList[0]?.name || '';
+    setStocktakeWarehouseName(slip.scopeLabel || defaultWh);
     setStocktakeNote(slip.note || '');
     setEditingSlipId(slip.id);
     setStocktakeTabFilter('all');
@@ -1339,6 +1780,7 @@ export function WorkshopTab({
       } else {
         await stockAuditApi.createStockAudit(payload);
       }
+      invalidateApiCache('products');
       await loadAuditsFromApi();
       await refreshCatalogProducts();
       message.success(`Đã hoàn tất và cân bằng tồn kho phiếu kiểm ${stocktakeSlipCode} vào Database!`);
@@ -1357,7 +1799,8 @@ export function WorkshopTab({
       setReturnDate(nowStr);
       setReturnStaffName(user?.name || 'Nguyễn Văn Nam (KCS)');
       setReturnSupplier(undefined);
-      setReturnWarehouse(warehousesList[0]?.name || 'Tổng Kho Bình Chánh');
+      const defaultWh = availableBranchWarehouses[0]?.name || warehousesList[0]?.name || '';
+      setReturnWarehouse(defaultWh);
       setReturnSourceCode(undefined);
       setReturnReason('Lỗi quy cách / Kiểm định không đạt tiêu chuẩn');
       setReturnSolution('Đã hoàn bù lô mới');
@@ -1376,7 +1819,8 @@ export function WorkshopTab({
     }
     const totalGoods = returnEntryLines.reduce((sum, item) => sum + (item.total || (item.quantity * item.returnPrice)), 0);
     const refund = Math.max(0, totalGoods - (returnDiscount || 0));
-    const paid = returnPaidAmount !== undefined ? Number(returnPaidAmount) : refund;
+    const isOffset = returnPaymentMethod === 'Cấn trừ công nợ';
+    const paid = isOffset ? 0 : (returnPaidAmount !== undefined ? Math.max(0, Number(returnPaidAmount)) : 0);
     const currentCode = returnCode || `#TH-2026-${(supplierReturnsList.length + 9).toString().padStart(3, '0')}`;
     const firstItem = returnEntryLines[0];
 
@@ -1540,29 +1984,51 @@ export function WorkshopTab({
     message.success('Đã xuất danh sách phiếu nhập kho ra file Excel thành công!');
   };
 
-  const handleExportSingleImportDetail = (imp: StockImportSlip) => {
-    const exportData = [
-      {
-        'Mã phiếu nhập': imp.code,
-        'Mã hàng': imp.code,
-        'Tên hàng hóa': imp.itemName,
-        'Quy cách': imp.spec || '',
-        'Đơn vị tính': imp.unit || 'bộ',
-        'Số lượng nhập': imp.quantity,
-        'Đơn giá nhập (VNĐ)': imp.unitPrice || 0,
-        'Tổng tiền hàng (VNĐ)': imp.totalValue || 0,
-        'Đã thanh toán (VNĐ)': imp.paidAmount !== undefined ? imp.paidAmount : imp.totalValue,
-        'Còn nợ lại NCC (VNĐ)': Math.max(0, (imp.totalValue || 0) - (imp.paidAmount !== undefined ? imp.paidAmount : imp.totalValue)),
-        'Nhà cung cấp': imp.supplier,
-        'Kho tiếp nhận': imp.warehouseName,
-        'Số hóa đơn VAT': imp.invoiceNumber || 'Chưa kèm hóa đơn',
-        'Người tiếp nhận & KCS': imp.inspector,
-        'Thời gian nhập': imp.importDate,
-        'Hình thức thanh toán': imp.paymentMethod || 'Chuyển khoản',
-        'Trạng thái': imp.status === 'draft' ? 'Bản lưu tạm' : 'Đã nhập kho',
-        'Ghi chú': imp.note || '',
-      },
-    ];
+  const handleExportSingleImportDetail = (imp: StockImportSlip, itemsList?: StockImportSlipItem[]) => {
+    let itemsToExport: StockImportSlipItem[] = (itemsList && itemsList.length > 0) ? itemsList : (imp.items || []);
+    if (itemsToExport.length === 0 && imp.itemsJson) {
+      try {
+        itemsToExport = JSON.parse(imp.itemsJson);
+      } catch {
+        itemsToExport = [];
+      }
+    }
+    if (itemsToExport.length === 0) {
+      itemsToExport = [
+        {
+          id: `line_${imp.id}`,
+          code: imp.code,
+          name: imp.itemName || 'Hàng hóa nhập kho',
+          unit: imp.unit || 'bộ',
+          quantity: imp.quantity || 1,
+          unitPrice: imp.unitPrice || 0,
+          discount: imp.discount || 0,
+          total: imp.totalValue || ((imp.quantity || 1) * (imp.unitPrice || 0)),
+        },
+      ];
+    }
+
+    const exportData = itemsToExport.map((item, idx) => ({
+      'STT': idx + 1,
+      'Mã phiếu nhập': imp.code,
+      'Thời gian nhập': imp.importDate,
+      'Kho tiếp nhận': imp.warehouseName,
+      'Nhà cung cấp': imp.supplier,
+      'Mã hàng': item.code || '---',
+      'Tên hàng hóa': item.name || imp.itemName,
+      'Đơn vị tính': item.unit || 'bộ',
+      'Số lượng': item.quantity,
+      'Đơn giá nhập (VNĐ)': item.unitPrice || 0,
+      'Giảm giá (VNĐ)': item.discount || 0,
+      'Giá nhập (VNĐ)': item.importPrice ?? item.unitPrice ?? 0,
+      'Thành tiền (VNĐ)': item.total || (item.quantity * (item.unitPrice || 0)),
+      'Tổng tiền hàng': imp.totalValue || 0,
+      'Đã thanh toán (VNĐ)': imp.paidAmount !== undefined ? imp.paidAmount : imp.totalValue,
+      'Còn nợ NCC (VNĐ)': Math.max(0, (imp.totalValue || 0) - (imp.paidAmount !== undefined ? imp.paidAmount : imp.totalValue)),
+      'Trạng thái': imp.statusLabel || (imp.status === 'draft' ? 'Phiếu tạm' : 'Đã nhập kho'),
+      'Ghi chú': importRowNotes[imp.id] ?? imp.note ?? '',
+    }));
+
     exportToExcel(exportData, `Chi_tiet_phieu_nhap_${imp.code.replace(/[^a-zA-Z0-9_-]/g, '')}`);
     message.success(`Đã xuất chi tiết phiếu nhập ${imp.code} ra file Excel thành công!`);
   };
@@ -1851,7 +2317,7 @@ export function WorkshopTab({
                   (w.branch || '').toLowerCase().includes(q) ||
                   (w.streetAddress || '').toLowerCase().includes(q) ||
                   (w.address || '').toLowerCase().includes(q);
-                const matchBranch = !w.branch || isMatchGlobalBranch(w.branch) || isMatchGlobalBranch(w.name);
+                const matchBranch = isMatchGlobalBranch(w.branch) || isMatchGlobalBranch(w.name);
                 const matchStatus = warehouseStatusFilter === 'all' || w.status === warehouseStatusFilter;
                 return matchSearch && matchBranch && matchStatus;
               });
@@ -2224,8 +2690,8 @@ export function WorkshopTab({
                       },
                       className: `cursor-pointer transition-colors ${
                         isExp
-                          ? '!bg-[#004d40] text-white font-medium hover:!bg-[#004d40]'
-                          : 'hover:!bg-slate-50'
+                          ? '!bg-amber-50/80 [&>td]:!bg-amber-50/80 font-medium'
+                          : 'hover:!bg-slate-50 [&>td]:hover:!bg-slate-50'
                       }`,
                     };
                   }}
@@ -2246,24 +2712,38 @@ export function WorkshopTab({
                       const itemsList: StockImportSlipItem[] =
                         imp.items && imp.items.length > 0
                           ? imp.items
+                          : imp.itemsJson
+                          ? (() => {
+                              try {
+                                const parsed = JSON.parse(imp.itemsJson);
+                                return Array.isArray(parsed) && parsed.length > 0 ? parsed : [];
+                              } catch {
+                                return [];
+                              }
+                            })()
+                          : [];
+
+                      const activeItemsList: StockImportSlipItem[] =
+                        itemsList.length > 0
+                          ? itemsList
                           : [
                               {
-                                id: 'line_default_1',
-                                code: 'SP003261',
+                                id: `line_${imp.id}`,
+                                code: imp.code || 'SP003261',
                                 name: imp.itemName || 'Sản phẩm nội thất nhập khẩu',
                                 unit: imp.unit || 'Bộ',
                                 batch: '---',
                                 expiryDate: '---',
                                 quantity: imp.quantity || 1,
                                 unitPrice: imp.unitPrice || 0,
-                                discount: 0,
+                                discount: imp.discount || 0,
                                 importPrice: imp.unitPrice || 0,
-                                total: imp.totalValue || 0,
+                                total: imp.totalValue || ((imp.quantity || 1) * (imp.unitPrice || 0)),
                               },
                             ];
 
-                      const totalQty = itemsList.reduce((acc, item) => acc + (item.quantity || 0), 0);
-                      const totalGoods = imp.totalValue || itemsList.reduce((acc, item) => acc + (item.total || 0), 0);
+                      const totalQty = activeItemsList.reduce((acc, item) => acc + (item.quantity || 0), 0);
+                      const totalGoods = imp.totalValue || activeItemsList.reduce((acc, item) => acc + (item.total || 0), 0);
                       const discountAmount = imp.discount || 0;
                       const paidAmount = imp.paidAmount !== undefined ? imp.paidAmount : totalGoods;
 
@@ -2286,7 +2766,7 @@ export function WorkshopTab({
                                   : 'border-transparent text-slate-600 hover:text-slate-900'
                               }`}
                             >
-                              Hàng hóa ({itemsList.length})
+                              Hàng hóa ({activeItemsList.length})
                             </button>
                             <button
                               type="button"
@@ -2340,7 +2820,7 @@ export function WorkshopTab({
                                       </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
-                                      {itemsList.map((item, idx) => (
+                                      {activeItemsList.map((item, idx) => (
                                         <tr key={item.id || idx} className="hover:bg-slate-50/70">
                                           <td className="px-3 py-2.5 font-mono text-[#008080] font-medium">
                                             <span
@@ -2399,7 +2879,11 @@ export function WorkshopTab({
                                     </label>
                                     <Input.TextArea
                                       rows={4}
-                                      defaultValue={imp.note || ''}
+                                      value={importRowNotes[imp.id] !== undefined ? importRowNotes[imp.id] : (imp.note || '')}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setImportRowNotes((prev) => ({ ...prev, [imp.id]: val }));
+                                      }}
                                       placeholder="Ghi chú phiếu nhập hàng..."
                                       className="w-full text-xs rounded-none border border-slate-200 bg-white p-2.5 text-slate-700 resize-none hover:border-slate-300 focus:border-[#008080]"
                                       onClick={(e) => e.stopPropagation()}
@@ -2410,7 +2894,7 @@ export function WorkshopTab({
                                   <div className="w-full md:w-80 shrink-0 space-y-1.5 text-xs text-slate-700 bg-slate-50/50 p-3 border border-slate-100">
                                     <div className="flex justify-between items-center py-0.5">
                                       <span className="text-slate-600">Số lượng mặt hàng</span>
-                                      <span className="font-mono font-semibold text-slate-900">{itemsList.length}</span>
+                                      <span className="font-mono font-semibold text-slate-900">{activeItemsList.length}</span>
                                     </div>
                                     <div className="flex justify-between items-center py-0.5">
                                       <span className="text-slate-600">Tổng số lượng</span>
@@ -2430,7 +2914,13 @@ export function WorkshopTab({
                                     </div>
                                     <div className="flex justify-between items-center py-0.5">
                                       <span className="font-semibold text-slate-800">Tiền đã trả NCC</span>
-                                      <span className="font-mono font-bold text-slate-950 text-sm">{paidAmount.toLocaleString('vi-VN')}</span>
+                                      <span className="font-mono font-bold text-emerald-700 text-sm">{paidAmount.toLocaleString('vi-VN')}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center py-0.5">
+                                      <span className="font-semibold text-slate-800">Còn nợ NCC</span>
+                                      <span className={`font-mono font-bold text-sm ${totalGoods - paidAmount > 0 ? 'text-rose-600' : 'text-slate-600'}`}>
+                                        {Math.max(0, totalGoods - paidAmount).toLocaleString('vi-VN')}
+                                      </span>
                                     </div>
                                   </div>
                                 </div>
@@ -2482,7 +2972,7 @@ export function WorkshopTab({
                                 </div>
                                 <div className="sm:col-span-2">
                                   <span className="text-slate-400 block text-[11px] mb-0.5">Ghi chú phiếu:</span>
-                                  <span className="text-slate-700 italic">{imp.note || 'Không có ghi chú'}</span>
+                                  <span className="text-slate-700 italic">{importRowNotes[imp.id] !== undefined ? importRowNotes[imp.id] : (imp.note || 'Không có ghi chú')}</span>
                                 </div>
                               </div>
                             )}
@@ -2490,6 +2980,34 @@ export function WorkshopTab({
                             {/* TAB 3: LỊCH SỬ THANH TOÁN */}
                             {currentTab === 'payments' && (
                               <div className="space-y-3">
+                                {/* Summary banner & Pay button if remaining debt */}
+                                <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-slate-50 border border-slate-200">
+                                  <div className="flex items-center gap-4 text-xs">
+                                    <span>Tổng tiền hàng: <strong className="font-mono text-slate-900">{totalGoods.toLocaleString('vi-VN')} đ</strong></span>
+                                    <span>•</span>
+                                    <span>Đã trả NCC: <strong className="font-mono text-emerald-700">{paidAmount.toLocaleString('vi-VN')} đ</strong></span>
+                                    <span>•</span>
+                                    <span>Còn nợ NCC: <strong className={`font-mono ${totalGoods - paidAmount > 0 ? 'text-rose-600 font-bold' : 'text-slate-600'}`}>{Math.max(0, totalGoods - paidAmount).toLocaleString('vi-VN')} đ</strong></span>
+                                  </div>
+                                  {totalGoods - paidAmount > 0 && (
+                                    <Button
+                                      size="small"
+                                      type="primary"
+                                      icon={<DollarOutlined />}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setPaymentSlipTarget(imp);
+                                        setPaymentAmount(Math.max(0, totalGoods - paidAmount));
+                                        setPaymentNoteText(`Thanh toán tiền hàng phiếu ${imp.code}`);
+                                        setPaymentModalVisible(true);
+                                      }}
+                                      className="h-7 text-xs !bg-[#008080] !border-[#008080] hover:!bg-[#006666] font-medium"
+                                    >
+                                      + Lập phiếu chi trả nợ NCC
+                                    </Button>
+                                  )}
+                                </div>
+
                                 <div className="overflow-x-auto border border-slate-200 bg-white">
                                   <table className="min-w-full text-xs">
                                     <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 font-semibold">
@@ -2584,8 +3102,7 @@ export function WorkshopTab({
                                 icon={<FileTextOutlined />}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setSelectedImportDetail(imp);
-                                  setShowImportDetailDrawer(true);
+                                  handleOpenImportSlip(imp, activeItemsList);
                                 }}
                                 className="h-8 rounded-none !bg-[#008080] !border-[#008080] hover:!bg-[#006666] text-white px-3.5 text-xs font-medium flex items-center shadow-none"
                               >
@@ -2597,7 +3114,7 @@ export function WorkshopTab({
                                 icon={<SaveOutlined />}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  message.success(`Đã lưu cập nhật phiếu nhập ${imp.code}!`);
+                                  handleSaveImportNote(imp);
                                 }}
                                 className="h-8 rounded-none border-slate-300 px-3 text-xs font-normal text-slate-700 hover:!border-slate-400 flex items-center"
                               >
@@ -2609,18 +3126,7 @@ export function WorkshopTab({
                                 icon={<CopyOutlined />}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  const nextNum = (importsList.length + 91).toString().padStart(3, '0');
-                                  const cloned: StockImportSlip = {
-                                    ...imp,
-                                    id: `imp_${Date.now()}`,
-                                    code: `PN000${nextNum}`,
-                                    importDate:
-                                      new Date().toLocaleDateString('vi-VN') +
-                                      ' ' +
-                                      new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-                                  };
-                                  setImportsList((prev) => [cloned, ...prev]);
-                                  message.success(`Đã nhân bản phiếu nhập "${imp.code}"!`);
+                                  handleCopyImportSlip(imp, activeItemsList);
                                 }}
                                 className="h-8 rounded-none border-slate-300 px-3 text-xs font-normal text-slate-700 hover:!border-slate-400 flex items-center"
                               >
@@ -2632,26 +3138,7 @@ export function WorkshopTab({
                                 icon={<SwapOutlined />}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setWarehouseSubTab('returns');
-                                  setReturnViewMode('create');
-                                  setReturnSupplier(imp.supplier);
-                                  setReturnSourceCode(imp.code);
-                                  if (itemsList.length > 0) {
-                                    setReturnEntryLines(
-                                      itemsList.map((it, i) => ({
-                                        id: `ret_line_${Date.now()}_${i}`,
-                                        code: it.code,
-                                        name: it.name,
-                                        spec: '',
-                                        unit: it.unit,
-                                        quantity: it.quantity,
-                                        purchasePrice: it.unitPrice || 0,
-                                        returnPrice: it.unitPrice || 0,
-                                        total: it.total,
-                                      }))
-                                    );
-                                  }
-                                  message.info(`Đã mở giao diện trả hàng cho phiếu nhập ${imp.code}`);
+                                  handleReturnFromImportSlip(imp, activeItemsList);
                                 }}
                                 className="h-8 rounded-none border-slate-300 px-3 text-xs font-normal text-slate-700 hover:!border-slate-400 flex items-center"
                               >
@@ -2663,7 +3150,7 @@ export function WorkshopTab({
                                 icon={<PrinterOutlined />}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setSelectedImportSlipForPrint(imp);
+                                  handlePrintImportSlip(imp, activeItemsList);
                                 }}
                                 className="h-8 rounded-none border-slate-300 px-3 text-xs font-normal text-slate-700 hover:!border-slate-400 flex items-center"
                               >
@@ -2675,7 +3162,7 @@ export function WorkshopTab({
                                 icon={<DownloadOutlined />}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleExportSingleImportDetail(imp);
+                                  handleExportSingleImportDetail(imp, activeItemsList);
                                 }}
                                 className="h-8 rounded-none border-slate-300 px-3 text-xs font-normal text-slate-700 hover:!border-slate-400 flex items-center"
                               >
@@ -2693,14 +3180,9 @@ export function WorkshopTab({
                       dataIndex: 'code',
                       key: 'code',
                       width: 160,
-                      render: (code, record) => {
-                        const isExp = expandedImportRowKeys.includes(record.id);
+                      render: (code) => {
                         return (
-                          <span
-                            className={`font-mono text-xs font-semibold px-2 py-0.5 rounded whitespace-nowrap inline-block ${
-                              isExp ? 'text-white bg-white/20' : 'text-[#784e34] bg-[#784e34]/10'
-                            }`}
-                          >
+                          <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded whitespace-nowrap inline-block text-[#784e34] bg-[#784e34]/10">
                             {code}
                           </span>
                         );
@@ -2711,10 +3193,9 @@ export function WorkshopTab({
                       dataIndex: 'importDate',
                       key: 'importDate',
                       width: 170,
-                      render: (date, record) => {
-                        const isExp = expandedImportRowKeys.includes(record.id);
+                      render: (date) => {
                         return (
-                          <span className={`font-mono text-xs ${isExp ? 'text-white' : 'text-slate-700'}`}>
+                          <span className="font-mono text-xs text-slate-700">
                             {date}
                           </span>
                         );
@@ -2725,10 +3206,9 @@ export function WorkshopTab({
                       dataIndex: 'supplierCode',
                       key: 'supplierCode',
                       width: 120,
-                      render: (code, record) => {
-                        const isExp = expandedImportRowKeys.includes(record.id);
+                      render: (code) => {
                         return (
-                          <span className={`text-xs ${isExp ? 'text-white/80' : 'text-slate-500'}`}>
+                          <span className="text-xs text-slate-500">
                             {code || '---'}
                           </span>
                         );
@@ -2739,10 +3219,9 @@ export function WorkshopTab({
                       dataIndex: 'supplier',
                       key: 'supplier',
                       width: 220,
-                      render: (sup, record) => {
-                        const isExp = expandedImportRowKeys.includes(record.id);
+                      render: (sup) => {
                         return (
-                          <span className={`font-medium text-sm ${isExp ? 'text-white' : 'text-slate-800'}`}>
+                          <span className="font-medium text-sm text-slate-800">
                             {sup}
                           </span>
                         );
@@ -2754,10 +3233,9 @@ export function WorkshopTab({
                       key: 'totalValue',
                       width: 160,
                       align: 'right',
-                      render: (val, record) => {
-                        const isExp = expandedImportRowKeys.includes(record.id);
+                      render: (val) => {
                         return (
-                          <span className={`font-mono font-bold text-sm ${isExp ? 'text-white' : 'text-slate-900'}`}>
+                          <span className="font-mono font-bold text-sm text-slate-900">
                             {(val || 0).toLocaleString('vi-VN')}
                           </span>
                         );
@@ -2787,7 +3265,6 @@ export function WorkshopTab({
                       width: 140,
                       align: 'center',
                       render: (s, record) => {
-                        const isExp = expandedImportRowKeys.includes(record.id);
                         const matchedReturn = supplierReturnsList.find(
                           (ret) =>
                             (ret.sourcePurchaseEntryCode && ret.sourcePurchaseEntryCode === record.code) ||
@@ -2812,7 +3289,7 @@ export function WorkshopTab({
                         }
 
                         return (
-                          <span className={`text-xs ${isExp ? 'text-white/80' : 'text-slate-400'}`}>
+                          <span className="text-xs text-slate-400">
                             Chưa trả
                           </span>
                         );
@@ -2878,13 +3355,18 @@ export function WorkshopTab({
                 filteredImportProducts={filteredImportProducts}
                 availableBranchSuppliers={availableBranchSuppliers}
                 availableBranchWarehouses={availableBranchWarehouses}
+                uomSelectOptions={uomSelectOptions}
                 onNavigateToProduct={onNavigateToProduct}
-                onBack={() => setImportViewMode('list')}
+                onBack={() => {
+                  setEditingImportSlipId(null);
+                  setImportViewMode('list');
+                }}
                 onSaveDraft={() => handleSaveImportSlip('draft')}
                 onSubmit={() => handleSaveImportSlip('completed')}
                 onOpenCreateSupplier={handleOpenCreateSupplier}
                 onExportExcel={handleExportCreateImportLinesExcel}
                 user={user}
+                isEditing={!!editingImportSlipId}
               />
             )}
             
@@ -3021,7 +3503,11 @@ export function WorkshopTab({
                                 setReturnRowTabs((prev) => ({ ...prev, [record.id]: 'items' }));
                               }
                             },
-                            className: `cursor-pointer transition-colors ${isExp ? '!bg-[#784e34]/10 font-medium' : 'hover:!bg-[#784e34]/5'}`,
+                            className: `cursor-pointer transition-colors ${
+                              isExp
+                                ? '!bg-amber-50/80 [&>td]:!bg-amber-50/80 font-medium'
+                                : 'hover:!bg-slate-50 [&>td]:hover:!bg-slate-50'
+                            }`,
                           };
                         }}
                         expandable={{
@@ -3483,6 +3969,7 @@ export function WorkshopTab({
                 importsList={importsList}
                 availableBranchSuppliers={availableBranchSuppliers}
                 availableBranchWarehouses={availableBranchWarehouses}
+                uomSelectOptions={uomSelectOptions}
                 isMatchGlobalBranch={isMatchGlobalBranch}
                 onNavigateToProduct={onNavigateToProduct}
                 onBack={() => setReturnViewMode('list')}
@@ -3644,8 +4131,8 @@ export function WorkshopTab({
                               },
                               className: `cursor-pointer transition-colors ${
                                 isExp
-                                  ? '!bg-[#004d40] text-white font-medium hover:!bg-[#004d40]'
-                                  : 'hover:!bg-slate-50'
+                                  ? '!bg-amber-50/80 [&>td]:!bg-amber-50/80 font-medium'
+                                  : 'hover:!bg-slate-50 [&>td]:hover:!bg-slate-50'
                               }`,
                             };
                           }}
@@ -3923,8 +4410,11 @@ export function WorkshopTab({
                                       <Popconfirm
                                         title={`Xóa phiếu kiểm kho ${slip.code}?`}
                                         description="Hành động này không thể hoàn tác."
-                                        onConfirm={(e) => {
+                                        onConfirm={async (e) => {
                                           e?.stopPropagation();
+                                          try {
+                                            await stockAuditApi.deleteStockAudit(slip.id);
+                                          } catch {}
                                           setAuditSlips((prev) => prev.filter((s) => s.id !== slip.id));
                                           message.success(`Đã xóa phiếu kiểm kho ${slip.code} thành công!`);
                                         }}
@@ -3945,6 +4435,39 @@ export function WorkshopTab({
 
                                     {/* Right: Cập nhật kết quả, Lưu, Sao chép, In, Xuất file */}
                                     <div className="flex flex-wrap items-center gap-2">
+                                      {slip.status !== 'completed' && (
+                                        <Popconfirm
+                                          title={`Hoàn tất và cân bằng tồn kho theo phiếu ${slip.code}?`}
+                                          description="Số lượng tồn kho thực tế của các mặt hàng sẽ được cập nhật đồng bộ vào hệ thống."
+                                          onConfirm={async (e) => {
+                                            e?.stopPropagation();
+                                            try {
+                                              await stockAuditApi.completeStockAudit(slip.id, {
+                                                note: slip.note,
+                                                itemsJson: JSON.stringify(slip.items || []),
+                                              });
+                                              invalidateApiCache('products');
+                                              await loadAuditsFromApi();
+                                              await refreshCatalogProducts();
+                                              message.success(`Đã hoàn tất và cân bằng tồn kho phiếu ${slip.code}!`);
+                                            } catch (err: any) {
+                                              message.error(err?.message || 'Hoàn tất kiểm kho thất bại.');
+                                            }
+                                          }}
+                                          okText="Cân bằng ngay"
+                                          cancelText="Hủy"
+                                        >
+                                          <Button
+                                            size="small"
+                                            icon={<CheckCircleOutlined />}
+                                            onClick={(e) => e.stopPropagation()}
+                                            className="h-8 rounded-none !bg-emerald-600 !border-emerald-600 hover:!bg-emerald-700 text-white px-3 text-xs font-medium flex items-center shadow-none"
+                                          >
+                                            Cân bằng tồn kho
+                                          </Button>
+                                        </Popconfirm>
+                                      )}
+
                                       <Button
                                         size="small"
                                         icon={<EditOutlined />}
@@ -4066,79 +4589,52 @@ export function WorkshopTab({
                               dataIndex: 'code',
                               key: 'code',
                               width: 150,
-                              render: (c, record) => {
-                                const isExp = expandedAuditRowKeys.includes(record.id);
-                                return (
-                                  <span
-                                    className={`font-mono text-xs font-semibold px-2.5 py-1 rounded whitespace-nowrap inline-block ${
-                                      isExp ? 'text-white bg-white/20' : 'text-[#784e34] bg-[#784e34]/10'
-                                    }`}
-                                  >
-                                    {c}
-                                  </span>
-                                );
-                              },
+                              render: (c) => (
+                                <span className="font-mono text-xs font-semibold px-2.5 py-1 rounded whitespace-nowrap inline-block text-[#784e34] bg-[#784e34]/10">
+                                  {c}
+                                </span>
+                              ),
                             },
                             {
                               title: 'Tên phiên kiểm kê',
                               dataIndex: 'title',
                               key: 'title',
-                              render: (t, record) => {
-                                const isExp = expandedAuditRowKeys.includes(record.id);
-                                return (
-                                  <span
-                                    className={`font-semibold text-xs leading-normal ${
-                                      isExp ? 'text-white' : 'text-slate-900'
-                                    }`}
-                                  >
-                                    {t}
-                                  </span>
-                                );
-                              },
+                              render: (t) => (
+                                <span className="font-semibold text-xs leading-normal text-slate-900">
+                                  {t}
+                                </span>
+                              ),
                             },
                             {
                               title: 'Phạm vi kho',
                               dataIndex: 'scopeLabel',
                               key: 'scopeLabel',
-                              render: (s, record) => {
-                                const isExp = expandedAuditRowKeys.includes(record.id);
-                                return (
-                                  <span className={`text-xs ${isExp ? 'text-white/90' : 'text-slate-600 font-normal'}`}>
-                                    {s}
-                                  </span>
-                                );
-                              },
+                              render: (s) => (
+                                <span className="text-xs text-slate-600 font-normal">
+                                  {s}
+                                </span>
+                              ),
                             },
                             {
                               title: 'Ngày kiểm',
                               dataIndex: 'createdAt',
                               key: 'createdAt',
                               width: 130,
-                              render: (d, record) => {
-                                const isExp = expandedAuditRowKeys.includes(record.id);
-                                return (
-                                  <span
-                                    className={`font-mono text-xs whitespace-nowrap ${
-                                      isExp ? 'text-white/80' : 'text-slate-500 font-normal'
-                                    }`}
-                                  >
-                                    {d}
-                                  </span>
-                                );
-                              },
+                              render: (d) => (
+                                <span className="font-mono text-xs whitespace-nowrap text-slate-500 font-normal">
+                                  {d}
+                                </span>
+                              ),
                             },
                             {
                               title: 'Người chủ trì',
                               dataIndex: 'creator',
                               key: 'creator',
-                              render: (cr, record) => {
-                                const isExp = expandedAuditRowKeys.includes(record.id);
-                                return (
-                                  <span className={`text-xs ${isExp ? 'text-white/90' : 'text-slate-700 font-normal'}`}>
-                                    {cr}
-                                  </span>
-                                );
-                              },
+                              render: (cr) => (
+                                <span className="text-xs text-slate-700 font-normal">
+                                  {cr}
+                                </span>
+                              ),
                             },
                             {
                               title: 'Trạng thái',
@@ -4166,21 +4662,14 @@ export function WorkshopTab({
                               align: 'center',
                               width: 90,
                               render: (_, r) => {
-                                const isExp = expandedAuditRowKeys.includes(r.id);
                                 return (
                                   <Space size={4} onClick={(e) => e.stopPropagation()}>
                                     <Button
-                                      icon={
-                                        <EditOutlined
-                                          className={`text-base ${
-                                            isExp ? 'text-white hover:text-amber-200' : 'text-slate-600 hover:text-[#784e34]'
-                                          }`}
-                                        />
-                                      }
+                                      icon={<EditOutlined className="text-base text-slate-600 hover:text-[#784e34]" />}
                                       size="small"
                                       type="text"
                                       onClick={() => handleOpenEditStocktake(r)}
-                                      className="hover:bg-black/10"
+                                      className="hover:bg-slate-100"
                                       title="Chỉnh sửa phiếu kiểm"
                                     />
                                     <Popconfirm
@@ -4194,13 +4683,10 @@ export function WorkshopTab({
                                       okButtonProps={{ danger: true }}
                                     >
                                       <Button
-                                        icon={
-                                          <DeleteOutlined
-                                            className={`text-base ${
-                                              isExp ? 'text-rose-200 hover:text-white' : 'text-slate-400 hover:text-red-600'
-                                            }`}
-                                          />
-                                        }
+                                        icon={<DeleteOutlined className="text-base text-slate-400 hover:text-red-600" />}
+                                        size="small"
+                                        type="text"
+                                        className="hover:bg-rose-50"
                                         title="Xóa phiếu"
                                       />
                                     </Popconfirm>
@@ -4238,6 +4724,7 @@ export function WorkshopTab({
                 allAuditableStock={allAuditableStock}
                 allProducts={allAvailableProducts}
                 availableBranchWarehouses={availableBranchWarehouses}
+                uomSelectOptions={uomSelectOptions}
                 onNavigateToProduct={onNavigateToProduct}
                 onBack={() => setStocktakeViewMode('list')}
                 onSaveDraft={handleSaveDraftStocktake}
@@ -4275,6 +4762,9 @@ export function WorkshopTab({
               <SuppliersTab
                 suppliersList={suppliersList}
                 setSuppliersList={setSuppliersList}
+                importsList={importsList}
+                supplierReturnsList={supplierReturnsList}
+                selectedGlobalBranch={selectedGlobalBranch}
               />
             )}
           </div>
@@ -5143,22 +5633,51 @@ export function WorkshopTab({
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td className="border border-slate-300 p-2.5 text-center font-mono font-semibold">01</td>
-                  <td className="border border-slate-300 p-2.5 font-bold text-slate-900">
-                    {selectedImportSlipForPrint.itemName}
-                  </td>
-                  <td className="border border-slate-300 p-2.5 text-slate-600 font-mono text-[11px]">
-                    {selectedImportSlipForPrint.spec || 'Quy cách chuẩn thương mại'}
-                  </td>
-                  <td className="border border-slate-300 p-2.5 text-center font-mono font-bold text-slate-900">
-                    {selectedImportSlipForPrint.quantity}
-                  </td>
-                  <td className="border border-slate-300 p-2.5 text-center">{selectedImportSlipForPrint.unit}</td>
-                  <td className="border border-slate-300 p-2.5 text-right font-mono font-bold text-[#784e34]">
-                    {selectedImportSlipForPrint.totalValue.toLocaleString('vi-VN')} đ
-                  </td>
-                </tr>
+                {(() => {
+                  let itemsToRender = selectedImportSlipForPrint.items || [];
+                  if (itemsToRender.length === 0 && selectedImportSlipForPrint.itemsJson) {
+                    try {
+                      itemsToRender = JSON.parse(selectedImportSlipForPrint.itemsJson);
+                    } catch {
+                      itemsToRender = [];
+                    }
+                  }
+                  if (itemsToRender.length === 0) {
+                    itemsToRender = [
+                      {
+                        id: '01',
+                        code: selectedImportSlipForPrint.code,
+                        name: selectedImportSlipForPrint.itemName,
+                        spec: selectedImportSlipForPrint.spec || 'Quy cách chuẩn thương mại',
+                        quantity: selectedImportSlipForPrint.quantity,
+                        unit: selectedImportSlipForPrint.unit,
+                        unitPrice: selectedImportSlipForPrint.unitPrice,
+                        total: selectedImportSlipForPrint.totalValue,
+                      } as any,
+                    ];
+                  }
+                  return itemsToRender.map((it, idx) => (
+                    <tr key={it.id || idx}>
+                      <td className="border border-slate-300 p-2.5 text-center font-mono font-semibold">
+                        {(idx + 1).toString().padStart(2, '0')}
+                      </td>
+                      <td className="border border-slate-300 p-2.5 font-bold text-slate-900">
+                        {it.name}
+                        {it.code && <div className="text-[11px] font-mono text-slate-500 font-normal">{it.code}</div>}
+                      </td>
+                      <td className="border border-slate-300 p-2.5 text-slate-600 font-mono text-[11px]">
+                        {it.spec || 'Quy cách chuẩn'}
+                      </td>
+                      <td className="border border-slate-300 p-2.5 text-center font-mono font-bold text-slate-900">
+                        {it.quantity}
+                      </td>
+                      <td className="border border-slate-300 p-2.5 text-center">{it.unit}</td>
+                      <td className="border border-slate-300 p-2.5 text-right font-mono font-bold text-[#784e34]">
+                        {(it.total || (it.quantity * (it.unitPrice || 0))).toLocaleString('vi-VN')} đ
+                      </td>
+                    </tr>
+                  ));
+                })()}
               </tbody>
               <tfoot>
                 <tr className="bg-slate-50 font-bold">
@@ -5207,6 +5726,104 @@ export function WorkshopTab({
           </div>
         )}
       </Drawer>
+
+      {/* MODAL LẬP PHIẾU CHI TRẢ NỢ NCC */}
+      <Modal
+        title={
+          <div className="flex items-center gap-2 text-slate-900 font-bold">
+            <DollarOutlined className="text-[#008080] text-base" />
+            <span>Lập phiếu chi trả nợ nhà cung cấp</span>
+          </div>
+        }
+        open={paymentModalVisible}
+        onCancel={() => {
+          setPaymentModalVisible(false);
+          setPaymentSlipTarget(null);
+        }}
+        onOk={handleConfirmPaySupplier}
+        okText="Xác nhận chi tiền"
+        cancelText="Đóng"
+        okButtonProps={{ className: '!bg-[#008080] !border-[#008080]' }}
+        width={520}
+        destroyOnHidden
+      >
+        {paymentSlipTarget && (
+          <div className="space-y-4 py-2">
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-1.5">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Mã phiếu nhập:</span>
+                <span className="font-mono font-bold text-[#008080]">{paymentSlipTarget.code}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Nhà cung cấp:</span>
+                <span className="font-semibold text-slate-800">{paymentSlipTarget.supplier}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Tổng tiền hàng:</span>
+                <span className="font-mono font-medium text-slate-900">
+                  {(paymentSlipTarget.totalValue || 0).toLocaleString('vi-VN')} đ
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Đã thanh toán:</span>
+                <span className="font-mono font-medium text-emerald-700">
+                  {(paymentSlipTarget.paidAmount || 0).toLocaleString('vi-VN')} đ
+                </span>
+              </div>
+              <div className="flex justify-between pt-1 border-t border-slate-200">
+                <span className="font-semibold text-slate-700">Công nợ còn lại:</span>
+                <span className="font-mono font-bold text-rose-600">
+                  {Math.max(0, (paymentSlipTarget.totalValue || 0) - (paymentSlipTarget.paidAmount || 0)).toLocaleString('vi-VN')} đ
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Số tiền chi trả (VNĐ) <span className="text-rose-500">*</span>
+              </label>
+              <InputNumber
+                className="w-full"
+                size="large"
+                min={1000}
+                max={Math.max(0, (paymentSlipTarget.totalValue || 0) - (paymentSlipTarget.paidAmount || 0))}
+                value={paymentAmount}
+                onChange={(val) => setPaymentAmount(val || 0)}
+                formatter={(val) => `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, '.')}
+                parser={(val) => Number((val || '').replace(/\./g, '')) as any}
+                addonAfter="đ"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Phương thức chi tiền
+              </label>
+              <Select
+                className="w-full"
+                value={paymentMethodSelect}
+                onChange={(v) => setPaymentMethodSelect(v)}
+                options={[
+                  { value: 'Chuyển khoản (VietQR)', label: 'Chuyển khoản (VietQR)' },
+                  { value: 'Tiền mặt', label: 'Tiền mặt' },
+                ]}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Ghi chú phiếu chi
+              </label>
+              <Input.TextArea
+                rows={3}
+                placeholder="Nhập ghi chú chi tiết đợt thanh toán..."
+                value={paymentNoteText}
+                onChange={(e) => setPaymentNoteText(e.target.value)}
+              />
+            </div>
+          </div>
+        )}
+      </Modal>
 
     </>
   );

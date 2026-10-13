@@ -30,11 +30,11 @@ const DEFAULT_SHOWROOMS: HomeShowroom[] = [
 
 export default function ShowroomSection({ onOpenBooking, showrooms, companyInfo }: ShowroomSectionProps) {
   const displayShowrooms = showrooms && showrooms.length > 0 ? showrooms : DEFAULT_SHOWROOMS;
-  const hotline = companyInfo?.hotline || '0986.739.587';
-  const rawPhone = hotline.replace(/\D/g, '') || '0986739587';
+  const hotline = companyInfo?.hotline || '0967.323.335';
+  const rawPhone = hotline.replace(/\D/g, '') || '0967323335';
 
   return (
-    <section id="showrooms" className="w-full py-16 md:py-24 bg-[#fbf2ee]">
+    <section id="showrooms" className="w-full py-7 md:py-9 bg-[#fbf2ee] border-b border-[#ebdcd2]">
       <div className="w-full max-w-[1720px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-16">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-14 items-center">
           {/* Showroom Information */}

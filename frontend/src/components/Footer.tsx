@@ -17,7 +17,7 @@ export default function Footer() {
   };
 
   return (
-    <footer className="w-full bg-[#fbf2ee] text-[#1f1b19] pt-16 pb-8 border-t border-[#eae1dd]">
+    <footer className="w-full bg-[#fbf2ee] text-[#1f1b19] pt-8 pb-8 border-t border-[#eae1dd]">
       <div className="w-full max-w-[1720px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-16">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-8 lg:gap-10 pb-12 border-b border-[#eae1dd]">
           {/* Brand Info */}
@@ -95,7 +95,7 @@ export default function Footer() {
               </p>
               <p>126 Nguyễn Thị Minh Khai, Phường Võ Thị Sáu, Quận 3</p>
               <p className="pt-2 text-[#83746c] font-data-mono text-xs">
-                Hotline: 1900 8922 (8:30 - 21:00)
+                Hotline & Zalo: 0967 323 335 (8:30 - 21:00)
               </p>
             </div>
           </div>
@@ -108,7 +108,7 @@ export default function Footer() {
             <ul className="flex flex-col gap-1.5 font-body-sm text-xs sm:text-sm text-[#51443d] mb-2">
               <li className="flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#5d371f]"></span>
-                <span>Bảo hành cấu trúc gỗ 5 năm tận tâm</span>
+                <span>Bảo hành cấu trúc gỗ 24 tháng tận tâm</span>
               </li>
               <li className="flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#5d371f]"></span>

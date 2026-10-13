@@ -136,6 +136,31 @@ const detectProvinceAndDistrict = (address?: string) => {
   return { province: undefined, district: undefined, detail: address };
 };
 
+// Helper to format role names into clean Vietnamese without English suffixes or keywords
+const formatRoleName = (rawRole?: string, rolesList: AdminRole[] = []): string => {
+  if (!rawRole) return 'Nhân viên';
+  const roleObj = rolesList.find((r) => r.id === rawRole || r.code === rawRole || r.name === rawRole);
+  let name = roleObj?.name || rawRole;
+
+  // Clean English parentheses like (Super Admin), (Admin), (Role), (Sales)
+  name = name
+    .replace(/\s*\([^)]*admin[^)]*\)/gi, '')
+    .replace(/\s*\([^)]*super[^)]*\)/gi, '')
+    .replace(/\s*\([^)]*[a-zA-Z]{3,}[^)]*\)/g, '')
+    .trim();
+
+  const lower = name.toLowerCase();
+  if (lower === 'role_staff' || lower === 'staff') return 'Nhân viên';
+  if (lower === 'super_admin' || lower === 'super admin' || lower === 'role_super_admin') return 'Quản trị viên tối cao';
+  if (lower === 'admin' || lower === 'role_admin') return 'Quản trị viên';
+  if (lower === 'sales' || lower === 'role_sales') return 'Nhân viên kinh doanh';
+  if (lower === 'manager' || lower === 'role_manager') return 'Quản lý showroom';
+  if (lower === 'warehouse' || lower === 'role_warehouse') return 'Thủ kho';
+  if (lower === 'designer' || lower === 'role_designer') return 'Kiến trúc sư / Thiết kế';
+
+  return name || 'Nhân viên';
+};
+
 export function EmployeesTab({
   employeesList: initialEmployees = INITIAL_EMPLOYEES,
   setEmployeesList: externalSetEmployeesList,
@@ -252,6 +277,7 @@ export function EmployeesTab({
 
     setTimeout(() => {
       form.resetFields();
+      const defaultRole = rolesList.find((r) => r.code !== 'SUPER_ADMIN')?.id || rolesList[0]?.id || '';
       form.setFieldsValue({
         code: nextCode,
         name: '',
@@ -265,12 +291,12 @@ export function EmployeesTab({
         addressDetail: '',
         address: '',
         department: branchesList[0]?.name || 'Chi nhánh',
-        title: TITLES[0],
+        title: formatRoleName(defaultRole, rolesList),
         branch: branchesList[0]?.name || 'Showroom Flagship Thảo Điền',
         branchIds: [branchesList[0]?.id || 'br_1'],
         username: '',
         password: 'D2Luxury@2026',
-        role: 'role_staff',
+        role: defaultRole,
         status: true,
         skills: [],
       });
@@ -303,7 +329,7 @@ export function EmployeesTab({
         branch: emp.branch,
         branchIds: emp.branchIds || [],
         username: emp.username || emp.login,
-        role: emp.role || 'role_staff',
+        role: emp.role || rolesList[0]?.id || '',
         status: emp.status === 'working',
         workingDate: emp.workingDate ? dayjs(emp.workingDate) : dayjs(),
         skills: emp.skills || [],
@@ -323,7 +349,70 @@ export function EmployeesTab({
   const handleSaveEmployee = async (values: any) => {
     const trimmedCode = (values.code || '').trim().toUpperCase();
     const trimmedName = (values.name || '').trim();
+    const cleanEmail = (values.email || '').trim().toLowerCase();
+    const cleanPhone = (values.phone || '').trim();
     const username = (values.username || generateUsername(trimmedName)).trim();
+
+    // 1. Validation: Tên nhân viên trùng
+    const duplicateName = employeesList.find((e) =>
+      (!editingEmployee || e.id !== editingEmployee.id) &&
+      e.name && e.name.trim().toLowerCase() === trimmedName.toLowerCase()
+    );
+    if (duplicateName) {
+      message.error(`Tên nhân viên "${trimmedName}" đã tồn tại trên hệ thống (${duplicateName.code}). Vui lòng nhập tên khác hoặc thêm họ tên đệm.`);
+      return;
+    }
+
+    // 2. Validation: Email đăng nhập trùng (nếu có nhập)
+    if (values.email && values.email.trim()) {
+      const cleanEmail = values.email.trim().toLowerCase();
+      const duplicateEmail = employeesList.find((e) =>
+        (!editingEmployee || e.id !== editingEmployee.id) &&
+        e.email && e.email.trim().toLowerCase() === cleanEmail
+      );
+      if (duplicateEmail) {
+        message.error(`Email đăng nhập "${values.email.trim()}" đã được sử dụng bởi nhân viên "${duplicateEmail.name}" (${duplicateEmail.code}).`);
+        return;
+      }
+    }
+
+    // 3. Validation: Tên đăng nhập trùng
+    if (username) {
+      const uLower = username.toLowerCase();
+      const duplicateUsername = employeesList.find((e) =>
+        (!editingEmployee || e.id !== editingEmployee.id) &&
+        ((e.username && e.username.trim().toLowerCase() === uLower) ||
+         (e.login && e.login.trim().toLowerCase() === uLower))
+      );
+      if (duplicateUsername) {
+        message.error(`Tên đăng nhập "${username}" đã được sử dụng bởi nhân viên "${duplicateUsername.name}" (${duplicateUsername.code}).`);
+        return;
+      }
+    }
+
+    // 4. Validation: Số điện thoại trùng
+    if (cleanPhone) {
+      const duplicatePhone = employeesList.find((e) =>
+        (!editingEmployee || e.id !== editingEmployee.id) &&
+        e.phone && e.phone.trim() === cleanPhone
+      );
+      if (duplicatePhone) {
+        message.error(`Số điện thoại "${cleanPhone}" đã được sử dụng bởi nhân viên "${duplicatePhone.name}" (${duplicatePhone.code}).`);
+        return;
+      }
+    }
+
+    // 5. Validation: Mã nhân viên trùng
+    if (trimmedCode) {
+      const duplicateCode = employeesList.find((e) =>
+        (!editingEmployee || e.id !== editingEmployee.id) &&
+        e.code && e.code.trim().toUpperCase() === trimmedCode
+      );
+      if (duplicateCode) {
+        message.error(`Mã nhân viên "${trimmedCode}" đã tồn tại trên hệ thống.`);
+        return;
+      }
+    }
 
     const fullAddress = [
       values.addressDetail,
@@ -342,18 +431,18 @@ export function EmployeesTab({
         birthday: values.birthday ? values.birthday.format('DD/MM/YYYY') : editingEmployee.birthday,
         idNumber: values.idNumber || '',
         phone: values.phone || '',
-        email: values.email || '',
+        email: values.email || editingEmployee.email || (username ? `${username.toLowerCase()}@d2luxury.vn` : ''),
         address: fullAddress || values.address || '',
         addressDetail: values.addressDetail || '',
         province: values.province || '',
         district: values.district || '',
         department: values.department || '',
-        title: values.title || '',
+        title: values.title || editingEmployee.title || formatRoleName(values.role, rolesList),
         branch: values.branch || '',
         branchIds: values.branchIds || [],
         login: username,
         username: username,
-        role: values.role,
+        role: values.role || rolesList[0]?.id || '',
         status: values.status ? ('working' as const) : ('resigned' as const),
         workingDate: values.workingDate ? values.workingDate.format('YYYY-MM-DD') : editingEmployee.workingDate,
         skills: values.skills || [],
@@ -365,8 +454,9 @@ export function EmployeesTab({
 
       try {
         await employeeApi.updateEmployee(editingEmployee.id, payload);
-      } catch (err) {
-        console.warn('API update employee failed, saving locally:', err);
+      } catch (err: any) {
+        message.error(err.message || 'Cập nhật nhân viên thất bại do dữ liệu bị trùng lặp!');
+        return;
       }
 
       const updatedList = employeesList.map((emp) =>
@@ -386,6 +476,7 @@ export function EmployeesTab({
       }
       message.success(`Đã cập nhật hồ sơ nhân viên "${trimmedName}" thành công!`);
     } else {
+      const defaultRole = rolesList.find((r) => r.code !== 'SUPER_ADMIN')?.id || rolesList[0]?.id || '';
       const newEmpPayload: Partial<AdminEmployee> = {
         code: trimmedCode || `NV${String(employeesList.length + 1).padStart(3, '0')}`,
         name: trimmedName,
@@ -393,38 +484,33 @@ export function EmployeesTab({
         birthday: values.birthday ? values.birthday.format('DD/MM/YYYY') : '01/01/1990',
         idNumber: values.idNumber || '',
         phone: values.phone || '',
-        email: values.email || '',
+        email: values.email || (username ? `${username.toLowerCase()}@d2luxury.vn` : `${(trimmedCode || 'nv').toLowerCase()}@d2luxury.vn`),
         address: fullAddress || values.address || '',
         addressDetail: values.addressDetail || '',
         province: values.province || '',
         district: values.district || '',
         department: values.branch || values.department || 'Chi nhánh',
-        title: values.title || TITLES[0],
-        branch: values.branch || branchesList[0]?.name || 'Showroom Thảo Điền',
+        title: values.title || formatRoleName(values.role || defaultRole, rolesList),
+        branch: values.branch || branchesList[0]?.name || 'Showroom Flagship Thảo Điền',
         branchIds: values.branchIds || [],
         login: username,
         username: username,
         password: values.password || 'D2Luxury@2026',
-        role: values.role || 'role_staff',
+        role: values.role || defaultRole,
         status: values.status ? ('working' as const) : ('resigned' as const),
         workingDate: values.workingDate ? values.workingDate.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD'),
         skills: values.skills || ['Tư vấn nội thất'],
         note: values.note || '',
       };
 
-      let createdEmp: AdminEmployee;
       try {
-        createdEmp = await employeeApi.createEmployee(newEmpPayload);
-      } catch (err) {
-        console.warn('API create employee failed, saving locally:', err);
-        createdEmp = {
-          ...newEmpPayload,
-          id: `emp_${Date.now()}`,
-        } as AdminEmployee;
+        const createdEmp = await employeeApi.createEmployee(newEmpPayload);
+        setEmployeesList([createdEmp, ...employeesList]);
+        message.success(`Đã thêm mới nhân viên "${createdEmp.name}" vào hệ thống!`);
+      } catch (err: any) {
+        message.error(err.message || 'Thêm mới nhân viên thất bại do dữ liệu bị trùng lặp!');
+        return;
       }
-
-      setEmployeesList([createdEmp, ...employeesList]);
-      message.success(`Đã thêm mới nhân viên "${createdEmp.name}" vào hệ thống!`);
     }
     setDrawerOpen(false);
   };
@@ -696,9 +782,9 @@ export function EmployeesTab({
             dataSource={filteredEmployees}
             rowKey="id"
             pagination={{
-              pageSize: filteredEmployees.length > 0 ? filteredEmployees.length : 10,
-              showSizeChanger: false,
-              hideOnSinglePage: true,
+              showSizeChanger: true,
+              pageSizeOptions: ['10', '20', '50', '100'],
+              hideOnSinglePage: false,
             }}
             onRow={(record) => ({
               onClick: () => handleOpenDetail(record),
@@ -763,11 +849,9 @@ export function EmployeesTab({
                 key: 'role',
                 width: 140,
                 render: (_, emp) => {
-                  const roleObj = rolesList.find((r) => r.id === emp.role);
-                  const roleLabel = roleObj?.name || emp.role || emp.login || emp.username || '---';
                   return (
-                    <span className="font-mono text-xs font-semibold text-slate-800">
-                      {roleLabel}
+                    <span className="text-xs font-semibold text-slate-800">
+                      {formatRoleName(emp.role, rolesList)}
                     </span>
                   );
                 },
@@ -1019,13 +1103,13 @@ export function EmployeesTab({
                   </h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                     <div>
-                      <span className="text-slate-500 block">Tên đăng nhập (Username):</span>
+                      <span className="text-slate-500 block">Tên đăng nhập:</span>
                       <strong className="font-mono text-slate-900 text-sm">{selectedEmployee.login || selectedEmployee.username}</strong>
                     </div>
                     <div>
-                      <span className="text-slate-500 block">Nhóm quyền hạn (RBAC Role):</span>
+                      <span className="text-slate-500 block">Nhóm quyền hạn &amp; Vai trò:</span>
                       <Tag color="gold" className="font-semibold text-xs mt-0.5">
-                        {rolesList.find((r) => r.id === selectedEmployee.role)?.name || 'Nhân viên nghiệp vụ POS'}
+                        {formatRoleName(selectedEmployee.role, rolesList)}
                       </Tag>
                     </div>
                     <div>
@@ -1122,7 +1206,23 @@ export function EmployeesTab({
             <Form.Item
               label={<span className="text-xs font-semibold text-slate-800">Họ và tên nhân viên</span>}
               name="name"
-              rules={[{ required: true, message: 'Vui lòng nhập họ và tên' }]}
+              rules={[
+                { required: true, message: 'Vui lòng nhập họ và tên' },
+                {
+                  validator: (_, value) => {
+                    if (!value) return Promise.resolve();
+                    const valTrim = value.trim().toLowerCase();
+                    const dup = employeesList.find((e) =>
+                      (!editingEmployee || e.id !== editingEmployee.id) &&
+                      e.name && e.name.trim().toLowerCase() === valTrim
+                    );
+                    if (dup) {
+                      return Promise.reject(new Error(`Tên "${value.trim()}" đã tồn tại (${dup.code})`));
+                    }
+                    return Promise.resolve();
+                  },
+                },
+              ]}
             >
               <Input
                 placeholder="VD: KTS. Trần Minh Quân"
@@ -1167,9 +1267,26 @@ export function EmployeesTab({
             <Row gutter={12}>
               <Col span={12}>
                 <Form.Item
-                  label={<span className="text-xs font-semibold text-slate-800">Tên đăng nhập (Username)</span>}
+                  label={<span className="text-xs font-semibold text-slate-800">Tên đăng nhập</span>}
                   name="username"
-                  rules={[{ required: true, message: 'Nhập tên đăng nhập' }]}
+                  rules={[
+                    { required: true, message: 'Nhập tên đăng nhập' },
+                    {
+                      validator: (_, value) => {
+                        if (!value) return Promise.resolve();
+                        const valTrim = value.trim().toLowerCase();
+                        const dup = employeesList.find((e) =>
+                          (!editingEmployee || e.id !== editingEmployee.id) &&
+                          ((e.username && e.username.trim().toLowerCase() === valTrim) ||
+                           (e.login && e.login.trim().toLowerCase() === valTrim))
+                        );
+                        if (dup) {
+                          return Promise.reject(new Error(`Tên đăng nhập "${value.trim()}" đã tồn tại (${dup.name})`));
+                        }
+                        return Promise.resolve();
+                      },
+                    },
+                  ]}
                 >
                   <Input
                     placeholder="quan.tm"
@@ -1180,14 +1297,14 @@ export function EmployeesTab({
               </Col>
               <Col span={12}>
                 <Form.Item
-                  label={<span className="text-xs font-semibold text-slate-800">Nhóm quyền hạn (Role)</span>}
+                  label={<span className="text-xs font-semibold text-slate-800">Vai trò &amp; Nhóm quyền hạn</span>}
                   name="role"
-                  rules={[{ required: true, message: 'Chọn nhóm quyền' }]}
+                  rules={[{ required: true, message: 'Vui lòng chọn vai trò' }]}
                 >
-                  <Select className="h-10 text-sm">
+                  <Select className="h-10 text-sm" placeholder="Chọn vai trò">
                     {rolesList.map((r) => (
                       <Select.Option key={r.id} value={r.id}>
-                        {r.name}
+                        {formatRoleName(r.name, rolesList)}
                       </Select.Option>
                     ))}
                   </Select>
@@ -1216,32 +1333,19 @@ export function EmployeesTab({
               <Input />
             </Form.Item>
 
-            <Row gutter={12}>
-              <Col span={12}>
-                <Form.Item
-                  label={<span className="text-xs font-semibold text-slate-800">Chi nhánh làm việc chính</span>}
-                  name="branch"
-                  rules={[{ required: true, message: 'Vui lòng chọn chi nhánh làm việc' }]}
-                >
-                  <Select className="h-10 text-sm" placeholder="Chọn chi nhánh...">
-                    {branchesList.map((b) => (
-                      <Select.Option key={b.id} value={b.name}>
-                        {b.name}
-                      </Select.Option>
-                    ))}
-                  </Select>
-                </Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item
-                  label={<span className="text-xs font-semibold text-slate-800">Chức danh / Vị trí</span>}
-                  name="title"
-                  rules={[{ required: true, message: 'Vui lòng nhập chức danh' }]}
-                >
-                  <Input placeholder="VD: Quản lý showroom, Tư vấn viên..." className="h-10 rounded-lg text-sm" />
-                </Form.Item>
-              </Col>
-            </Row>
+            <Form.Item
+              label={<span className="text-xs font-semibold text-slate-800">Chi nhánh làm việc chính</span>}
+              name="branch"
+              rules={[{ required: true, message: 'Vui lòng chọn chi nhánh làm việc' }]}
+            >
+              <Select className="h-10 text-sm" placeholder="Chọn chi nhánh...">
+                {branchesList.map((b) => (
+                  <Select.Option key={b.id} value={b.name}>
+                    {b.name}
+                  </Select.Option>
+                ))}
+              </Select>
+            </Form.Item>
           </div>
 
           {/* SECTION 4: LIÊN HỆ & ĐỊA CHỈ */}
@@ -1250,22 +1354,13 @@ export function EmployeesTab({
               <PhoneOutlined className="text-emerald-600" /> Thông tin liên hệ &amp; Địa chỉ
             </h4>
 
-            <Row gutter={12}>
-              <Col span={12}>
-                <Form.Item
-                  label={<span className="text-xs font-semibold text-slate-800">Số điện thoại di động</span>}
-                  name="phone"
-                  rules={[{ required: true, message: 'Vui lòng nhập số điện thoại' }]}
-                >
-                  <Input placeholder="0918.234.567" className="h-10 rounded-lg font-mono text-sm" />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item label={<span className="text-xs font-semibold text-slate-800">Email nội bộ</span>} name="email">
-                  <Input placeholder="quan.tm@d2luxury.vn" className="h-10 rounded-lg text-sm" />
-                </Form.Item>
-              </Col>
-            </Row>
+            <Form.Item
+              label={<span className="text-xs font-semibold text-slate-800">Số điện thoại di động</span>}
+              name="phone"
+              rules={[{ required: true, message: 'Vui lòng nhập số điện thoại' }]}
+            >
+              <Input placeholder="0918.234.567" className="h-10 rounded-lg font-mono text-sm" />
+            </Form.Item>
 
             <Row gutter={12}>
               <Col span={12}>

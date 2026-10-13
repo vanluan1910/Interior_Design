@@ -4,6 +4,7 @@ using InteriorDesign.Integration.Common;
 using InteriorDesign.Integration.Requests;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace InteriorDesign.Api.Controllers;
 
@@ -11,10 +12,12 @@ namespace InteriorDesign.Api.Controllers;
 public sealed class CategoriesController : ApiControllerBase
 {
     private readonly InteriorDbContext _context;
+    private readonly IMemoryCache _cache;
 
-    public CategoriesController(InteriorDbContext context)
+    public CategoriesController(InteriorDbContext context, IMemoryCache cache)
     {
         _context = context;
+        _cache = cache;
     }
 
     /// <summary>
@@ -30,61 +33,64 @@ public sealed class CategoriesController : ApiControllerBase
     {
         try
         {
+            var isDefaultQuery = string.IsNullOrWhiteSpace(search) &&
+                                 (string.IsNullOrWhiteSpace(space) || space == "all") &&
+                                 (string.IsNullOrWhiteSpace(status) || status == "all") &&
+                                 !includeDeleted;
+
+            if (isDefaultQuery && _cache.TryGetValue("categories_all", out List<Category>? cached) && cached != null)
+            {
+                return Ok(ApiResponse<List<Category>>.Ok(cached));
+            }
+
             var query = includeDeleted
                 ? _context.Categories.IgnoreQueryFilters().AsNoTracking().AsQueryable()
                 : _context.Categories.AsNoTracking().AsQueryable();
 
             if (!string.IsNullOrWhiteSpace(search))
             {
-                var q = search.Trim().ToLower();
+                var q = search.Trim();
                 query = query.Where(c =>
-                    c.Code.ToLower().Contains(q) ||
-                    c.Name.ToLower().Contains(q) ||
-                    c.Slug.ToLower().Contains(q) ||
-                    c.Description.ToLower().Contains(q) ||
-                    c.FeaturedProduct.ToLower().Contains(q)
+                    c.Code.Contains(q) ||
+                    c.Name.Contains(q) ||
+                    c.Slug.Contains(q) ||
+                    c.Description.Contains(q) ||
+                    c.FeaturedProduct.Contains(q)
                 );
             }
 
             if (!string.IsNullOrWhiteSpace(space) && space != "all")
             {
-                var s = space.Trim().ToLower();
-                query = query.Where(c => c.Space.ToLower() == s || c.Space.ToLower().Contains(s));
+                var s = space.Trim();
+                query = query.Where(c => c.Space == s || c.Space.Contains(s));
             }
 
             if (!string.IsNullOrWhiteSpace(status) && status != "all")
             {
-                var st = status.Trim().ToLower();
-                query = query.Where(c => c.Status.ToLower() == st);
+                var st = status.Trim();
+                query = query.Where(c => c.Status == st);
             }
 
             var list = await query
-                .Select(c => new Category
-                {
-                    Id = c.Id,
-                    Code = c.Code,
-                    Name = c.Name,
-                    Slug = c.Slug,
-                    Description = c.Description,
-                    ImageUrl = c.ImageUrl,
-                    Icon = c.Icon,
-                    Space = c.Space,
-                    SpaceId = c.SpaceId,
-                    DisplayOrder = c.DisplayOrder,
-                    ProductCount = _context.Products.Count(p => p.CategoryId == c.Id),
-                    FeaturedProduct = c.FeaturedProduct,
-                    Badge = c.Badge,
-                    ShowOnHome = c.ShowOnHome,
-                    ShowOnMenu = c.ShowOnMenu,
-                    Status = c.Status,
-                    IsActive = c.IsActive,
-                    IsDeleted = c.IsDeleted,
-                    DeletedAt = c.DeletedAt,
-                    CreatedAt = c.CreatedAt
-                })
                 .OrderBy(c => c.DisplayOrder)
                 .ThenByDescending(c => c.CreatedAt)
                 .ToListAsync(cancellationToken);
+
+            var productCounts = await _context.Products
+                .AsNoTracking()
+                .GroupBy(p => p.CategoryId)
+                .Select(g => new { CategoryId = g.Key, Count = g.Count() })
+                .ToDictionaryAsync(g => g.CategoryId, g => g.Count, cancellationToken);
+
+            foreach (var cat in list)
+            {
+                cat.ProductCount = productCounts.GetValueOrDefault(cat.Id, 0);
+            }
+
+            if (isDefaultQuery)
+            {
+                _cache.Set("categories_all", list, TimeSpan.FromMinutes(5));
+            }
 
             return Ok(ApiResponse<List<Category>>.Ok(list));
         }
@@ -208,8 +214,15 @@ public sealed class CategoriesController : ApiControllerBase
 
         _context.Categories.Add(category);
         await _context.SaveChangesAsync(cancellationToken);
+        InvalidateCategoryCache();
 
         return Ok(ApiResponse<Category>.Ok(category, "Tạo danh mục nhóm hàng thành công."));
+    }
+
+    private void InvalidateCategoryCache()
+    {
+        _cache.Remove("categories_all");
+        _cache.Remove("home_data");
     }
 
     /// <summary>
@@ -369,6 +382,7 @@ public sealed class CategoriesController : ApiControllerBase
         }
 
         await _context.SaveChangesAsync(cancellationToken);
+        InvalidateCategoryCache();
 
         int totalHandled = insertedCount + updatedCount;
         return Ok(ApiResponse<int>.Ok(
@@ -384,6 +398,7 @@ public sealed class CategoriesController : ApiControllerBase
     public async Task<IActionResult> CleanupCategories(CancellationToken cancellationToken)
     {
         var cleanedCount = await DeduplicateCategoriesInternalAsync(cancellationToken);
+        InvalidateCategoryCache();
         return Ok(ApiResponse<int>.Ok(cleanedCount, "Đã chuẩn hóa và gộp danh mục thành công!"));
     }
 
@@ -483,6 +498,7 @@ public sealed class CategoriesController : ApiControllerBase
         category.IsActive = category.Status != "hidden";
 
         await _context.SaveChangesAsync(cancellationToken);
+        InvalidateCategoryCache();
 
         return Ok(ApiResponse<Category>.Ok(category, "Cập nhật danh mục nhóm hàng thành công."));
     }
@@ -500,12 +516,13 @@ public sealed class CategoriesController : ApiControllerBase
         category.Status = string.IsNullOrWhiteSpace(request.Status) ? "active" : request.Status.ToLowerInvariant();
         category.IsActive = category.Status == "active";
         await _context.SaveChangesAsync(cancellationToken);
+        InvalidateCategoryCache();
 
         return Ok(ApiResponse<Category>.Ok(category, $"Đã chuyển trạng thái danh mục thành '{category.Status}'."));
     }
 
     /// <summary>
-    /// Xóa mềm danh mục nhóm hàng
+    /// Xóa mềm danh mục nhóm hàng (Không được xóa nếu đang có sản phẩm)
     /// </summary>
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> DeleteCategory(Guid id, CancellationToken cancellationToken)
@@ -514,9 +531,16 @@ public sealed class CategoriesController : ApiControllerBase
         if (category is null)
             return NotFound(ApiResponse<bool>.Fail("Không tìm thấy danh mục nhóm hàng để xóa."));
 
+        var productCount = await _context.Products.CountAsync(p => p.CategoryId == id, cancellationToken);
+        if (productCount > 0)
+        {
+            return BadRequest(ApiResponse<bool>.Fail($"Không thể xóa danh mục '{category.Name}' vì đang có {productCount} sản phẩm thuộc danh mục này. Vui lòng chuyển danh mục hoặc xóa các sản phẩm liên quan trước!"));
+        }
+
         category.IsDeleted = true;
         category.DeletedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync(cancellationToken);
+        InvalidateCategoryCache();
 
         return Ok(ApiResponse<bool>.Ok(true, $"Đã xóa danh mục nhóm hàng '{category.Name}'."));
     }
@@ -537,6 +561,7 @@ public sealed class CategoriesController : ApiControllerBase
         category.IsDeleted = false;
         category.DeletedAt = null;
         await _context.SaveChangesAsync(cancellationToken);
+        InvalidateCategoryCache();
 
         return Ok(ApiResponse<Category>.Ok(category, $"Đã khôi phục danh mục nhóm hàng '{category.Name}'."));
     }

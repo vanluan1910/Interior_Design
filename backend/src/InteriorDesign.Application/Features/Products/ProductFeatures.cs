@@ -5,6 +5,8 @@ using InteriorDesign.Integration.Common;
 using InteriorDesign.Integration.Requests;
 using InteriorDesign.Integration.Responses;
 using MediatR;
+using System.Text.Json;
+using System.Text.Encodings.Web;
 
 namespace InteriorDesign.Application.Features.Products;
 
@@ -15,7 +17,9 @@ public sealed record GetProductsQuery(
     string? Search = null,
     string? Space = null,
     Guid? CategoryId = null,
-    string? Status = null
+    string? Category = null,
+    string? Status = null,
+    string? Branch = null
 ) : IRequest<ApiResponse<PagedResult<ProductDto>>>;
 
 public sealed record GetProductByIdQuery(Guid Id) : IRequest<ApiResponse<ProductDto>>;
@@ -77,7 +81,7 @@ public sealed class GetProductsQueryHandler(IInteriorRepository repo)
             statusFilter = parsedStatus;
         }
 
-        var result = await repo.GetProductsAsync(query.Page, query.PageSize, query.Search, query.Space, query.CategoryId, statusFilter, cancellationToken);
+        var result = await repo.GetProductsAsync(query.Page, query.PageSize, query.Search, query.Space, query.CategoryId, query.Category, statusFilter, query.Branch, cancellationToken);
         var dtos = result.Items.Select(ProductMapper.ToDto).ToList();
         var paged = new PagedResult<ProductDto>(dtos, result.Page, result.PageSize, result.TotalItems);
 
@@ -172,6 +176,21 @@ public sealed class CreateProductCommandHandler(IInteriorRepository repo)
             UpdatedAt = DateTimeOffset.UtcNow
         };
 
+        var jsonOptions = new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+
+        if (!string.IsNullOrWhiteSpace(req.BranchStocksJson) && req.BranchStocksJson != "{}")
+        {
+            product.BranchStocksJson = req.BranchStocksJson;
+        }
+        else if (!string.IsNullOrWhiteSpace(req.Branch) && !string.Equals(req.Branch, "all", StringComparison.OrdinalIgnoreCase))
+        {
+            var bStocks = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+            {
+                [req.Branch.Trim()] = req.InStock
+            };
+            product.BranchStocksJson = JsonSerializer.Serialize(bStocks, jsonOptions);
+        }
+
         var created = await repo.AddProductAsync(product, cancellationToken);
         return ApiResponse<ProductDto>.Ok(ProductMapper.ToDto(created), "Tạo sản phẩm thành công.");
     }
@@ -215,6 +234,51 @@ public sealed class UpdateProductCommandHandler(IInteriorRepository repo)
         existing.ShortDescription = req.ShortDescription ?? req.Collection ?? existing.ShortDescription;
         existing.Description = req.Description ?? existing.Description;
         existing.UpdatedAt = DateTimeOffset.UtcNow;
+
+        var jsonOptions = new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+
+        if (!string.IsNullOrWhiteSpace(req.BranchStocksJson) && req.BranchStocksJson != "{}")
+        {
+            existing.BranchStocksJson = req.BranchStocksJson;
+            try
+            {
+                var dict = JsonSerializer.Deserialize<Dictionary<string, int>>(req.BranchStocksJson);
+                if (dict != null && dict.Count > 0)
+                {
+                    existing.InStock = dict.Values.Sum();
+                }
+            }
+            catch { }
+        }
+        else if (!string.IsNullOrWhiteSpace(req.Branch) && !string.Equals(req.Branch, "all", StringComparison.OrdinalIgnoreCase))
+        {
+            var bStocks = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            if (!string.IsNullOrWhiteSpace(existing.BranchStocksJson) && existing.BranchStocksJson != "{}")
+            {
+                try
+                {
+                    bStocks = JsonSerializer.Deserialize<Dictionary<string, int>>(existing.BranchStocksJson) ?? new(StringComparer.OrdinalIgnoreCase);
+                }
+                catch { }
+            }
+            else
+            {
+                // Nếu trước đó là sản phẩm dùng chung / seed data:
+                // Giữ nguyên tồn kho cũ cho tất cả các chi nhánh khác hiện có
+                var allBranches = await repo.GetBranchesAsync(cancellationToken);
+                foreach (var b in allBranches)
+                {
+                    if (!string.Equals(b.Name, req.Branch, StringComparison.OrdinalIgnoreCase))
+                    {
+                        bStocks[b.Name] = existing.InStock;
+                    }
+                }
+            }
+
+            bStocks[req.Branch.Trim()] = req.InStock;
+            existing.BranchStocksJson = JsonSerializer.Serialize(bStocks, jsonOptions);
+            existing.InStock = bStocks.Values.Sum();
+        }
 
         var updated = await repo.UpdateProductAsync(existing, cancellationToken);
         return ApiResponse<ProductDto>.Ok(ProductMapper.ToDto(updated!), "Cập nhật sản phẩm thành công.");

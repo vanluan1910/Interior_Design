@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   ADMIN_STORAGE_KEYS,
@@ -71,6 +71,7 @@ import {
   SyncOutlined,
 } from '@ant-design/icons';
 import { VietQrCard } from '@/components/common/VietQrCard';
+import { useAuth } from '@/context/AuthContext';
 import { AdminSearchInput, AdminFormDrawer } from '@/components/admin';
 import { branchApi } from '@/api/branchApi';
 import { roleApi } from '@/api/roleApi';
@@ -86,6 +87,8 @@ import type {
   AdminEmployee,
   AdminCompanyInfo,
   PermissionDefinition,
+  PermissionGroup,
+  PermissionSubGroup,
 } from '@/types/admin';
 import {
   INITIAL_BRANCHES,
@@ -102,10 +105,12 @@ export interface SettingsTabProps {
   branchesList?: AdminBranch[];
   setBranchesList?: React.Dispatch<React.SetStateAction<AdminBranch[]>>;
   uomsList?: AdminUom[];
+  setUomsList?: React.Dispatch<React.SetStateAction<AdminUom[]>>;
   rolesList?: AdminRole[];
   setRolesList?: React.Dispatch<React.SetStateAction<AdminRole[]>>;
   onUpdateRoles?: (roles: AdminRole[] | ((prev: AdminRole[]) => AdminRole[])) => void;
   employeesList?: AdminEmployee[];
+  setEmployeesList?: React.Dispatch<React.SetStateAction<AdminEmployee[]>>;
   selectedGlobalBranch?: string;
   activeSettingsTab?: 'company' | 'payment' | 'print-templates' | 'branches' | 'uom' | 'employees' | 'permissions';
   onSettingsTabChange?: (tab: 'company' | 'payment' | 'print-templates' | 'branches' | 'uom' | 'employees' | 'permissions') => void;
@@ -123,14 +128,17 @@ export function SettingsTab({
   branchesList = INITIAL_BRANCHES,
   setBranchesList,
   uomsList = [],
+  setUomsList,
   rolesList = INITIAL_ROLES,
   setRolesList,
   onUpdateRoles,
   employeesList = INITIAL_EMPLOYEES,
+  setEmployeesList,
   selectedGlobalBranch = 'all',
   activeSettingsTab,
   onSettingsTabChange,
 }: SettingsTabProps) {
+  const { hasPermission } = useAuth();
   const { message, modal } = App.useApp();
   const searchParams = useSearchParams();
 
@@ -367,6 +375,19 @@ export function SettingsTab({
     setCurrentEmployees(getStoredAdminData(ADMIN_STORAGE_KEYS.EMPLOYEES, employeesList || INITIAL_EMPLOYEES));
   }, []);
 
+  const loadEmployeesFromApi = useCallback(async () => {
+    try {
+      const res = await employeeApi.getEmployees();
+      if (Array.isArray(res) && res.length > 0) {
+        setCurrentEmployees(res);
+        setEmployeesList?.(res);
+        setStoredAdminData(ADMIN_STORAGE_KEYS.EMPLOYEES, res);
+      }
+    } catch (err) {
+      console.warn('Failed to load employees in SettingsTab:', err);
+    }
+  }, [setEmployeesList]);
+
   // Lazy load tab data on active tab change
   useEffect(() => {
     if (settingsActiveTab === 'company') {
@@ -378,15 +399,10 @@ export function SettingsTab({
       loadBranchesFromApi();
     } else if (settingsActiveTab === 'uom') {
       loadUomsFromApi();
-    } else if (settingsActiveTab === 'employees') {
-      employeeApi.getEmployees().then((res) => {
-        if (Array.isArray(res)) {
-          setCurrentEmployees(res);
-          setStoredAdminData(ADMIN_STORAGE_KEYS.EMPLOYEES, res);
-        }
-      }).catch(() => {});
+    } else if (settingsActiveTab === 'employees' || settingsActiveTab === 'permissions') {
+      loadEmployeesFromApi();
     }
-  }, [settingsActiveTab]);
+  }, [settingsActiveTab, loadEmployeesFromApi]);
 
   // Sync from props
   useEffect(() => {
@@ -396,10 +412,6 @@ export function SettingsTab({
   useEffect(() => {
     if (employeesList && employeesList.length > 0) setCurrentEmployees(employeesList);
   }, [employeesList]);
-
-  useEffect(() => {
-    if (uomsList) setCurrentUoms(uomsList);
-  }, [uomsList]);
 
   // Persistence hooks for local master data
   useEffect(() => {
@@ -611,6 +623,16 @@ export function SettingsTab({
 
   // ================= DOMACO POS UOM STATE & HANDLERS =================
   const [currentUoms, setCurrentUoms] = useState<AdminUom[]>(uomsList || []);
+
+  useEffect(() => {
+    if (uomsList && uomsList.length > 0) setCurrentUoms(uomsList);
+  }, [uomsList]);
+
+  useEffect(() => {
+    if (setUomsList && currentUoms && currentUoms.length > 0) {
+      setUomsList(currentUoms);
+    }
+  }, [currentUoms, setUomsList]);
   const [uomSearchQuery, setUomSearchQuery] = useState('');
   const [selectedUomKeys, setSelectedUomKeys] = useState<React.Key[]>([]);
   const [uomDrawerOpen, setUomDrawerOpen] = useState(false);
@@ -895,6 +917,7 @@ export function SettingsTab({
 
   // ================= DOMACO POS RBAC ROLES & PERMISSIONS STATE =================
   const [currentRoles, setCurrentRoles] = useState<AdminRole[]>(rolesList || INITIAL_ROLES);
+  const [permissionCatalogGroups, setPermissionCatalogGroups] = useState<PermissionGroup[]>(PERMISSION_GROUPS);
   const [isSavingPermissions, setIsSavingPermissions] = useState(false);
 
   const loadRolesFromApi = async () => {
@@ -903,15 +926,29 @@ export function SettingsTab({
       if (roles && roles.length > 0) {
         setCurrentRoles(roles);
         onUpdateRoles?.(roles);
+        setSelectedRoleId((prev) => (roles.some((r) => r.id === prev) ? prev : roles[0].id));
       }
     } catch (err) {
       console.warn('Load roles from API failed:', err);
     }
   };
 
+  const loadPermissionsCatalog = async () => {
+    try {
+      const catalog = await roleApi.getPermissionsCatalog();
+      if (catalog && catalog.length > 0) {
+        setPermissionCatalogGroups(catalog);
+      }
+    } catch (err) {
+      console.warn('Load permissions catalog failed:', err);
+    }
+  };
+
   useEffect(() => {
     loadRolesFromApi();
-  }, []);
+    loadPermissionsCatalog();
+    loadEmployeesFromApi();
+  }, [loadEmployeesFromApi]);
 
   useEffect(() => {
     if (rolesList && rolesList.length > 0) setCurrentRoles(rolesList);
@@ -943,90 +980,106 @@ export function SettingsTab({
     );
   }, [currentRoles, roleSearchQuery]);
 
+  // Helper to determine if an employee is assigned to a given role
+  const isEmployeeInRole = (emp: AdminEmployee, role: AdminRole): boolean => {
+    if (!emp || !role) return false;
+
+    const empRole = (emp.role || '').trim();
+    const empRoleId = ((emp as any).roleId || '').trim();
+    const empRoleName = ((emp as any).roleName || '').trim();
+
+    const roleId = (role.id || '').trim();
+    const roleCode = (role.code || '').trim();
+    const roleName = (role.name || '').trim();
+
+    // 1. Direct match by ID, Code, or Name
+    if (empRole && (empRole === roleId || empRole === roleCode || empRole === roleName)) return true;
+    if (empRoleId && (empRoleId === roleId || empRoleId === roleCode || empRoleId === roleName)) return true;
+    if (empRoleName && (empRoleName === roleName || empRoleName === roleCode)) return true;
+
+    // 2. Case-insensitive comparison
+    const empRoleLower = empRole.toLowerCase();
+    const roleIdLower = roleId.toLowerCase();
+    const roleCodeLower = roleCode.toLowerCase();
+    const roleNameLower = roleName.toLowerCase();
+
+    if (empRoleLower && (
+      empRoleLower === roleIdLower ||
+      empRoleLower === roleCodeLower ||
+      empRoleLower === roleNameLower
+    )) {
+      return true;
+    }
+
+    if (empRoleId && empRoleId.toLowerCase() === roleIdLower) return true;
+
+    // 3. Super Admin aliases
+    const isSuperAdminRole =
+      roleCodeLower === 'super_admin' ||
+      roleCodeLower === 'admin' ||
+      roleIdLower === 'role_admin' ||
+      roleIdLower === 'a1111111-1111-1111-1111-111111111111' ||
+      roleNameLower.includes('quản trị viên tối cao');
+
+    if (isSuperAdminRole) {
+      if (
+        empRoleLower === 'super_admin' ||
+        empRoleLower === 'admin' ||
+        empRoleLower === 'quản trị viên tối cao' ||
+        empRoleLower === 'a1111111-1111-1111-1111-111111111111'
+      ) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  // List of active employees to evaluate for roles
+  const effectiveEmployees = useMemo(() => {
+    if (currentEmployees && currentEmployees.length > 0) return currentEmployees;
+    if (employeesList && employeesList.length > 0) return employeesList;
+    return [];
+  }, [currentEmployees, employeesList]);
+
   // Helper to get real-time assigned employee count
   const getRoleUserCount = (role: AdminRole) => {
-    return employeesList.filter((emp) => {
-      if (emp.role === role.id || emp.role === role.code) return true;
-      const titleLower = emp.title?.toLowerCase() || '';
-      const deptLower = emp.department?.toLowerCase() || '';
-      if (role.code === 'SUPER_ADMIN' || role.id === 'role_admin') {
-        return emp.code === 'NV001' || titleLower.includes('giám đốc') || titleLower.includes('quản trị');
-      }
-      if (role.code === 'PROJECT_DIRECTOR' || role.id === 'role_director') {
-        return titleLower.includes('quản lý') || titleLower.includes('trưởng phòng') || titleLower.includes('sales lead');
-      }
-      if (role.code === 'INTERIOR_ARCHITECT' || role.id === 'role_architect') {
-        return titleLower.includes('tư vấn') || titleLower.includes('kiến trúc') || titleLower.includes('thiết kế');
-      }
-      if (role.code === 'STORE_WAREHOUSE_MANAGER' || role.id === 'role_warehouse_lead') {
-        return titleLower.includes('kho') || deptLower.includes('kho');
-      }
-      if (role.code === 'PROJECT_COST_ACCOUNTANT' || role.id === 'role_cost_accountant') {
-        return titleLower.includes('kế toán') || deptLower.includes('tài chính');
-      }
-      if (role.code === 'SITE_INSTALLATION_LEAD' || role.id === 'role_site_engineer') {
-        return titleLower.includes('giao') || titleLower.includes('lắp đặt') || titleLower.includes('vận chuyển');
-      }
-      return false;
-    }).length;
+    return effectiveEmployees.filter((emp) => isEmployeeInRole(emp, role)).length;
   };
 
   // Employees assigned to current role
   const assignedEmployees = useMemo(() => {
     if (!currentRole) return [];
-    return employeesList.filter((emp) => {
-      if (emp.role === currentRole.id || emp.role === currentRole.code) return true;
-      const titleLower = emp.title?.toLowerCase() || '';
-      const deptLower = emp.department?.toLowerCase() || '';
-      if (currentRole.code === 'SUPER_ADMIN' || currentRole.id === 'role_admin') {
-        return emp.code === 'NV001' || titleLower.includes('giám đốc') || titleLower.includes('quản trị');
-      }
-      if (currentRole.code === 'PROJECT_DIRECTOR' || currentRole.id === 'role_director') {
-        return titleLower.includes('quản lý') || titleLower.includes('trưởng phòng') || titleLower.includes('sales lead');
-      }
-      if (currentRole.code === 'INTERIOR_ARCHITECT' || currentRole.id === 'role_architect') {
-        return titleLower.includes('tư vấn') || titleLower.includes('kiến trúc') || titleLower.includes('thiết kế');
-      }
-      if (currentRole.code === 'STORE_WAREHOUSE_MANAGER' || currentRole.id === 'role_warehouse_lead') {
-        return titleLower.includes('kho') || deptLower.includes('kho');
-      }
-      if (currentRole.code === 'PROJECT_COST_ACCOUNTANT' || currentRole.id === 'role_cost_accountant') {
-        return titleLower.includes('kế toán') || deptLower.includes('tài chính');
-      }
-      if (currentRole.code === 'SITE_INSTALLATION_LEAD' || currentRole.id === 'role_site_engineer') {
-        return titleLower.includes('giao') || titleLower.includes('lắp đặt') || titleLower.includes('vận chuyển');
-      }
-      return false;
-    });
-  }, [employeesList, currentRole]);
+    return effectiveEmployees.filter((emp) => isEmployeeInRole(emp, currentRole));
+  }, [effectiveEmployees, currentRole]);
 
   // Total permissions across all groups
   const allPermissionKeys = useMemo(() => {
-    return PERMISSION_GROUPS.flatMap((g) => g.permissions.map((p) => p.key));
-  }, []);
+    return permissionCatalogGroups.flatMap((g: PermissionGroup) => g.permissions.map((p: PermissionDefinition) => p.key));
+  }, [permissionCatalogGroups]);
 
   const [permissionFilterSection, setPermissionFilterSection] = useState<string>('all');
   const [permissionKeywordSearch, setPermissionKeywordSearch] = useState<string>('');
 
   const displayedPermissionGroups = useMemo(() => {
-    let groups = PERMISSION_GROUPS;
+    let groups = permissionCatalogGroups;
     if (permissionFilterSection !== 'all') {
-      groups = groups.filter((g) => g.groupKey === permissionFilterSection);
+      groups = groups.filter((g: PermissionGroup) => g.groupKey === permissionFilterSection);
     }
     if (!permissionKeywordSearch.trim()) return groups;
     const q = permissionKeywordSearch.toLowerCase();
-    return groups.filter((g) => {
+    return groups.filter((g: PermissionGroup) => {
       return (
         g.groupName.toLowerCase().includes(q) ||
         g.permissions.some(
-          (p) =>
+          (p: PermissionDefinition) =>
             p.name.toLowerCase().includes(q) ||
             p.key.toLowerCase().includes(q) ||
             (p.description && p.description.toLowerCase().includes(q))
         )
       );
     });
-  }, [permissionFilterSection, permissionKeywordSearch]);
+  }, [permissionCatalogGroups, permissionFilterSection, permissionKeywordSearch]);
 
   // ================= PERMISSION TOGGLES =================
   const handleTogglePermission = (permKey: string) => {
@@ -1043,17 +1096,17 @@ export function SettingsTab({
 
   const handleToggleGroupPermissions = (groupKey: string, grant: boolean) => {
     if (!currentRole) return;
-    const targetGroup = PERMISSION_GROUPS.find((g) => g.groupKey === groupKey);
+    const targetGroup = permissionCatalogGroups.find((g: PermissionGroup) => g.groupKey === groupKey);
     if (!targetGroup) return;
 
-    const groupKeys = targetGroup.permissions.map((p) => p.key);
+    const groupKeys = targetGroup.permissions.map((p: PermissionDefinition) => p.key);
     let updatedPerms: string[];
 
     if (grant) {
       const merged = new Set([...currentRole.permissions, ...groupKeys]);
       updatedPerms = Array.from(merged);
     } else {
-      updatedPerms = currentRole.permissions.filter((k) => !groupKeys.includes(k));
+      updatedPerms = currentRole.permissions.filter((k: string) => !groupKeys.includes(k));
     }
 
     setCurrentRoles((prev) =>
@@ -1317,24 +1370,28 @@ export function SettingsTab({
   };
 
   // ================= SIDEBAR MENU DEFINITION =================
-  const settingsMenuItems: SettingsMenuItem[] = [
+  // ================= SIDEBAR MENU DEFINITION =================
+  const rawSettingsMenuItems: (SettingsMenuItem & { permission?: string })[] = [
     {
       key: 'company',
       icon: <ShopOutlined />,
       label: 'Thông tin doanh nghiệp',
       group: 'general',
+      permission: 'settings.brand.view',
     },
     {
       key: 'payment',
       icon: <CreditCardOutlined />,
       label: 'Cấu hình thanh toán & QR',
       group: 'general',
+      permission: 'settings.payment.view',
     },
     {
       key: 'print-templates',
       icon: <PrinterOutlined />,
       label: 'Mẫu phiếu in & Hóa đơn',
       group: 'general',
+      permission: 'settings.print.view',
     },
     {
       key: 'branches',
@@ -1342,6 +1399,7 @@ export function SettingsTab({
       label: 'Chi nhánh & Cơ sở',
       badge: <Tag color="default" className="font-mono text-[10px] m-0 bg-slate-100 border-slate-200">{currentBranches.length}</Tag>,
       group: 'operations',
+      permission: 'settings.branches.view',
     },
     {
       key: 'uom',
@@ -1349,6 +1407,7 @@ export function SettingsTab({
       label: 'Đơn vị tính (UOM)',
       badge: <Tag color="default" className="font-mono text-[10px] m-0 bg-slate-100 border-slate-200">{currentUoms.length}</Tag>,
       group: 'operations',
+      permission: 'settings.uom.view',
     },
     {
       key: 'employees',
@@ -1356,6 +1415,7 @@ export function SettingsTab({
       label: 'Nhân viên & Người dùng',
       badge: <Tag color="default" className="font-mono text-[10px] m-0 bg-slate-100 border-slate-200">{currentEmployees.length}</Tag>,
       group: 'security',
+      permission: 'settings.employees.view',
     },
     {
       key: 'permissions',
@@ -1363,8 +1423,23 @@ export function SettingsTab({
       label: 'Vai trò & Phân quyền',
       badge: <Tag color="gold" className="font-mono text-[10px] m-0">{currentRoles.length} vai trò</Tag>,
       group: 'security',
+      permission: 'settings.rbac.view',
     },
   ];
+
+  const settingsMenuItems = useMemo(() => {
+    return rawSettingsMenuItems.filter((item) => {
+      if (!item.permission) return true;
+      return hasPermission(item.permission);
+    });
+  }, [rawSettingsMenuItems, hasPermission]);
+
+  // Auto-switch to first accessible settings tab if current tab is forbidden for role
+  useEffect(() => {
+    if (settingsMenuItems.length > 0 && !settingsMenuItems.some((item) => item.key === settingsActiveTab)) {
+      setSettingsActiveTab(settingsMenuItems[0].key);
+    }
+  }, [settingsMenuItems, settingsActiveTab]);
 
   return (
     <div className="space-y-4 flex-1 flex flex-col h-full">
@@ -1396,15 +1471,10 @@ export function SettingsTab({
         <Segmented
           value={settingsActiveTab}
           onChange={(val: any) => setSettingsActiveTab(val)}
-          options={[
-            { value: 'company', label: '🏢 Doanh nghiệp' },
-            { value: 'payment', label: '💳 Thanh toán' },
-            { value: 'print-templates', label: '🖨️ Phiếu in' },
-            { value: 'branches', label: `🏬 Chi nhánh (${currentBranches.length})` },
-            { value: 'uom', label: `📏 ĐVT (${currentUoms.length})` },
-            { value: 'employees', label: `👥 Nhân viên (${currentEmployees.length})` },
-            { value: 'permissions', label: `🔐 Phân quyền (${currentRoles.length})` },
-          ]}
+          options={settingsMenuItems.map((item) => ({
+            value: item.key,
+            label: `${item.label}${item.badge ? ` (${item.key === 'branches' ? currentBranches.length : item.key === 'uom' ? currentUoms.length : item.key === 'employees' ? currentEmployees.length : currentRoles.length})` : ''}`,
+          }))}
           className="w-full bg-slate-100 p-1"
         />
       </div>
@@ -2546,9 +2616,9 @@ export function SettingsTab({
                                 </span>
                               ),
                             },
-                            ...PERMISSION_GROUPS.map((group) => {
+                            ...permissionCatalogGroups.map((group: PermissionGroup) => {
                               const groupTotal = group.permissions.length;
-                              const groupGranted = group.permissions.filter((p) => currentRole.permissions.includes(p.key)).length;
+                              const groupGranted = group.permissions.filter((p: PermissionDefinition) => currentRole.permissions.includes(p.key)).length;
                               return {
                                 key: group.groupKey,
                                 label: (
@@ -2569,14 +2639,14 @@ export function SettingsTab({
 
                       {/* Granular Matrix Cards */}
                       <div className="space-y-4">
-                        {displayedPermissionGroups.map((group) => {
-                          const groupKeys = group.permissions.map((p) => p.key);
-                          const groupGrantedCount = groupKeys.filter((k) => currentRole.permissions.includes(k)).length;
+                        {displayedPermissionGroups.map((group: PermissionGroup) => {
+                          const groupKeys = group.permissions.map((p: PermissionDefinition) => p.key);
+                          const groupGrantedCount = groupKeys.filter((k: string) => currentRole.permissions.includes(k)).length;
                           const groupTotalCount = groupKeys.length;
                           const groupAllChecked = groupGrantedCount === groupTotalCount && groupTotalCount > 0;
                           const groupIndeterminate = groupGrantedCount > 0 && groupGrantedCount < groupTotalCount;
 
-                          const subGroups = group.subGroups || [
+                          const subGroups: PermissionSubGroup[] = group.subGroups || [
                             { subKey: group.groupKey, subName: group.groupName, permissions: group.permissions },
                           ];
 
@@ -2606,13 +2676,13 @@ export function SettingsTab({
                               {/* SubGroups Grid */}
                               <div className="p-3 sm:p-4 bg-slate-50/20">
                                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
-                                  {subGroups.map((sub) => {
+                                  {subGroups.map((sub: PermissionSubGroup) => {
                                     const subTotalCount = sub.permissions.length;
-                                    const subGrantedCount = sub.permissions.filter((p) => currentRole.permissions.includes(p.key)).length;
+                                    const subGrantedCount = sub.permissions.filter((p: PermissionDefinition) => currentRole.permissions.includes(p.key)).length;
                                     const subAllChecked = subGrantedCount === subTotalCount && subTotalCount > 0;
                                     const subIndeterminate = subGrantedCount > 0 && subGrantedCount < subTotalCount;
 
-                                    const filteredSubPermissions = sub.permissions.filter((p) => {
+                                    const filteredSubPermissions = sub.permissions.filter((p: PermissionDefinition) => {
                                       if (!permissionKeywordSearch.trim()) return true;
                                       const q = permissionKeywordSearch.toLowerCase();
                                       return (
@@ -2646,7 +2716,7 @@ export function SettingsTab({
 
                                         {/* Permissions List with Checkboxes (NO SWITCHES) */}
                                         <div className="p-2.5 space-y-1.5 flex-1 bg-white">
-                                          {filteredSubPermissions.map((perm) => {
+                                          {filteredSubPermissions.map((perm: PermissionDefinition) => {
                                             const isChecked = currentRole.permissions.includes(perm.key);
                                             return (
                                               <div

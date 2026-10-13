@@ -27,6 +27,8 @@ public sealed record CreateProductRequest
     public string? ShortDescription { get; init; }
     public string? Description { get; init; }
     public string? Collection { get; init; }
+    public string? Branch { get; init; }
+    public string? BranchStocksJson { get; init; }
 }
 
 public sealed record UpdateProductRequest
@@ -57,4 +59,6 @@ public sealed record UpdateProductRequest
     public string? ShortDescription { get; init; }
     public string? Description { get; init; }
     public string? Collection { get; init; }
+    public string? Branch { get; init; }
+    public string? BranchStocksJson { get; init; }
 }

@@ -23,6 +23,8 @@ function mapCatalogToWishlistProduct(item: FeaturedCatalogProduct): Product {
   else if (rawSpace.includes('off') || rawSpace.includes('việc')) space = 'office';
   else space = 'living';
 
+  const isOutOfStock = item.stockType === 'out_of_stock' || (item.inStockQty !== undefined && item.inStockQty <= 0);
+
   return {
     id: item.id,
     sku: item.code || `SP-${item.id.slice(0, 5)}`,
@@ -39,8 +41,8 @@ function mapCatalogToWishlistProduct(item: FeaturedCatalogProduct): Product {
     subtitle: item.collection || 'Chế tác thủ công',
     description: item.description || '',
     dimensions: item.dimensions || 'Tiêu chuẩn',
-    stockStatus: item.stockType === 'custom' ? 'Đặt may đo' : 'Sẵn hàng',
-    inStock: item.stockType !== 'custom',
+    stockStatus: isOutOfStock ? 'Hết hàng' : (item.stockType === 'custom' ? 'Đặt may đo' : 'Sẵn hàng'),
+    inStock: !isOutOfStock && item.stockType !== 'custom',
     materialDetails: item.material || 'Gỗ tự nhiên cao cấp',
   };
 }
@@ -60,9 +62,12 @@ export default function WishlistDrawer({ isOpen, onClose }: WishlistDrawerProps)
     let isMounted = true;
     async function loadWishlistProducts() {
       try {
-        const list = await productApi.getProducts({ pageSize: 100 });
-        if (isMounted && Array.isArray(list)) {
-          setDbProducts(list.map(mapCatalogToWishlistProduct));
+        const fetched = await Promise.all(
+          wishlistIds.map((id) => productApi.getProductById(id))
+        );
+        const valid = fetched.filter((p): p is FeaturedCatalogProduct => p !== null);
+        if (isMounted) {
+          setDbProducts(valid.map(mapCatalogToWishlistProduct));
         }
       } catch (e) {
         console.warn('Could not load products for wishlist:', e);
@@ -86,6 +91,10 @@ export default function WishlistDrawer({ isOpen, onClose }: WishlistDrawerProps)
 
 
   const handleAddToCart = (item: Product) => {
+    if (!item.inStock || item.stockStatus === 'Hết hàng') {
+      message.warning('Sản phẩm đã hết hàng, không thể thêm vào giỏ!');
+      return;
+    }
     addToCart({
       id: item.id,
       sku: item.sku,
@@ -176,74 +185,95 @@ export default function WishlistDrawer({ isOpen, onClose }: WishlistDrawerProps)
             </Link>
           </div>
         ) : (
-          favoritedProducts.map((item) => (
-            <div
-              key={item.id}
-              className="bg-white border border-[#eae1dd] p-4 flex gap-4 shadow-sm hover:border-[#5d371f]/40 transition-all group"
-            >
-              {/* Product Thumbnail */}
-              <Link
-                href={`/products/${item.id}`}
-                onClick={onClose}
-                className="w-24 h-24 bg-[#f5ece8] border border-[#eae1dd] shrink-0 overflow-hidden relative block"
+          favoritedProducts.map((item) => {
+            const isOutOfStock = !item.inStock || item.stockStatus === 'Hết hàng';
+            return (
+              <div
+                key={item.id}
+                className="bg-white border border-[#eae1dd] p-4 flex gap-4 shadow-sm hover:border-[#5d371f]/40 transition-all group"
               >
-                <img
-                  src={item.image}
-                  alt={item.name}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                />
-                {item.tag && (
-                  <span className="absolute top-1 left-1 bg-[#784e34] text-white text-[9px] font-bold px-1.5 py-0.5">
-                    {item.tag}
-                  </span>
-                )}
-              </Link>
+                {/* Product Thumbnail */}
+                <Link
+                  href={`/products/${item.id}`}
+                  onClick={onClose}
+                  className="w-24 h-24 bg-[#f5ece8] border border-[#eae1dd] shrink-0 overflow-hidden relative block"
+                >
+                  <img
+                    src={item.image}
+                    alt={item.name}
+                    className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ${
+                      isOutOfStock ? 'grayscale-[40%] opacity-80' : ''
+                    }`}
+                  />
+                  {isOutOfStock ? (
+                    <span className="absolute top-1 left-1 bg-[#ba1a1a] text-white text-[9px] font-bold px-1.5 py-0.5">
+                      Hết hàng
+                    </span>
+                  ) : item.tag ? (
+                    <span className="absolute top-1 left-1 bg-[#784e34] text-white text-[9px] font-bold px-1.5 py-0.5">
+                      {item.tag}
+                    </span>
+                  ) : null}
+                </Link>
 
-              {/* Product Details & Actions */}
-              <div className="flex-1 flex flex-col justify-between min-w-0">
-                <div>
-                  <div className="flex items-start justify-between gap-2">
-                    <Link
-                      href={`/products/${item.id}`}
-                      onClick={onClose}
-                      className="font-serif text-sm font-bold text-[#1f1b19] hover:text-[#5d371f] transition-colors truncate block"
-                    >
-                      {item.name}
-                    </Link>
+                {/* Product Details & Actions */}
+                <div className="flex-1 flex flex-col justify-between min-w-0">
+                  <div>
+                    <div className="flex items-start justify-between gap-2">
+                      <Link
+                        href={`/products/${item.id}`}
+                        onClick={onClose}
+                        className="font-serif text-sm font-bold text-[#1f1b19] hover:text-[#5d371f] transition-colors truncate block"
+                      >
+                        {item.name}
+                      </Link>
+                      <button
+                        onClick={() => handleRemove(item.id, item.name)}
+                        type="button"
+                        title="Bỏ thích"
+                        className="text-[#83746c] hover:text-[#ba1a1a] transition-colors p-0.5 cursor-pointer shrink-0"
+                      >
+                        <DeleteOutlined className="text-sm" />
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <p className="text-[11px] text-[#83746c] truncate">
+                        {item.woodType}
+                      </p>
+                      {isOutOfStock && (
+                        <span className="text-[10px] font-bold text-[#ba1a1a] bg-[#ffdad6] px-1.5 py-0.2 shrink-0">
+                          Hết hàng
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="mt-2 pt-2 border-t border-[#f5ece8] flex items-center justify-between gap-2">
+                    <div>
+                      <span className="text-xs font-bold text-[#5d371f] font-data-mono block">
+                        {item.price.toLocaleString('vi-VN')}đ
+                      </span>
+                    </div>
+
                     <button
-                      onClick={() => handleRemove(item.id, item.name)}
+                      onClick={() => handleAddToCart(item)}
+                      disabled={isOutOfStock}
                       type="button"
-                      title="Bỏ thích"
-                      className="text-[#83746c] hover:text-[#ba1a1a] transition-colors p-0.5 cursor-pointer shrink-0"
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold transition-colors shadow-sm ${
+                        isOutOfStock
+                          ? 'bg-[#eae1dd] text-[#83746c] cursor-not-allowed border border-[#eae1dd]'
+                          : 'bg-[#5d371f] text-white hover:bg-[#784e34] cursor-pointer'
+                      }`}
                     >
-                      <DeleteOutlined className="text-sm" />
+                      <ShoppingCartOutlined />
+                      <span>{isOutOfStock ? 'Hết hàng' : 'Thêm giỏ'}</span>
                     </button>
                   </div>
-
-                  <p className="text-[11px] text-[#83746c] truncate mt-0.5">
-                    {item.woodType}
-                  </p>
-                </div>
-
-                <div className="mt-2 pt-2 border-t border-[#f5ece8] flex items-center justify-between gap-2">
-                  <div>
-                    <span className="text-xs font-bold text-[#5d371f] font-data-mono block">
-                      {item.price.toLocaleString('vi-VN')}đ
-                    </span>
-                  </div>
-
-                  <button
-                    onClick={() => handleAddToCart(item)}
-                    type="button"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#5d371f] text-white text-[11px] font-semibold hover:bg-[#784e34] transition-colors shadow-sm cursor-pointer"
-                  >
-                    <ShoppingCartOutlined />
-                    <span>Thêm giỏ</span>
-                  </button>
                 </div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
 

@@ -45,6 +45,10 @@ function mapCatalogToCategoryProduct(item: FeaturedCatalogProduct): CategoryProd
 
   const woodMaterialName = item.material || item.metaInfo || (woodMaterial === 'walnut' ? 'Gỗ óc chó Bắc Mỹ' : woodMaterial === 'oak' ? 'Gỗ sồi tự nhiên' : woodMaterial === 'ash' ? 'Gỗ tần bì tự nhiên' : 'Khung gỗ bọc da bò Ý');
 
+  const isOutOfStock = (typeof item.inStock === 'number' && item.inStock <= 0) || item.stockType === 'out_of_stock';
+  const stockStatus = isOutOfStock ? 'out_of_stock' : (item.stockType === 'custom' ? 'custom' : 'showroom');
+  const stockLabel = isOutOfStock ? 'Hết hàng' : (item.stockType === 'custom' ? 'Đặt may đo' : 'Sẵn tại Showroom');
+
   return {
     id: item.id,
     sku: item.code || `SP-${item.id.slice(0, 5)}`,
@@ -58,11 +62,13 @@ function mapCatalogToCategoryProduct(item: FeaturedCatalogProduct): CategoryProd
     colorTone: (item.color || '').toLowerCase().includes('nâu') ? 'chestnut' : 'light-oak',
     price: item.price,
     originalPrice: item.originalPrice && item.originalPrice > item.price ? item.originalPrice : undefined,
-    stockStatus: item.stockType === 'custom' ? 'custom' : 'showroom',
-    stockLabel: item.stockType === 'custom' ? 'Đặt may đo' : 'Sẵn tại Showroom',
+    stockStatus,
+    stockLabel,
+    inStock: !isOutOfStock,
+    inStockQty: typeof item.inStock === 'number' ? item.inStock : 0,
     image: item.image || '/logo.png',
     macroImage: item.images?.[1] || item.image || '/logo.png',
-    tag: item.stockNote || item.collection || 'Tuyệt tác mộc',
+    tag: isOutOfStock ? 'Hết hàng' : (item.stockNote || item.collection || 'Tuyệt tác mộc'),
     description: item.description || item.collection || `Sản phẩm ${item.name} chế tác tinh xảo từ gỗ tự nhiên`,
     dimensions: item.dimensions || 'Theo thiết kế',
     warranty: item.warranty || 'Bảo hành 5 năm',
@@ -429,6 +435,8 @@ function ProductsContent() {
 
   // Dynamic Products State loaded from API
   const [catalogProducts, setCatalogProducts] = useState<CategoryProduct[]>([]);
+  const [totalItems, setTotalItems] = useState<number>(0);
+  const [pageSize, setPageSize] = useState<number>(9);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   // Dynamically extract distinct wood materials from real database products
@@ -443,15 +451,28 @@ function ProductsContent() {
       .sort((a, b) => b.count - a.count);
   }, [catalogProducts]);
 
-  // Fetch real products from Backend (load all products from DB)
+  // Reset page when URL parameters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [spaceParam, categoryParam, queryParam, pathname]);
+
+  // Fetch real products from Backend using server-side pagination & DB filters
   useEffect(() => {
     let isMounted = true;
     async function loadProducts() {
       setIsLoading(true);
       try {
-        const items = await productApi.getProducts({ pageSize: 500 });
-        if (isMounted && Array.isArray(items)) {
-          setCatalogProducts(items.map(mapCatalogToCategoryProduct));
+        const querySpace = spaceParam || (pathname === '/living-room' ? 'living' : undefined);
+        const res = await productApi.getPagedProducts({
+          page: currentPage,
+          pageSize: pageSize,
+          space: querySpace && querySpace !== 'all' ? querySpace : undefined,
+          category: categoryParam || undefined,
+          search: queryParam || searchQuery || undefined,
+        });
+        if (isMounted) {
+          setCatalogProducts(res.items.map(mapCatalogToCategoryProduct));
+          setTotalItems(res.totalItems);
         }
       } catch (err) {
         console.warn('Could not load products from API:', err);
@@ -463,7 +484,7 @@ function ProductsContent() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [currentPage, pageSize, spaceParam, categoryParam, queryParam, searchQuery, pathname]);
 
   // Synchronize state with URL parameters
   useEffect(() => {
@@ -549,11 +570,16 @@ function ProductsContent() {
     setSearchQuery('');
     setMaxPrice(75);
     setSortBy('best-selling');
+    setCurrentPage(1);
     message.info('Đã thiết lập lại toàn bộ bộ lọc');
   };
 
   // Cart & Wishlist Handlers
   const handleAddToCart = (product: Product, quantity = 1) => {
+    if (!product.inStock || product.stockStatus === 'Hết hàng') {
+      message.warning(`Sản phẩm "${product.name}" hiện đang hết hàng, không thể thêm vào giỏ!`);
+      return;
+    }
     addToCart({
       id: product.id,
       sku: product.sku,
@@ -569,6 +595,10 @@ function ProductsContent() {
   };
 
   const handleAddCategoryProductToCart = (item: CategoryProduct) => {
+    if (item.stockStatus === 'out_of_stock' || item.inStock === false) {
+      message.warning(`Sản phẩm "${item.name}" hiện đang hết hàng, không thể thêm vào giỏ!`);
+      return;
+    }
     addToCart({
       id: item.id,
       sku: item.sku,
@@ -584,6 +614,7 @@ function ProductsContent() {
   };
 
   const handleOpenQuickViewFromCategory = (item: CategoryProduct) => {
+    const isOutOfStock = item.stockStatus === 'out_of_stock' || item.inStock === false;
     const p: Product = {
       id: item.id,
       sku: item.sku,
@@ -599,8 +630,8 @@ function ProductsContent() {
       subtitle: item.woodMaterialName,
       description: item.description,
       dimensions: item.dimensions,
-      stockStatus: item.stockLabel,
-      inStock: true,
+      stockStatus: isOutOfStock ? 'Hết hàng' : item.stockLabel,
+      inStock: !isOutOfStock,
       materialDetails: item.woodMaterialName,
     };
     setQuickViewProduct(p);
@@ -616,58 +647,14 @@ function ProductsContent() {
     }
   };
 
-  // Filtered & Sorted Products
+  // Filtered & Sorted Products from the current page
   const filteredProducts = useMemo(() => {
     return catalogProducts
       .filter((item) => {
-        // Space filter
-        if (selectedSpaces.length > 0 && !selectedSpaces.includes(item.space)) {
-          return false;
-        }
-
-        // Specific room subcategory filter
-        if (activeSpecificRoom && SPACE_SUBCATEGORIES[activeSpecificRoom]) {
-          if (selectedSubcategories.length === 0) {
-            return false;
-          }
-          const roomConfig = SPACE_SUBCATEGORIES[activeSpecificRoom];
-          const matchesSub = selectedSubcategories.some((subId) => {
-            const opt = roomConfig.options.find((o) => o.id === subId);
-            if (opt) return opt.matcher(item);
-            return matchesCategoryFilter(item, subId);
-          });
-          if (!matchesSub) {
-            return false;
-          }
-        }
-
-        // Category filter from URL parameter
-        if (selectedCategory && !matchesCategoryFilter(item, selectedCategory)) {
-          return false;
-        }
-
-        // Dynamic Material filter from DB
-        if (availableMaterials.length > 0) {
-          if (selectedMaterials.length === 0) {
-            return false;
-          }
-          if (selectedMaterials.length < availableMaterials.length) {
-            const itemMat = extractPrimaryWood(item.woodMaterialName || item.description);
-            if (!selectedMaterials.includes(itemMat)) {
-              return false;
-            }
-          }
-        }
-
-        // Search query filter
-        if (searchQuery.trim()) {
-          const q = searchQuery.toLowerCase().trim();
-          const matchName = item.name.toLowerCase().includes(q);
-          const matchDesc = item.description.toLowerCase().includes(q);
-          const matchSku = item.sku.toLowerCase().includes(q);
-          const matchSpace = item.spaceName.toLowerCase().includes(q);
-          const matchWood = item.woodMaterialName.toLowerCase().includes(q);
-          if (!matchName && !matchDesc && !matchSku && !matchSpace && !matchWood) {
+        // Material filter
+        if (availableMaterials.length > 0 && selectedMaterials.length > 0 && selectedMaterials.length < availableMaterials.length) {
+          const itemMat = extractPrimaryWood(item.woodMaterialName || item.description);
+          if (!selectedMaterials.includes(itemMat)) {
             return false;
           }
         }
@@ -686,22 +673,13 @@ function ProductsContent() {
       });
   }, [
     catalogProducts,
-    selectedSpaces,
-    activeSpecificRoom,
-    selectedSubcategories,
     selectedMaterials,
     availableMaterials,
-    selectedCategory,
-    searchQuery,
     maxPrice,
     sortBy,
   ]);
 
-  const PAGE_SIZE = 9;
-  const pagedProducts = useMemo(() => {
-    const start = (currentPage - 1) * PAGE_SIZE;
-    return filteredProducts.slice(start, start + PAGE_SIZE);
-  }, [filteredProducts, currentPage]);
+  const pagedProducts = filteredProducts;
 
 
   const formatPrice = (val: number) => {
@@ -896,7 +874,7 @@ function ProductsContent() {
               {/* Controls & Sorters Bar */}
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white p-3.5 px-5 rounded-none shadow-sm border border-[#eae1dd]">
                 <div className="flex items-center gap-2 font-body-sm text-xs sm:text-sm text-[#51443d]">
-                  <span className="font-bold text-[#1f1b19]">{filteredProducts.length}</span> mẫu thiết kế nội thất
+                  <span className="font-bold text-[#1f1b19]">{totalItems || filteredProducts.length}</span> mẫu thiết kế nội thất
                   <span className="text-[#83746c]">|</span>
                   <span className="hidden md:inline text-[#3f4332]">
                     Chế tác thủ công từ D2 LUXURY
@@ -957,18 +935,19 @@ function ProductsContent() {
                 <div className="grid gap-6 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
                   {pagedProducts.map((p) => {
                     const isWishlisted = wishlistIds.includes(p.id);
+                    const isOutOfStock = p.stockStatus === 'out_of_stock' || p.inStock === false;
 
                     return (
                       <Link
                         key={p.id}
                         href={`/products/${p.id}`}
-                        className="group flex flex-col bg-white rounded-none overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 border border-[#eae1dd] hover-lift cursor-pointer text-inherit no-underline"
+                        className="group flex flex-col bg-white rounded-none overflow-hidden shadow-xs hover:border-[#5d371f]/50 transition-colors duration-300 border border-[#eae1dd] cursor-pointer text-inherit no-underline"
                       >
                         {/* Image & Macro Preview */}
                         <div className="relative aspect-[4/3] bg-[#eae1dd] overflow-hidden">
                           <img
                             alt={p.name}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                            className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ${isOutOfStock ? 'grayscale-[40%] opacity-80' : ''}`}
                             src={p.image}
                           />
 
@@ -983,10 +962,21 @@ function ProductsContent() {
 
                           {/* Badges */}
                           <div className="absolute top-3 left-3">
-                            <Tag color="rgba(255,255,255,0.9)" className="text-[#5d371f] font-bold text-xs border border-[#d5c3ba]/60 rounded-none px-2.5 py-0.5 backdrop-blur-sm shadow-sm m-0">
-                              {p.stockLabel}
+                            <Tag
+                              color={isOutOfStock ? "#ba1a1a" : "rgba(255,255,255,0.9)"}
+                              className={`${isOutOfStock ? '!text-white !bg-[#ba1a1a] !border-[#ba1a1a]' : '!text-[#5d371f] !border-[#d5c3ba]/60'} font-bold text-xs rounded-none px-2.5 py-0.5 backdrop-blur-sm shadow-sm m-0`}
+                            >
+                              {isOutOfStock ? 'Hết hàng' : p.stockLabel}
                             </Tag>
                           </div>
+
+                          {isOutOfStock && (
+                            <div className="absolute inset-0 bg-black/30 flex items-center justify-center pointer-events-none">
+                              <span className="px-3 py-1 bg-[#ba1a1a] text-white text-xs font-bold uppercase tracking-wider shadow-lg">
+                                Hết hàng
+                              </span>
+                            </div>
+                          )}
                         </div>
 
                         {/* Card Info */}
@@ -1009,19 +999,20 @@ function ProductsContent() {
                               </span>
                             </div>
 
-
                             <div className="flex items-center gap-1.5">
                               <Button
                                 type="primary"
                                 size="middle"
+                                disabled={isOutOfStock}
                                 onClick={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
+                                  if (isOutOfStock) return;
                                   handleAddCategoryProductToCart(p);
                                 }}
-                                className="bg-[#5d371f] hover:!bg-[#784e34] rounded-none shadow-md flex items-center justify-center"
+                                className={`${isOutOfStock ? '!bg-[#f0ebe8] !text-[#a89b93] !border-[#eae1dd] !cursor-not-allowed' : 'bg-[#5d371f] hover:!bg-[#784e34] shadow-md'} rounded-none flex items-center justify-center`}
                                 icon={<ShoppingCartOutlined className="text-[16px]" />}
-                                title="Thêm vào giỏ hàng"
+                                title={isOutOfStock ? "Sản phẩm hiện đang hết hàng" : "Thêm vào giỏ hàng"}
                               />
                             </div>
                           </div>
@@ -1033,21 +1024,32 @@ function ProductsContent() {
               )}
 
               {/* Ant Design Pagination */}
-              {filteredProducts.length > 0 && (
+              {totalItems > 0 && (
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-[#eae1dd]">
                   <span className="font-body-sm text-xs text-[#83746c]">
                     Hiển thị <span className="font-bold text-[#1f1b19]">
-                      {Math.min((currentPage - 1) * PAGE_SIZE + 1, filteredProducts.length)} - {Math.min(currentPage * PAGE_SIZE, filteredProducts.length)}
+                      {Math.min((currentPage - 1) * pageSize + 1, totalItems)} - {Math.min(currentPage * pageSize, totalItems)}
                     </span> của{' '}
-                    <span className="font-bold text-[#1f1b19]">{filteredProducts.length}</span> mẫu thiết kế
+                    <span className="font-bold text-[#1f1b19]">{totalItems}</span> mẫu thiết kế
                   </span>
 
                   <Pagination
                     current={currentPage}
-                    total={filteredProducts.length}
-                    pageSize={PAGE_SIZE}
-                    onChange={(page) => setCurrentPage(page)}
-                    showSizeChanger={false}
+                    total={totalItems}
+                    pageSize={pageSize}
+                    showSizeChanger={true}
+                    pageSizeOptions={['6', '9', '12', '24', '36', '48']}
+                    onShowSizeChange={(current, size) => {
+                      setPageSize(size);
+                      setCurrentPage(1);
+                    }}
+                    onChange={(page, size) => {
+                      setCurrentPage(page);
+                      if (size && size !== pageSize) {
+                        setPageSize(size);
+                      }
+                      window.scrollTo({ top: 300, behavior: 'smooth' });
+                    }}
                   />
                 </div>
               )}

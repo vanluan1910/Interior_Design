@@ -5,7 +5,7 @@ import Header from '@/components/Header';
 import Hero from '@/components/Hero';
 import LivingSpaces from '@/components/LivingSpaces';
 import FeaturedProducts from '@/components/FeaturedProducts';
-import CraftsmanshipStory from '@/components/CraftsmanshipStory';
+import ProjectLookbook from '@/components/ProjectLookbook';
 import MaterialExperience from '@/components/MaterialExperience';
 import ShowroomSection from '@/components/ShowroomSection';
 import Footer from '@/components/Footer';
@@ -223,9 +223,6 @@ export default function HomePage() {
         {/* Hero Banner with Integrated Service Guarantees */}
         <Hero onOpenBooking={() => {}} hero={homeData?.hero} />
 
-        {/* Bento Living Space Categories */}
-        <LivingSpaces onSelectCategory={handleCategorySelect} spaces={homeData?.livingSpaces} />
-
         {/* Featured Artisan Products */}
         <FeaturedProducts
           products={products}
@@ -237,8 +234,11 @@ export default function HomePage() {
           wishlistIds={wishlistIds}
         />
 
-        {/* Craftsmanship & Workshop Story */}
-        <CraftsmanshipStory onOpenBooking={() => {}} />
+        {/* Bento Living Space Categories */}
+        <LivingSpaces onSelectCategory={handleCategorySelect} spaces={homeData?.livingSpaces} />
+
+        {/* Featured Villa & Penthouse Real Projects Lookbook */}
+        <ProjectLookbook onOpenBooking={() => {}} />
 
         {/* Interactive Material Experience */}
         <MaterialExperience products={products} />

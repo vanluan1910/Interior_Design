@@ -82,10 +82,10 @@ public sealed class CustomersController : ApiControllerBase
 
             query = query.OrderByDescending(x => x.CreatedAt);
 
-            if (page.HasValue && pageSize.HasValue && pageSize.Value > 0)
+            if (pageSize.HasValue && pageSize.Value > 0)
             {
-                var p = Math.Max(1, page.Value);
-                var ps = Math.Max(1, pageSize.Value);
+                var p = Math.Max(1, page ?? 1);
+                var ps = Math.Min(1000, pageSize.Value);
                 query = query.Skip((p - 1) * ps).Take(ps);
             }
 
@@ -106,14 +106,20 @@ public sealed class CustomersController : ApiControllerBase
     [HttpGet("stats")]
     public async Task<IActionResult> GetCustomerStats(CancellationToken cancellationToken)
     {
-        var customers = await _context.Customers.AsNoTracking().ToListAsync(cancellationToken);
+        var total = await _context.Customers.CountAsync(cancellationToken);
+        var active = await _context.Customers.CountAsync(x => x.Status == "active", cancellationToken);
+        var individual = await _context.Customers.CountAsync(x => x.CustomerType == "individual" || string.IsNullOrWhiteSpace(x.CustomerType), cancellationToken);
+        var organization = await _context.Customers.CountAsync(x => x.CustomerType == "organization", cancellationToken);
+        var totalDebt = await _context.Customers.SumAsync(x => (decimal?)x.Debt, cancellationToken) ?? 0;
+        var totalRevenue = await _context.Customers.SumAsync(x => (decimal?)x.TotalSpent, cancellationToken) ?? 0;
+
         var stats = new CustomerStatsDto(
-            TotalCustomers: customers.Count,
-            ActiveCustomers: customers.Count(x => x.Status == "active"),
-            IndivualCount: customers.Count(x => x.CustomerType == "individual" || string.IsNullOrWhiteSpace(x.CustomerType)),
-            OrganizationCount: customers.Count(x => x.CustomerType == "organization"),
-            TotalDebt: customers.Sum(x => x.Debt),
-            TotalRevenue: customers.Sum(x => x.TotalSpent)
+            TotalCustomers: total,
+            ActiveCustomers: active,
+            IndivualCount: individual,
+            OrganizationCount: organization,
+            TotalDebt: totalDebt,
+            TotalRevenue: totalRevenue
         );
 
         return Ok(ApiResponse<CustomerStatsDto>.Ok(stats));

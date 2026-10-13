@@ -595,17 +595,43 @@ export function printOrderInvoice(order: any, options?: { templateType?: 'invoic
           </tr>
         </thead>
         <tbody class="divide-y divide-dashed divide-slate-200">
-          <tr>
-            <td class="py-1.5 text-center font-mono">1</td>
-            <td class="py-1.5">
-              <div class="font-semibold text-slate-900">${order.productName || 'Sản phẩm nội thất'}</div>
-              <div class="text-[9px] text-slate-500">${order.productSpec || (order.woodType ? `Chất liệu gỗ ${order.woodType}, may đo hoàn thiện` : 'Gia công theo thiết kế 3D')}</div>
-            </td>
-            <td class="py-1.5 text-center text-slate-600">Bộ</td>
-            <td class="py-1.5 text-center font-semibold">1</td>
-            <td class="py-1.5 text-right font-mono">${(order.value || 0).toLocaleString('vi-VN')}</td>
-            <td class="py-1.5 text-right font-mono font-bold text-slate-900">${(order.value || 0).toLocaleString('vi-VN')}</td>
-          </tr>
+          ${order.items && order.items.length > 0 ? (
+            order.items.map((it: any, idx: number) => `
+              <tr>
+                <td class="py-1.5 text-center font-mono">${idx + 1}</td>
+                <td class="py-1.5">
+                  <div class="font-semibold text-slate-900">${(it.productName || '').replace(/\s*\(x\d+\)/gi, '')}</div>
+                  <div class="text-[9px] text-slate-500">${it.dimensions || it.material || order.productSpec || (order.woodType ? `Chất liệu gỗ ${order.woodType}` : 'Gia công may đo')}</div>
+                </td>
+                <td class="py-1.5 text-center text-slate-600">Bộ</td>
+                <td class="py-1.5 text-center font-semibold">${it.quantity || 1}</td>
+                <td class="py-1.5 text-right font-mono">${(it.unitPrice || 0).toLocaleString('vi-VN')}</td>
+                <td class="py-1.5 text-right font-mono font-bold text-slate-900">${(it.totalPrice || ((it.unitPrice || 0) * (it.quantity || 1))).toLocaleString('vi-VN')}</td>
+              </tr>
+            `).join('')
+          ) : (() => {
+            const cleanName = (order.productName || 'Sản phẩm nội thất').replace(/\s*\(x\d+\)/gi, '');
+            const matches = Array.from((order.productName || '').matchAll(/\(x(\d+)\)/gi)) as RegExpMatchArray[];
+            const qty = (typeof order.quantity === 'number' && order.quantity > 0)
+              ? order.quantity
+              : matches.length > 0
+                ? matches.reduce((sum: number, m: any) => sum + (parseInt(m[1], 10) || 1), 0)
+                : 1;
+            const unitPrice = qty > 1 ? Math.round((order.value || 0) / qty) : (order.value || 0);
+            return `
+              <tr>
+                <td class="py-1.5 text-center font-mono">1</td>
+                <td class="py-1.5">
+                  <div class="font-semibold text-slate-900">${cleanName}</div>
+                  <div class="text-[9px] text-slate-500">${order.productSpec || (order.woodType ? `Chất liệu gỗ ${order.woodType}, may đo hoàn thiện` : 'Gia công theo thiết kế 3D')}</div>
+                </td>
+                <td class="py-1.5 text-center text-slate-600">Bộ</td>
+                <td class="py-1.5 text-center font-semibold">${qty}</td>
+                <td class="py-1.5 text-right font-mono">${unitPrice.toLocaleString('vi-VN')}</td>
+                <td class="py-1.5 text-right font-mono font-bold text-slate-900">${(order.value || 0).toLocaleString('vi-VN')}</td>
+              </tr>
+            `;
+          })()}
         </tbody>
       </table>
     </div>

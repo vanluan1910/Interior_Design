@@ -83,10 +83,10 @@ public sealed class OrdersController : ApiControllerBase
 
             query = query.OrderByDescending(x => x.OrderDate).ThenByDescending(x => x.CreatedAt);
 
-            if (page.HasValue && pageSize.HasValue && pageSize.Value > 0)
+            if (pageSize.HasValue && pageSize.Value > 0)
             {
-                var p = Math.Max(1, page.Value);
-                var ps = Math.Max(1, pageSize.Value);
+                var p = Math.Max(1, page ?? 1);
+                var ps = Math.Min(1000, pageSize.Value);
                 query = query.Skip((p - 1) * ps).Take(ps);
             }
 
@@ -107,14 +107,20 @@ public sealed class OrdersController : ApiControllerBase
     [HttpGet("stats")]
     public async Task<IActionResult> GetOrderStats(CancellationToken cancellationToken)
     {
-        var orders = await _context.Orders.AsNoTracking().ToListAsync(cancellationToken);
+        var total = await _context.Orders.CountAsync(cancellationToken);
+        var pending = await _context.Orders.CountAsync(x => x.Status == OrderStatus.Pending, cancellationToken);
+        var processing = await _context.Orders.CountAsync(x => x.Status == OrderStatus.Processing, cancellationToken);
+        var completed = await _context.Orders.CountAsync(x => x.Status == OrderStatus.Completed, cancellationToken);
+        var totalRevenue = await _context.Orders.SumAsync(x => (decimal?)(x.TotalAmount > 0 ? x.TotalAmount : x.SubTotal), cancellationToken) ?? 0;
+        var totalDeposit = await _context.Orders.SumAsync(x => (decimal?)x.DepositAmount, cancellationToken) ?? 0;
+
         var stats = new OrderStatsDto(
-            TotalOrders: orders.Count,
-            PendingOrders: orders.Count(x => x.Status == OrderStatus.Pending),
-            ProcessingOrders: orders.Count(x => x.Status == OrderStatus.Processing),
-            CompletedOrders: orders.Count(x => x.Status == OrderStatus.Completed),
-            TotalRevenue: orders.Sum(x => x.TotalAmount > 0 ? x.TotalAmount : x.SubTotal),
-            TotalDeposit: orders.Sum(x => x.DepositAmount)
+            TotalOrders: total,
+            PendingOrders: pending,
+            ProcessingOrders: processing,
+            CompletedOrders: completed,
+            TotalRevenue: totalRevenue,
+            TotalDeposit: totalDeposit
         );
 
         return Ok(ApiResponse<OrderStatsDto>.Ok(stats));
@@ -138,7 +144,27 @@ public sealed class OrdersController : ApiControllerBase
     }
 
     /// <summary>
-    /// Tạo mới đơn hàng
+    /// Lấy chi tiết đơn hàng theo mã đơn (OrderCode)
+    /// </summary>
+    [HttpGet("by-code/{code}")]
+    public async Task<IActionResult> GetOrderByCode(string code, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(code))
+            return BadRequest(ApiResponse<OrderDto>.Fail("Mã đơn hàng không hợp lệ."));
+
+        var order = await _context.Orders
+            .Include(o => o.Items)
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.OrderCode.ToLower() == code.Trim().ToLower(), cancellationToken);
+
+        if (order is null)
+            return NotFound(ApiResponse<OrderDto>.Fail($"Không tìm thấy đơn hàng với mã '{code}'."));
+
+        return Ok(ApiResponse<OrderDto>.Ok(OrderMapper.ToDto(order)));
+    }
+
+    /// <summary>
+    /// Tạo mới đơn hàng (Checkout / Đặt hàng trực tiếp vào Database thật)
     /// </summary>
     [HttpPost]
     public async Task<IActionResult> CreateOrder([FromBody] CreateOrderRequest request, CancellationToken cancellationToken)
@@ -149,6 +175,11 @@ public sealed class OrdersController : ApiControllerBase
         if (string.IsNullOrWhiteSpace(request.CustomerPhone))
             return BadRequest(ApiResponse<OrderDto>.Fail("Số điện thoại không được để trống."));
 
+        var cleanPhone = request.CustomerPhone.Trim();
+        var cleanName = request.CustomerName.Trim();
+        var cleanEmail = request.CustomerEmail?.Trim() ?? string.Empty;
+
+        // Sinh mã đơn hàng tự động duy nhất
         var code = request.OrderCode?.Trim().ToUpper();
         if (string.IsNullOrWhiteSpace(code))
         {
@@ -192,28 +223,111 @@ public sealed class OrdersController : ApiControllerBase
             deadlineDate = parsedDeadline;
         }
 
+        // Xác định chi nhánh đặt hàng chuẩn xác
+        var targetBranch = !string.IsNullOrWhiteSpace(request.Branch) ? request.Branch.Trim() : (!string.IsNullOrWhiteSpace(request.Showroom) ? request.Showroom.Trim() : null);
+        var allBranches = await _context.Branches.AsNoTracking().Where(b => !b.IsDeleted).ToListAsync(cancellationToken);
+        if (!string.IsNullOrWhiteSpace(targetBranch))
+        {
+            var mb = allBranches.FirstOrDefault(b => IsBranchMatch(b.Name, targetBranch));
+            if (mb != null) targetBranch = mb.Name;
+        }
+        else if (allBranches.Count > 0)
+        {
+            targetBranch = allBranches[0].Name;
+        }
+        else
+        {
+            targetBranch = "Chi nhánh Hà Nội";
+        }
+
+        // Xử lý giỏ hàng & sản phẩm từ database thật
         decimal subTotal = request.Value ?? 0;
         var items = new List<OrderItem>();
+        var orderId = Guid.NewGuid();
+
         if (request.Items != null && request.Items.Count > 0)
         {
             subTotal = 0;
             foreach (var itemReq in request.Items)
             {
-                var itemTotal = itemReq.UnitPrice * itemReq.Quantity;
+                Product? product = null;
+
+                // 1. Tìm theo ProductId nếu có
+                if (itemReq.ProductId.HasValue && itemReq.ProductId.Value != Guid.Empty)
+                {
+                    product = await _context.Products.FirstOrDefaultAsync(p => p.Id == itemReq.ProductId.Value, cancellationToken);
+                }
+
+                // 2. Tìm theo SKU nếu chưa thấy
+                if (product == null && !string.IsNullOrWhiteSpace(itemReq.ProductSku))
+                {
+                    product = await _context.Products.FirstOrDefaultAsync(p => p.Sku.ToLower() == itemReq.ProductSku.Trim().ToLower(), cancellationToken);
+                }
+
+                // 3. Tìm theo Tên nếu chưa thấy
+                if (product == null && !string.IsNullOrWhiteSpace(itemReq.ProductName))
+                {
+                    product = await _context.Products.FirstOrDefaultAsync(p => p.Name.ToLower() == itemReq.ProductName.Trim().ToLower(), cancellationToken);
+                }
+
+                var qty = Math.Max(1, itemReq.Quantity);
+                var unitPrice = itemReq.UnitPrice > 0 ? itemReq.UnitPrice : (product?.Price ?? 0);
+                var itemTotal = unitPrice * qty;
                 subTotal += itemTotal;
+
                 items.Add(new OrderItem
                 {
-                    ProductId = itemReq.ProductId ?? Guid.NewGuid(),
-                    ProductName = itemReq.ProductName,
-                    ProductSku = itemReq.ProductSku ?? "",
-                    ProductImage = itemReq.ProductImage ?? "",
-                    Material = itemReq.Material ?? "",
-                    Dimensions = itemReq.Dimensions ?? "",
-                    UnitPrice = itemReq.UnitPrice,
-                    Quantity = Math.Max(1, itemReq.Quantity),
+                    Id = Guid.NewGuid(),
+                    OrderId = orderId,
+                    ProductId = product?.Id ?? itemReq.ProductId ?? Guid.NewGuid(),
+                    ProductName = !string.IsNullOrWhiteSpace(itemReq.ProductName) ? itemReq.ProductName : (product?.Name ?? "Sản phẩm nội thất"),
+                    ProductSku = !string.IsNullOrWhiteSpace(itemReq.ProductSku) ? itemReq.ProductSku : (product?.Sku ?? string.Empty),
+                    ProductImage = !string.IsNullOrWhiteSpace(itemReq.ProductImage) ? itemReq.ProductImage : (product?.MainImageUrl ?? string.Empty),
+                    Material = !string.IsNullOrWhiteSpace(itemReq.Material) ? itemReq.Material : (product?.Material ?? "Gỗ tự nhiên cao cấp"),
+                    Dimensions = !string.IsNullOrWhiteSpace(itemReq.Dimensions) ? itemReq.Dimensions : (product?.Dimensions ?? string.Empty),
+                    UnitPrice = unitPrice,
+                    Quantity = qty,
                     TotalPrice = itemTotal
                 });
             }
+        }
+        else if (!string.IsNullOrWhiteSpace(request.ProductName))
+        {
+            Product? product = null;
+            if (!string.IsNullOrWhiteSpace(request.ProductSku))
+            {
+                product = await _context.Products.FirstOrDefaultAsync(p => p.Sku.ToLower() == request.ProductSku.Trim().ToLower(), cancellationToken);
+            }
+            if (product == null)
+            {
+                product = await _context.Products.FirstOrDefaultAsync(p => p.Name.ToLower() == request.ProductName.Trim().ToLower(), cancellationToken);
+            }
+
+            var qty = 1;
+            var unitPrice = request.Value > 0 ? request.Value.Value : (product?.Price ?? 0);
+            var itemTotal = unitPrice * qty;
+            subTotal = itemTotal;
+
+            items.Add(new OrderItem
+            {
+                Id = Guid.NewGuid(),
+                OrderId = orderId,
+                ProductId = product?.Id ?? Guid.NewGuid(),
+                ProductName = request.ProductName.Trim(),
+                ProductSku = product?.Sku ?? request.ProductSku ?? string.Empty,
+                ProductImage = product?.MainImageUrl ?? string.Empty,
+                Material = request.WoodType ?? product?.Material ?? "Gỗ tự nhiên cao cấp",
+                Dimensions = product?.Dimensions ?? request.ProductSpec ?? string.Empty,
+                UnitPrice = unitPrice,
+                Quantity = qty,
+                TotalPrice = itemTotal
+            });
+        }
+
+        // Trừ tồn kho sản phẩm theo đúng chi nhánh đặt hàng
+        if (orderStatus != OrderStatus.Cancelled && items.Count > 0)
+        {
+            await DeductOrRestoreStockAsync(targetBranch, items, isRestoring: false, cancellationToken);
         }
 
         var totalAmount = subTotal + request.ShippingFee - request.DiscountAmount;
@@ -226,26 +340,90 @@ public sealed class OrdersController : ApiControllerBase
             depositAmount = Math.Round(totalAmount * (depositPercent / 100m));
         }
 
+        // Tự động liên kết / ghi nhận Khách Hàng vào bảng Customers trong DB thật
+        Customer? customer = null;
+        if (request.CustomerId.HasValue && request.CustomerId.Value != Guid.Empty)
+        {
+            customer = await _context.Customers.FirstOrDefaultAsync(c => c.Id == request.CustomerId.Value, cancellationToken);
+        }
+
+        if (customer == null && !string.IsNullOrWhiteSpace(cleanPhone))
+        {
+            customer = await _context.Customers.FirstOrDefaultAsync(c => c.Phone == cleanPhone, cancellationToken);
+        }
+
+        if (customer != null)
+        {
+            customer.TotalSpent += totalAmount;
+            customer.OrderCount += 1;
+            customer.LastOrderDate = DateTimeOffset.UtcNow;
+            customer.UpdatedAt = DateTimeOffset.UtcNow;
+            if (string.IsNullOrWhiteSpace(customer.Address) && !string.IsNullOrWhiteSpace(request.ShippingAddress))
+            {
+                customer.Address = request.ShippingAddress.Trim();
+            }
+            if (string.IsNullOrWhiteSpace(customer.City) && !string.IsNullOrWhiteSpace(request.City))
+            {
+                customer.City = request.City.Trim();
+            }
+            if (string.IsNullOrWhiteSpace(customer.Email) && !string.IsNullOrWhiteSpace(cleanEmail))
+            {
+                customer.Email = cleanEmail;
+            }
+        }
+        else
+        {
+            var custCount = await _context.Customers.IgnoreQueryFilters().CountAsync(cancellationToken);
+            var custCode = $"KH-{(custCount + 1).ToString().PadLeft(3, '0')}";
+            while (await _context.Customers.IgnoreQueryFilters().AnyAsync(x => x.Code == custCode, cancellationToken))
+            {
+                custCount++;
+                custCode = $"KH-{(custCount + 1).ToString().PadLeft(3, '0')}";
+            }
+
+            customer = new Customer
+            {
+                Code = custCode,
+                FullName = cleanName,
+                Phone = cleanPhone,
+                Email = string.IsNullOrWhiteSpace(cleanEmail) ? null : cleanEmail,
+                Address = request.ShippingAddress?.Trim() ?? request.CustomerAddress?.Trim(),
+                City = request.City?.Trim(),
+                CustomerType = "individual",
+                Type = "retail",
+                Tier = "standard",
+                TotalSpent = totalAmount,
+                Debt = 0,
+                OrderCount = 1,
+                LastOrderDate = DateTimeOffset.UtcNow,
+                Status = "active",
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow
+            };
+            _context.Customers.Add(customer);
+        }
+
         var order = new Order
         {
+            Id = orderId,
             OrderCode = code,
             OrderType = request.OrderType ?? "retail",
-            CustomerId = request.CustomerId,
-            CustomerName = request.CustomerName.Trim(),
-            CustomerPhone = request.CustomerPhone.Trim(),
-            CustomerEmail = request.CustomerEmail?.Trim() ?? "",
-            ShippingAddress = request.ShippingAddress?.Trim() ?? "",
-            City = request.City?.Trim() ?? "",
-            District = request.District?.Trim() ?? "",
-            ProductName = request.ProductName?.Trim(),
+            CustomerId = customer.Id,
+            CustomerName = cleanName,
+            CustomerPhone = cleanPhone,
+            CustomerEmail = cleanEmail,
+            ShippingAddress = request.ShippingAddress?.Trim() ?? request.CustomerAddress?.Trim() ?? string.Empty,
+            City = request.City?.Trim() ?? string.Empty,
+            District = request.District?.Trim() ?? string.Empty,
+            ProductName = request.ProductName?.Trim() ?? (items.FirstOrDefault()?.ProductName),
             ProductSpec = request.ProductSpec?.Trim(),
-            WoodType = request.WoodType?.Trim(),
+            WoodType = request.WoodType?.Trim() ?? (items.FirstOrDefault()?.Material),
             SpaceType = request.SpaceType ?? "living",
-            Branch = request.Branch?.Trim(),
-            Showroom = request.Showroom?.Trim() ?? request.Branch?.Trim(),
+            Branch = targetBranch,
+            Showroom = targetBranch,
             OrderDate = orderDate,
             DeadlineDate = deadlineDate,
-            Note = request.Note?.Trim() ?? "",
+            Note = request.Note?.Trim() ?? string.Empty,
             PaymentMethod = request.PaymentMethod ?? "VietQR",
             PaymentStatus = paymentStatus,
             Status = orderStatus,
@@ -315,8 +493,19 @@ public sealed class OrdersController : ApiControllerBase
         if (!string.IsNullOrWhiteSpace(request.DeadlineDate) && DateTimeOffset.TryParse(request.DeadlineDate, out var dl))
             order.DeadlineDate = dl;
 
+        var oldStatus = order.Status;
         if (!string.IsNullOrWhiteSpace(request.Status) && Enum.TryParse<OrderStatus>(request.Status, true, out var parsedStatus))
+        {
             order.Status = parsedStatus;
+            if (oldStatus != OrderStatus.Cancelled && parsedStatus == OrderStatus.Cancelled)
+            {
+                await DeductOrRestoreStockAsync(order.Branch ?? order.Showroom, order.Items.ToList(), isRestoring: true, cancellationToken);
+            }
+            else if (oldStatus == OrderStatus.Cancelled && parsedStatus != OrderStatus.Cancelled)
+            {
+                await DeductOrRestoreStockAsync(order.Branch ?? order.Showroom, order.Items.ToList(), isRestoring: false, cancellationToken);
+            }
+        }
 
         if (!string.IsNullOrWhiteSpace(request.PaymentStatus) && Enum.TryParse<PaymentStatus>(request.PaymentStatus, true, out var parsedPaymentStatus))
             order.PaymentStatus = parsedPaymentStatus;
@@ -358,11 +547,53 @@ public sealed class OrdersController : ApiControllerBase
         if (!Enum.TryParse<OrderStatus>(request.Status, true, out var parsedStatus))
             return BadRequest(ApiResponse<OrderDto>.Fail("Trạng thái đơn hàng không hợp lệ."));
 
+        var oldStatus = order.Status;
         order.Status = parsedStatus;
+        if (!string.IsNullOrWhiteSpace(request.Note))
+        {
+            order.Note = string.IsNullOrWhiteSpace(order.Note) ? request.Note : $"{order.Note}; {request.Note}";
+        }
         order.UpdatedAt = DateTimeOffset.UtcNow;
+
+        if (oldStatus != OrderStatus.Cancelled && parsedStatus == OrderStatus.Cancelled)
+        {
+            await DeductOrRestoreStockAsync(order.Branch ?? order.Showroom, order.Items.ToList(), isRestoring: true, cancellationToken);
+        }
+        else if (oldStatus == OrderStatus.Cancelled && parsedStatus != OrderStatus.Cancelled)
+        {
+            await DeductOrRestoreStockAsync(order.Branch ?? order.Showroom, order.Items.ToList(), isRestoring: false, cancellationToken);
+        }
 
         await _context.SaveChangesAsync(cancellationToken);
         return Ok(ApiResponse<OrderDto>.Ok(OrderMapper.ToDto(order), "Cập nhật trạng thái đơn hàng thành công."));
+    }
+
+    /// <summary>
+    /// Cập nhật trạng thái thanh toán
+    /// </summary>
+    [HttpPatch("{id:guid}/payment-status")]
+    public async Task<IActionResult> UpdatePaymentStatus(Guid id, [FromBody] UpdatePaymentStatusRequest request, CancellationToken cancellationToken)
+    {
+        var order = await _context.Orders.Include(o => o.Items).FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (order is null)
+            return NotFound(ApiResponse<OrderDto>.Fail("Không tìm thấy đơn hàng."));
+
+        if (!Enum.TryParse<PaymentStatus>(request.PaymentStatus, true, out var parsedPaymentStatus))
+            return BadRequest(ApiResponse<OrderDto>.Fail("Trạng thái thanh toán không hợp lệ."));
+
+        order.PaymentStatus = parsedPaymentStatus;
+        if (!string.IsNullOrWhiteSpace(request.PaymentMethod))
+        {
+            order.PaymentMethod = request.PaymentMethod;
+        }
+        if (request.PaidAmount.HasValue && request.PaidAmount.Value > 0)
+        {
+            order.DepositAmount = request.PaidAmount.Value;
+        }
+        order.UpdatedAt = DateTimeOffset.UtcNow;
+
+        await _context.SaveChangesAsync(cancellationToken);
+        return Ok(ApiResponse<OrderDto>.Ok(OrderMapper.ToDto(order), "Cập nhật trạng thái thanh toán thành công."));
     }
 
     /// <summary>
@@ -377,11 +608,25 @@ public sealed class OrdersController : ApiControllerBase
         if (!Enum.TryParse<OrderStatus>(request.Status, true, out var parsedStatus))
             return BadRequest(ApiResponse<int>.Fail("Trạng thái đơn hàng không hợp lệ."));
 
-        var orders = await _context.Orders.Where(x => request.OrderIds.Contains(x.Id)).ToListAsync(cancellationToken);
+        var orders = await _context.Orders.Include(o => o.Items).Where(x => request.OrderIds.Contains(x.Id)).ToListAsync(cancellationToken);
         foreach (var order in orders)
         {
+            var oldStatus = order.Status;
             order.Status = parsedStatus;
+            if (!string.IsNullOrWhiteSpace(request.Note))
+            {
+                order.Note = string.IsNullOrWhiteSpace(order.Note) ? request.Note : $"{order.Note}; {request.Note}";
+            }
             order.UpdatedAt = DateTimeOffset.UtcNow;
+
+            if (oldStatus != OrderStatus.Cancelled && parsedStatus == OrderStatus.Cancelled)
+            {
+                await DeductOrRestoreStockAsync(order.Branch ?? order.Showroom, order.Items.ToList(), isRestoring: true, cancellationToken);
+            }
+            else if (oldStatus == OrderStatus.Cancelled && parsedStatus != OrderStatus.Cancelled)
+            {
+                await DeductOrRestoreStockAsync(order.Branch ?? order.Showroom, order.Items.ToList(), isRestoring: false, cancellationToken);
+            }
         }
 
         await _context.SaveChangesAsync(cancellationToken);
@@ -394,14 +639,138 @@ public sealed class OrdersController : ApiControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> DeleteOrder(Guid id, CancellationToken cancellationToken)
     {
-        var order = await _context.Orders.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        var order = await _context.Orders.Include(o => o.Items).FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (order is null)
             return NotFound(ApiResponse<bool>.Fail("Không tìm thấy đơn hàng."));
+
+        if (!order.IsDeleted && order.Status != OrderStatus.Cancelled)
+        {
+            await DeductOrRestoreStockAsync(order.Branch ?? order.Showroom, order.Items.ToList(), isRestoring: true, cancellationToken);
+        }
 
         order.IsDeleted = true;
         order.UpdatedAt = DateTimeOffset.UtcNow;
         await _context.SaveChangesAsync(cancellationToken);
 
         return Ok(ApiResponse<bool>.Ok(true, "Xóa đơn hàng thành công."));
+    }
+
+    private async Task DeductOrRestoreStockAsync(string? targetBranch, List<OrderItem> items, bool isRestoring, CancellationToken cancellationToken)
+    {
+        if (items == null || items.Count == 0) return;
+
+        var allBranches = await _context.Branches.AsNoTracking().Where(b => !b.IsDeleted).ToListAsync(cancellationToken);
+        string branchName = targetBranch?.Trim() ?? string.Empty;
+        var matchedBranch = allBranches.FirstOrDefault(b => IsBranchMatch(b.Name, branchName));
+        if (matchedBranch != null)
+        {
+            branchName = matchedBranch.Name;
+        }
+        else if (string.IsNullOrWhiteSpace(branchName) && allBranches.Count > 0)
+        {
+            branchName = allBranches[0].Name;
+        }
+        if (string.IsNullOrWhiteSpace(branchName))
+        {
+            branchName = "Chi nhánh Hà Nội";
+        }
+
+        foreach (var item in items)
+        {
+            Product? product = null;
+            if (item.ProductId != Guid.Empty)
+            {
+                product = await _context.Products.FirstOrDefaultAsync(p => p.Id == item.ProductId, cancellationToken);
+            }
+            if (product == null && !string.IsNullOrWhiteSpace(item.ProductSku))
+            {
+                product = await _context.Products.FirstOrDefaultAsync(p => p.Sku.ToLower() == item.ProductSku.Trim().ToLower(), cancellationToken);
+            }
+            if (product == null && !string.IsNullOrWhiteSpace(item.ProductName))
+            {
+                product = await _context.Products.FirstOrDefaultAsync(p => p.Name.ToLower() == item.ProductName.Trim().ToLower(), cancellationToken);
+            }
+
+            if (product == null) continue;
+
+            var qty = Math.Max(1, item.Quantity);
+            var branchStocks = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+            if (!string.IsNullOrWhiteSpace(product.BranchStocksJson) && product.BranchStocksJson != "{}")
+            {
+                try
+                {
+                    var existing = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, int>>(product.BranchStocksJson);
+                    if (existing != null)
+                    {
+                        foreach (var kvp in existing) branchStocks[kvp.Key] = kvp.Value;
+                    }
+                }
+                catch { }
+            }
+
+            var matchKey = branchStocks.Keys.FirstOrDefault(k => IsBranchMatch(k, branchName));
+            if (matchKey == null)
+            {
+                if (branchStocks.Count == 0 && product.InStock > 0)
+                {
+                    matchKey = branchName;
+                    branchStocks[matchKey] = product.InStock;
+                }
+                else
+                {
+                    matchKey = branchName;
+                    branchStocks[matchKey] = 0;
+                }
+            }
+
+            if (isRestoring)
+            {
+                branchStocks[matchKey] += qty;
+            }
+            else
+            {
+                branchStocks[matchKey] -= qty;
+            }
+
+            var jsonOptions = new System.Text.Json.JsonSerializerOptions { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+            product.BranchStocksJson = System.Text.Json.JsonSerializer.Serialize(branchStocks, jsonOptions);
+            product.InStock = branchStocks.Values.Sum();
+            product.UpdatedAt = DateTimeOffset.UtcNow;
+        }
+    }
+
+    private static bool IsBranchMatch(string? branchA, string? branchB)
+    {
+        if (string.IsNullOrWhiteSpace(branchA) || string.IsNullOrWhiteSpace(branchB)) return false;
+        var cleanA = RemoveDiacritics(branchA).ToLowerInvariant().Trim();
+        var cleanB = RemoveDiacritics(branchB).ToLowerInvariant().Trim();
+        if (cleanA == cleanB) return true;
+        if (cleanA.Contains(cleanB) || cleanB.Contains(cleanA)) return true;
+
+        if ((cleanA.Contains("thao dien") || cleanA.Contains("td01")) && (cleanB.Contains("thao dien") || cleanB.Contains("td01"))) return true;
+        if ((cleanA.Contains("quan 10") || cleanA.Contains("q10")) && (cleanB.Contains("quan 10") || cleanB.Contains("q10"))) return true;
+        if ((cleanA.Contains("binh chanh") || cleanA.Contains("bc01")) && (cleanB.Contains("binh chanh") || cleanB.Contains("bc01"))) return true;
+        if ((cleanA.Contains("ha noi") || cleanA.Contains("ecopark") || cleanA.Contains("hn01")) && (cleanB.Contains("ha noi") || cleanB.Contains("ecopark") || cleanB.Contains("hn01"))) return true;
+        if (cleanA.Contains("nam dinh") && cleanB.Contains("nam dinh")) return true;
+
+        return false;
+    }
+
+    private static string RemoveDiacritics(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+        var normalizedString = text.Normalize(System.Text.NormalizationForm.FormD);
+        var stringBuilder = new System.Text.StringBuilder(capacity: normalizedString.Length);
+        for (int i = 0; i < normalizedString.Length; i++)
+        {
+            char c = normalizedString[i];
+            var unicodeCategory = System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c);
+            if (unicodeCategory != System.Globalization.UnicodeCategory.NonSpacingMark)
+            {
+                stringBuilder.Append(c);
+            }
+        }
+        return stringBuilder.ToString().Normalize(System.Text.NormalizationForm.FormC).Replace('đ', 'd').Replace('Đ', 'D');
     }
 }

@@ -1,4 +1,6 @@
 import { FeaturedCatalogProduct } from '@/types/admin';
+import { cachedFetch, invalidateApiCache } from './shared/apiCache';
+import { isMatchBranch } from '@/utils/branchHelper';
 
 export type { FeaturedCatalogProduct };
 
@@ -19,12 +21,28 @@ export interface PagedProductResult {
   totalItems: number;
 }
 
-function mapDtoToCatalogProduct(dto: any): FeaturedCatalogProduct {
-  const inStockQty = typeof dto.inStock === 'number' ? dto.inStock : 10;
-  let stockType: 'in_stock' | 'low' | 'custom' = 'in_stock';
-  if (inStockQty <= 2 && inStockQty > 0) {
+function mapDtoToCatalogProduct(dto: any, branchParam?: string): FeaturedCatalogProduct {
+  let inStockQty = typeof dto.inStock === 'number' ? dto.inStock : 0;
+
+  // Extract branch-scoped stock if branch is filtered
+  if (branchParam && branchParam !== 'all' && dto.branchStocksJson && dto.branchStocksJson !== '{}') {
+    try {
+      const bDict = JSON.parse(dto.branchStocksJson);
+      const matchedKey = Object.keys(bDict).find((k) => isMatchBranch(k, branchParam));
+      if (matchedKey !== undefined && typeof bDict[matchedKey] === 'number') {
+        inStockQty = bDict[matchedKey];
+      } else {
+        inStockQty = 0;
+      }
+    } catch {}
+  }
+
+  let stockType: 'in_stock' | 'low' | 'custom' | 'out_of_stock' = 'in_stock';
+  if (inStockQty <= 0 || dto.status === 'Draft' || dto.status === 'Inactive') {
+    stockType = 'out_of_stock';
+  } else if (inStockQty <= 2) {
     stockType = 'low';
-  } else if (dto.status === 'Draft' || inStockQty === 0) {
+  } else if (dto.stockType === 'custom') {
     stockType = 'custom';
   }
 
@@ -50,6 +68,9 @@ function mapDtoToCatalogProduct(dto: any): FeaturedCatalogProduct {
     categoryName: dto.categoryName || '',
     space: dto.space || 'LivingRoom',
     unit: dto.unit || 'Bộ',
+    branch: dto.branch || '',
+    branchStocksJson: dto.branchStocksJson || '{}',
+    inStock: inStockQty,
     metaInfo: dto.woodType || dto.material || 'Gỗ Óc Chó FAS',
     description: dto.description || '',
     dimensions: dto.dimensions || '',
@@ -68,6 +89,7 @@ export const productApi = {
     search?: string;
     space?: string;
     categoryId?: string;
+    category?: string;
     status?: string;
     branch?: string;
     page?: number;
@@ -75,30 +97,34 @@ export const productApi = {
   }): Promise<FeaturedCatalogProduct[]> {
     const query = new URLSearchParams();
     if (params?.page !== undefined) query.append('page', String(params.page));
-    if (params?.pageSize !== undefined) query.append('pageSize', String(params.pageSize));
+    query.append('pageSize', String(params?.pageSize ?? 100));
     if (params?.search) query.append('search', params.search);
     if (params?.space && params.space !== 'all') query.append('space', params.space);
     if (params?.categoryId && params.categoryId !== 'all') query.append('categoryId', params.categoryId);
+    if (params?.category && params.category !== 'all') query.append('category', params.category);
     if (params?.status && params.status !== 'all') query.append('status', params.status);
     if (params?.branch && params.branch !== 'all') query.append('branch', params.branch);
 
-    const res = await fetch(`${API_BASE_URL}/api/products?${query.toString()}`, {
-      headers: { Accept: 'application/json' },
-    });
+    const cacheKey = `products:catalog:${query.toString()}`;
+    return cachedFetch(cacheKey, async () => {
+      const res = await fetch(`${API_BASE_URL}/api/products?${query.toString()}`, {
+        headers: { Accept: 'application/json' },
+      });
 
-    if (!res.ok) {
-      throw new Error(`Failed to fetch products (${res.status})`);
-    }
+      if (!res.ok) {
+        throw new Error(`Failed to fetch products (${res.status})`);
+      }
 
-    const json = await res.json();
-    const data = json.data;
-    if (data && Array.isArray(data.items)) {
-      return data.items.map(mapDtoToCatalogProduct);
-    }
-    if (Array.isArray(data)) {
-      return data.map(mapDtoToCatalogProduct);
-    }
-    return [];
+      const json = await res.json();
+      const data = json.data;
+      if (data && Array.isArray(data.items)) {
+        return data.items.map((item: any) => mapDtoToCatalogProduct(item, params?.branch));
+      }
+      if (Array.isArray(data)) {
+        return data.map((item: any) => mapDtoToCatalogProduct(item, params?.branch));
+      }
+      return [];
+    }, 15000);
   },
 
   /**
@@ -108,6 +134,7 @@ export const productApi = {
     search?: string;
     space?: string;
     categoryId?: string;
+    category?: string;
     status?: string;
     branch?: string;
     page?: number;
@@ -119,41 +146,45 @@ export const productApi = {
     if (params?.search) query.append('search', params.search);
     if (params?.space && params.space !== 'all') query.append('space', params.space);
     if (params?.categoryId && params.categoryId !== 'all') query.append('categoryId', params.categoryId);
+    if (params?.category && params.category !== 'all') query.append('category', params.category);
     if (params?.status && params.status !== 'all') query.append('status', params.status);
     if (params?.branch && params.branch !== 'all') query.append('branch', params.branch);
 
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/products?${query.toString()}`, {
-        headers: { Accept: 'application/json' },
-      });
+    const cacheKey = `products:paged:${query.toString()}`;
+    return cachedFetch(cacheKey, async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/products?${query.toString()}`, {
+          headers: { Accept: 'application/json' },
+        });
 
-      if (!res.ok) {
-        console.warn(`Backend returned status ${res.status} for paged products`);
-        return { items: [], totalItems: 0, page: params?.page || 1, pageSize: params?.pageSize || 10 };
-      }
+        if (!res.ok) {
+          console.warn(`Backend returned status ${res.status} for paged products`);
+          return { items: [], totalItems: 0, page: params?.page || 1, pageSize: params?.pageSize || 10 };
+        }
 
-      const json = await res.json();
-      const data = json.data;
-      if (data && Array.isArray(data.items)) {
-        return {
-          items: data.items.map(mapDtoToCatalogProduct),
-          totalItems: data.totalItems ?? data.items.length,
-          page: data.page ?? (params?.page || 1),
-          pageSize: data.pageSize ?? (params?.pageSize || data.items.length),
-        };
+        const json = await res.json();
+        const data = json.data;
+        if (data && Array.isArray(data.items)) {
+          return {
+            items: data.items.map((item: any) => mapDtoToCatalogProduct(item, params?.branch)),
+            totalItems: data.totalItems ?? data.items.length,
+            page: data.page ?? (params?.page || 1),
+            pageSize: data.pageSize ?? (params?.pageSize || data.items.length),
+          };
+        }
+        if (Array.isArray(data)) {
+          return {
+            items: data.map((item: any) => mapDtoToCatalogProduct(item, params?.branch)),
+            totalItems: data.length,
+            page: params?.page || 1,
+            pageSize: params?.pageSize || data.length,
+          };
+        }
+      } catch (err) {
+        console.warn('Backend server is unreachable or offline:', err);
       }
-      if (Array.isArray(data)) {
-        return {
-          items: data.map(mapDtoToCatalogProduct),
-          totalItems: data.length,
-          page: params?.page || 1,
-          pageSize: params?.pageSize || data.length,
-        };
-      }
-    } catch (err) {
-      console.warn('Backend server is unreachable or offline:', err);
-    }
-    return { items: [], totalItems: 0, page: params?.page || 1, pageSize: params?.pageSize || 10 };
+      return { items: [], totalItems: 0, page: params?.page || 1, pageSize: params?.pageSize || 10 };
+    }, 15000);
   },
 
   /**
@@ -266,6 +297,8 @@ export const productApi = {
         discountPercent: 0,
         isFeatured: false,
         isNew: true,
+        branch: payload.branch,
+        branchStocksJson: payload.branchStocksJson,
       }),
     });
 
@@ -279,6 +312,7 @@ export const productApi = {
       throw new Error(json.message || 'Tạo sản phẩm thất bại.');
     }
 
+    invalidateApiCache('products');
     return mapDtoToCatalogProduct(json.data);
   },
 
@@ -324,6 +358,8 @@ export const productApi = {
         mainImageUrl: payload.image || '',
         images: subImagesList,
         space: payload.space || 'LivingRoom',
+        branch: payload.branch,
+        branchStocksJson: payload.branchStocksJson,
       }),
     });
 
@@ -333,18 +369,16 @@ export const productApi = {
     }
 
     const json = await res.json();
-    if (!json.success || !json.data) {
-      throw new Error(json.message || 'Cập nhật sản phẩm thất bại.');
-    }
-
+    invalidateApiCache('products');
     return mapDtoToCatalogProduct(json.data);
   },
 
   /**
    * Xóa sản phẩm
    */
-  async deleteProduct(id: string): Promise<boolean> {
-    const res = await fetch(`${API_BASE_URL}/api/products/${id}`, {
+  async deleteProduct(id: string, branch?: string): Promise<boolean> {
+    const query = branch && branch !== 'all' ? `?branch=${encodeURIComponent(branch)}` : '';
+    const res = await fetch(`${API_BASE_URL}/api/products/${id}${query}`, {
       method: 'DELETE',
       headers: { Accept: 'application/json' },
     });
@@ -354,6 +388,7 @@ export const productApi = {
       throw new Error(err?.message || `Xóa sản phẩm thất bại (${res.status})`);
     }
 
+    invalidateApiCache('products');
     const json = await res.json();
     return Boolean(json.success);
   },
@@ -381,6 +416,7 @@ export const productApi = {
       throw new Error(json.message || 'Nhập sản phẩm từ Excel thất bại.');
     }
 
+    invalidateApiCache('products');
     return {
       count: json.data || products.length,
       message: json.message || `Đã nhập thành công ${json.data || products.length} sản phẩm!`,

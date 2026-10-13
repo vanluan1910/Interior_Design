@@ -6,6 +6,7 @@ using InteriorDesign.Integration.Requests;
 using InteriorDesign.Integration.Responses;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace InteriorDesign.Api.Controllers;
 
@@ -13,10 +14,12 @@ namespace InteriorDesign.Api.Controllers;
 public sealed class SpacesController : ApiControllerBase
 {
     private readonly InteriorDbContext _context;
+    private readonly IMemoryCache _cache;
 
-    public SpacesController(InteriorDbContext context)
+    public SpacesController(InteriorDbContext context, IMemoryCache cache)
     {
         _context = context;
+        _cache = cache;
     }
 
     /// <summary>
@@ -31,32 +34,46 @@ public sealed class SpacesController : ApiControllerBase
     {
         try
         {
+            var isDefaultQuery = string.IsNullOrWhiteSpace(search) &&
+                                 (string.IsNullOrWhiteSpace(status) || status == "all") &&
+                                 !includeDeleted;
+
+            if (isDefaultQuery && _cache.TryGetValue("spaces_all", out List<InteriorSpace>? cached) && cached != null)
+            {
+                return Ok(ApiResponse<List<InteriorSpace>>.Ok(cached));
+            }
+
             var query = includeDeleted
                 ? _context.Spaces.IgnoreQueryFilters().AsNoTracking().AsQueryable()
                 : _context.Spaces.AsNoTracking().AsQueryable();
 
             if (!string.IsNullOrWhiteSpace(search))
             {
-                var q = search.Trim().ToLower();
+                var q = search.Trim();
                 query = query.Where(s =>
-                    s.Code.ToLower().Contains(q) ||
-                    s.Name.ToLower().Contains(q) ||
-                    s.Slug.ToLower().Contains(q) ||
-                    s.Tagline.ToLower().Contains(q) ||
-                    s.Description.ToLower().Contains(q)
+                    s.Code.Contains(q) ||
+                    s.Name.Contains(q) ||
+                    s.Slug.Contains(q) ||
+                    s.Tagline.Contains(q) ||
+                    s.Description.Contains(q)
                 );
             }
 
             if (!string.IsNullOrWhiteSpace(status) && status != "all")
             {
-                var st = status.Trim().ToLower();
-                query = query.Where(s => s.Status.ToLower() == st);
+                var st = status.Trim();
+                query = query.Where(s => s.Status == st);
             }
 
             var list = await query
                 .OrderBy(s => s.DisplayOrder)
                 .ThenByDescending(s => s.CreatedAt)
                 .ToListAsync(cancellationToken);
+
+            if (isDefaultQuery)
+            {
+                _cache.Set("spaces_all", list, TimeSpan.FromMinutes(5));
+            }
 
             return Ok(ApiResponse<List<InteriorSpace>>.Ok(list));
         }
@@ -180,7 +197,7 @@ public sealed class SpacesController : ApiControllerBase
         }
         else
         {
-            baseQuery = baseQuery.Where(p => p.Space == spaceIdentifier || p.Space.Contains(spaceIdentifier));
+            baseQuery = baseQuery.Where(p => p.Space == spaceIdentifier || (!string.IsNullOrEmpty(spaceIdentifier) && p.Space.Contains(spaceIdentifier)));
         }
 
         // Lấy danh mục con và số lượng sản phẩm của không gian
@@ -591,7 +608,7 @@ public sealed class SpacesController : ApiControllerBase
     }
 
     /// <summary>
-    /// Xóa mềm không gian nội thất
+    /// Xóa mềm không gian nội thất (Không được xóa nếu đang có sản phẩm hoặc danh mục)
     /// </summary>
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> DeleteSpace(Guid id, CancellationToken cancellationToken)
@@ -599,6 +616,41 @@ public sealed class SpacesController : ApiControllerBase
         var space = await _context.Spaces.FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
         if (space is null)
             return NotFound(ApiResponse<bool>.Fail("Không tìm thấy không gian nội thất để xóa."));
+
+        var sid = (space.Slug + " " + space.Name + " " + space.Code).ToLower();
+        var prodQuery = _context.Products.AsNoTracking().AsQueryable();
+        if (sid.Contains("living") || sid.Contains("khách") || sid.Contains("kg01"))
+        {
+            prodQuery = prodQuery.Where(p => p.Space.Contains("khách") || p.Space.Contains("Living") || p.Space == "KG01");
+        }
+        else if (sid.Contains("bedroom") || sid.Contains("ngủ") || sid.Contains("kg03"))
+        {
+            prodQuery = prodQuery.Where(p => p.Space.Contains("ngủ") || p.Space.Contains("Bed") || p.Space == "KG03");
+        }
+        else if (sid.Contains("dining") || sid.Contains("ăn") || sid.Contains("kg02"))
+        {
+            prodQuery = prodQuery.Where(p => p.Space.Contains("ăn") || p.Space.Contains("Dining") || p.Space == "KG02");
+        }
+        else if (sid.Contains("office") || sid.Contains("việc") || sid.Contains("kg04"))
+        {
+            prodQuery = prodQuery.Where(p => p.Space.Contains("việc") || p.Space.Contains("Office") || p.Space == "KG04");
+        }
+        else
+        {
+            prodQuery = prodQuery.Where(p => p.Space == space.Name || p.Space.Contains(space.Name) || p.Space == space.Slug || p.Space == space.Code);
+        }
+
+        var productCount = await prodQuery.CountAsync(cancellationToken);
+        if (productCount > 0)
+        {
+            return BadRequest(ApiResponse<bool>.Fail($"Không thể xóa không gian '{space.Name}' vì đang có {productCount} sản phẩm thuộc không gian này. Vui lòng chuyển không gian hoặc xóa các sản phẩm liên quan trước!"));
+        }
+
+        var catCount = await _context.Categories.CountAsync(c => !c.IsDeleted && (c.SpaceId == space.Id || c.Space == space.Name || c.Space.Contains(space.Name)), cancellationToken);
+        if (catCount > 0)
+        {
+            return BadRequest(ApiResponse<bool>.Fail($"Không thể xóa không gian '{space.Name}' vì đang có {catCount} danh mục nhóm hàng thuộc không gian này. Vui lòng chuyển các danh mục sang không gian khác trước!"));
+        }
 
         space.IsDeleted = true;
         space.DeletedAt = DateTime.UtcNow;

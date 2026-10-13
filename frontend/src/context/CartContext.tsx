@@ -17,6 +17,7 @@ export interface CartItemData {
   isFavorite: boolean;
   specs: string[];
   giftInfo?: string;
+  inStockQty?: number;
 }
 
 const DEFAULT_INITIAL_CART: CartItemData[] = [];
@@ -169,6 +170,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         isFavorite: wishlistIds.includes(item.id),
         specs: item.specs || ['Gỗ tự nhiên chuẩn FAS', 'Sơn dầu mộc cao cấp'],
         giftInfo: item.giftInfo,
+        inStockQty: item.inStockQty,
       };
       return [...prev, newItem];
     });

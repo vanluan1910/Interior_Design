@@ -72,6 +72,14 @@ const nextConfig: NextConfig = {
         source: "/uploads/:path*",
         destination: "http://localhost:5000/uploads/:path*",
       },
+      {
+        source: "/swagger/:path*",
+        destination: "http://localhost:5000/swagger/:path*",
+      },
+      {
+        source: "/openapi/:path*",
+        destination: "http://localhost:5000/openapi/:path*",
+      },
     ];
   },
 };

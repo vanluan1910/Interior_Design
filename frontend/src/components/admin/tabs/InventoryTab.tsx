@@ -68,12 +68,14 @@ export interface InventoryTabProps {
   categoriesList: AdminCategory[];
   spacesList?: AdminSpace[];
   uomsList?: AdminUom[];
+  branchesList?: import('@/types/admin').AdminBranch[];
   selectedGlobalBranch?: string;
   initialSearch?: string;
   onClearInitialSearch?: () => void;
   onOpenCreateProduct?: () => void;
   onOpenEditProduct?: (product: FeaturedCatalogProduct) => void;
   onExportProductsExcel?: () => void;
+  onNavigateToCreateImport?: (product: FeaturedCatalogProduct) => void;
 }
 
 export function InventoryTab({
@@ -82,12 +84,14 @@ export function InventoryTab({
   categoriesList,
   spacesList = [],
   uomsList = [],
+  branchesList = [],
   selectedGlobalBranch = 'all',
   initialSearch,
   onClearInitialSearch,
   onOpenCreateProduct,
   onOpenEditProduct,
   onExportProductsExcel,
+  onNavigateToCreateImport,
 }: InventoryTabProps) {
   const { message } = App.useApp();
   const [form] = Form.useForm();
@@ -118,10 +122,12 @@ export function InventoryTab({
   }, [uomsList]);
 
   const uomSelectOptions = useMemo(() => {
-    const standard = ['Bộ', 'Chiếc', 'Cái', 'm²', 'm³', 'md', 'Kg', 'Hộp', 'Set'];
-    const fromApi = currentUoms.map((u) => u.name).filter(Boolean);
-    const combined = Array.from(new Set([...fromApi, ...standard]));
-    return combined.map((name) => ({ value: name, label: name }));
+    if (currentUoms && currentUoms.length > 0) {
+      return currentUoms
+        .filter((u) => u.status !== 'inactive')
+        .map((u) => ({ value: u.name, label: u.name }));
+    }
+    return [];
   }, [currentUoms]);
 
   // Spaces Data State
@@ -546,7 +552,7 @@ export function InventoryTab({
     if (!selectedProductKeys.length) return;
     try {
       await Promise.all(
-        selectedProductKeys.map((k) => productApi.deleteProduct(String(k)))
+        selectedProductKeys.map((k) => productApi.deleteProduct(String(k), selectedGlobalBranch))
       );
       message.success(`Đã xóa ${selectedProductKeys.length} sản phẩm đã chọn!`);
       setSelectedProductKeys([]);
@@ -558,7 +564,7 @@ export function InventoryTab({
 
   const handleDeleteSingleProduct = async (id: string, name: string) => {
     try {
-      await productApi.deleteProduct(id);
+      await productApi.deleteProduct(id, selectedGlobalBranch);
       message.success(`Đã xóa sản phẩm ${name}!`);
       await fetchProducts(currentPage, pageSize, searchQuery, inventoryCategoryFilter, inventoryStockTag);
     } catch (err: any) {
@@ -588,7 +594,27 @@ export function InventoryTab({
       ? Number(values.originalPrice)
       : (values.price || 0);
 
+    const inputStockNum = typeof values.stockNote === 'number'
+      ? values.stockNote
+      : parseInt(String(values.stockNote || '0').replace(/\D/g, '') || '0', 10);
+
     if (editingProduct) {
+      let updatedBranchStocksJson = editingProduct.branchStocksJson || '{}';
+      if (selectedGlobalBranch && selectedGlobalBranch !== 'all') {
+        try {
+          const bDict = JSON.parse(updatedBranchStocksJson);
+          if (Object.keys(bDict).length === 0 && branchesList && branchesList.length > 0) {
+            branchesList.forEach((b) => {
+              if (b.name) bDict[b.name] = editingProduct.inStock || 0;
+            });
+          }
+          bDict[selectedGlobalBranch] = inputStockNum;
+          updatedBranchStocksJson = JSON.stringify(bDict);
+        } catch {
+          updatedBranchStocksJson = JSON.stringify({ [selectedGlobalBranch]: inputStockNum });
+        }
+      }
+
       const payload: Partial<FeaturedCatalogProduct> = {
         name: values.name,
         code: values.code || editingProduct.code,
@@ -599,7 +625,10 @@ export function InventoryTab({
         originalPrice: rawOriginalPrice,
         price: values.price || 0,
         stockType: values.stockType || 'in_stock',
-        stockNote: `${values.stockNote || 1} chiếc`,
+        stockNote: `${inputStockNum} chiếc`,
+        inStock: inputStockNum,
+        branch: selectedGlobalBranch !== 'all' ? selectedGlobalBranch : undefined,
+        branchStocksJson: updatedBranchStocksJson,
         unit: values.unit || 'Bộ',
         image: values.image !== undefined ? values.image : (editingProduct.image || ''),
         images: subImagesList,
@@ -620,6 +649,11 @@ export function InventoryTab({
         message.error(err?.message || 'Cập nhật sản phẩm thất bại.');
       }
     } else {
+      let initialBranchStocksJson = '{}';
+      if (selectedGlobalBranch && selectedGlobalBranch !== 'all') {
+        initialBranchStocksJson = JSON.stringify({ [selectedGlobalBranch]: inputStockNum });
+      }
+
       const newProductPayload: Partial<FeaturedCatalogProduct> = {
         code: values.code || `SP${(totalProducts + 1).toString().padStart(4, '0')}`,
         name: values.name,
@@ -630,7 +664,8 @@ export function InventoryTab({
         originalPrice: rawOriginalPrice,
         price: values.price || 0,
         stockType: values.stockType || 'in_stock',
-        stockNote: `${values.stockNote || 1} chiếc`,
+        stockNote: `${inputStockNum} chiếc`,
+        inStock: inputStockNum,
         unit: values.unit || 'Bộ',
         image: values.image || '',
         images: subImagesList,
@@ -642,6 +677,7 @@ export function InventoryTab({
         warranty: values.warranty || '',
         shippingNote: values.shippingNote || '',
         branch: values.branch || (selectedGlobalBranch !== 'all' ? selectedGlobalBranch : undefined),
+        branchStocksJson: initialBranchStocksJson,
       };
       try {
         const created = await productApi.createProduct(newProductPayload);
@@ -677,7 +713,7 @@ export function InventoryTab({
     }
     const hideLoading = message.loading('Đang chuẩn bị dữ liệu xuất Excel...', 0);
     try {
-      const allProds = await productApi.getProducts({ page: 1, pageSize: 1000 });
+      const allProds = await productApi.getProducts();
       const exportData = (allProds.length > 0 ? allProds : productsList).map((p) => {
         const cat = categoriesList.find((c) => c.id === p.categoryId)?.name || p.categoryName;
         return {
@@ -771,7 +807,11 @@ export function InventoryTab({
                     Danh mục: <span className="text-slate-700">{catName}</span>
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                    {prod.stockType === 'in_stock' ? (
+                    {stockCount < 0 ? (
+                      <Tag className="border-0 bg-red-100 text-red-700 text-xs font-semibold m-0">Âm kho ({stockCount})</Tag>
+                    ) : stockCount === 0 || prod.stockType === 'out_of_stock' ? (
+                      <Tag className="border-0 bg-red-50 text-red-600 text-xs font-semibold m-0">Hết hàng (0)</Tag>
+                    ) : prod.stockType === 'in_stock' || (stockCount > 5 && prod.stockType !== 'custom') ? (
                       <Tag className="border-0 bg-emerald-50 text-emerald-700 text-xs font-normal m-0">Còn hàng sẵn</Tag>
                     ) : prod.stockType === 'custom' ? (
                       <Tag className="border-0 bg-blue-50 text-blue-700 text-xs font-normal m-0">May đo theo đơn</Tag>
@@ -805,7 +845,7 @@ export function InventoryTab({
                 <div>
                   <div className="text-slate-500 mb-1">Tình trạng tồn kho</div>
                   <div className="text-slate-900 text-sm">
-                    {prod.stockType === 'in_stock' ? 'Còn hàng sẵn' : prod.stockType === 'custom' ? 'May đo theo đơn' : 'Sắp hết hàng'}
+                    {stockCount < 0 ? `Âm kho (${stockCount})` : stockCount === 0 || prod.stockType === 'out_of_stock' ? 'Hết hàng (0)' : prod.stockType === 'in_stock' ? 'Còn hàng sẵn' : prod.stockType === 'custom' ? 'May đo theo đơn' : 'Sắp hết hàng'}
                   </div>
                 </div>
 
@@ -855,7 +895,7 @@ export function InventoryTab({
             </div>
           )}
 
-          {/* TAB 3: TỒN KHO */}
+          {/* TAB 3: TỒN KHO THEO CHI NHÁNH */}
           {currentTab === 'inventory' && (
             <div className="overflow-x-auto border border-slate-200 bg-white rounded">
               <table className="min-w-full text-xs">
@@ -868,18 +908,40 @@ export function InventoryTab({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {[
-                    { name: 'Chi nhánh Trung Tâm (Quận 1)', total: stockCount, reserved: 0, available: stockCount },
-                    { name: 'Showroom Nam Sài Gòn (Quận 7)', total: 0, reserved: 0, available: 0 },
-                    { name: 'Xưởng Sản Xuất (Bình Dương)', total: 0, reserved: 0, available: 0 },
-                  ].map((b, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50">
-                      <td className="px-3 py-2.5 text-slate-900">{b.name}</td>
-                      <td className="px-3 py-2.5 text-center font-mono text-slate-900">{b.total}</td>
-                      <td className="px-3 py-2.5 text-center font-mono text-slate-500">{b.reserved}</td>
-                      <td className="px-3 py-2.5 text-center font-mono text-[#784e34]">{b.available}</td>
-                    </tr>
-                  ))}
+                  {(() => {
+                    let bStocks: Record<string, number> = {};
+                    if (prod.branchStocksJson && prod.branchStocksJson !== '{}') {
+                      try {
+                        bStocks = JSON.parse(prod.branchStocksJson);
+                      } catch {}
+                    }
+
+                    const displayBranches = (branchesList && branchesList.length > 0)
+                      ? branchesList
+                      : [
+                          { id: 'b1', name: 'Showroom Flagship Thảo Điền' },
+                          { id: 'b2', name: 'Showroom Trung Tâm Ba Tháng Hai' },
+                          { id: 'b3', name: 'Tổng Kho Phân Phối & Giao Vận Bình Chánh' },
+                          { id: 'b4', name: 'Showroom Trải Nghiệm Ecopark Hà Nội' },
+                        ];
+
+                    return displayBranches.map((b) => {
+                      const matchedKey = Object.keys(bStocks).find((k) =>
+                        k.toLowerCase() === b.name.toLowerCase() ||
+                        k.toLowerCase().includes(b.name.toLowerCase()) ||
+                        b.name.toLowerCase().includes(k.toLowerCase())
+                      );
+                      const qty = matchedKey ? (bStocks[matchedKey] ?? 0) : (Object.keys(bStocks).length === 0 ? stockCount : 0);
+                      return (
+                        <tr key={b.id} className="hover:bg-slate-50">
+                          <td className="px-3 py-2.5 text-slate-900 font-medium">{b.name}</td>
+                          <td className="px-3 py-2.5 text-center font-mono font-bold text-slate-900">{qty}</td>
+                          <td className="px-3 py-2.5 text-center font-mono text-slate-400">0</td>
+                          <td className="px-3 py-2.5 text-center font-mono font-bold text-[#784e34]">{qty}</td>
+                        </tr>
+                      );
+                    });
+                  })()}
                 </tbody>
               </table>
             </div>
@@ -916,12 +978,16 @@ export function InventoryTab({
 
             <Popconfirm
               title={`Xóa sản phẩm "${prod.name}"?`}
-              description="Hành động này không thể hoàn tác."
+              description={
+                selectedGlobalBranch !== 'all'
+                  ? `Lưu ý: Sản phẩm thuộc Danh mục dùng chung toàn hệ thống D2 Luxury. Khi xóa, sản phẩm sẽ bị xóa khỏi tất cả các chi nhánh!`
+                  : 'Hành động này sẽ xóa vĩnh viễn sản phẩm khỏi toàn bộ hệ thống.'
+              }
               onConfirm={(e) => {
                 e?.stopPropagation();
                 handleDeleteSingleProduct(prod.id, prod.name);
               }}
-              okText="Xóa"
+              okText="Xác nhận xóa"
               cancelText="Hủy"
               okButtonProps={{ danger: true }}
             >
@@ -943,9 +1009,13 @@ export function InventoryTab({
               icon={<BarcodeOutlined />}
               onClick={(e) => {
                 e.stopPropagation();
-                message.info(`Tạo phiếu nhập hàng cho sản phẩm ${prod.code}...`);
+                if (onNavigateToCreateImport) {
+                  onNavigateToCreateImport(prod);
+                } else {
+                  message.info(`Tạo phiếu nhập hàng cho sản phẩm ${prod.code}...`);
+                }
               }}
-              className="h-8 rounded border-slate-300 px-3 text-xs text-slate-700 bg-white hover:text-[#784e34] hover:border-[#784e34] flex items-center gap-1.5"
+              className="h-8 rounded border-slate-300 px-3 text-xs text-slate-700 bg-white hover:text-[#784e34] hover:border-[#784e34] flex items-center gap-1.5 cursor-pointer"
             >
               Nhập hàng
             </Button>
@@ -1008,6 +1078,7 @@ export function InventoryTab({
                 { value: 'in_stock', label: 'Còn hàng sẵn' },
                 { value: 'custom', label: 'May đo theo đơn' },
                 { value: 'low', label: 'Sắp hết hàng' },
+                { value: 'out_of_stock', label: 'Hết hàng' },
               ]}
             />
           </div>
@@ -1175,13 +1246,21 @@ export function InventoryTab({
                 dataIndex: 'stockNote',
                 key: 'stockNote',
                 align: 'center',
-                width: 130,
+                width: 140,
                 render: (note, prod) => {
-                  const rawNum = prod.stockNote ? prod.stockNote.replace(/\D/g, '') : '';
-                  const count = rawNum !== '' ? parseInt(rawNum, 10) : 0;
+                  const rawNum = prod.stockNote ? prod.stockNote.replace(/[^-0-9]/g, '') : '';
+                  const count = prod.inStock !== undefined ? prod.inStock : (rawNum !== '' ? parseInt(rawNum, 10) : 0);
+                  if (count < 0) {
+                    return (
+                      <span className="font-mono font-bold text-xs text-red-600 bg-red-50 px-2 py-0.5 rounded border border-red-200 inline-block">
+                        {count} <span className="text-red-500 font-normal font-sans">{prod.unit || 'Bộ'}</span>
+                      </span>
+                    );
+                  }
+                  const isOut = count === 0;
                   return (
-                    <span className="font-mono font-semibold text-xs text-slate-800">
-                      {count} <span className="text-slate-400 font-normal font-sans">{prod.unit || 'chiếc'}</span>
+                    <span className={`font-mono font-bold text-xs ${isOut ? 'text-red-600' : 'text-slate-800'}`}>
+                      {count} <span className="text-slate-400 font-normal font-sans">{prod.unit || 'Bộ'}</span>
                     </span>
                   );
                 },
@@ -1219,14 +1298,22 @@ export function InventoryTab({
                 key: 'stockType',
                 align: 'center',
                 width: 140,
-                render: (type) => {
-                  if (type === 'in_stock') {
-                    return <Tag className="border-0 bg-emerald-50 text-emerald-700 text-xs font-medium">Hàng có sẵn</Tag>;
+                render: (type, prod) => {
+                  const rawNum = prod.stockNote ? prod.stockNote.replace(/[^-0-9]/g, '') : '';
+                  const count = prod.inStock !== undefined ? prod.inStock : (rawNum !== '' ? parseInt(rawNum, 10) : 0);
+                  if (count < 0) {
+                    return <Tag className="border-0 bg-red-100 text-red-700 text-xs font-bold">Âm kho ({count})</Tag>;
+                  }
+                  if (type === 'out_of_stock' || count === 0) {
+                    return <Tag className="border-0 bg-red-50 text-red-600 text-xs font-bold">Hết hàng (0)</Tag>;
                   }
                   if (type === 'custom') {
                     return <Tag className="border-0 bg-blue-50 text-blue-700 text-xs font-medium">May đo</Tag>;
                   }
-                  return <Tag className="border-0 bg-amber-50 text-amber-700 text-xs font-medium">Sắp hết</Tag>;
+                  if (type === 'low' || (count > 0 && count <= 5)) {
+                    return <Tag className="border-0 bg-amber-50 text-amber-700 text-xs font-medium">Sắp hết</Tag>;
+                  }
+                  return <Tag className="border-0 bg-emerald-50 text-emerald-700 text-xs font-medium">Hàng có sẵn</Tag>;
                 },
               },
               {

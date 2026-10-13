@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, Suspense } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -50,6 +50,8 @@ import { customerApi } from '@/api/customerApi';
 import { orderApi } from '@/api/orderApi';
 import { settingsApi } from '@/api/settingsApi';
 import { roleApi } from '@/api/roleApi';
+import { employeeApi } from '@/api/employeeApi';
+import { isMatchBranch } from '@/utils/branchHelper';
 import {
   type OrderRow,
   type AdminCustomer,
@@ -82,13 +84,39 @@ function AdminPageContent({
   const { message } = App.useApp();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, logout } = useAuth();
+  const { user, logout, hasPermission, hasAnyPermission } = useAuth();
 
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  interface AdminNavTab {
+    key: string;
+    label: string;
+    permission?: string;
+    permissions?: string[];
+  }
+
+  const ALL_ADMIN_TABS: AdminNavTab[] = useMemo(() => [
+    { key: 'overview', label: 'Tổng quan' },
+    { key: 'orders', label: 'Đơn hàng', permission: 'orders.view' },
+    { key: 'inventory', label: 'Sản phẩm', permission: 'catalog.products.view' },
+    { key: 'categories', label: 'Danh mục', permissions: ['catalog.categories.view', 'catalog.spaces.view'] },
+    { key: 'workshop', label: 'Kho & Showroom', permissions: ['inventory.warehouses.view', 'inventory.imports.view', 'inventory.returns.view', 'inventory.stocktake.view'] },
+    { key: 'customers', label: 'Khách hàng', permissions: ['customers.profile.view', 'customers.consult.view'] },
+    { key: 'settings', label: 'Cài đặt', permissions: ['settings.brand.view', 'settings.payment.view', 'settings.print.view', 'settings.branches.view', 'settings.uom.view', 'settings.employees.view', 'settings.rbac.view'] },
+  ], []);
+
+  const accessibleNavTabs: AdminNavTab[] = useMemo(() => {
+    return ALL_ADMIN_TABS.filter((tab: AdminNavTab) => {
+      if (!tab.permission && !tab.permissions) return true;
+      if (tab.permission) return hasPermission(tab.permission);
+      if (tab.permissions) return hasAnyPermission(tab.permissions);
+      return true;
+    });
+  }, [ALL_ADMIN_TABS, hasPermission, hasAnyPermission]);
 
   const urlTab = searchParams.get('tab');
   const validUrlTab = (urlTab && ['overview', 'orders', 'inventory', 'categories', 'workshop', 'customers', 'suppliers', 'branches', 'settings'].includes(urlTab))
@@ -97,10 +125,20 @@ function AdminPageContent({
 
   const [activeNavState, setActiveNavState] = useState<'overview' | 'orders' | 'inventory' | 'categories' | 'workshop' | 'customers' | 'suppliers' | 'branches' | 'settings' | null>(validUrlTab);
   const [targetProductSearch, setTargetProductSearch] = useState<string | null>(searchParams.get('search') || searchParams.get('productSearch') || null);
+  const [targetCreateImportProduct, setTargetCreateImportProduct] = useState<FeaturedCatalogProduct | null>(null);
 
   const activeNav = activeNavState || validUrlTab || initialTab;
 
-  const handleNavigateToProduct = (productCodeOrNameOrId: string) => {
+  // Auto-switch to first accessible tab if current tab is forbidden for role
+  useEffect(() => {
+    if (!mounted || !user) return;
+    const isCurrentAllowed = accessibleNavTabs.some((t: AdminNavTab) => t.key === activeNav);
+    if (!isCurrentAllowed && accessibleNavTabs.length > 0) {
+      setActiveNavState(accessibleNavTabs[0].key as any);
+    }
+  }, [activeNav, accessibleNavTabs, mounted, user]);
+
+  const handleNavigateToProduct = useCallback((productCodeOrNameOrId: string) => {
     const clean = productCodeOrNameOrId.replace(/^[#]/, '').trim();
     setTargetProductSearch(clean);
     setActiveNavState('inventory');
@@ -110,10 +148,23 @@ function AdminPageContent({
       url.searchParams.set('search', clean);
       window.history.pushState({}, '', url.toString());
     }
-  };
+  }, []);
 
   const handleClearProductSearch = useCallback(() => {
     setTargetProductSearch(null);
+  }, []);
+
+  const handleNavigateToCreateImport = useCallback((product: FeaturedCatalogProduct) => {
+    setTargetCreateImportProduct(product);
+    setActiveNavState('workshop');
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', 'workshop');
+      url.searchParams.set('subTab', 'imports');
+      url.searchParams.set('mode', 'create');
+      if (product.code) url.searchParams.set('productCode', product.code);
+      window.history.pushState({}, '', url.toString());
+    }
   }, []);
 
   // Data State with LocalStorage Persistence (SSR Safe)
@@ -151,6 +202,44 @@ function AdminPageContent({
   // Global Branch Selection State (in Header) - persistent across page reloads
   const [selectedGlobalBranch, setSelectedGlobalBranch] = useState<string>('');
 
+  // Determine if current user can switch between branches
+  const canSwitchBranch = useMemo(() => {
+    if (!user) return true;
+    if (user.roleCode === 'SUPER_ADMIN' || user.permissions?.includes('*')) return true;
+    if (hasPermission('settings.branches.view') || hasPermission('settings.branches.update')) return true;
+    // If the employee has a specific branch assigned, they are restricted strictly to that branch
+    if (user.branch && user.branch.trim() !== '') return false;
+    return true;
+  }, [user, hasPermission]);
+
+  // Filter selectable branches: if employee is assigned to a specific branch, only show that branch
+  const displayBranches = useMemo(() => {
+    if (canSwitchBranch) {
+      return branchesList;
+    }
+    if (user?.branch) {
+      const matched = branchesList.filter((b) => isMatchBranch(b.name, user.branch));
+      if (matched.length > 0) return matched;
+      return [{ id: 'user_branch', name: user.branch } as AdminBranch];
+    }
+    return branchesList;
+  }, [canSwitchBranch, branchesList, user?.branch]);
+
+  // Enforce branch isolation for branch-assigned employees
+  useEffect(() => {
+    if (!canSwitchBranch && user?.branch) {
+      const targetBranch = branchesList.find((b) => isMatchBranch(b.name, user.branch))?.name || user.branch;
+      if (selectedGlobalBranch !== targetBranch) {
+        setSelectedGlobalBranch(targetBranch);
+        setStoredAdminData(ADMIN_STORAGE_KEYS.SELECTED_BRANCH, targetBranch);
+        try {
+          localStorage.setItem('d2_selected_branch', targetBranch);
+          window.dispatchEvent(new CustomEvent('branch_changed', { detail: { branchName: targetBranch } }));
+        } catch {}
+      }
+    }
+  }, [canSwitchBranch, user?.branch, selectedGlobalBranch, branchesList]);
+
   // Load stored data on mount safely after hydration
   useEffect(() => {
     loadHeaderCompanyInfo();
@@ -184,20 +273,39 @@ function AdminPageContent({
       setSelectedGlobalBranch(storedBranch);
     }
 
-    // Load real product catalog from DB
-    const loadProducts = async () => {
-      try {
-        const products = await productApi.getProducts();
-        if (products && Array.isArray(products)) {
-          setCatalogList(products);
-          return;
-        }
-      } catch (err) {
-        console.warn('Could not fetch products from API:', err);
+    const handleBranchSync = (e: any) => {
+      const branch = e?.detail?.branchName;
+      if (branch && branch !== selectedGlobalBranch) {
+        setSelectedGlobalBranch(branch);
       }
-      setCatalogList([]);
     };
+    window.addEventListener('branch_changed', handleBranchSync);
+    return () => window.removeEventListener('branch_changed', handleBranchSync);
+  }, []);
 
+  const loadProducts = useCallback(async () => {
+    try {
+      const products = await productApi.getProducts({
+        branch: selectedGlobalBranch !== 'all' ? selectedGlobalBranch : undefined,
+      });
+      if (products && Array.isArray(products)) {
+        setCatalogList(products);
+        return;
+      }
+    } catch (err) {
+      console.warn('Could not fetch products from API:', err);
+    }
+    setCatalogList([]);
+  }, [selectedGlobalBranch]);
+
+  // Load real product catalog from DB whenever branch changes or tab is active
+  useEffect(() => {
+    if (activeNav === 'workshop' || activeNav === 'inventory' || activeNav === 'overview') {
+      loadProducts();
+    }
+  }, [selectedGlobalBranch, activeNav, loadProducts]);
+
+  useEffect(() => {
     // Fetch branches from Backend API with fallback to local storage
     const loadBranches = async () => {
       try {
@@ -206,6 +314,12 @@ function AdminPageContent({
           setBranchesList(branches);
           setStoredAdminData(ADMIN_STORAGE_KEYS.BRANCHES, branches);
           setSelectedGlobalBranch((prev) => {
+            if (!canSwitchBranch && user?.branch) {
+              const matched = branches.find((b) => isMatchBranch(b.name, user.branch));
+              const assigned = matched ? matched.name : user.branch;
+              setStoredAdminData(ADMIN_STORAGE_KEYS.SELECTED_BRANCH, assigned);
+              return assigned;
+            }
             if (prev && prev !== 'all' && branches.some((b) => b.name === prev)) {
               return prev;
             }
@@ -224,6 +338,12 @@ function AdminPageContent({
       setStoredAdminData(ADMIN_STORAGE_KEYS.BRANCHES, cleaned);
       if (cleaned.length > 0) {
         setSelectedGlobalBranch((prev) => {
+          if (!canSwitchBranch && user?.branch) {
+            const matched = cleaned.find((b: AdminBranch) => isMatchBranch(b.name, user.branch));
+            const assigned = matched ? matched.name : user.branch;
+            setStoredAdminData(ADMIN_STORAGE_KEYS.SELECTED_BRANCH, assigned);
+            return assigned;
+          }
           if (prev && prev !== 'all' && cleaned.some((b: AdminBranch) => b.name === prev)) {
             return prev;
           }
@@ -337,8 +457,24 @@ function AdminPageContent({
       setRolesList(getStoredAdminData(ADMIN_STORAGE_KEYS.ROLES, INITIAL_ROLES));
     };
 
-    // 1. Always load branches for global header
+    // Fetch Employees directly from Backend API (Real Data)
+    const loadEmployees = async () => {
+      try {
+        const emps = await employeeApi.getEmployees();
+        if (emps && Array.isArray(emps) && emps.length > 0) {
+          setEmployeesList(emps);
+          setStoredAdminData(ADMIN_STORAGE_KEYS.EMPLOYEES, emps);
+          return;
+        }
+      } catch (err) {
+        console.warn('Could not fetch employees from API, using fallback:', err);
+      }
+      setEmployeesList(getStoredAdminData(ADMIN_STORAGE_KEYS.EMPLOYEES, INITIAL_EMPLOYEES));
+    };
+
+    // 1. Always load common master data (branches, uoms)
     loadBranches();
+    loadUoms();
 
     // 2. Load tab-specific datasets lazily based on active tab
     if (activeNav === 'inventory' || activeNav === 'categories') {
@@ -358,8 +494,8 @@ function AdminPageContent({
     } else if (activeNav === 'suppliers') {
       loadSuppliers();
     } else if (activeNav === 'settings') {
-      loadUoms();
       loadRoles();
+      loadEmployees();
     }
   }, [activeNav]);
 
@@ -380,45 +516,11 @@ function AdminPageContent({
     }
   };
 
-  // Sync to localStorage
+  // Remember selected branch preference across reloads
   useEffect(() => {
-    if (mounted) setStoredAdminData(ADMIN_STORAGE_KEYS.ORDERS, ordersList);
-  }, [ordersList, mounted]);
-
-  useEffect(() => {
-    if (mounted) setStoredAdminData(ADMIN_STORAGE_KEYS.CATEGORIES, categoriesList);
-  }, [categoriesList, mounted]);
-
-  useEffect(() => {
-    if (mounted) setStoredAdminData(ADMIN_STORAGE_KEYS.SPACES, spacesList);
-  }, [spacesList, mounted]);
-
-  useEffect(() => {
-    if (mounted) setStoredAdminData(ADMIN_STORAGE_KEYS.EMPLOYEES, employeesList);
-  }, [employeesList, mounted]);
-
-  useEffect(() => {
-    if (mounted) setStoredAdminData(ADMIN_STORAGE_KEYS.CUSTOMERS, customersList);
-  }, [customersList, mounted]);
-
-  useEffect(() => {
-    if (mounted) setStoredAdminData(ADMIN_STORAGE_KEYS.SUPPLIERS, suppliersList);
-  }, [suppliersList, mounted]);
-
-  useEffect(() => {
-    if (mounted) setStoredAdminData(ADMIN_STORAGE_KEYS.BRANCHES, branchesList);
-  }, [branchesList, mounted]);
-
-  useEffect(() => {
-    if (mounted) setStoredAdminData(ADMIN_STORAGE_KEYS.UOMS, uomsList);
-  }, [uomsList, mounted]);
-
-  useEffect(() => {
-    if (mounted) setStoredAdminData(ADMIN_STORAGE_KEYS.ROLES, rolesList);
-  }, [rolesList, mounted]);
-
-  useEffect(() => {
-    if (mounted) setStoredAdminData(ADMIN_STORAGE_KEYS.SELECTED_BRANCH, selectedGlobalBranch);
+    if (mounted && selectedGlobalBranch) {
+      setStoredAdminData(ADMIN_STORAGE_KEYS.SELECTED_BRANCH, selectedGlobalBranch);
+    }
   }, [selectedGlobalBranch, mounted]);
 
   useEffect(() => {
@@ -505,17 +607,9 @@ function AdminPageContent({
               </div>
             </Link>
 
-            {/* Desktop Navigation (XL screens >= 1280px show all tabs directly) */}
+            {/* Desktop Navigation (XL screens >= 1280px show all permitted tabs directly) */}
             <nav className="hidden xl:flex items-center gap-1.5 2xl:gap-3.5 h-20">
-              {[
-                { key: 'overview', label: 'Tổng quan' },
-                { key: 'orders', label: 'Đơn hàng' },
-                { key: 'inventory', label: 'Sản phẩm' },
-                { key: 'categories', label: 'Danh mục' },
-                { key: 'workshop', label: 'Kho & Showroom' },
-                { key: 'customers', label: 'Khách hàng' },
-                { key: 'settings', label: 'Cài đặt' },
-              ].map((tab) => (
+              {accessibleNavTabs.map((tab) => (
                 <button
                   key={tab.key}
                   type="button"
@@ -531,7 +625,7 @@ function AdminPageContent({
                 </button>
               ))}
 
-              {/* Bán hàng (Quay lại trang bán hàng) ngay cạnh Cài đặt */}
+              {/* Bán hàng (Quay lại trang bán hàng) */}
               <Link
                 href="/"
                 className="relative flex items-center gap-1.5 h-20 text-[13px] 2xl:text-[13.5px] text-[#51443d] hover:text-[#5d371f] font-normal px-1.5 2xl:px-2 transition-all whitespace-nowrap cursor-pointer select-none no-underline after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2.5px] after:bg-transparent hover:after:bg-[#5d371f]/30"
@@ -542,16 +636,9 @@ function AdminPageContent({
               </Link>
             </nav>
 
-            {/* Tablet / Compact Desktop Navigation (LG screens: 6 primary tabs + "..." Dropdown) */}
+            {/* Tablet / Compact Desktop Navigation (LG screens) */}
             <nav className="hidden lg:flex xl:hidden items-center gap-1.5 h-20">
-              {[
-                { key: 'overview', label: 'Tổng quan' },
-                { key: 'orders', label: 'Đơn hàng' },
-                { key: 'inventory', label: 'Sản phẩm' },
-                { key: 'categories', label: 'Danh mục' },
-                { key: 'workshop', label: 'Kho & Showroom' },
-                { key: 'customers', label: 'Khách hàng' },
-              ].map((tab) => (
+              {accessibleNavTabs.slice(0, 5).map((tab) => (
                 <button
                   key={tab.key}
                   type="button"
@@ -568,32 +655,44 @@ function AdminPageContent({
               ))}
 
               {/* Overflow "..." Dropdown Menu for LG screens */}
-              <Dropdown
-                menu={{
-                  items: [
-                    { key: 'settings', label: '⚙️ Cài đặt hệ thống', onClick: () => handleNavChange('settings') },
-                    { key: 'storefront', label: '🛍️ Bán hàng', onClick: () => router.push('/') },
-                  ],
-                  selectedKeys: [activeNav],
-                }}
-                placement="bottomLeft"
-                trigger={['hover', 'click']}
-              >
-                <button
-                  type="button"
-                  className={`relative flex items-center gap-1 h-20 text-[12px] transition-all whitespace-nowrap px-1 cursor-pointer select-none bg-transparent border-0 outline-none ${activeNav === 'settings'
-                      ? 'text-[#5d371f] font-medium after:content-[\'\'] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2.5px] after:bg-[#5d371f]'
-                      : 'text-[#51443d] hover:text-[#5d371f] font-normal after:content-[\'\'] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2.5px] after:bg-transparent hover:after:bg-[#5d371f]/30'
-                    }`}
+              {accessibleNavTabs.length > 5 ? (
+                <Dropdown
+                  menu={{
+                    items: [
+                      ...accessibleNavTabs.slice(5).map((t) => ({
+                        key: t.key,
+                        label: `${t.key === 'settings' ? '⚙️ ' : ''}${t.label}`,
+                        onClick: () => handleNavChange(t.key as any),
+                      })),
+                      { key: 'storefront', label: '🛍️ Bán hàng', onClick: () => router.push('/') },
+                    ],
+                    selectedKeys: [activeNav],
+                  }}
+                  placement="bottomLeft"
+                  trigger={['hover', 'click']}
                 >
-                  {activeNav === 'settings' ? (
-                    <span>Cài đặt</span>
-                  ) : (
-                    <span>Thêm</span>
-                  )}
-                  <EllipsisOutlined className="text-base" />
-                </button>
-              </Dropdown>
+                  <button
+                    type="button"
+                    className={`relative flex items-center gap-1 h-20 text-[12px] transition-all whitespace-nowrap px-1 cursor-pointer select-none bg-transparent border-0 outline-none ${
+                      accessibleNavTabs.slice(5).some((t) => t.key === activeNav)
+                        ? 'text-[#5d371f] font-medium after:content-[\'\'] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2.5px] after:bg-[#5d371f]'
+                        : 'text-[#51443d] hover:text-[#5d371f] font-normal after:content-[\'\'] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2.5px] after:bg-transparent hover:after:bg-[#5d371f]/30'
+                    }`}
+                  >
+                    <span>{accessibleNavTabs.slice(5).find((t) => t.key === activeNav)?.label || 'Thêm'}</span>
+                    <EllipsisOutlined className="text-base" />
+                  </button>
+                </Dropdown>
+              ) : (
+                <Link
+                  href="/"
+                  className="relative flex items-center gap-1.5 h-20 text-[12.5px] text-[#51443d] hover:text-[#5d371f] font-normal px-1.5 transition-all whitespace-nowrap cursor-pointer select-none no-underline"
+                  title="Chuyển sang trang bán hàng"
+                >
+                  <ShopOutlined className="text-sm" />
+                  <span>Bán hàng</span>
+                </Link>
+              )}
             </nav>
           </div>
 
@@ -602,16 +701,20 @@ function AdminPageContent({
             {/* Global Branch Selector Dropdown */}
             <div className="flex items-center shrink-0">
               <Select
-                value={selectedGlobalBranch || branchesList[0]?.name || undefined}
+                value={selectedGlobalBranch || displayBranches[0]?.name || undefined}
                 onChange={(val) => {
                   setSelectedGlobalBranch(val);
                   setStoredAdminData(ADMIN_STORAGE_KEYS.SELECTED_BRANCH, val);
+                  try {
+                    localStorage.setItem('d2_selected_branch', val);
+                    window.dispatchEvent(new CustomEvent('branch_changed', { detail: { branchName: val } }));
+                  } catch {}
                   message.success(`Đã chuyển cơ sở: ${val}`);
                 }}
                 className="w-48 sm:w-60 xl:w-72 text-xs font-semibold"
                 popupMatchSelectWidth={false}
                 placeholder="Chọn chi nhánh"
-                options={branchesList.map((b) => ({
+                options={displayBranches.map((b) => ({
                   value: b.name,
                   label: b.name,
                 }))}
@@ -637,7 +740,7 @@ function AdminPageContent({
                 />
                 <div className="flex flex-col justify-center text-left leading-none shrink-0">
                   <div className="text-xs font-bold text-[#1f1b19] leading-tight max-w-[110px] truncate">{user?.name || 'Quản trị viên'}</div>
-                  <div className="text-[10px] text-[#83746c] leading-tight mt-0.5">d2luxury.admin</div>
+                  <div className="text-[10px] text-[#83746c] leading-tight mt-0.5 truncate max-w-[110px]">{user?.roleName || user?.roleCode || (user?.role === 'admin' ? 'Quản trị viên' : 'Nhân viên')}</div>
                 </div>
               </div>
             </Dropdown>
@@ -673,9 +776,11 @@ function AdminPageContent({
             categoriesList={categoriesList}
             spacesList={spacesList}
             uomsList={uomsList}
+            branchesList={branchesList}
             selectedGlobalBranch={selectedGlobalBranch}
             initialSearch={targetProductSearch || undefined}
             onClearInitialSearch={handleClearProductSearch}
+            onNavigateToCreateImport={handleNavigateToCreateImport}
           />
         )}
 
@@ -695,9 +800,13 @@ function AdminPageContent({
             setCatalogList={setCatalogList}
             suppliersList={suppliersList}
             setSuppliersList={setSuppliersList}
+            uomsList={uomsList}
             branchesList={branchesList}
             selectedGlobalBranch={selectedGlobalBranch}
-            initialSubTab={(searchParams.get('subTab') as any) || 'warehouses'}
+            initialSubTab={(searchParams.get('subTab') as any) || (targetCreateImportProduct ? 'imports' : 'warehouses')}
+            initialImportProduct={targetCreateImportProduct}
+            initialImportMode={searchParams.get('mode') === 'create' || Boolean(targetCreateImportProduct) ? 'create' : 'list'}
+            onClearInitialImportProduct={() => setTargetCreateImportProduct(null)}
             onNavigateToProduct={handleNavigateToProduct}
           />
         )}
@@ -706,6 +815,8 @@ function AdminPageContent({
           <CustomersTab
             customersList={customersList}
             setCustomersList={setCustomersList}
+            ordersList={ordersList}
+            setOrdersList={setOrdersList}
             selectedGlobalBranch={selectedGlobalBranch}
           />
         )}
@@ -723,8 +834,10 @@ function AdminPageContent({
             branchesList={branchesList}
             setBranchesList={setBranchesList}
             uomsList={uomsList}
+            setUomsList={setUomsList}
             rolesList={rolesList}
             employeesList={employeesList}
+            setEmployeesList={setEmployeesList}
             selectedGlobalBranch={selectedGlobalBranch}
             activeSettingsTab={settingsActiveTab as any}
             onSettingsTabChange={(tab) => setSettingsActiveTab(tab as any)}

@@ -27,6 +27,7 @@ public sealed record CreateOrderRequest
     public string? City { get; init; }
     public string? District { get; init; }
     public string? ProductName { get; init; }
+    public string? ProductSku { get; init; }
     public string? ProductSpec { get; init; }
     public string? WoodType { get; init; }
     public string? SpaceType { get; init; }
@@ -62,6 +63,7 @@ public sealed record UpdateOrderRequest
     public string? City { get; init; }
     public string? District { get; init; }
     public string? ProductName { get; init; }
+    public string? ProductSku { get; init; }
     public string? ProductSpec { get; init; }
     public string? WoodType { get; init; }
     public string? SpaceType { get; init; }

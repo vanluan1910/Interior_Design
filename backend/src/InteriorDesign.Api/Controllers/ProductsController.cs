@@ -15,10 +15,11 @@ public sealed class ProductsController : ApiControllerBase
     [HttpGet]
     public async Task<IActionResult> GetProducts(
         [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 10,
+        [FromQuery] int pageSize = 12,
         [FromQuery] string? search = null,
         [FromQuery] string? space = null,
         [FromQuery] Guid? categoryId = null,
+        [FromQuery] string? category = null,
         [FromQuery] string? status = null,
         [FromQuery] string? branch = null,
         CancellationToken cancellationToken = default)
@@ -27,13 +28,14 @@ public sealed class ProductsController : ApiControllerBase
         {
             var clampedPage = Math.Max(1, page);
             var clampedPageSize = Math.Max(1, pageSize);
-            var response = await Sender.Send(new GetProductsQuery(clampedPage, clampedPageSize, search, space, categoryId, status), cancellationToken);
+            var response = await Sender.Send(new GetProductsQuery(clampedPage, clampedPageSize, search, space, categoryId, category, status, branch), cancellationToken);
 
             if (response.Success && response.Data?.Items != null && !string.IsNullOrWhiteSpace(branch) && !string.Equals(branch, "all", StringComparison.OrdinalIgnoreCase))
             {
-                var adjustedItems = response.Data.Items.Select(p =>
+                var adjustedItems = new List<ProductDto>();
+                foreach (var p in response.Data.Items)
                 {
-                    int branchQty = 0;
+                    int branchQty = p.InStock;
                     if (!string.IsNullOrWhiteSpace(p.BranchStocksJson) && p.BranchStocksJson != "{}")
                     {
                         try
@@ -41,22 +43,15 @@ public sealed class ProductsController : ApiControllerBase
                             var dict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, int>>(p.BranchStocksJson);
                             if (dict != null)
                             {
-                                var matchKey = dict.Keys.FirstOrDefault(k => string.Equals(k, branch, StringComparison.OrdinalIgnoreCase) || k.Contains(branch, StringComparison.OrdinalIgnoreCase) || branch.Contains(k, StringComparison.OrdinalIgnoreCase));
-                                if (matchKey != null && dict.TryGetValue(matchKey, out var q))
-                                {
-                                    branchQty = q;
-                                }
+                                var matchKey = dict.Keys.FirstOrDefault(k => IsBranchMatch(k, branch));
+                                branchQty = matchKey != null && dict.TryGetValue(matchKey, out var q) ? q : 0;
                             }
                         }
                         catch { }
                     }
-                    else
-                    {
-                        // Chưa chia tồn kho chi nhánh -> trả về 0 cho chi nhánh phụ hoặc giữ nguyên nếu là chi nhánh gốc
-                        branchQty = p.InStock;
-                    }
-                    return p with { InStock = branchQty };
-                }).ToList();
+
+                    adjustedItems.Add(p with { InStock = branchQty });
+                }
 
                 var pagedResult = new PagedResult<ProductDto>(adjustedItems, response.Data.Page, response.Data.PageSize, response.Data.TotalItems);
                 return Ok(ApiResponse<PagedResult<ProductDto>>.Ok(pagedResult));
@@ -64,10 +59,58 @@ public sealed class ProductsController : ApiControllerBase
 
             return Ok(response);
         }
-        catch (OperationCanceledException)
+        catch (Exception ex) when (ex is OperationCanceledException ||
+            cancellationToken.IsCancellationRequested ||
+            HttpContext.RequestAborted.IsCancellationRequested ||
+            (ex is InvalidOperationException && ex.Message.Contains("The connection is closed", StringComparison.OrdinalIgnoreCase)))
         {
-            return StatusCode(499, ApiResponse<object>.Fail("Yêu cầu đã bị hủy."));
+            return StatusCode(499, ApiResponse<object>.Fail("Yêu cầu đã bị hủy bởi phía client hoặc kết nối bị gián đoạn."));
         }
+    }
+
+    private static string RemoveDiacritics(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+        var normalizedString = text.Normalize(System.Text.NormalizationForm.FormD);
+        var sb = new System.Text.StringBuilder();
+        foreach (var c in normalizedString)
+        {
+            var unicodeCategory = System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c);
+            if (unicodeCategory != System.Globalization.UnicodeCategory.NonSpacingMark)
+            {
+                sb.Append(c);
+            }
+        }
+        return sb.ToString().Normalize(System.Text.NormalizationForm.FormC).Replace("đ", "d").Replace("Đ", "D");
+    }
+
+    private static bool IsBranchMatch(string storedBranch, string targetBranch)
+    {
+        if (string.IsNullOrWhiteSpace(storedBranch) || string.IsNullOrWhiteSpace(targetBranch)) return false;
+        if (string.Equals(storedBranch, targetBranch, StringComparison.OrdinalIgnoreCase)) return true;
+        if (storedBranch.Contains(targetBranch, StringComparison.OrdinalIgnoreCase) || targetBranch.Contains(storedBranch, StringComparison.OrdinalIgnoreCase)) return true;
+
+        var s = RemoveDiacritics(storedBranch).ToLower().Trim();
+        var t = RemoveDiacritics(targetBranch).ToLower().Trim();
+
+        if (s == t || s.Contains(t) || t.Contains(s)) return true;
+
+        string[] groups = [
+            "thao dien|thu duc|td01|quoc huong|kho thao dien|flagship",
+            "quan 10|q10|ba thang hai|3 thang 2|sr-q10|kho ba thang hai",
+            "binh chanh|bc01|le minh xuan|tong kho binh chanh",
+            "ecopark|ha noi|hung yen|van giang|eco|sr-eco|chi nhanh ha noi"
+        ];
+
+        foreach (var g in groups)
+        {
+            var aliases = g.Split('|');
+            bool sIn = aliases.Any(a => s.Contains(a));
+            bool tIn = aliases.Any(a => t.Contains(a));
+            if (sIn && tIn) return true;
+        }
+
+        return false;
     }
 
     [HttpGet("featured")]
@@ -78,23 +121,62 @@ public sealed class ProductsController : ApiControllerBase
             var response = await Sender.Send(new GetFeaturedProductsQuery(limit), cancellationToken);
             return Ok(response);
         }
-        catch (OperationCanceledException)
+        catch (Exception ex) when (ex is OperationCanceledException ||
+            cancellationToken.IsCancellationRequested ||
+            HttpContext.RequestAborted.IsCancellationRequested ||
+            (ex is InvalidOperationException && ex.Message.Contains("The connection is closed", StringComparison.OrdinalIgnoreCase)))
         {
             return StatusCode(499, ApiResponse<object>.Fail("Yêu cầu đã bị hủy."));
         }
     }
 
     [HttpGet("{id:guid}")]
-    public async Task<IActionResult> GetProductById(Guid id, CancellationToken cancellationToken) =>
-        ToActionResult(await Sender.Send(new GetProductByIdQuery(id), cancellationToken));
+    public async Task<IActionResult> GetProductById(Guid id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return ToActionResult(await Sender.Send(new GetProductByIdQuery(id), cancellationToken));
+        }
+        catch (Exception ex) when (ex is OperationCanceledException ||
+            cancellationToken.IsCancellationRequested ||
+            HttpContext.RequestAborted.IsCancellationRequested ||
+            (ex is InvalidOperationException && ex.Message.Contains("The connection is closed", StringComparison.OrdinalIgnoreCase)))
+        {
+            return StatusCode(499, ApiResponse<object>.Fail("Yêu cầu đã bị hủy."));
+        }
+    }
 
     [HttpGet("slug/{slug}")]
-    public async Task<IActionResult> GetProductBySlug(string slug, CancellationToken cancellationToken) =>
-        ToActionResult(await Sender.Send(new GetProductBySlugQuery(slug), cancellationToken));
+    public async Task<IActionResult> GetProductBySlug(string slug, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return ToActionResult(await Sender.Send(new GetProductBySlugQuery(slug), cancellationToken));
+        }
+        catch (Exception ex) when (ex is OperationCanceledException ||
+            cancellationToken.IsCancellationRequested ||
+            HttpContext.RequestAborted.IsCancellationRequested ||
+            (ex is InvalidOperationException && ex.Message.Contains("The connection is closed", StringComparison.OrdinalIgnoreCase)))
+        {
+            return StatusCode(499, ApiResponse<object>.Fail("Yêu cầu đã bị hủy."));
+        }
+    }
 
     [HttpGet("detail/{identifier}")]
-    public async Task<IActionResult> GetProductDetail(string identifier, [FromQuery] int relatedLimit = 4, CancellationToken cancellationToken = default) =>
-        ToActionResult(await Sender.Send(new GetProductDetailQuery(identifier, relatedLimit), cancellationToken));
+    public async Task<IActionResult> GetProductDetail(string identifier, [FromQuery] int relatedLimit = 4, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return ToActionResult(await Sender.Send(new GetProductDetailQuery(identifier, relatedLimit), cancellationToken));
+        }
+        catch (Exception ex) when (ex is OperationCanceledException ||
+            cancellationToken.IsCancellationRequested ||
+            HttpContext.RequestAborted.IsCancellationRequested ||
+            (ex is InvalidOperationException && ex.Message.Contains("The connection is closed", StringComparison.OrdinalIgnoreCase)))
+        {
+            return StatusCode(499, ApiResponse<object>.Fail("Yêu cầu đã bị hủy."));
+        }
+    }
 
     [HttpPost]
     public async Task<IActionResult> CreateProduct([FromBody] CreateProductRequest request, CancellationToken cancellationToken) =>
@@ -272,6 +354,57 @@ public sealed class ProductsController : ApiControllerBase
         ToActionResult(await Sender.Send(new UpdateProductCommand(id, request), cancellationToken));
 
     [HttpDelete("{id:guid}")]
-    public async Task<IActionResult> DeleteProduct(Guid id, CancellationToken cancellationToken) =>
-        ToActionResult(await Sender.Send(new DeleteProductCommand(id), cancellationToken));
+    public async Task<IActionResult> DeleteProduct(
+        Guid id,
+        [FromQuery] string? branch = null,
+        [FromServices] InteriorDbContext? context = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (!string.IsNullOrWhiteSpace(branch) && !string.Equals(branch, "all", StringComparison.OrdinalIgnoreCase) && context != null)
+        {
+            var product = await context.Products.FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+            if (product != null)
+            {
+                var allBranches = await context.Branches.Where(b => !b.IsDeleted).Select(b => b.Name).ToListAsync(cancellationToken);
+                var dict = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+                if (!string.IsNullOrWhiteSpace(product.BranchStocksJson) && product.BranchStocksJson != "{}")
+                {
+                    try
+                    {
+                        dict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, int>>(product.BranchStocksJson) ?? new(StringComparer.OrdinalIgnoreCase);
+                    }
+                    catch { }
+                }
+                else
+                {
+                    // Sản phẩm dùng chung: trước khi gỡ khỏi chi nhánh này, giữ lại tồn kho cho các chi nhánh còn lại
+                    foreach (var bName in allBranches)
+                    {
+                        if (!IsBranchMatch(bName, branch))
+                        {
+                            dict[bName] = product.InStock;
+                        }
+                    }
+                }
+
+                var matchKey = dict.Keys.FirstOrDefault(k => IsBranchMatch(k, branch));
+                if (matchKey != null)
+                {
+                    dict.Remove(matchKey);
+                }
+
+                if (dict.Count > 0)
+                {
+                    var jsonOptions = new System.Text.Json.JsonSerializerOptions { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+                    product.BranchStocksJson = System.Text.Json.JsonSerializer.Serialize(dict, jsonOptions);
+                    product.InStock = dict.Values.Sum();
+                    await context.SaveChangesAsync(cancellationToken);
+                    return Ok(ApiResponse<bool>.Ok(true, $"Đã gỡ sản phẩm khỏi {branch}."));
+                }
+            }
+        }
+
+        return ToActionResult(await Sender.Send(new DeleteProductCommand(id), cancellationToken));
+    }
 }

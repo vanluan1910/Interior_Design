@@ -55,7 +55,7 @@ public sealed class AuthRepository(InteriorDbContext db) : IAuthRepository
         var isForbiddenEmployeeAttr = await db.Employees.AsNoTracking().AnyAsync(
             e => !e.IsDeleted && (
                 (!string.IsNullOrEmpty(e.Code) && e.Code.ToLower() == trimmed) ||
-                (!string.IsNullOrEmpty(e.Email) && e.Email.ToLower() == trimmed && e.Username.ToLower() != trimmed && e.Login.ToLower() != trimmed)
+                (!string.IsNullOrEmpty(e.Email) && e.Email.ToLower() == trimmed && (e.Username == null || e.Username.ToLower() != trimmed) && (e.Login == null || e.Login.ToLower() != trimmed))
             ), cancellationToken);
 
         if (isForbiddenEmployeeAttr)

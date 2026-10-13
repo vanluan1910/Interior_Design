@@ -5,6 +5,7 @@ using InteriorDesign.Integration.Common;
 using InteriorDesign.Integration.Responses;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace InteriorDesign.Api.Controllers;
 
@@ -15,10 +16,12 @@ namespace InteriorDesign.Api.Controllers;
 public sealed class HomeController : ApiControllerBase
 {
     private readonly InteriorDbContext _context;
+    private readonly IMemoryCache _cache;
 
-    public HomeController(InteriorDbContext context)
+    public HomeController(InteriorDbContext context, IMemoryCache cache)
     {
         _context = context;
+        _cache = cache;
     }
 
     /// <summary>
@@ -29,6 +32,10 @@ public sealed class HomeController : ApiControllerBase
     {
         try
         {
+            if (_cache.TryGetValue("home_data", out HomeResponseDto? cachedHome) && cachedHome != null)
+            {
+                return Ok(ApiResponse<HomeResponseDto>.Ok(cachedHome, "Lấy dữ liệu trang chủ thành công (Cache)."));
+            }
             // 1. Lấy cấu hình công ty & thương hiệu từ StoreSettings
             var storeSetting = await _context.StoreSettings.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
 
@@ -125,10 +132,15 @@ public sealed class HomeController : ApiControllerBase
             {
                 livingSpaces = spacesDb.Select((s, idx) =>
                 {
-                    var rawKey = !string.IsNullOrWhiteSpace(s.Slug) ? s.Slug : (!string.IsNullOrWhiteSpace(s.Code) ? s.Code : s.Name);
-                    var spaceKey = MapSpaceToCategoryKey(rawKey);
-                    var pCount = productCountBySpace.TryGetValue(s.Slug?.ToLower() ?? "", out var c1) ? c1 :
-                                 (productCountBySpace.TryGetValue(spaceKey, out var c2) ? c2 : (s.CategoryCount > 0 ? s.CategoryCount : 15));
+                    var spaceKey = MapSpaceToCategoryKey(s.Code, s.Name, s.Slug);
+                    var pCount = spaceKey switch
+                    {
+                        "living" => productCountBySpace.GetValueOrDefault("phòng khách", 206),
+                        "dining" => productCountBySpace.GetValueOrDefault("phòng ăn", 117),
+                        "office" => productCountBySpace.GetValueOrDefault("phòng làm việc", 31),
+                        "bedroom" => productCountBySpace.GetValueOrDefault("phòng ngủ", 117),
+                        _ => 15
+                    };
                     var countText = $"Xem {pCount} thiết kế";
                     var colSpan = (idx == 0 || idx == 3) ? 7 : 5;
                     var codeLabel = $"0{idx + 1} / {s.Name.ToUpper()}";
@@ -146,16 +158,36 @@ public sealed class HomeController : ApiControllerBase
                         };
                     }
 
+                    var tagline = !string.IsNullOrWhiteSpace(s.Tagline) ? s.Tagline : spaceKey switch
+                    {
+                        "living" => "Không gian chính",
+                        "dining" => "Bữa cơm ấm cúng",
+                        "office" => "Tập trung & sáng tạo",
+                        "bedroom" => "Giấc ngủ thư thái",
+                        _ => "Không gian sống"
+                    };
+
+                    var displayName = s.Name.Contains("Tĩnh Tại") || s.Name.Contains("Sum Vầy") || s.Name.Contains("Vỗ Về")
+                        ? s.Name
+                        : spaceKey switch
+                        {
+                            "living" => "Phòng Khách Tĩnh Tại",
+                            "dining" => "Phòng Ăn Sum Vầy",
+                            "office" => "Phòng Làm Việc Tĩnh Tại",
+                            "bedroom" => "Phòng Ngủ Vỗ Về",
+                            _ => s.Name
+                        };
+
                     return new HomeSpaceDto(
                         Key: spaceKey,
-                        Name: s.Name,
-                        Tagline: !string.IsNullOrWhiteSpace(s.Tagline) ? s.Tagline : "Không gian sống",
+                        Name: displayName,
+                        Tagline: tagline,
                         Description: desc,
                         ImageUrl: !string.IsNullOrWhiteSpace(s.Image) ? s.Image : GetDefaultSpaceImage(spaceKey),
                         CountText: countText,
                         CodeLabel: codeLabel,
                         ColSpan: colSpan,
-                        LinkUrl: !string.IsNullOrWhiteSpace(s.Slug) ? $"/products?space={s.Slug}" : $"/products?space={spaceKey}",
+                        LinkUrl: $"/products?space={spaceKey}",
                         Id: s.Id
                     );
                 }).ToList();
@@ -284,6 +316,7 @@ public sealed class HomeController : ApiControllerBase
                 Testimonials: testimonials
             );
 
+            _cache.Set("home_data", homeData, TimeSpan.FromMinutes(5));
             return Ok(ApiResponse<HomeResponseDto>.Ok(homeData, "Lấy dữ liệu trang chủ thành công."));
         }
         catch (OperationCanceledException)

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Encodings.Web;
 using InteriorDesign.Domain.Entities;
 using InteriorDesign.Infrastructure.Data;
 using InteriorDesign.Integration.Common;
@@ -172,114 +173,162 @@ public sealed class SupplierReturnsController : ApiControllerBase
         _context.SupplierReturnSlips.Add(slip);
 
         // Giảm công nợ nhà cung cấp nếu có cấn trừ
+        Supplier? supplier = null;
         if (request.SupplierId.HasValue)
         {
-            var supplier = await _context.Suppliers.FindAsync(new object[] { request.SupplierId.Value }, cancellationToken);
-            if (supplier != null)
+            supplier = await _context.Suppliers.FindAsync(new object[] { request.SupplierId.Value }, cancellationToken);
+        }
+        else if (!string.IsNullOrWhiteSpace(request.SupplierName))
+        {
+            var trimmedSupplierName = request.SupplierName.Trim().ToLower();
+            supplier = await _context.Suppliers.FirstOrDefaultAsync(s => s.Name.ToLower() == trimmedSupplierName, cancellationToken);
+            if (supplier != null && !slip.SupplierId.HasValue)
             {
-                supplier.CurrentDebt = Math.Max(0, supplier.CurrentDebt - refund);
+                slip.SupplierId = supplier.Id;
             }
         }
 
-        // Tự động giảm tồn kho (InStock) của các sản phẩm trả lại NCC theo từng Chi nhánh / Kho cụ thể
-        if (slip.Status == "completed" && !string.IsNullOrWhiteSpace(slip.ItemsJson) && slip.ItemsJson != "[]")
+        if (supplier != null && string.Equals(slip.Status, "completed", StringComparison.OrdinalIgnoreCase))
         {
-            try
-            {
-                string targetBranch = string.Empty;
-                if (slip.WarehouseId.HasValue && slip.WarehouseId.Value != Guid.Empty)
-                {
-                    var wh = await _context.Warehouses.FirstOrDefaultAsync(w => w.Id == slip.WarehouseId.Value, cancellationToken);
-                    if (wh != null && !string.IsNullOrWhiteSpace(wh.Branch))
-                    {
-                        targetBranch = wh.Branch;
-                    }
-                }
-                if (string.IsNullOrWhiteSpace(targetBranch) && !string.IsNullOrWhiteSpace(slip.WarehouseName))
-                {
-                    var wh = await _context.Warehouses.FirstOrDefaultAsync(w => w.Name == slip.WarehouseName, cancellationToken);
-                    if (wh != null && !string.IsNullOrWhiteSpace(wh.Branch))
-                    {
-                        targetBranch = wh.Branch;
-                    }
-                    else
-                    {
-                        var br = await _context.Branches.FirstOrDefaultAsync(b => b.Name == slip.WarehouseName, cancellationToken);
-                        if (br != null)
-                        {
-                            targetBranch = br.Name;
-                        }
-                    }
-                }
-                if (string.IsNullOrWhiteSpace(targetBranch))
-                {
-                    var defBr = await _context.Branches.FirstOrDefaultAsync(b => !b.IsDeleted, cancellationToken);
-                    targetBranch = defBr?.Name ?? "Chi nhánh Hà Nội";
-                }
+            supplier.CurrentDebt = Math.Max(0, supplier.CurrentDebt - refund);
+        }
 
-                using var doc = JsonDocument.Parse(slip.ItemsJson);
-                if (doc.RootElement.ValueKind == JsonValueKind.Array)
-                {
-                    foreach (var elem in doc.RootElement.EnumerateArray())
-                    {
-                        var idStr = elem.TryGetProperty("id", out var idProp) ? idProp.GetString() : null;
-                        var codeStr = elem.TryGetProperty("code", out var codeProp) ? codeProp.GetString() : null;
-                        var nameStr = elem.TryGetProperty("name", out var nameProp) ? nameProp.GetString() : null;
-                        var qty = elem.TryGetProperty("quantity", out var qtyProp) ? (qtyProp.ValueKind == JsonValueKind.Number ? qtyProp.GetDecimal() : 0) : 0;
-                        if (qty <= 0) continue;
-
-                        Product? product = null;
-                        if (!string.IsNullOrWhiteSpace(idStr) && Guid.TryParse(idStr, out var prodGuid))
-                        {
-                            product = await _context.Products.FirstOrDefaultAsync(p => p.Id == prodGuid, cancellationToken);
-                        }
-                        if (product == null && !string.IsNullOrWhiteSpace(codeStr))
-                        {
-                            product = await _context.Products.FirstOrDefaultAsync(p => p.Sku == codeStr, cancellationToken);
-                        }
-                        if (product == null && !string.IsNullOrWhiteSpace(nameStr))
-                        {
-                            product = await _context.Products.FirstOrDefaultAsync(p => p.Name == nameStr, cancellationToken);
-                        }
-
-                        if (product != null)
-                        {
-                            var bStocks = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-                            if (!string.IsNullOrWhiteSpace(product.BranchStocksJson) && product.BranchStocksJson != "{}")
-                            {
-                                try
-                                {
-                                    bStocks = JsonSerializer.Deserialize<Dictionary<string, int>>(product.BranchStocksJson) ?? new(StringComparer.OrdinalIgnoreCase);
-                                }
-                                catch { }
-                            }
-
-                            var existingKey = bStocks.Keys.FirstOrDefault(k => string.Equals(k, targetBranch, StringComparison.OrdinalIgnoreCase) || k.Contains(targetBranch, StringComparison.OrdinalIgnoreCase) || targetBranch.Contains(k, StringComparison.OrdinalIgnoreCase));
-                            if (existingKey != null && bStocks.TryGetValue(existingKey, out var curVal))
-                            {
-                                bStocks[existingKey] = Math.Max(0, curVal - (int)Math.Round(qty));
-                            }
-                            else
-                            {
-                                bStocks[targetBranch] = 0;
-                            }
-
-                            product.BranchStocksJson = JsonSerializer.Serialize(bStocks);
-                            product.InStock = bStocks.Values.Sum();
-                            product.UpdatedAt = DateTimeOffset.UtcNow;
-                        }
-                    }
-                }
-            }
-            catch
-            {
-                // Json fallback
-            }
+        // Tự động giảm tồn kho (InStock) của các sản phẩm trả lại NCC theo từng Chi nhánh / Kho cụ thể
+        if (string.Equals(slip.Status, "completed", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(slip.ItemsJson) && slip.ItemsJson != "[]")
+        {
+            await ApplySupplierReturnProductsAsync(slip, cancellationToken);
         }
 
         await _context.SaveChangesAsync(cancellationToken);
 
         return CreatedAtAction(nameof(GetSupplierReturnById), new { id = slip.Id }, ApiResponse<SupplierReturnSlip>.Ok(slip, "Tạo phiếu trả hàng thành công."));
+    }
+
+    private async Task ApplySupplierReturnProductsAsync(SupplierReturnSlip slip, CancellationToken cancellationToken)
+    {
+        try
+        {
+            string targetBranch = string.Empty;
+            if (slip.WarehouseId.HasValue && slip.WarehouseId.Value != Guid.Empty)
+            {
+                var wh = await _context.Warehouses.FirstOrDefaultAsync(w => w.Id == slip.WarehouseId.Value, cancellationToken);
+                if (wh != null)
+                {
+                    targetBranch = !string.IsNullOrWhiteSpace(wh.Branch) ? wh.Branch : wh.Name;
+                }
+            }
+            if (string.IsNullOrWhiteSpace(targetBranch) && !string.IsNullOrWhiteSpace(slip.WarehouseName))
+            {
+                var wh = await _context.Warehouses.FirstOrDefaultAsync(w => w.Name == slip.WarehouseName, cancellationToken);
+                if (wh != null)
+                {
+                    targetBranch = !string.IsNullOrWhiteSpace(wh.Branch) ? wh.Branch : wh.Name;
+                }
+                else
+                {
+                    var br = await _context.Branches.FirstOrDefaultAsync(b => b.Name == slip.WarehouseName, cancellationToken);
+                    if (br != null)
+                    {
+                        targetBranch = br.Name;
+                    }
+                    else
+                    {
+                        targetBranch = slip.WarehouseName;
+                    }
+                }
+            }
+            if (string.IsNullOrWhiteSpace(targetBranch))
+            {
+                var defBr = await _context.Branches.FirstOrDefaultAsync(b => !b.IsDeleted, cancellationToken);
+                targetBranch = defBr?.Name ?? "Showroom Flagship Thảo Điền";
+            }
+
+            // Match with official branch name from DB if possible
+            var allBranches = await _context.Branches.Where(b => !b.IsDeleted).ToListAsync(cancellationToken);
+            var matchedBranch = allBranches.FirstOrDefault(b => IsBranchMatch(b.Name, targetBranch) || IsBranchMatch(targetBranch, b.Name));
+            if (matchedBranch != null)
+            {
+                targetBranch = matchedBranch.Name;
+            }
+
+            using var doc = JsonDocument.Parse(slip.ItemsJson);
+            if (doc.RootElement.ValueKind == JsonValueKind.Array)
+            {
+                var allProducts = await _context.Products.ToListAsync(cancellationToken);
+
+                foreach (var elem in doc.RootElement.EnumerateArray())
+                {
+                    var idStr = elem.TryGetProperty("id", out var idProp) ? idProp.GetString() : null;
+                    var productIdStr = elem.TryGetProperty("productId", out var pidProp) ? pidProp.GetString() : null;
+                    var codeStr = elem.TryGetProperty("code", out var codeProp) ? codeProp.GetString() : (elem.TryGetProperty("sku", out var skuProp) ? skuProp.GetString() : null);
+                    var nameStr = elem.TryGetProperty("name", out var nameProp) ? nameProp.GetString() : null;
+                    var qty = elem.TryGetProperty("quantity", out var qtyProp) ? (qtyProp.ValueKind == JsonValueKind.Number ? qtyProp.GetDecimal() : 0) : 0;
+                    if (qty <= 0) continue;
+
+                    Product? product = null;
+                    if (!string.IsNullOrWhiteSpace(productIdStr) && Guid.TryParse(productIdStr, out var pGuid))
+                    {
+                        product = allProducts.FirstOrDefault(p => p.Id == pGuid);
+                    }
+                    if (product == null && !string.IsNullOrWhiteSpace(idStr))
+                    {
+                        if (Guid.TryParse(idStr, out var prodGuid))
+                        {
+                            product = allProducts.FirstOrDefault(p => p.Id == prodGuid);
+                        }
+                        else if (idStr.StartsWith("prod_", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var strippedCode = idStr.Substring(5);
+                            product = allProducts.FirstOrDefault(p => string.Equals(p.Sku, strippedCode, StringComparison.OrdinalIgnoreCase));
+                        }
+                    }
+                    if (product == null && !string.IsNullOrWhiteSpace(codeStr))
+                    {
+                        var cleanCode = codeStr.Trim();
+                        product = allProducts.FirstOrDefault(p =>
+                            string.Equals(p.Sku, cleanCode, StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(p.Sku.Replace("-", "").Replace("_", ""), cleanCode.Replace("-", "").Replace("_", ""), StringComparison.OrdinalIgnoreCase));
+                    }
+                    if (product == null && !string.IsNullOrWhiteSpace(nameStr))
+                    {
+                        var cleanName = nameStr.Trim();
+                        product = allProducts.FirstOrDefault(p => string.Equals(p.Name, cleanName, StringComparison.OrdinalIgnoreCase));
+                    }
+
+                    if (product != null)
+                    {
+                        var bStocks = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                        if (!string.IsNullOrWhiteSpace(product.BranchStocksJson) && product.BranchStocksJson != "{}")
+                        {
+                            try
+                            {
+                                bStocks = JsonSerializer.Deserialize<Dictionary<string, int>>(product.BranchStocksJson) ?? new(StringComparer.OrdinalIgnoreCase);
+                            }
+                            catch { }
+                        }
+
+                        var existingKey = bStocks.Keys.FirstOrDefault(k => IsBranchMatch(k, targetBranch));
+                        if (existingKey != null && bStocks.TryGetValue(existingKey, out var curVal))
+                        {
+                            bStocks[existingKey] = Math.Max(0, curVal - (int)Math.Round(qty));
+                        }
+                        else
+                        {
+                            bStocks[targetBranch] = 0;
+                        }
+
+                        var jsonOptions = new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+                        product.BranchStocksJson = JsonSerializer.Serialize(bStocks, jsonOptions);
+                        product.InStock = bStocks.Values.Sum();
+                        product.UpdatedAt = DateTimeOffset.UtcNow;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Json fallback
+        }
     }
 
     /// <summary>
@@ -293,6 +342,8 @@ public sealed class SupplierReturnsController : ApiControllerBase
         {
             return NotFound(ApiResponse<SupplierReturnSlip>.Fail("Không tìm thấy phiếu trả hàng cần cập nhật."));
         }
+
+        var wasDraft = string.Equals(slip.Status, "draft", StringComparison.OrdinalIgnoreCase);
 
         if (!string.IsNullOrWhiteSpace(request.Code)) slip.Code = request.Code.Trim().ToUpper();
         if (request.SourceImportCode != null) slip.SourceImportCode = request.SourceImportCode.Trim();
@@ -318,6 +369,33 @@ public sealed class SupplierReturnsController : ApiControllerBase
         if (request.ItemsJson != null) slip.ItemsJson = request.ItemsJson;
 
         slip.UpdatedAt = DateTimeOffset.UtcNow;
+
+        // Nếu chuyển từ phiếu tạm (draft) sang đã hoàn tất (completed), trừ công nợ NCC và trừ tồn kho
+        if (wasDraft && string.Equals(slip.Status, "completed", StringComparison.OrdinalIgnoreCase))
+        {
+            Supplier? targetSupplier = null;
+            if (slip.SupplierId.HasValue)
+            {
+                targetSupplier = await _context.Suppliers.FindAsync(new object[] { slip.SupplierId.Value }, cancellationToken);
+            }
+            else if (!string.IsNullOrWhiteSpace(slip.SupplierName))
+            {
+                var trimmedSupplierName = slip.SupplierName.Trim().ToLower();
+                targetSupplier = await _context.Suppliers.FirstOrDefaultAsync(s => s.Name.ToLower() == trimmedSupplierName, cancellationToken);
+            }
+
+            if (targetSupplier != null)
+            {
+                var refund = slip.SupplierRefund > 0 ? slip.SupplierRefund : slip.TotalValue;
+                targetSupplier.CurrentDebt = Math.Max(0, targetSupplier.CurrentDebt - refund);
+            }
+
+            if (!string.IsNullOrWhiteSpace(slip.ItemsJson) && slip.ItemsJson != "[]")
+            {
+                await ApplySupplierReturnProductsAsync(slip, cancellationToken);
+            }
+        }
+
         await _context.SaveChangesAsync(cancellationToken);
 
         return Ok(ApiResponse<SupplierReturnSlip>.Ok(slip, "Cập nhật phiếu trả hàng thành công."));
@@ -366,5 +444,50 @@ public sealed class SupplierReturnsController : ApiControllerBase
         await _context.SaveChangesAsync(cancellationToken);
 
         return Ok(ApiResponse<int>.Ok(slips.Count, $"Đã xóa thành công {slips.Count} phiếu trả hàng."));
+    }
+
+    private static string RemoveDiacritics(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+        var normalizedString = text.Normalize(System.Text.NormalizationForm.FormD);
+        var sb = new System.Text.StringBuilder();
+        foreach (var c in normalizedString)
+        {
+            var unicodeCategory = System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c);
+            if (unicodeCategory != System.Globalization.UnicodeCategory.NonSpacingMark)
+            {
+                sb.Append(c);
+            }
+        }
+        return sb.ToString().Normalize(System.Text.NormalizationForm.FormC).Replace("đ", "d").Replace("Đ", "D");
+    }
+
+    private static bool IsBranchMatch(string storedBranch, string targetBranch)
+    {
+        if (string.IsNullOrWhiteSpace(storedBranch) || string.IsNullOrWhiteSpace(targetBranch)) return false;
+        if (string.Equals(storedBranch, targetBranch, StringComparison.OrdinalIgnoreCase)) return true;
+        if (storedBranch.Contains(targetBranch, StringComparison.OrdinalIgnoreCase) || targetBranch.Contains(storedBranch, StringComparison.OrdinalIgnoreCase)) return true;
+
+        var s = RemoveDiacritics(storedBranch).ToLower().Trim();
+        var t = RemoveDiacritics(targetBranch).ToLower().Trim();
+
+        if (s == t || s.Contains(t) || t.Contains(s)) return true;
+
+        string[] groups = [
+            "thao dien|thu duc|td01|quoc huong|kho thao dien|flagship",
+            "quan 10|q10|ba thang hai|3 thang 2|sr-q10|kho ba thang hai",
+            "binh chanh|bc01|le minh xuan|tong kho binh chanh",
+            "ecopark|ha noi|hung yen|van giang|eco|sr-eco|chi nhanh ha noi"
+        ];
+
+        foreach (var g in groups)
+        {
+            var aliases = g.Split('|');
+            bool sIn = aliases.Any(a => s.Contains(a));
+            bool tIn = aliases.Any(a => t.Contains(a));
+            if (sIn && tIn) return true;
+        }
+
+        return false;
     }
 }

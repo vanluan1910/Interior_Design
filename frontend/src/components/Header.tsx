@@ -39,7 +39,6 @@ function HeaderContent({
 
   const [mounted, setMounted] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
@@ -147,17 +146,7 @@ function HeaderContent({
   // Determine active navigation item
   const isHomeActive = pathname === '/' && !spaceParam;
 
-  const handleSearch = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && searchQuery.trim()) {
-      router.push(`/products?q=${encodeURIComponent(searchQuery.trim())}`);
-    }
-  };
 
-  const executeSearch = () => {
-    if (searchQuery.trim()) {
-      router.push(`/products?q=${encodeURIComponent(searchQuery.trim())}`);
-    }
-  };
 
   // Fallback spaces in case API is loading or empty (core spaces only, no "Sản phẩm khác")
   const defaultSpaces: AdminSpace[] = [
@@ -289,31 +278,31 @@ function HeaderContent({
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-[#fff8f5]/95 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)] border-b border-[#eae1dd]/60">
-      <div className="h-20 w-full max-w-[1720px] mx-auto px-4 sm:px-6 lg:px-10 xl:px-14 flex items-center justify-between flex-nowrap whitespace-nowrap gap-3">
+      <div className="h-20 w-full max-w-[1720px] mx-auto px-3 sm:px-5 md:px-6 lg:px-6 xl:px-10 2xl:px-12 flex items-center justify-between flex-nowrap whitespace-nowrap gap-2 lg:gap-3 xl:gap-4">
         {/* Logo Thương Hiệu */}
-        <Link href="/" className="flex items-center gap-2.5 sm:gap-3.5 group shrink-0">
+        <Link href="/" className="flex items-center gap-2 sm:gap-3 group shrink-0">
           <img
             alt={storeInfo.brandName || 'Logo'}
-            className="h-11 sm:h-12 md:h-14 w-auto object-contain transition-transform group-hover:scale-105"
+            className="h-10 sm:h-11 md:h-12 w-auto object-contain transition-transform group-hover:scale-105"
             src={storeInfo.logoUrl || '/logo.png'}
           />
           <div className="flex flex-col">
-            <span className="font-headline-sm text-base sm:text-lg md:text-xl text-[#5d371f] leading-none tracking-tight font-bold">
+            <span className="font-headline-sm text-sm sm:text-base md:text-lg xl:text-xl text-[#5d371f] leading-none tracking-tight font-bold">
               {storeInfo.brandName || 'D2 LUXURY'}
             </span>
-            <span className="font-label-sm text-[9px] sm:text-[10px] md:text-label-sm text-[#83746c] tracking-wider mt-0.5 font-medium">
+            <span className="font-label-sm text-[8.5px] sm:text-[9.5px] md:text-[10px] text-[#83746c] tracking-wider mt-0.5 font-medium">
               {storeInfo.companyName || 'Nội Thất Gỗ Tự Nhiên'}
             </span>
           </div>
         </Link>
 
         {/* Thanh điều hướng chính với Dropdown Menu */}
-        <nav className="hidden lg:flex items-center gap-2 xl:gap-4 2xl:gap-6 shrink-0 flex-nowrap h-20">
+        <nav className="hidden lg:flex items-center gap-1 xl:gap-2.5 2xl:gap-5 shrink-0 flex-nowrap h-20">
           {navItems.map((item) => (
             <div key={item.title} className="relative group h-20 flex items-center">
               <Link
                 href={item.href}
-                className={`relative flex items-center gap-0.5 h-20 font-title-md text-[13px] xl:text-[13.5px] 2xl:text-[14px] transition-all whitespace-nowrap px-1 cursor-pointer ${
+                className={`relative flex items-center gap-0.5 h-20 font-title-md text-xs xl:text-[13px] 2xl:text-[14px] transition-all whitespace-nowrap px-1 xl:px-1.5 2xl:px-2 cursor-pointer ${
                   item.isActive
                     ? 'text-[#5d371f] font-bold after:content-[\'\'] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2.5px] after:bg-[#5d371f]'
                     : 'text-[#2e1d13] hover:text-[#5d371f] font-semibold after:content-[\'\'] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2.5px] after:bg-transparent hover:after:bg-[#5d371f]/30'
@@ -351,26 +340,7 @@ function HeaderContent({
         </nav>
 
         {/* Action Controls (Strict 1 line) */}
-        <div className="flex items-center gap-2 sm:gap-2.5 shrink-0 flex-nowrap">
-          {/* Search bar */}
-          <div className="relative hidden md:block">
-            <button
-              onClick={executeSearch}
-              aria-label="Tìm kiếm"
-              className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-[#83746c] hover:text-[#5d371f] text-[18px] cursor-pointer"
-            >
-              search
-            </button>
-            <input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={handleSearch}
-              className="w-36 lg:w-44 xl:w-52 pl-8 pr-3 py-1.5 rounded-none bg-[#ffffff] text-[#1f1b19] font-body-sm text-xs placeholder:text-[#83746c] focus:outline-none focus:ring-1 focus:ring-[#5d371f] border border-[#d5c3ba]/60 shadow-sm"
-              placeholder="Tìm kiếm nội thất..."
-              type="text"
-            />
-          </div>
-
+        <div className="flex items-center gap-2 sm:gap-3 xl:gap-3.5 shrink-0 flex-nowrap">
           {/* Cart Button */}
           <Link
             href="/cart"
@@ -380,10 +350,10 @@ function HeaderContent({
                 onOpenCart();
               }
             }}
-            className="p-2 rounded-none text-[#51443d] hover:text-[#5d371f] hover:bg-[#f5ece8] transition-colors relative cursor-pointer shrink-0"
+            className="p-1.5 sm:p-2 rounded-none text-[#51443d] hover:text-[#5d371f] hover:bg-[#f5ece8] transition-colors relative cursor-pointer shrink-0"
           >
-            <span className="material-symbols-outlined text-[22px]">shopping_bag</span>
-            <span className="absolute top-1 right-1 w-4 h-4 rounded-none bg-[#784e34] text-white font-data-mono text-[10px] flex items-center justify-center font-bold">
+            <span className="material-symbols-outlined text-[20px] sm:text-[22px]">shopping_bag</span>
+            <span className="absolute top-0.5 right-0.5 sm:top-1 sm:right-1 w-4 h-4 rounded-none bg-[#784e34] text-white font-data-mono text-[10px] flex items-center justify-center font-bold">
               {cartCount}
             </span>
           </Link>
@@ -473,7 +443,7 @@ function HeaderContent({
                         admin_panel_settings
                       </span>
                       <span className="font-medium text-[#5d371f] flex items-center gap-1.5">
-                        Trang quản trị <span className="text-[9px] bg-[#5d371f] text-white px-1.5 py-0.5 rounded font-data-mono font-bold">ADMIN</span>
+                        Trang quản trị <span className="text-[9px] bg-[#5d371f] text-white px-1.5 py-0.5 rounded-none font-data-mono font-bold">ADMIN</span>
                       </span>
                     </Link>
                   )}

@@ -10,9 +10,9 @@ namespace InteriorDesign.Infrastructure.Repositories;
 public sealed class InteriorRepository(InteriorDbContext db) : IInteriorRepository
 {
     // Products
-    public async Task<PagedResult<Product>> GetProductsAsync(int page, int pageSize, string? search, string? space, Guid? categoryId, ProductStatus? status, CancellationToken cancellationToken)
+    public async Task<PagedResult<Product>> GetProductsAsync(int page, int pageSize, string? search, string? space, Guid? categoryId, string? category, ProductStatus? status, string? branch, CancellationToken cancellationToken)
     {
-        var baseQuery = db.Products.AsNoTracking().AsQueryable();
+        var baseQuery = db.Products.Include(p => p.Category).AsNoTracking().AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -23,21 +23,25 @@ public sealed class InteriorRepository(InteriorDbContext db) : IInteriorReposito
         if (!string.IsNullOrWhiteSpace(space) && !space.Equals("all", StringComparison.OrdinalIgnoreCase))
         {
             var sp = space.Trim().ToLower();
-            if (sp == "living" || sp == "livingroom" || sp == "living-room" || sp.Contains("khách") || sp == "kg01")
+            if (sp == "living" || sp == "livingroom" || sp == "living-room" || sp.Contains("khách") || sp.Contains("khach") || sp == "kg01")
             {
                 baseQuery = baseQuery.Where(p => p.Space.Contains("khách") || p.Space.Contains("Living") || p.Space == "KG01");
             }
-            else if (sp == "bedroom" || sp == "bed" || sp.Contains("ngủ") || sp == "kg02" || sp == "kg03")
+            else if (sp == "bedroom" || sp == "bed" || sp.Contains("ngủ") || sp.Contains("ngu") || sp == "kg03")
             {
-                baseQuery = baseQuery.Where(p => p.Space.Contains("ngủ") || p.Space.Contains("Bed") || p.Space == "KG02" || p.Space == "KG03");
+                baseQuery = baseQuery.Where(p => p.Space.Contains("ngủ") || p.Space.Contains("Bed") || p.Space == "KG03");
             }
-            else if (sp == "dining" || sp == "diningroom" || sp == "dining-room" || sp.Contains("ăn") || sp.Contains("bếp"))
+            else if (sp == "dining" || sp == "diningroom" || sp == "dining-room" || sp.Contains("ăn") || sp.Contains("an") || sp.Contains("bếp") || sp == "kg02")
             {
-                baseQuery = baseQuery.Where(p => p.Space.Contains("ăn") || p.Space.Contains("bếp") || p.Space.Contains("Dining"));
+                baseQuery = baseQuery.Where(p => p.Space.Contains("ăn") || p.Space.Contains("bếp") || p.Space.Contains("Dining") || p.Space == "KG02");
             }
-            else if (sp == "office" || sp == "work" || sp.Contains("việc") || sp.Contains("sách") || sp == "kg04")
+            else if (sp == "office" || sp == "work" || sp.Contains("việc") || sp.Contains("viec") || sp.Contains("sách") || sp == "kg04")
             {
                 baseQuery = baseQuery.Where(p => p.Space.Contains("việc") || p.Space.Contains("sách") || p.Space.Contains("Office") || p.Space == "KG04");
+            }
+            else if (sp == "other" || sp.Contains("khác") || sp.Contains("khac") || sp == "kg05" || sp == "kg06")
+            {
+                baseQuery = baseQuery.Where(p => p.Space.Contains("khác") || p.Space.Contains("Other") || p.Space == "KG05" || p.Space == "KG06");
             }
             else
             {
@@ -49,21 +53,101 @@ public sealed class InteriorRepository(InteriorDbContext db) : IInteriorReposito
         {
             baseQuery = baseQuery.Where(p => p.CategoryId == categoryId.Value);
         }
+        else if (!string.IsNullOrWhiteSpace(category) && !category.Equals("all", StringComparison.OrdinalIgnoreCase))
+        {
+            var cat = category.Trim();
+            if (Guid.TryParse(cat, out var parsedCatGuid))
+            {
+                baseQuery = baseQuery.Where(p => p.CategoryId == parsedCatGuid);
+            }
+            else
+            {
+                baseQuery = baseQuery.Where(p => p.Category != null && (p.Category.Slug == cat || p.Category.Name.Contains(cat) || p.Category.Code == cat || p.Name.Contains(cat)));
+            }
+        }
 
         if (status.HasValue)
         {
             baseQuery = baseQuery.Where(p => p.Status == status.Value);
         }
 
+        if (!string.IsNullOrWhiteSpace(branch) && !string.Equals(branch, "all", StringComparison.OrdinalIgnoreCase))
+        {
+            var b = branch.Trim();
+            var bLower = b.ToLower();
+            string keyword = b;
+            string keywordAlt1 = b;
+            string keywordAlt2 = b;
+            string keywordAlt3 = b;
+
+            if (bLower.Contains("nam định") || bLower.Contains("nam dinh"))
+            {
+                keyword = "Nam Định";
+                keywordAlt1 = "Nam \u0110\u1ECBnh";
+                keywordAlt2 = "Nam \\u0110\\u1ECBnh";
+                keywordAlt3 = "Nam";
+            }
+            else if (bLower.Contains("hà nội") || bLower.Contains("ha noi"))
+            {
+                keyword = "Hà Nội";
+                keywordAlt1 = "H\u00E0 N\u1ED9i";
+                keywordAlt2 = "H\\u00E0 N\\u1ED9i";
+                keywordAlt3 = "Hà Nội";
+            }
+            else if (bLower.Contains("bình chánh") || bLower.Contains("binh chanh"))
+            {
+                keyword = "Bình Chánh";
+                keywordAlt1 = "B\u00ECnh Ch\u00E1nh";
+                keywordAlt2 = "B\\u00ECnh Ch\\u00E1nh";
+                keywordAlt3 = "Bình Chánh";
+            }
+            else if (bLower.Contains("thảo điền") || bLower.Contains("thao dien"))
+            {
+                keyword = "Thảo Điền";
+                keywordAlt1 = "Th\u1EA3o \u0110i\u1EC7n";
+                keywordAlt2 = "Th\\u1EA3o \\u0110i\\u1EC7n";
+                keywordAlt3 = "Thảo Điền";
+            }
+            else if (bLower.Contains("quận 10") || bLower.Contains("quan 10"))
+            {
+                keyword = "Quận 10";
+                keywordAlt1 = "Qu\u1EADn 10";
+                keywordAlt2 = "Qu\\u1EADn 10";
+                keywordAlt3 = "Q10";
+            }
+
+            baseQuery = baseQuery.Where(p =>
+                string.IsNullOrEmpty(p.BranchStocksJson) ||
+                p.BranchStocksJson == "{}" ||
+                p.BranchStocksJson.Contains(keyword) ||
+                p.BranchStocksJson.Contains(keywordAlt1) ||
+                p.BranchStocksJson.Contains(keywordAlt2) ||
+                p.BranchStocksJson.Contains(keywordAlt3) ||
+                p.BranchStocksJson.Contains(b));
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
         var total = await baseQuery.CountAsync(cancellationToken);
+        if (total == 0)
+        {
+            return new PagedResult<Product>([], page, pageSize, 0);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
         var items = await baseQuery
-            .Include(p => p.Category)
             .OrderByDescending(p => p.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(cancellationToken);
 
         return new PagedResult<Product>(items, page, pageSize, total);
+    }
+
+    public async Task<IReadOnlyList<Branch>> GetBranchesAsync(CancellationToken cancellationToken)
+    {
+        return await db.Branches.Where(b => !b.IsDeleted).AsNoTracking().ToListAsync(cancellationToken);
     }
 
     public async Task<Product?> GetProductByIdAsync(Guid id, CancellationToken cancellationToken)
@@ -80,20 +164,25 @@ public sealed class InteriorRepository(InteriorDbContext db) : IInteriorReposito
     {
         if (string.IsNullOrWhiteSpace(identifier)) return null;
 
-        var query = db.Products.Include(p => p.Category).AsNoTracking();
+        var normalized = identifier.Trim();
 
-        if (Guid.TryParse(identifier, out var guid))
+        if (Guid.TryParse(normalized, out var guid))
         {
-            var byId = await query.FirstOrDefaultAsync(p => p.Id == guid, cancellationToken);
+            var byId = await db.Products
+                .Include(p => p.Category)
+                .AsNoTracking()
+                .FirstOrDefaultAsync(p => p.Id == guid, cancellationToken);
             if (byId != null) return byId;
         }
 
-        var normalized = identifier.Trim();
-        return await query.FirstOrDefaultAsync(p =>
-            p.Slug == normalized ||
-            p.Sku == normalized ||
-            p.Name == normalized,
-            cancellationToken);
+        return await db.Products
+            .Include(p => p.Category)
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p =>
+                p.Slug == normalized ||
+                p.Sku == normalized ||
+                p.Name == normalized,
+                cancellationToken);
     }
 
     public async Task<IReadOnlyList<Product>> GetRelatedProductsAsync(Guid productId, string? space, Guid? categoryId, int limit, CancellationToken cancellationToken)
@@ -174,6 +263,9 @@ public sealed class InteriorRepository(InteriorDbContext db) : IInteriorReposito
 
     public async Task<bool> DeleteCategoryAsync(Guid id, CancellationToken cancellationToken)
     {
+        var hasProducts = await db.Products.AnyAsync(p => p.CategoryId == id, cancellationToken);
+        if (hasProducts) return false;
+
         var cat = await db.Categories.FindAsync([id], cancellationToken);
         if (cat is null) return false;
 
@@ -198,7 +290,16 @@ public sealed class InteriorRepository(InteriorDbContext db) : IInteriorReposito
             query = query.Where(o => o.Status == status.Value);
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
+
         var total = await query.CountAsync(cancellationToken);
+        if (total == 0)
+        {
+            return new PagedResult<Order>([], page, pageSize, 0);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
         var items = await query.OrderByDescending(o => o.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
@@ -247,7 +348,16 @@ public sealed class InteriorRepository(InteriorDbContext db) : IInteriorReposito
             query = query.Where(c => c.Status == status.Value);
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
+
         var total = await query.CountAsync(cancellationToken);
+        if (total == 0)
+        {
+            return new PagedResult<ConsultationBooking>([], page, pageSize, 0);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
         var items = await query.OrderByDescending(c => c.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)

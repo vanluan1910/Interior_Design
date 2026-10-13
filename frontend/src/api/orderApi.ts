@@ -1,4 +1,5 @@
 import { OrderRow } from '@/types/admin';
+import { cachedFetch, invalidateApiCache } from './shared/apiCache';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
@@ -34,7 +35,7 @@ export interface CreateOrderPayload extends Partial<OrderRow> {
 
 export const orderApi = {
   /**
-   * Lấy danh sách đơn hàng từ Backend API
+   * Lấy danh sách đơn hàng từ Backend API (kèm bộ nhớ đệm chống trùng lặp request)
    */
   async getOrders(params?: {
     search?: string;
@@ -62,16 +63,19 @@ export const orderApi = {
     if (params?.toDate) query.append('toDate', params.toDate);
     if (params?.includeDeleted) query.append('includeDeleted', 'true');
 
-    const res = await fetch(`${API_BASE_URL}/api/orders?${query.toString()}`, {
-      headers: { Accept: 'application/json' },
-    });
+    const cacheKey = `orders:${query.toString()}`;
+    return cachedFetch(cacheKey, async () => {
+      const res = await fetch(`${API_BASE_URL}/api/orders?${query.toString()}`, {
+        headers: { Accept: 'application/json' },
+      });
 
-    if (!res.ok) {
-      throw new Error(`Failed to fetch orders (${res.status})`);
-    }
+      if (!res.ok) {
+        throw new Error(`Failed to fetch orders (${res.status})`);
+      }
 
-    const json: OrderApiResponse<OrderRow[]> = await res.json();
-    return json.data || [];
+      const json: OrderApiResponse<OrderRow[]> = await res.json();
+      return json.data || [];
+    }, 15000);
   },
 
   /**
@@ -107,6 +111,22 @@ export const orderApi = {
   },
 
   /**
+   * Lấy chi tiết đơn hàng theo mã đơn (Order Code)
+   */
+  async getOrderByCode(code: string): Promise<OrderRow> {
+    const res = await fetch(`${API_BASE_URL}/api/orders/by-code/${encodeURIComponent(code)}`, {
+      headers: { Accept: 'application/json' },
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to fetch order by code (${res.status})`);
+    }
+
+    const json: OrderApiResponse<OrderRow> = await res.json();
+    return json.data;
+  },
+
+  /**
    * Tạo mới đơn hàng
    */
   async createOrder(payload: CreateOrderPayload): Promise<OrderRow> {
@@ -129,6 +149,7 @@ export const orderApi = {
       throw new Error(json.message || 'Thêm đơn hàng thất bại.');
     }
 
+    invalidateApiCache('orders');
     return json.data;
   },
 
@@ -155,6 +176,7 @@ export const orderApi = {
       throw new Error(json.message || 'Cập nhật đơn hàng thất bại.');
     }
 
+    invalidateApiCache('orders');
     return json.data;
   },
 
@@ -181,6 +203,7 @@ export const orderApi = {
       throw new Error(json.message || 'Cập nhật trạng thái đơn hàng thất bại.');
     }
 
+    invalidateApiCache('orders');
     return json.data;
   },
 
@@ -207,6 +230,7 @@ export const orderApi = {
       throw new Error(json.message || 'Cập nhật trạng thái thanh toán thất bại.');
     }
 
+    invalidateApiCache('orders');
     return json.data;
   },
 
@@ -229,6 +253,7 @@ export const orderApi = {
     }
 
     const json: OrderApiResponse<boolean> = await res.json();
+    invalidateApiCache('orders');
     return Boolean(json.data ?? json.success);
   },
 
@@ -247,6 +272,7 @@ export const orderApi = {
     }
 
     const json: OrderApiResponse<boolean> = await res.json();
+    invalidateApiCache('orders');
     return Boolean(json.success);
   },
 };

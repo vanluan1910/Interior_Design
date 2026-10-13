@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Button, Input, Select, InputNumber, Popconfirm, App } from 'antd';
 import { FileExcelOutlined, DeleteOutlined } from '@ant-design/icons';
 import {
@@ -18,19 +18,7 @@ import type {
 
 const { Option } = Select;
 
-const COMMON_UOM_OPTIONS = [
-  { value: 'Bộ', label: 'Bộ' },
-  { value: 'Chiếc', label: 'Chiếc' },
-  { value: 'Cái', label: 'Cái' },
-  { value: 'Tấm', label: 'Tấm' },
-  { value: 'Thanh', label: 'Thanh' },
-  { value: 'm3', label: 'm³ (Khối)' },
-  { value: 'm2', label: 'm²' },
-  { value: 'md', label: 'md (Mét dài)' },
-  { value: 'kg', label: 'kg' },
-  { value: 'Hộp', label: 'Hộp' },
-  { value: 'Gói', label: 'Gói' },
-];
+const COMMON_UOM_OPTIONS: Array<{ value: string; label: string }> = [];
 
 const formatInputMoney = (value: number | string | undefined): string => {
   if (value === undefined || value === null || value === '') return '';
@@ -91,6 +79,7 @@ export interface StockImportCreateProps {
   filteredImportProducts: FeaturedCatalogProduct[];
   availableBranchSuppliers: AdminSupplier[];
   availableBranchWarehouses: AdminWarehouse[];
+  uomSelectOptions?: Array<{ value: string; label: string }>;
   onNavigateToProduct?: (query: string) => void;
   onBack: () => void;
   onSaveDraft: () => void;
@@ -98,6 +87,7 @@ export interface StockImportCreateProps {
   onOpenCreateSupplier?: () => void;
   onExportExcel?: () => void;
   user?: { name?: string } | null;
+  isEditing?: boolean;
 }
 
 export function StockImportCreate({
@@ -126,6 +116,7 @@ export function StockImportCreate({
   filteredImportProducts,
   availableBranchSuppliers,
   availableBranchWarehouses,
+  uomSelectOptions,
   onNavigateToProduct,
   onBack,
   onSaveDraft,
@@ -133,13 +124,32 @@ export function StockImportCreate({
   onOpenCreateSupplier,
   onExportExcel,
   user,
+  isEditing,
 }: StockImportCreateProps) {
   const { message } = App.useApp();
+
+  const activeUomOptions = React.useMemo(() => {
+    if (uomSelectOptions && uomSelectOptions.length > 0) {
+      return uomSelectOptions;
+    }
+    return COMMON_UOM_OPTIONS;
+  }, [uomSelectOptions]);
+
+  // Auto-sync import warehouse to currently available branch warehouses
+  useEffect(() => {
+    if (availableBranchWarehouses.length > 0) {
+      const isValid = availableBranchWarehouses.some((w) => w.name === importWarehouse);
+      if (!isValid) {
+        setImportWarehouse(availableBranchWarehouses[0].name);
+      }
+    }
+  }, [availableBranchWarehouses, importWarehouse, setImportWarehouse]);
+
   return (
     <PosEntryLayout
       header={
         <PosEntryHeader
-          title="Lập Phiếu Nhập Hàng"
+          title={isEditing ? 'Cập Nhật Phiếu Nhập Hàng' : 'Lập Phiếu Nhập Hàng'}
           code={importCode || '#PN-2026-NEW'}
           codeColor="primary"
           onBack={onBack}
@@ -159,9 +169,13 @@ export function StockImportCreate({
                 : product.price || 0;
             if (!alreadyLine) {
               const defaultUnit =
-                product.name.toLowerCase().includes('sofa') || product.name.toLowerCase().includes('bàn')
-                  ? 'Bộ'
-                  : 'Chiếc';
+                (product as any).unit ||
+                (product as any).uom ||
+                (activeUomOptions && activeUomOptions.length > 0
+                  ? activeUomOptions[0].value
+                  : (product.name.toLowerCase().includes('sofa') || product.name.toLowerCase().includes('bàn')
+                      ? 'Bộ'
+                      : 'Chiếc'));
               setImportEntryLines((prev) => [
                 ...prev,
                 {
@@ -228,12 +242,12 @@ export function StockImportCreate({
       }
       sidebar={
         <PosEntrySidebar
-          creatorName={importInspector || user?.name || 'Nguyễn Văn Nam (KCS)'}
+          creatorName={importInspector || user?.name || 'Thủ kho / KCS'}
           createdDate={importDate || new Date().toLocaleDateString('vi-VN')}
           onCancel={onBack}
           onSaveDraft={onSaveDraft}
           onSubmit={onSubmit}
-          submitText="✓ Nhập hàng vào kho"
+          submitText={isEditing ? '✓ Hoàn thành nhập kho' : '✓ Nhập hàng vào kho'}
           submitButtonBg="!bg-[#784e34] hover:!bg-[#633f2a]"
         >
           <div>
@@ -269,12 +283,13 @@ export function StockImportCreate({
           <div>
             <label className="text-xs font-semibold text-slate-800 block mb-1">Kho tiếp nhận lưu trữ</label>
             <Select
-              value={importWarehouse}
+              value={importWarehouse || availableBranchWarehouses[0]?.name || undefined}
               onChange={(val) => setImportWarehouse(val)}
-              placeholder="Chọn kho tiếp nhận..."
+              placeholder={availableBranchWarehouses.length === 0 ? 'Chi nhánh chưa có kho lưu trữ' : 'Chọn kho tiếp nhận...'}
               className="w-full h-9 text-xs"
               showSearch
               optionFilterProp="children"
+              notFoundContent={<span className="text-xs text-slate-500 p-2 block">Không có kho nào thuộc chi nhánh này</span>}
             >
               {availableBranchWarehouses.map((w) => (
                 <Option key={w.id} value={w.name}>
@@ -308,9 +323,10 @@ export function StockImportCreate({
           {/* Financial Calculations */}
           <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-2.5 text-xs">
             {(() => {
-              const totalGoods = importEntryLines.reduce((sum, item) => sum + (item.total || (item.quantity * item.unitPrice)), 0);
+              const totalGoods = importEntryLines.reduce((sum, item) => sum + ((Number(item.quantity) || 0) * (Number(item.unitPrice) || 0)), 0);
               const payable = Math.max(0, totalGoods - (importDiscount || 0));
-              const paid = importPaidAmount !== undefined ? Number(importPaidAmount) : payable;
+              const isUnpaid = importPaymentMethod === 'Chưa thanh toán';
+              const paid = isUnpaid ? 0 : (importPaidAmount !== undefined ? Number(importPaidAmount) : 0);
               const debt = Math.max(0, payable - paid);
 
               return (
@@ -322,15 +338,11 @@ export function StockImportCreate({
 
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-slate-600 font-medium shrink-0">Giảm giá / Chiết khấu</span>
-                    <InputNumber
-                      min={0}
-                      controls={false}
-                      value={importDiscount}
-                      formatter={formatInputMoney}
-                      parser={parseInputMoney}
-                      onChange={(val) => setImportDiscount(val !== null && val !== undefined ? Number(String(val).replace(/\./g, '')) || 0 : 0)}
+                    <Input
+                      value={formatInputMoney(importDiscount)}
+                      onChange={(e) => setImportDiscount(parseInputMoney(e.target.value))}
                       style={{ width: 190, minWidth: 180 }}
-                      className="w-48 sm:w-52 min-w-[180px] h-8 text-xs font-mono [&_.ant-input-number-input]:text-right [&_.ant-input-number-input]:px-2.5 !border-0 !border-b !border-slate-300 hover:!border-slate-500 focus-within:!border-[#784e34] !rounded-none !shadow-none !bg-transparent"
+                      className="w-48 sm:w-52 min-w-[180px] h-8 text-xs font-mono text-right px-2.5 !border-0 !border-b !border-slate-300 hover:!border-slate-500 focus-within:!border-[#784e34] !rounded-none !shadow-none !bg-transparent"
                     />
                   </div>
 
@@ -339,25 +351,49 @@ export function StockImportCreate({
                     <span className="font-mono font-bold text-[#784e34] text-sm">{payable.toLocaleString('vi-VN')} đ</span>
                   </div>
 
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-slate-700 font-semibold shrink-0">Tiền trả nhà cung cấp</span>
-                    <InputNumber
-                      min={0}
-                      controls={false}
-                      placeholder={payable ? formatInputMoney(payable) : '0'}
-                      value={importPaidAmount}
-                      formatter={formatInputMoney}
-                      parser={parseInputMoney}
-                      onChange={(val) => setImportPaidAmount(val !== null && val !== undefined ? Number(String(val).replace(/\./g, '')) || 0 : undefined)}
-                      style={{ width: 190, minWidth: 180 }}
-                      className="w-48 sm:w-52 min-w-[180px] h-8 text-xs font-mono font-bold text-emerald-700 [&_.ant-input-number-input]:text-right [&_.ant-input-number-input]:px-2.5 !border-0 !border-b !border-slate-300 hover:!border-slate-500 focus-within:!border-emerald-700 !rounded-none !shadow-none !bg-transparent"
-                    />
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="text-slate-700 font-semibold">Tiền trả nhà cung cấp</span>
+                        {!isUnpaid && (
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setImportPaidAmount(payable)}
+                              className="text-[10px] px-1.5 py-0.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded border border-emerald-200 cursor-pointer font-medium"
+                              title="Điền đủ toàn bộ số tiền cần trả"
+                            >
+                              Trả đủ
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setImportPaidAmount(0)}
+                              className="text-[10px] px-1.5 py-0.5 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded border border-rose-200 cursor-pointer font-medium"
+                              title="Chưa trả tiền (0 đ)"
+                            >
+                              Chưa trả
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      <Input
+                        disabled={isUnpaid}
+                        placeholder={isUnpaid ? '0 đ (Chưa thanh toán)' : 'Nhập số tiền đã trả...'}
+                        value={isUnpaid ? '0' : (importPaidAmount !== undefined ? formatInputMoney(importPaidAmount) : '')}
+                        onChange={(e) => {
+                          const raw = e.target.value.trim();
+                          setImportPaidAmount(raw ? parseInputMoney(raw) : 0);
+                        }}
+                        style={{ width: 190, minWidth: 180 }}
+                        className={`w-48 sm:w-52 min-w-[180px] h-8 text-xs font-mono font-bold text-right px-2.5 !border-0 !border-b !border-slate-300 hover:!border-slate-500 focus-within:!border-emerald-700 !rounded-none !shadow-none !bg-transparent ${isUnpaid ? 'text-slate-400 italic' : 'text-emerald-700'}`}
+                      />
+                    </div>
                   </div>
 
                   <div className="flex items-center justify-between">
                     <span className="text-slate-600 font-medium">Tính vào công nợ NCC</span>
                     <span className={`font-mono font-bold ${debt > 0 ? 'text-rose-600' : 'text-slate-500'}`}>
-                      {debt > 0 ? `-${debt.toLocaleString('vi-VN')} đ` : '0 đ'}
+                      {debt > 0 ? `${debt.toLocaleString('vi-VN')} đ` : '0 đ'}
                     </span>
                   </div>
 
@@ -365,7 +401,14 @@ export function StockImportCreate({
                     <label className="text-[11px] font-semibold text-slate-600 block mb-1">Hình thức thanh toán</label>
                     <Select
                       value={importPaymentMethod}
-                      onChange={(m) => setImportPaymentMethod(m)}
+                      onChange={(m) => {
+                        setImportPaymentMethod(m);
+                        if (m === 'Chưa thanh toán') {
+                          setImportPaidAmount(0);
+                        } else if (importPaidAmount === 0 || importPaidAmount === undefined) {
+                          setImportPaidAmount(payable);
+                        }
+                      }}
                       className="w-full h-8 text-xs"
                       options={[
                         { value: 'Chuyển khoản', label: 'Chuyển khoản MBBank / QR' },
@@ -398,7 +441,7 @@ export function StockImportCreate({
         totalQuantity={importEntryLines.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0)}
         emptyTitle="Chưa có sản phẩm nào trong phiếu nhập"
         emptyDescription="Tìm kiếm hàng hóa theo mã SKU hoặc tên sản phẩm ở ô tìm kiếm phía trên (F3) để thêm vào phiếu nhập."
-        footerTotalValue={`${importEntryLines.reduce((sum, item) => sum + (item.total || (item.quantity * item.unitPrice)), 0).toLocaleString('vi-VN')} đ`}
+        footerTotalValue={`${importEntryLines.reduce((sum, item) => sum + ((Number(item.quantity) || 0) * (Number(item.unitPrice) || 0)), 0).toLocaleString('vi-VN')} đ`}
       >
         <div className="overflow-x-auto rounded-lg border border-slate-200">
           <table className="min-w-[860px] w-full text-xs">
@@ -449,7 +492,7 @@ export function StockImportCreate({
                   <td className="px-3 py-2 text-center">
                     <Select
                       size="small"
-                      value={line.unit || 'Bộ'}
+                      value={line.unit || (activeUomOptions[0]?.value ?? 'Bộ')}
                       onChange={(u) => {
                         setImportEntryLines((prev) =>
                           prev.map((l) => (l.id === line.id ? { ...l, unit: u } : l))
@@ -458,16 +501,32 @@ export function StockImportCreate({
                       popupMatchSelectWidth={false}
                       classNames={{ popup: { root: 'min-w-[120px]' } }}
                       className="w-full min-w-[85px] text-xs [&_.ant-select-selector]:!h-8 [&_.ant-select-selector]:!px-2 [&_.ant-select-selection-item]:!text-xs [&_.ant-select-selection-item]:!leading-[30px] [&_.ant-select-selector]:!border-0 [&_.ant-select-selector]:!border-b [&_.ant-select-selector]:!border-slate-300 [&_.ant-select-selector]:!rounded-none [&_.ant-select-selector]:!shadow-none [&_.ant-select-selector]:!bg-transparent hover:[&_.ant-select-selector]:!border-slate-500"
-                      options={COMMON_UOM_OPTIONS}
+                      options={
+                        line.unit && !activeUomOptions.some((o) => o.value === line.unit)
+                          ? [{ value: line.unit, label: line.unit }, ...activeUomOptions]
+                          : activeUomOptions
+                      }
                     />
                   </td>
                   <td className="px-3 py-2 text-right w-28 min-w-[90px]">
-                    <InputNumber<number>
+                    <Input
+                      type="number"
                       min={1}
-                      controls={false}
-                      value={line.quantity}
-                      onChange={(q) => {
-                        const numQ = q !== null && q !== undefined ? Number(q) || 1 : 1;
+                      value={line.quantity || ''}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        const numQ = raw === '' ? 0 : Math.max(0, parseInt(raw, 10) || 0);
+                        setImportEntryLines((prev) =>
+                          prev.map((l) =>
+                            l.id === line.id
+                              ? { ...l, quantity: numQ, total: numQ * l.unitPrice }
+                              : l
+                          )
+                        );
+                      }}
+                      onBlur={(e) => {
+                        const raw = e.target.value;
+                        const numQ = Math.max(1, parseInt(raw, 10) || 1);
                         setImportEntryLines((prev) =>
                           prev.map((l) =>
                             l.id === line.id
@@ -477,32 +536,28 @@ export function StockImportCreate({
                         );
                       }}
                       style={{ width: '100%', minWidth: 80 }}
-                      className="w-full min-w-[80px] h-8 text-xs font-mono font-bold [&_.ant-input-number-input]:!text-right [&_.ant-input-number-input]:!px-2 [&_.ant-input-number-handler-wrap]:!hidden !border-0 !border-b !border-slate-300 hover:!border-slate-500 focus-within:!border-[#784e34] !rounded-none !shadow-none !bg-transparent"
+                      className="w-full min-w-[80px] h-8 text-xs font-mono font-bold text-right px-2 !border-0 !border-b !border-slate-300 hover:!border-slate-500 focus-within:!border-[#784e34] !rounded-none !shadow-none !bg-transparent [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     />
                   </td>
                   <td className="px-3 py-2 text-right w-56 min-w-[200px]">
-                    <InputNumber<number>
-                      min={0}
-                      controls={false}
-                      value={line.unitPrice}
-                      formatter={formatInputMoney}
-                      parser={parseInputMoney}
-                      onChange={(p) => {
-                        const numP = p !== null && p !== undefined ? Number(String(p).replace(/\./g, '')) || 0 : 0;
+                    <Input
+                      value={formatInputMoney(line.unitPrice)}
+                      onChange={(e) => {
+                        const numP = parseInputMoney(e.target.value);
                         setImportEntryLines((prev) =>
                           prev.map((l) =>
                             l.id === line.id
-                              ? { ...l, unitPrice: numP, total: line.quantity * numP }
+                              ? { ...l, unitPrice: numP, total: (l.quantity || 0) * numP }
                               : l
                           )
                         );
                       }}
                       style={{ width: '100%', minWidth: 180 }}
-                      className="w-full min-w-[180px] h-8 text-xs font-mono font-bold [&_.ant-input-number-input]:!text-right [&_.ant-input-number-input]:!px-2.5 [&_.ant-input-number-handler-wrap]:!hidden !border-0 !border-b !border-slate-300 hover:!border-slate-500 focus-within:!border-[#784e34] !rounded-none !shadow-none !bg-transparent"
+                      className="w-full min-w-[180px] h-8 text-xs font-mono font-bold text-right px-2.5 !border-0 !border-b !border-slate-300 hover:!border-slate-500 focus-within:!border-[#784e34] !rounded-none !shadow-none !bg-transparent"
                     />
                   </td>
                   <td className="px-3 py-2 text-right w-44 min-w-[160px] font-mono font-bold text-[#784e34] whitespace-nowrap">
-                    {(line.total || line.quantity * line.unitPrice).toLocaleString('vi-VN')} đ
+                    {((Number(line.quantity) || 0) * (Number(line.unitPrice) || 0)).toLocaleString('vi-VN')} đ
                   </td>
                   <td className="px-3 py-2 text-center">
                     <Button

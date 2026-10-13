@@ -17,6 +17,14 @@ public static class DatabaseInitializer
                 Console.WriteLine($"[MigrateAsync Warning]: {ex.Message}");
             }
 
+            // Ensure AUTO_CLOSE is disabled to avoid transport-level connection drop (error 19)
+            await ExecuteSafeSqlAsync(context, "Disable AUTO_CLOSE", @"
+                IF EXISTS (SELECT 1 FROM sys.databases WHERE name = DB_NAME() AND is_auto_close_on = 1)
+                BEGIN
+                    ALTER DATABASE CURRENT SET AUTO_CLOSE OFF;
+                END
+            ");
+
             // Execute schema migrations safely in isolated steps
             await ExecuteSafeSqlAsync(context, "Indexes and columns", @"
                 IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_spaces_Code' AND object_id = OBJECT_ID('spaces'))

@@ -29,6 +29,7 @@ export const metadata: Metadata = {
 
 import { CartProvider } from "@/context/CartContext";
 import { AuthProvider } from "@/context/AuthContext";
+import FloatingContactButtons from "@/components/FloatingContactButtons";
 
 export default function RootLayout({
   children,
@@ -43,7 +44,7 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className="bg-surface font-sans text-on-surface antialiased selection:bg-primary-fixed-dim selection:text-on-primary-fixed">
+      <body className="bg-surface font-sans text-on-surface antialiased selection:bg-primary-fixed-dim selection:text-on-primary-fixed overflow-x-hidden min-h-screen">
         <AntdRegistry>
           <ConfigProvider
             locale={viVN}
@@ -59,6 +60,10 @@ export default function RootLayout({
                 fontFamily: "var(--font-be-vietnam-pro), 'Be Vietnam Pro', sans-serif",
                 colorBgBase: "#fff8f5",
                 colorTextBase: "#1f1b19",
+                borderRadius: 0,
+                borderRadiusLG: 0,
+                borderRadiusSM: 0,
+                borderRadiusXS: 0,
               },
               components: {
                 Button: {
@@ -68,6 +73,7 @@ export default function RootLayout({
                 },
                 Card: {
                   headerFontSize: 16,
+                  borderRadiusLG: 0,
                 },
                 Table: {
                   headerBg: "#f8fafc",
@@ -123,6 +129,7 @@ export default function RootLayout({
               <AuthProvider>
                 <CartProvider>
                   {children}
+                  <FloatingContactButtons />
                 </CartProvider>
               </AuthProvider>
             </App>
