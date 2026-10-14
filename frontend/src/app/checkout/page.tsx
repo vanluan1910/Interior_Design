@@ -29,8 +29,11 @@ import { VIETNAM_PROVINCES } from '@/data/vietnamAddresses';
 import { orderApi } from '@/api/orderApi';
 import { branchApi } from '@/api/branchApi';
 import { productApi, FeaturedCatalogProduct } from '@/api/productApi';
+import { settingsApi, PaymentConfigData } from '@/api/settingsApi';
+import { getBankBin } from '@/components/common/VietQrCard';
 import { AdminBranch } from '@/types/admin';
-import { ADMIN_STORAGE_KEYS, getStoredAdminData } from '@/utils/adminStorage';
+import { ADMIN_STORAGE_KEYS, getStoredAdminData, setStoredAdminData } from '@/utils/adminStorage';
+import { getProductStockForBranch } from '@/utils/branchHelper';
 
 function CheckoutContent() {
   const router = useRouter();
@@ -81,13 +84,36 @@ function CheckoutContent() {
     };
   }, []);
 
+  // Payment configuration from Admin Settings
+  const [paymentConfig, setPaymentConfig] = useState<PaymentConfigData | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    settingsApi
+      .getPaymentConfig()
+      .then((res) => {
+        if (isMounted && res) {
+          setPaymentConfig(res);
+        }
+      })
+      .catch((err) => {
+        console.warn('Could not load payment config from API:', err);
+        const stored = getStoredAdminData<any>(ADMIN_STORAGE_KEYS.PAYMENT_SETTINGS, null);
+        if (isMounted && stored) {
+          setPaymentConfig(stored);
+        }
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const getItemAvailableStock = (item: { id: string; sku?: string; inStockQty?: number }) => {
     const found = catalogProducts.find(
       (p) => p.id === item.id || (p.code && item.sku && p.code.toLowerCase() === item.sku.toLowerCase())
     );
     if (found) {
-      const rawStock = typeof found.inStock === 'number' ? found.inStock : (found.inStockQty !== undefined ? found.inStockQty : undefined);
-      return rawStock !== undefined ? rawStock : (found.stockNote ? (parseInt(found.stockNote.replace(/\D/g, ''), 10) || 0) : 0);
+      return getProductStockForBranch(found, selectedBranch);
     }
     return item.inStockQty !== undefined ? item.inStockQty : 99;
   };
@@ -157,7 +183,7 @@ function CheckoutContent() {
         const list = await branchApi.getBranches();
         if (list && Array.isArray(list) && list.length > 0) {
           setBranches(list);
-          const savedBranch = getStoredAdminData<string>(ADMIN_STORAGE_KEYS.SELECTED_BRANCH, '') || localStorage.getItem('d2_selected_branch') || '';
+          const savedBranch = localStorage.getItem('d2_selected_branch') || localStorage.getItem('d2_customer_branch') || '';
           if (savedBranch && list.some((b) => b.name === savedBranch)) {
             setSelectedBranch(savedBranch);
           } else {
@@ -168,10 +194,23 @@ function CheckoutContent() {
       } catch (err) {
         console.warn('Could not load branches for checkout:', err);
       }
-      const fallback = getStoredAdminData<string>(ADMIN_STORAGE_KEYS.SELECTED_BRANCH, '') || 'Chi nhánh Hà Nội';
+      const fallback = localStorage.getItem('d2_selected_branch') || localStorage.getItem('d2_customer_branch') || 'Chi nhánh Hà Nội';
       setSelectedBranch(fallback);
     };
     loadBranches();
+
+    const handleBranchChanged = (e: any) => {
+      const b = e.detail?.branch || e.detail?.branchName;
+      if (b && b !== 'all') {
+        setSelectedBranch(b);
+      }
+    };
+    window.addEventListener('customer_branch_changed', handleBranchChanged);
+    window.addEventListener('branch_changed', handleBranchChanged);
+    return () => {
+      window.removeEventListener('customer_branch_changed', handleBranchChanged);
+      window.removeEventListener('branch_changed', handleBranchChanged);
+    };
   }, []);
 
   // Sync user info into checkout form
@@ -208,6 +247,16 @@ function CheckoutContent() {
   const finalTotal = useMemo(() => {
     return subtotal;
   }, [subtotal]);
+
+  // Dynamic Bank and VietQR details from Store Configuration
+  const activeBankName = paymentConfig?.bankName || 'MB Bank';
+  const activeAccountNumber = (paymentConfig?.accountNumber || paymentConfig?.bankAccountNumber || '0379241075').trim();
+  const activeAccountName = (paymentConfig?.accountName || paymentConfig?.bankAccountName || 'Nguyễn Văn Luân').trim();
+  const activeBankBin = paymentConfig?.bankBin || getBankBin(activeBankName);
+  const transferMemo = `D2 ${phone.replace(/\s+/g, '') || 'LUXURY'}`;
+  const qrTemplate = paymentConfig?.vietQrTemplate || 'compact';
+
+  const dynamicQrUrl = `https://img.vietqr.io/image/${activeBankBin}-${activeAccountNumber}-${qrTemplate}.png?amount=${finalTotal}&addInfo=${encodeURIComponent(transferMemo)}&accountName=${encodeURIComponent(activeAccountName)}`;
 
   // Order Success Modal
   const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
@@ -252,7 +301,7 @@ function CheckoutContent() {
 
       const isGuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       const finalBranch = selectedBranch || (typeof window !== 'undefined'
-        ? (getStoredAdminData<string>(ADMIN_STORAGE_KEYS.SELECTED_BRANCH, '') || localStorage.getItem('d2_selected_branch') || 'Chi nhánh Hà Nội')
+        ? (localStorage.getItem('d2_selected_branch') || localStorage.getItem('d2_customer_branch') || (branches[0]?.name ?? 'Chi nhánh Hà Nội'))
         : 'Chi nhánh Hà Nội');
 
       const isCod = paymentMethod === 'cod';
@@ -320,6 +369,14 @@ function CheckoutContent() {
           console.warn('Could not save local user order:', e);
         }
       }
+
+      // Sync to admin orders local storage if available
+      try {
+        const currentAdminOrders = getStoredAdminData<any[]>(ADMIN_STORAGE_KEYS.ORDERS, []);
+        if (Array.isArray(currentAdminOrders)) {
+          setStoredAdminData(ADMIN_STORAGE_KEYS.ORDERS, [created, ...currentAdminOrders.filter((o) => o.id !== created.id)]);
+        }
+      } catch {}
 
       if (isDirectMode && typeof window !== 'undefined') {
         sessionStorage.removeItem('d2_direct_checkout_item');
@@ -536,7 +593,19 @@ function CheckoutContent() {
                       </div>
                       <select
                         value={selectedBranch}
-                        onChange={(e) => setSelectedBranch(e.target.value)}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setSelectedBranch(val);
+                          if (typeof window !== 'undefined') {
+                            localStorage.setItem('d2_selected_branch', val);
+                            localStorage.setItem('d2_customer_branch', val);
+                            window.dispatchEvent(
+                              new CustomEvent('customer_branch_changed', {
+                                detail: { branch: val, branchName: val },
+                              })
+                            );
+                          }
+                        }}
                         className="px-3.5 py-2.5 bg-[#fbf2ee] border border-[#eae1dd] text-[#1f1b19] font-medium focus:outline-none focus:border-[#5d371f] transition-colors cursor-pointer"
                       >
                         {branches.length > 0 ? (
@@ -549,7 +618,7 @@ function CheckoutContent() {
                           <>
                             <option value="Chi nhánh Hà Nội">Chi nhánh Hà Nội</option>
                             <option value="Chi nhánh Nam Định">Chi nhánh Nam Định</option>
-                            <option value="Showroom Flagship Thảo Điền">Showroom Flagship Thảo Điền</option>
+                            <option value="Trụ sở & Showroom Phú Quốc">Trụ sở &amp; Showroom Phú Quốc</option>
                           </>
                         )}
                       </select>
@@ -715,8 +784,8 @@ function CheckoutContent() {
                               <div className="flex flex-col items-center gap-2 shrink-0">
                                 <div className="bg-white p-2 border border-[#eae1dd] shadow-sm">
                                   <img
-                                    src={`https://img.vietqr.io/image/vietinbank-113366668888-compact.jpg?amount=${finalTotal}&addInfo=${encodeURIComponent(`D2 ${phone.replace(/\s+/g, '') || 'LUXURY'}`)}&accountName=D2%20LUXURY`}
-                                    alt="Mã QR Chuyển khoản VietinBank"
+                                    src={dynamicQrUrl}
+                                    alt={`Mã QR Chuyển khoản ${activeBankName}`}
                                     className="w-44 h-auto object-contain"
                                   />
                                 </div>
@@ -728,24 +797,24 @@ function CheckoutContent() {
                               <div className="flex flex-col gap-2 text-xs flex-1 w-full">
                                 <div className="pb-2 border-b border-[#eae1dd]">
                                   <span className="text-[10px] uppercase font-bold text-[#83746c] block tracking-wider">Ngân hàng thụ hưởng</span>
-                                  <p className="font-bold text-sm text-[#1f1b19]">VietinBank (Ngân hàng TMCP Công Thương VN)</p>
+                                  <p className="font-bold text-sm text-[#1f1b19]">{activeBankName}</p>
                                 </div>
 
                                 <div className="flex items-center justify-between py-1 border-b border-[#eae1dd]/60">
                                   <div>
                                     <span className="text-[10px] text-[#83746c] block">Chủ tài khoản:</span>
-                                    <strong className="font-serif text-[#5d371f] text-xs">CÔNG TY CỔ PHẦN NỘI THẤT D2 LUXURY</strong>
+                                    <strong className="font-serif text-[#5d371f] text-xs uppercase">{activeAccountName}</strong>
                                   </div>
                                 </div>
 
                                 <div className="flex items-center justify-between py-1 border-b border-[#eae1dd]/60">
                                   <div>
                                     <span className="text-[10px] text-[#83746c] block">Số tài khoản:</span>
-                                    <strong className="font-data-mono text-sm text-[#1f1b19]">113366668888</strong>
+                                    <strong className="font-data-mono text-sm text-[#1f1b19]">{activeAccountNumber}</strong>
                                   </div>
                                   <button
                                     type="button"
-                                    onClick={() => handleCopy('113366668888', 'Số tài khoản')}
+                                    onClick={() => handleCopy(activeAccountNumber, 'Số tài khoản')}
                                     className="px-2.5 py-1 bg-[#fbf2ee] hover:bg-[#eae1dd] border border-[#eae1dd] text-[11px] font-bold text-[#5d371f] flex items-center gap-1 transition-colors cursor-pointer"
                                   >
                                     <CopyOutlined /> Sao chép
@@ -769,11 +838,11 @@ function CheckoutContent() {
                                 <div className="flex items-center justify-between pt-1">
                                   <div>
                                     <span className="text-[10px] text-[#83746c] block">Nội dung chuyển khoản:</span>
-                                    <strong className="font-data-mono text-xs text-[#5d371f]">D2 {phone.replace(/\s+/g, '') || 'LUXURY'}</strong>
+                                    <strong className="font-data-mono text-xs text-[#5d371f]">{transferMemo}</strong>
                                   </div>
                                   <button
                                     type="button"
-                                    onClick={() => handleCopy(`D2 ${phone.replace(/\s+/g, '') || 'LUXURY'}`, 'Nội dung chuyển khoản')}
+                                    onClick={() => handleCopy(transferMemo, 'Nội dung chuyển khoản')}
                                     className="px-2.5 py-1 bg-[#fbf2ee] hover:bg-[#eae1dd] border border-[#eae1dd] text-[11px] font-bold text-[#5d371f] flex items-center gap-1 transition-colors cursor-pointer"
                                   >
                                     <CopyOutlined /> Sao chép
@@ -942,10 +1011,10 @@ function CheckoutContent() {
                       </div>
                     </div>
                     <a
-                      href="tel:19008922"
+                      href="tel:0967323335"
                       className="px-3 py-1.5 bg-white border border-[#eae1dd] text-xs font-bold text-[#5d371f] hover:bg-[#5d371f] hover:text-white transition-colors"
                     >
-                      1900 8922
+                      0967 323 335
                     </a>
                   </div>
                 </div>
@@ -1014,13 +1083,15 @@ function CheckoutContent() {
 
           {paymentMethod === 'qr' && (
             <div className="w-full bg-[#fbf2ee] border border-[#eae1dd] p-4 flex flex-col items-center gap-2">
-              <span className="text-xs font-bold text-[#5d371f]">Quét mã VietQR VietinBank để thanh toán ngay</span>
+              <span className="text-xs font-bold text-[#5d371f]">Quét mã VietQR {activeBankName} để thanh toán ngay</span>
               <img
-                src={`https://img.vietqr.io/image/vietinbank-113366668888-compact.jpg?amount=${finalTotal}&addInfo=${encodeURIComponent(`D2 ${phone.replace(/\s+/g, '') || 'LUXURY'}`)}&accountName=D2%20LUXURY`}
-                alt="VietQR VietinBank"
+                src={dynamicQrUrl}
+                alt={`VietQR ${activeBankName}`}
                 className="w-40 h-auto rounded border border-[#eae1dd] shadow-sm bg-white p-1"
               />
-              <span className="text-[11px] text-[#83746c]">STK: <strong>113366668888</strong> • Nội dung: <strong>D2 {phone.replace(/\s+/g, '') || 'LUXURY'}</strong></span>
+              <span className="text-[11px] text-[#83746c]">
+                STK: <strong>{activeAccountNumber}</strong> ({activeBankName}) • Chủ TK: <strong>{activeAccountName}</strong> • Nội dung: <strong>{transferMemo}</strong>
+              </span>
             </div>
           )}
 

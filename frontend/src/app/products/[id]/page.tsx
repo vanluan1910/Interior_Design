@@ -33,10 +33,11 @@ import Footer from '@/components/Footer';
 import SampleBoxModal from '@/components/SampleBoxModal';
 import QuickViewModal from '@/components/QuickViewModal';
 import { Product, CartItem } from '@/types';
+import { getProductStockForBranch } from '@/utils/branchHelper';
 import { useCart } from '@/context/CartContext';
 import { productApi, FeaturedCatalogProduct } from '@/api/productApi';
 
-function mapCatalogToDetailProduct(item: FeaturedCatalogProduct): Product {
+function mapCatalogToDetailProduct(item: FeaturedCatalogProduct, currentBranch?: string): Product {
   const rawSpace = (item.space || '').toLowerCase();
   let space: 'living' | 'bedroom' | 'dining' | 'office' = 'living';
   if (rawSpace.includes('bed') || rawSpace.includes('ngủ')) space = 'bedroom';
@@ -88,16 +89,17 @@ function mapCatalogToDetailProduct(item: FeaturedCatalogProduct): Product {
     description: item.description || `Sản phẩm ${item.name} chế tác tỉ mỉ từ gỗ tự nhiên tuyển chọn bởi nghệ nhân D2 LUXURY.`,
     dimensions: item.dimensions || 'Theo thiết kế tiêu chuẩn',
     stockStatus: (() => {
-      const rawStock = typeof item.inStock === 'number' ? item.inStock : (item.inStockQty !== undefined ? item.inStockQty : undefined);
-      const stockQty = rawStock !== undefined ? rawStock : (item.stockNote ? (parseInt(item.stockNote.replace(/\D/g, ''), 10) || 0) : 0);
-      if (stockQty > 0) return `Còn ${stockQty} sản phẩm sẵn`;
+      const stockQty = getProductStockForBranch(item, currentBranch);
+      if (stockQty > 0) return `Còn hàng (${stockQty} sản phẩm)`;
       if (item.stockType === 'custom') return 'Đặt may đo (7-14 ngày)';
-      return 'Sẵn sàng đặt hàng (Bán âm kho / May đo)';
+      return 'Hết hàng (Nhận đặt may đo)';
     })(),
-    inStock: true,
+    inStock: (() => {
+      const stockQty = getProductStockForBranch(item, currentBranch);
+      return stockQty > 0;
+    })(),
     inStockQty: (() => {
-      const rawStock = typeof item.inStock === 'number' ? item.inStock : (item.inStockQty !== undefined ? item.inStockQty : undefined);
-      return rawStock !== undefined ? rawStock : (item.stockNote ? (parseInt(item.stockNote.replace(/\D/g, ''), 10) || 0) : 0);
+      return getProductStockForBranch(item, currentBranch);
     })(),
     materialDetails: item.material || item.metaInfo || 'Gỗ tự nhiên sấy chân không đạt chuẩn',
     material: item.material || item.metaInfo,
@@ -119,6 +121,28 @@ export default function ProductDetailPage({
   const [currentProduct, setCurrentProduct] = useState<Product | null>(null);
   const [companionProducts, setCompanionProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [selectedBranch, setSelectedBranch] = useState<string>('');
+
+  useEffect(() => {
+    const saved = typeof window !== 'undefined'
+      ? (localStorage.getItem('d2_selected_branch') || localStorage.getItem('d2_customer_branch') || '')
+      : '';
+    if (saved && saved !== 'all') {
+      setSelectedBranch(saved);
+    }
+    const handleBranchChanged = (e: any) => {
+      const b = e.detail?.branch || e.detail?.branchName;
+      if (b && b !== 'all') {
+        setSelectedBranch(b);
+      }
+    };
+    window.addEventListener('customer_branch_changed', handleBranchChanged);
+    window.addEventListener('branch_changed', handleBranchChanged);
+    return () => {
+      window.removeEventListener('customer_branch_changed', handleBranchChanged);
+      window.removeEventListener('branch_changed', handleBranchChanged);
+    };
+  }, []);
 
   // Load product dynamically from Database API
   useEffect(() => {
@@ -130,26 +154,26 @@ export default function ProductDetailPage({
 
         if (isMounted) {
           if (detailResult && detailResult.product) {
-            const mapped = mapCatalogToDetailProduct(detailResult.product);
+            const mapped = mapCatalogToDetailProduct(detailResult.product, selectedBranch);
             setCurrentProduct(mapped);
 
             if (detailResult.relatedProducts && detailResult.relatedProducts.length > 0) {
               const companions = detailResult.relatedProducts
                 .filter((p) => p.id !== detailResult.product.id)
                 .slice(0, 3)
-                .map(mapCatalogToDetailProduct);
+                .map((p) => mapCatalogToDetailProduct(p, selectedBranch));
               setCompanionProducts(companions);
             }
           } else {
             // Secondary fallback search if identifier is custom
             const found = await productApi.getProductById(id);
             if (found) {
-              setCurrentProduct(mapCatalogToDetailProduct(found));
+              setCurrentProduct(mapCatalogToDetailProduct(found, selectedBranch));
               const crossList = await productApi.getProducts({ space: found.space });
               const companions = crossList
                 .filter((p) => p.id !== found.id)
                 .slice(0, 3)
-                .map(mapCatalogToDetailProduct);
+                .map((p) => mapCatalogToDetailProduct(p, selectedBranch));
               setCompanionProducts(companions);
             } else {
               setCurrentProduct(null);
@@ -168,7 +192,7 @@ export default function ProductDetailPage({
     return () => {
       isMounted = false;
     };
-  }, [id]);
+  }, [id, selectedBranch]);
 
   // Gallery - Dynamic real images from database
   const galleryImages = useMemo(() => {
@@ -607,7 +631,7 @@ export default function ProductDetailPage({
             {/* Tab Headers */}
             <div className="flex items-center gap-2 overflow-x-auto pb-1 border-b border-[#eae1dd]">
               {[
-                { id: 'specs', label: 'Thông số kỹ thuật & Chế tác' },
+                { id: 'specs', label: 'Thông số kỹ thuật' },
                 { id: 'care', label: 'Hướng dẫn bảo dưỡng gỗ tự nhiên' },
                 { id: 'shipping', label: 'Chính sách giao nhận & Đổi trả' },
               ].map((tab) => (
@@ -630,18 +654,6 @@ export default function ProductDetailPage({
             {activeTab === 'specs' && (
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
                 <div className="lg:col-span-7 flex flex-col gap-4">
-                  <div className="flex flex-col gap-1">
-                    <span className="text-xs uppercase tracking-widest text-[#83746c] font-semibold">
-                      Triết lý chế tác
-                    </span>
-                    <h3 className="font-headline-md text-xl sm:text-2xl text-[#5d371f] font-normal">
-                      Chế tác mộc mộng tinh xảo từ {currentProduct.woodType || 'gỗ tự nhiên'}
-                    </h3>
-                    <p className="text-xs sm:text-sm text-[#51443d] leading-relaxed mt-1">
-                      {currentProduct.description || `Sản phẩm ${currentProduct.name} được chế tác tỉ mỉ bởi nghệ nhân D2 LUXURY, sử dụng hệ chốt ghép mộng chắc chắn, hoàn thiện lớp bảo vệ an toàn cho sức khỏe và tôn vinh trọn vẹn vân gỗ tự nhiên.`}
-                    </p>
-                  </div>
-
                   {/* Spec Table */}
                   <div className="overflow-hidden bg-white border border-[#eae1dd] shadow-sm">
                     <table className="w-full text-left text-xs">

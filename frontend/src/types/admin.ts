@@ -107,6 +107,7 @@ export interface FeaturedCatalogProduct {
   price: number; // Giá bán niêm yết
   originalPrice?: number; // Giá gốc / Giá vốn / Giá nhập
   costPrice?: number; // Alias giá gốc
+  discountPercent?: number; // % giảm giá khuyến mãi
   stockNote: string;
   stockType: 'in_stock' | 'low' | 'custom' | 'out_of_stock';
   image: string;

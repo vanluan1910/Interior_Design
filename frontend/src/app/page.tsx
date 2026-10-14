@@ -139,7 +139,7 @@ export default function HomePage() {
       try {
         const [homeRes, catalogRes] = await Promise.allSettled([
           homeApi.getHomeData(),
-          productApi.getProducts({ pageSize: 500 }),
+          productApi.getProducts({ pageSize: 40 }),
         ]);
 
         if (isMounted) {
@@ -150,12 +150,12 @@ export default function HomePage() {
             } catch {}
           }
 
-          if (catalogRes.status === 'fulfilled' && catalogRes.value && catalogRes.value.length > 0) {
-            const mappedCatalog = catalogRes.value.map(mapCatalogProductToProduct);
-            setProducts(mappedCatalog);
-          } else if (homeRes.status === 'fulfilled' && homeRes.value?.featuredProducts && homeRes.value.featuredProducts.length > 0) {
+          if (homeRes.status === 'fulfilled' && homeRes.value?.featuredProducts && homeRes.value.featuredProducts.length > 0) {
             const mappedHome = homeRes.value.featuredProducts.map(mapHomeProductToProduct);
             setProducts(mappedHome);
+          } else if (catalogRes.status === 'fulfilled' && catalogRes.value && catalogRes.value.length > 0) {
+            const mappedCatalog = catalogRes.value.map(mapCatalogProductToProduct);
+            setProducts(mappedCatalog);
           }
         }
       } catch (err) {

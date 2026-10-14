@@ -69,12 +69,6 @@ public sealed class OrdersController : ApiControllerBase
                 query = query.Where(x => x.OrderType != null && x.OrderType.ToLower() == ot);
             }
 
-            if (!string.IsNullOrWhiteSpace(branch) && branch != "all")
-            {
-                var br = branch.Trim().ToLower();
-                query = query.Where(x => x.Branch != null && x.Branch.ToLower().Contains(br));
-            }
-
             if (!string.IsNullOrWhiteSpace(spaceType) && spaceType != "all")
             {
                 var sp = spaceType.Trim().ToLower();
@@ -83,16 +77,36 @@ public sealed class OrdersController : ApiControllerBase
 
             query = query.OrderByDescending(x => x.OrderDate).ThenByDescending(x => x.CreatedAt);
 
-            if (pageSize.HasValue && pageSize.Value > 0)
+            List<Order> entities;
+            if (!string.IsNullOrWhiteSpace(branch) && branch != "all")
             {
-                var p = Math.Max(1, page ?? 1);
-                var ps = Math.Min(1000, pageSize.Value);
-                query = query.Skip((p - 1) * ps).Take(ps);
+                var rawEntities = await query.ToListAsync(cancellationToken);
+                var allBranches = await _context.Branches.AsNoTracking().Where(b => !b.IsDeleted).ToListAsync(cancellationToken);
+                var allWarehouses = await _context.Warehouses.AsNoTracking().Where(w => !w.IsDeleted).ToListAsync(cancellationToken);
+                var filtered = rawEntities.Where(x => BranchMatcher.IsBranchMatch(x.Branch, branch, allBranches, allWarehouses) || BranchMatcher.IsBranchMatch(x.Showroom, branch, allBranches, allWarehouses)).ToList();
+                if (pageSize.HasValue && pageSize.Value > 0)
+                {
+                    var p = Math.Max(1, page ?? 1);
+                    var ps = Math.Min(1000, pageSize.Value);
+                    entities = filtered.Skip((p - 1) * ps).Take(ps).ToList();
+                }
+                else
+                {
+                    entities = filtered;
+                }
+            }
+            else
+            {
+                if (pageSize.HasValue && pageSize.Value > 0)
+                {
+                    var p = Math.Max(1, page ?? 1);
+                    var ps = Math.Min(1000, pageSize.Value);
+                    query = query.Skip((p - 1) * ps).Take(ps);
+                }
+                entities = await query.ToListAsync(cancellationToken);
             }
 
-            var entities = await query.ToListAsync(cancellationToken);
             var dtos = entities.Select(OrderMapper.ToDto).ToList();
-
             return Ok(ApiResponse<List<OrderDto>>.Ok(dtos));
         }
         catch (OperationCanceledException)
@@ -228,7 +242,8 @@ public sealed class OrdersController : ApiControllerBase
         var allBranches = await _context.Branches.AsNoTracking().Where(b => !b.IsDeleted).ToListAsync(cancellationToken);
         if (!string.IsNullOrWhiteSpace(targetBranch))
         {
-            var mb = allBranches.FirstOrDefault(b => IsBranchMatch(b.Name, targetBranch));
+            var allWarehouses = await _context.Warehouses.AsNoTracking().Where(w => !w.IsDeleted).ToListAsync(cancellationToken);
+            var mb = BranchMatcher.FindMatchingBranch(allBranches, targetBranch, allWarehouses);
             if (mb != null) targetBranch = mb.Name;
         }
         else if (allBranches.Count > 0)
@@ -358,6 +373,10 @@ public sealed class OrdersController : ApiControllerBase
             customer.OrderCount += 1;
             customer.LastOrderDate = DateTimeOffset.UtcNow;
             customer.UpdatedAt = DateTimeOffset.UtcNow;
+            if (string.IsNullOrWhiteSpace(customer.Branch))
+            {
+                customer.Branch = targetBranch;
+            }
             if (string.IsNullOrWhiteSpace(customer.Address) && !string.IsNullOrWhiteSpace(request.ShippingAddress))
             {
                 customer.Address = request.ShippingAddress.Trim();
@@ -389,6 +408,7 @@ public sealed class OrdersController : ApiControllerBase
                 Email = string.IsNullOrWhiteSpace(cleanEmail) ? null : cleanEmail,
                 Address = request.ShippingAddress?.Trim() ?? request.CustomerAddress?.Trim(),
                 City = request.City?.Trim(),
+                Branch = targetBranch,
                 CustomerType = "individual",
                 Type = "retail",
                 Tier = "standard",
@@ -660,8 +680,9 @@ public sealed class OrdersController : ApiControllerBase
         if (items == null || items.Count == 0) return;
 
         var allBranches = await _context.Branches.AsNoTracking().Where(b => !b.IsDeleted).ToListAsync(cancellationToken);
+        var allWarehouses = await _context.Warehouses.AsNoTracking().Where(w => !w.IsDeleted).ToListAsync(cancellationToken);
         string branchName = targetBranch?.Trim() ?? string.Empty;
-        var matchedBranch = allBranches.FirstOrDefault(b => IsBranchMatch(b.Name, branchName));
+        var matchedBranch = BranchMatcher.FindMatchingBranch(allBranches, branchName, allWarehouses);
         if (matchedBranch != null)
         {
             branchName = matchedBranch.Name;
@@ -709,13 +730,20 @@ public sealed class OrdersController : ApiControllerBase
                 catch { }
             }
 
-            var matchKey = branchStocks.Keys.FirstOrDefault(k => IsBranchMatch(k, branchName));
+            var matchKey = branchStocks.Keys.FirstOrDefault(k => BranchMatcher.IsBranchMatch(k, branchName, allBranches, allWarehouses));
             if (matchKey == null)
             {
                 if (branchStocks.Count == 0 && product.InStock > 0)
                 {
-                    matchKey = branchName;
-                    branchStocks[matchKey] = product.InStock;
+                    foreach (var b in allBranches)
+                    {
+                        branchStocks[b.Name] = product.InStock;
+                    }
+                    matchKey = branchStocks.Keys.FirstOrDefault(k => BranchMatcher.IsBranchMatch(k, branchName, allBranches, allWarehouses)) ?? branchName;
+                    if (!branchStocks.ContainsKey(matchKey))
+                    {
+                        branchStocks[matchKey] = product.InStock;
+                    }
                 }
                 else
                 {
@@ -740,37 +768,4 @@ public sealed class OrdersController : ApiControllerBase
         }
     }
 
-    private static bool IsBranchMatch(string? branchA, string? branchB)
-    {
-        if (string.IsNullOrWhiteSpace(branchA) || string.IsNullOrWhiteSpace(branchB)) return false;
-        var cleanA = RemoveDiacritics(branchA).ToLowerInvariant().Trim();
-        var cleanB = RemoveDiacritics(branchB).ToLowerInvariant().Trim();
-        if (cleanA == cleanB) return true;
-        if (cleanA.Contains(cleanB) || cleanB.Contains(cleanA)) return true;
-
-        if ((cleanA.Contains("thao dien") || cleanA.Contains("td01")) && (cleanB.Contains("thao dien") || cleanB.Contains("td01"))) return true;
-        if ((cleanA.Contains("quan 10") || cleanA.Contains("q10")) && (cleanB.Contains("quan 10") || cleanB.Contains("q10"))) return true;
-        if ((cleanA.Contains("binh chanh") || cleanA.Contains("bc01")) && (cleanB.Contains("binh chanh") || cleanB.Contains("bc01"))) return true;
-        if ((cleanA.Contains("ha noi") || cleanA.Contains("ecopark") || cleanA.Contains("hn01")) && (cleanB.Contains("ha noi") || cleanB.Contains("ecopark") || cleanB.Contains("hn01"))) return true;
-        if (cleanA.Contains("nam dinh") && cleanB.Contains("nam dinh")) return true;
-
-        return false;
-    }
-
-    private static string RemoveDiacritics(string text)
-    {
-        if (string.IsNullOrWhiteSpace(text)) return string.Empty;
-        var normalizedString = text.Normalize(System.Text.NormalizationForm.FormD);
-        var stringBuilder = new System.Text.StringBuilder(capacity: normalizedString.Length);
-        for (int i = 0; i < normalizedString.Length; i++)
-        {
-            char c = normalizedString[i];
-            var unicodeCategory = System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c);
-            if (unicodeCategory != System.Globalization.UnicodeCategory.NonSpacingMark)
-            {
-                stringBuilder.Append(c);
-            }
-        }
-        return stringBuilder.ToString().Normalize(System.Text.NormalizationForm.FormC).Replace('đ', 'd').Replace('Đ', 'D');
-    }
 }

@@ -19,7 +19,8 @@ public sealed record GetProductsQuery(
     Guid? CategoryId = null,
     string? Category = null,
     string? Status = null,
-    string? Branch = null
+    string? Branch = null,
+    string? Material = null
 ) : IRequest<ApiResponse<PagedResult<ProductDto>>>;
 
 public sealed record GetProductByIdQuery(Guid Id) : IRequest<ApiResponse<ProductDto>>;
@@ -81,7 +82,7 @@ public sealed class GetProductsQueryHandler(IInteriorRepository repo)
             statusFilter = parsedStatus;
         }
 
-        var result = await repo.GetProductsAsync(query.Page, query.PageSize, query.Search, query.Space, query.CategoryId, query.Category, statusFilter, query.Branch, cancellationToken);
+        var result = await repo.GetProductsAsync(query.Page, query.PageSize, query.Search, query.Space, query.CategoryId, query.Category, statusFilter, query.Branch, query.Material, cancellationToken);
         var dtos = result.Items.Select(ProductMapper.ToDto).ToList();
         var paged = new PagedResult<ProductDto>(dtos, result.Page, result.PageSize, result.TotalItems);
 

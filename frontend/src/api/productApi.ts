@@ -59,6 +59,9 @@ function mapDtoToCatalogProduct(dto: any, branchParam?: string): FeaturedCatalog
     price: price,
     originalPrice: originalPrice,
     costPrice: originalPrice,
+    discountPercent: typeof dto.discountPercent === 'number'
+      ? dto.discountPercent
+      : (originalPrice > price ? Math.round(((originalPrice - price) / originalPrice) * 100) : 0),
     stockNote: `${inStockQty} chiếc`,
     stockType: (dto.stockType as any) || stockType,
     image: dto.mainImageUrl || dto.image || '',
@@ -92,6 +95,7 @@ export const productApi = {
     category?: string;
     status?: string;
     branch?: string;
+    material?: string;
     page?: number;
     pageSize?: number;
   }): Promise<FeaturedCatalogProduct[]> {
@@ -104,6 +108,7 @@ export const productApi = {
     if (params?.category && params.category !== 'all') query.append('category', params.category);
     if (params?.status && params.status !== 'all') query.append('status', params.status);
     if (params?.branch && params.branch !== 'all') query.append('branch', params.branch);
+    if (params?.material && params.material !== 'all') query.append('material', params.material);
 
     const cacheKey = `products:catalog:${query.toString()}`;
     return cachedFetch(cacheKey, async () => {
@@ -137,6 +142,7 @@ export const productApi = {
     category?: string;
     status?: string;
     branch?: string;
+    material?: string;
     page?: number;
     pageSize?: number;
   }): Promise<{ items: FeaturedCatalogProduct[]; totalItems: number; page: number; pageSize: number }> {
@@ -149,6 +155,7 @@ export const productApi = {
     if (params?.category && params.category !== 'all') query.append('category', params.category);
     if (params?.status && params.status !== 'all') query.append('status', params.status);
     if (params?.branch && params.branch !== 'all') query.append('branch', params.branch);
+    if (params?.material && params.material !== 'all') query.append('material', params.material);
 
     const cacheKey = `products:paged:${query.toString()}`;
     return cachedFetch(cacheKey, async () => {
@@ -184,6 +191,36 @@ export const productApi = {
         console.warn('Backend server is unreachable or offline:', err);
       }
       return { items: [], totalItems: 0, page: params?.page || 1, pageSize: params?.pageSize || 10 };
+    }, 15000);
+  },
+
+  /**
+   * Lấy danh sách chất liệu gỗ thực tế trực tiếp từ DB kèm số lượng sản phẩm
+   */
+  async getMaterials(space?: string): Promise<{ name: string; count: number }[]> {
+    const query = new URLSearchParams();
+    if (space && space !== 'all') query.append('space', space);
+
+    const cacheKey = `products:materials:${query.toString()}`;
+    return cachedFetch(cacheKey, async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/products/materials?${query.toString()}`, {
+          headers: { Accept: 'application/json' },
+        });
+
+        if (res.ok) {
+          const json = await res.json();
+          if (json.data && Array.isArray(json.data)) {
+            return json.data.map((item: any) => ({
+              name: item.name || item.Name || '',
+              count: typeof item.count === 'number' ? item.count : (typeof item.Count === 'number' ? item.Count : 0),
+            }));
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to fetch materials from DB API:', err);
+      }
+      return [];
     }, 15000);
   },
 
@@ -294,7 +331,7 @@ export const productApi = {
         mainImageUrl: payload.image || '',
         images: subImagesList,
         space: payload.space || 'LivingRoom',
-        discountPercent: 0,
+        discountPercent: payload.discountPercent !== undefined ? payload.discountPercent : 0,
         isFeatured: false,
         isNew: true,
         branch: payload.branch,
@@ -344,6 +381,7 @@ export const productApi = {
         categoryId: payload.categoryId,
         price: payload.price || 0,
         originalPrice: payload.originalPrice !== undefined ? payload.originalPrice : (payload.costPrice !== undefined ? payload.costPrice : payload.price || 0),
+        discountPercent: payload.discountPercent !== undefined ? payload.discountPercent : 0,
         inStock: parsedQty,
         unit: payload.unit || 'Bộ',
         stockType: payload.stockType,

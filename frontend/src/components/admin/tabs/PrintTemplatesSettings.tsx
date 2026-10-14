@@ -594,7 +594,7 @@ export function PrintTemplatesSettings() {
                 </div>
               )}
               <div className="font-bold text-slate-900 text-xs">CÔNG TY CỔ PHẦN NỘI THẤT D2 LUXURY</div>
-              <div className="text-slate-600 text-[10px]">Đ/c: Showroom 01, KĐT Vinhomes Riverside, Long Biên, Hà Nội</div>
+              <div className="text-slate-600 text-[10px]">Đ/c: Ngã 4 Cửa Cạn, đặc khu Phú Quốc, tỉnh An Giang</div>
               <div className="text-slate-600 text-[10px]">Hotline: 0986.739.587 - 0985.166.393 | MST: 0109887766</div>
               {activeTemplate.headerNote && (
                 <div className="text-[10px] text-[#784e34] font-medium pt-0.5">{activeTemplate.headerNote}</div>

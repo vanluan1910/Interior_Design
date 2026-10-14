@@ -39,9 +39,10 @@ import {
   AdminSidebarSummary,
   AdminSearchInput,
 } from '@/components/admin';
-import type { AdminCustomer, OrderRow } from '@/types/admin';
+import type { AdminCustomer, OrderRow, AdminBranch } from '@/types/admin';
 import { customerApi } from '@/api/customerApi';
 import { orderApi } from '@/api/orderApi';
+import { branchApi } from '@/api/branchApi';
 import { isMatchBranch } from '@/utils/branchHelper';
 import { getCleanProductName, getOrderQuantity } from './OrdersTab';
 
@@ -52,6 +53,7 @@ export interface CustomersTabProps {
   ordersList?: OrderRow[];
   setOrdersList?: React.Dispatch<React.SetStateAction<OrderRow[]>>;
   selectedGlobalBranch?: string;
+  branchesList?: AdminBranch[];
   onOpenCreateCustomer?: () => void;
   onOpenEditCustomer?: (customer: AdminCustomer) => void;
   onSelectCustomerDetail?: (customer: AdminCustomer) => void;
@@ -75,6 +77,7 @@ export function CustomersTab({
   ordersList = [],
   setOrdersList,
   selectedGlobalBranch = 'all',
+  branchesList = [],
   onOpenCreateCustomer,
   onOpenEditCustomer,
   onSelectCustomerDetail,
@@ -85,6 +88,53 @@ export function CustomersTab({
   const [customerSearchQuery, setCustomerSearchQuery] = useState('');
   const [debtFilter, setDebtFilter] = useState('all'); // 'all' | 'has_debt' | 'no_debt'
   const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'active' | 'inactive'
+  const [branchFilter, setBranchFilter] = useState<string>(selectedGlobalBranch || 'all');
+
+  // Load branches if not provided as prop
+  const [internalBranches, setInternalBranches] = useState<AdminBranch[]>([]);
+  const effectiveBranches = useMemo(() => {
+    return branchesList && branchesList.length > 0 ? branchesList : internalBranches;
+  }, [branchesList, internalBranches]);
+
+  React.useEffect(() => {
+    if (!branchesList || branchesList.length === 0) {
+      branchApi
+        .getBranches()
+        .then((list) => {
+          if (Array.isArray(list) && list.length > 0) {
+            setInternalBranches(list);
+          }
+        })
+        .catch((e) => console.warn('Could not load branches:', e));
+    }
+  }, [branchesList]);
+
+  // Sync if selectedGlobalBranch prop changes
+  React.useEffect(() => {
+    if (selectedGlobalBranch) {
+      setBranchFilter(selectedGlobalBranch);
+    }
+  }, [selectedGlobalBranch]);
+
+  // Branch filter options combining registered branches, customer branches, and order branches
+  const branchFilterOptions = useMemo(() => {
+    const branchSet = new Set<string>();
+    effectiveBranches.forEach((b) => {
+      if (b.name) branchSet.add(b.name);
+    });
+    customersList.forEach((c) => {
+      if (c.branch) branchSet.add(c.branch);
+      if (c.branchName) branchSet.add(c.branchName);
+    });
+    ordersList.forEach((o) => {
+      if (o.branch) branchSet.add(o.branch);
+      if (o.showroom) branchSet.add(o.showroom);
+    });
+    return [
+      { value: 'all', label: 'Tất cả chi nhánh' },
+      ...Array.from(branchSet).map((b) => ({ value: b, label: b })),
+    ];
+  }, [effectiveBranches, customersList, ordersList]);
 
   // Table Selection & Accordion Expansion States
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
@@ -156,7 +206,9 @@ export function CustomersTab({
         (c.address || '').toLowerCase().includes(q) ||
         (c.buyerName || '').toLowerCase().includes(q) ||
         (c.companyName || '').toLowerCase().includes(q) ||
-        (c.taxId || '').toLowerCase().includes(q);
+        (c.taxId || '').toLowerCase().includes(q) ||
+        (c.branch || '').toLowerCase().includes(q) ||
+        (c.branchName || '').toLowerCase().includes(q);
 
       const matchStatus = statusFilter === 'all' || (c.status || 'active') === statusFilter;
 
@@ -165,24 +217,23 @@ export function CustomersTab({
       if (debtFilter === 'no_debt') matchDebt = Number(c.debt || 0) <= 0;
 
       let matchBranch = true;
-      if (selectedGlobalBranch && selectedGlobalBranch !== 'all') {
+      if (branchFilter && branchFilter !== 'all') {
         const hasOrderInBranch = ordersList.some((o) => {
           const isSameCustomer =
             (c.phone && o.customerPhone && o.customerPhone.replace(/\s+/g, '') === c.phone.replace(/\s+/g, '')) ||
             (c.name && o.customerName && o.customerName.trim().toLowerCase() === c.name.trim().toLowerCase()) ||
             ((o as any).customerId && (o as any).customerId === c.id);
-          return isSameCustomer && isMatchBranch(o.branch || o.showroom, selectedGlobalBranch);
+          return isSameCustomer && isMatchBranch(o.branch || o.showroom, branchFilter);
         });
 
-        const hasBranchDirect = isMatchBranch(c.branch || c.branchName || c.salesRep || c.address, selectedGlobalBranch);
-        const isMasterCustomer = !c.branch && !c.branchName;
+        const hasBranchDirect = isMatchBranch(c.branch || c.branchName || c.salesRep || c.address, branchFilter);
 
-        matchBranch = hasOrderInBranch || hasBranchDirect || isMasterCustomer;
+        matchBranch = hasOrderInBranch || hasBranchDirect;
       }
 
       return matchSearch && matchStatus && matchDebt && matchBranch;
     });
-  }, [allMergedCustomers, ordersList, customerSearchQuery, debtFilter, statusFilter, selectedGlobalBranch]);
+  }, [allMergedCustomers, ordersList, customerSearchQuery, debtFilter, statusFilter, branchFilter]);
 
   // Open Create Customer Drawer
   const handleOpenCreate = () => {
@@ -202,6 +253,7 @@ export function CustomersTab({
         customerType: 'individual',
         status: 'active',
         country: 'Việt Nam',
+        branch: branchFilter !== 'all' ? branchFilter : (selectedGlobalBranch !== 'all' ? selectedGlobalBranch : undefined),
       });
     }, 0);
   };
@@ -221,6 +273,7 @@ export function CustomersTab({
       form.setFieldsValue({
         code: customer.code,
         name: customer.name,
+        branch: customer.branch || customer.branchName,
         phone: customer.phone,
         phone2: customer.phone2,
         email: customer.email,
@@ -267,6 +320,8 @@ export function CustomersTab({
         ...values,
         code: trimmedCode || undefined,
         name: trimmedName,
+        branch: values.branch || undefined,
+        branchName: values.branch || undefined,
         birthday: values.birthday ? values.birthday.format('YYYY-MM-DD') : undefined,
       };
 
@@ -342,6 +397,7 @@ export function CustomersTab({
     const headers = [
       'Mã KH',
       'Họ và tên',
+      'Chi nhánh',
       'Số điện thoại',
       'Email',
       'Địa chỉ / Công trình',
@@ -352,6 +408,7 @@ export function CustomersTab({
     const dataRows = filteredCustomers.map((c) => [
       `"${c.code}"`,
       `"${c.name}"`,
+      `"${c.branch || c.branchName || ''}"`,
       `"${c.phone}"`,
       `"${c.email || ''}"`,
       `"${(c.address || '').replace(/"/g, '""')}"`,
@@ -524,11 +581,26 @@ export function CustomersTab({
       {/* ── TOP ACTION TOOLBAR ────────────────────────────────────────── */}
       <div className="bg-white p-4 rounded-none shadow-xs border border-slate-200/80 flex flex-wrap items-center justify-between gap-3">
         {/* Search Box */}
-        <div className="flex flex-1 items-center gap-2.5 min-w-[280px] max-w-xl">
+        <div className="flex-1 min-w-[240px] max-w-md">
           <AdminSearchInput
             placeholder="Tìm kiếm theo mã KH, họ tên, số điện thoại, email, địa chỉ, MST..."
             value={customerSearchQuery}
             onChange={(val) => setCustomerSearchQuery(val)}
+          />
+        </div>
+
+        {/* Quick Branch Select */}
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-xs font-semibold text-slate-700 whitespace-nowrap flex items-center gap-1">
+            <span className="material-symbols-outlined text-base text-[#784e34]">storefront</span>
+            Chi nhánh:
+          </span>
+          <Select
+            value={branchFilter}
+            onChange={(v) => setBranchFilter(v)}
+            className="w-56 h-10 [&_.ant-select-selector]:!h-10 [&_.ant-select-selector]:!flex [&_.ant-select-selector]:!items-center [&_.ant-select-selection-item]:!flex [&_.ant-select-selection-item]:!items-center font-medium"
+            options={branchFilterOptions}
+            placeholder="Chọn chi nhánh"
           />
         </div>
 
@@ -540,6 +612,7 @@ export function CustomersTab({
               setCustomerSearchQuery('');
               setDebtFilter('all');
               setStatusFilter('all');
+              setBranchFilter('all');
               await refreshCustomers();
               message.success('Đã làm mới danh sách khách hàng từ Database!');
             }}
@@ -627,16 +700,29 @@ export function CustomersTab({
           hasActiveFilters={Boolean(
             customerSearchQuery ||
               debtFilter !== 'all' ||
-              statusFilter !== 'all'
+              statusFilter !== 'all' ||
+              branchFilter !== 'all'
           )}
           onResetFilters={() => {
             setCustomerSearchQuery('');
             setDebtFilter('all');
             setStatusFilter('all');
+            setBranchFilter('all');
           }}
         >
-          {/* Tình trạng công nợ */}
+          {/* Cơ sở / Chi nhánh */}
           <div className="space-y-1.5">
+            <label className="font-semibold text-slate-600 text-xs uppercase tracking-wider block">Cơ sở / Chi nhánh</label>
+            <Select
+              value={branchFilter}
+              onChange={(v) => setBranchFilter(v)}
+              className="w-full text-sm"
+              options={branchFilterOptions}
+            />
+          </div>
+
+          {/* Tình trạng công nợ */}
+          <div className="space-y-1.5 pt-2 border-t border-slate-100">
             <label className="font-semibold text-slate-600 text-xs uppercase tracking-wider block">Tình trạng công nợ</label>
             <Select
               value={debtFilter}
@@ -746,7 +832,7 @@ export function CustomersTab({
               {
                 title: 'Khách hàng',
                 key: 'name',
-                width: 250,
+                width: 230,
                 render: (_, r: AdminCustomer) => (
                   <div className="flex items-center gap-2.5">
                     <div className="w-8 h-8 rounded-full bg-[#fbf2ee] border border-[#d8c3af] flex items-center justify-center font-bold text-xs text-[#5d371f] shrink-0">
@@ -756,12 +842,28 @@ export function CustomersTab({
                       <div className="font-semibold text-slate-900 text-sm truncate">
                         {r.name}
                       </div>
-                      <div className="text-xs text-slate-500 font-mono">
-                        {r.phone} {r.customerType === 'organization' ? '• Doanh nghiệp' : ''}
+                      <div className="text-xs text-slate-500 font-mono flex items-center gap-1.5 flex-wrap mt-0.5">
+                        <span>{r.phone}</span>
+                        {r.customerType === 'organization' && <span>• Doanh nghiệp</span>}
                       </div>
                     </div>
                   </div>
                 ),
+              },
+              {
+                title: 'Chi nhánh',
+                key: 'branch',
+                width: 170,
+                render: (_, r: AdminCustomer) => {
+                  const br = r.branch || r.branchName;
+                  return br ? (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium bg-amber-50 text-amber-900 border border-amber-200">
+                      📍 {br}
+                    </span>
+                  ) : (
+                    <span className="text-slate-400 text-xs italic">Toàn hệ thống</span>
+                  );
+                },
               },
               {
                 title: 'Địa chỉ / Công trình',
@@ -996,9 +1098,20 @@ export function CustomersTab({
               </Form.Item>
 
               <Form.Item
+                name="branch"
+                label={<span className="text-xs font-semibold text-slate-700">Chi nhánh trực thuộc</span>}
+              >
+                <Select
+                  placeholder="Chọn chi nhánh phụ trách"
+                  allowClear
+                  options={effectiveBranches.map((b) => ({ label: b.name, value: b.name }))}
+                  className="w-full text-xs"
+                />
+              </Form.Item>
+
+              <Form.Item
                 name="status"
                 label={<span className="text-xs font-semibold text-slate-700">Trạng thái hoạt động</span>}
-                className="sm:col-span-2"
               >
                 <Select
                   options={[
@@ -1530,6 +1643,12 @@ function CustomerExpandedDetailRow({
               <span className="font-medium text-slate-900 text-sm flex items-center gap-1.5">
                 {customer.name}
                 <span className="font-mono text-xs font-normal text-[#784e34]">#{customer.code}</span>
+              </span>
+            </div>
+            <div>
+              <span className="text-slate-400 block mb-0.5">Chi nhánh phụ trách:</span>
+              <span className="font-medium text-[#784e34] text-sm">
+                {customer.branch || customer.branchName ? `📍 ${customer.branch || customer.branchName}` : 'Dùng chung hệ thống'}
               </span>
             </div>
             <div>

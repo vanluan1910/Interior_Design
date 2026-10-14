@@ -70,7 +70,7 @@ import {
   FileTextOutlined,
   SyncOutlined,
 } from '@ant-design/icons';
-import { VietQrCard } from '@/components/common/VietQrCard';
+import { VietQrCard, getBankBin } from '@/components/common/VietQrCard';
 import { useAuth } from '@/context/AuthContext';
 import { AdminSearchInput, AdminFormDrawer } from '@/components/admin';
 import { branchApi } from '@/api/branchApi';
@@ -186,6 +186,8 @@ export function SettingsTab({
     accountName: '',
     branchName: '',
     defaultDeposit: 30,
+    bankBin: '',
+    vietQrTemplate: 'compact',
   };
 
   // Form and state for Payment Settings with live VietQR preview
@@ -295,6 +297,8 @@ export function SettingsTab({
           accountName: rawPayment.accountName || rawPayment.AccountName || rawPayment.bankAccountName || rawPayment.BankAccountName || '',
           branchName: rawPayment.branchName || rawPayment.BranchName || '',
           defaultDeposit: rawPayment.defaultDeposit ?? rawPayment.DefaultDeposit ?? 30,
+          bankBin: rawPayment.bankBin || rawPayment.BankBin || '',
+          vietQrTemplate: rawPayment.vietQrTemplate || rawPayment.VietQrTemplate || 'compact',
         };
         setPaymentSettings(merged);
         paymentForm.setFieldsValue(merged);
@@ -1348,10 +1352,20 @@ export function SettingsTab({
 
   const handleSaveSettings = async (values: any) => {
     try {
-      const res = await settingsApi.updatePaymentConfig(values);
-      setPaymentSettings((prev) => ({ ...prev, ...values }));
-      paymentForm.setFieldsValue(values);
-      setStoredAdminData(ADMIN_STORAGE_KEYS.PAYMENT_SETTINGS, { ...paymentSettings, ...values });
+      const bankBin = values.bankBin || paymentSettings.bankBin || getBankBin(values.bankName || paymentSettings.bankName);
+      const payload = {
+        ...paymentSettings,
+        ...values,
+        bankBin,
+        accountNumber: values.accountNumber || paymentSettings.accountNumber,
+        accountName: values.accountName || paymentSettings.accountName,
+        bankAccountNumber: values.accountNumber || paymentSettings.accountNumber,
+        bankAccountName: values.accountName || paymentSettings.accountName,
+      };
+      await settingsApi.updatePaymentConfig(payload);
+      setPaymentSettings(payload);
+      paymentForm.setFieldsValue(payload);
+      setStoredAdminData(ADMIN_STORAGE_KEYS.PAYMENT_SETTINGS, payload);
       message.success('Đã lưu cấu hình tài khoản thanh toán & mã VietQR thành công!');
     } catch (err: any) {
       console.warn('API update payment config failed:', err);
@@ -1780,7 +1794,7 @@ export function SettingsTab({
 
           {/* TAB 2: CẤU HÌNH THANH TOÁN & VIETQR */}
           <div className={settingsActiveTab === 'payment' ? 'space-y-5' : 'hidden'}>
-              <div className="pb-3 border-b border-slate-100 flex items-center justify-between">
+              <div className="pb-3 border-b border-slate-100 flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center gap-2">
                   <CreditCardOutlined className="text-[#784e34] text-lg" />
                   <div>
@@ -1788,6 +1802,14 @@ export function SettingsTab({
                     <p className="text-xs text-slate-500 m-0">Tự động sinh mã VietQR động cho khách đặt cọc và thanh toán đơn hàng</p>
                   </div>
                 </div>
+                <Button
+                  type="primary"
+                  icon={<SaveOutlined />}
+                  onClick={() => paymentForm.submit()}
+                  className="bg-[#5d371f] hover:bg-[#784e34] text-white font-semibold text-xs px-4 h-9 rounded-none shadow-sm cursor-pointer"
+                >
+                  Lưu cấu hình thanh toán
+                </Button>
               </div>
 
               <Form
@@ -1797,6 +1819,9 @@ export function SettingsTab({
                 initialValues={paymentSettings}
                 onValuesChange={(_, allValues) => setPaymentSettings((prev) => ({ ...prev, ...allValues }))}
               >
+                <Form.Item name="bankBin" noStyle>
+                  <Input type="hidden" />
+                </Form.Item>
                 <Row gutter={24} className="items-start">
                   <Col xs={24} lg={15}>
                     <div className="space-y-4">
@@ -1806,6 +1831,11 @@ export function SettingsTab({
                           loading={loadingBanks}
                           placeholder="Tìm kiếm ngân hàng (MB, VCB, ACB, Techcombank...)..."
                           className="h-10 text-sm"
+                          onChange={(val, option: any) => {
+                            const bin = option?.key || getBankBin(val);
+                            paymentForm.setFieldsValue({ bankBin: bin, bankName: val });
+                            setPaymentSettings((prev) => ({ ...prev, bankName: val, bankBin: bin }));
+                          }}
                           filterOption={(input, option) => {
                             const label = String(option?.label || '');
                             const val = String(option?.value || '');
@@ -1906,6 +1936,16 @@ export function SettingsTab({
                           </Form.Item>
                         </Col>
                       </Row>
+                      <div className="pt-4 border-t border-slate-200 flex items-center justify-end">
+                        <Button
+                          type="primary"
+                          htmlType="submit"
+                          icon={<SaveOutlined />}
+                          className="bg-[#5d371f] hover:bg-[#784e34] text-white font-bold text-sm px-6 h-10 rounded-none shadow-sm cursor-pointer"
+                        >
+                          Lưu cấu hình thanh toán &amp; VietQR
+                        </Button>
+                      </div>
                     </div>
                   </Col>
 

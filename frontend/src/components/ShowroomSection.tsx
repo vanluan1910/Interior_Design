@@ -12,26 +12,16 @@ interface ShowroomSectionProps {
 const DEFAULT_SHOWROOMS: HomeShowroom[] = [
   {
     id: '1',
-    name: 'Showroom & Trụ sở Hà Nội',
-    address: 'Số 88 Phố Huế, Quận Hai Bà Trưng, Hà Nội',
-    phone: '0986.739.587',
+    name: 'Trụ sở & Showroom Phú Quốc',
+    address: 'Ngã 4 Cửa Cạn, đặc khu Phú Quốc, tỉnh An Giang',
+    phone: '0967 323 335',
     openingHours: 'Giờ mở cửa: 08:30 - 21:00 (Hàng ngày)',
     isHeadquarter: true,
-  },
-  {
-    id: '2',
-    name: 'Showroom TP. Hồ Chí Minh',
-    address: '215 Nguyễn Văn Trỗi, Phường 10, Quận Phú Nhuận, TP.HCM',
-    phone: '0986.739.587',
-    openingHours: 'Giờ mở cửa: 09:00 - 21:30 (Hàng ngày)',
-    isHeadquarter: false,
   },
 ];
 
 export default function ShowroomSection({ onOpenBooking, showrooms, companyInfo }: ShowroomSectionProps) {
   const displayShowrooms = showrooms && showrooms.length > 0 ? showrooms : DEFAULT_SHOWROOMS;
-  const hotline = companyInfo?.hotline || '0967.323.335';
-  const rawPhone = hotline.replace(/\D/g, '') || '0967323335';
 
   return (
     <section id="showrooms" className="w-full py-7 md:py-9 bg-[#fbf2ee] border-b border-[#ebdcd2]">
@@ -51,60 +41,54 @@ export default function ShowroomSection({ onOpenBooking, showrooms, companyInfo 
 
             {/* Showroom Cards */}
             <div className="flex flex-col gap-3 pt-1">
-              {displayShowrooms.map((sr, idx) => (
-                <div
-                  key={sr.id ? `showroom-${sr.id}-${idx}` : `showroom-${idx}`}
-                  className="p-4 rounded-none bg-white shadow-sm border border-[#eae1dd] hover-border-[#5d371f]/40 transition-colors"
-                >
-                  <div className="flex items-start gap-3">
-                    <span className="material-symbols-outlined text-[#5d371f] text-[24px] shrink-0 mt-0.5">
-                      {sr.isHeadquarter ? 'storefront' : 'location_on'}
-                    </span>
-                    <div className="flex flex-col">
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-title-md text-sm sm:text-base text-[#1f1b19] font-semibold m-0">
-                          {sr.name}
-                        </h3>
-                        {sr.isHeadquarter && (
-                          <span className="text-[10px] font-bold px-2 py-0.5 bg-[#5d371f]/10 text-[#5d371f] rounded-none">
-                            HQ Flagship
-                          </span>
-                        )}
-                      </div>
-                      <p className="font-body-sm text-xs sm:text-sm text-[#51443d] mt-1 m-0">
-                        {sr.address}
-                      </p>
-                      <div className="flex items-center gap-3 text-[11px] text-[#83746c] mt-1.5 flex-wrap">
-                        <span className="font-data-mono">
-                          {sr.openingHours || '08:00 - 21:00 (Hàng ngày)'}
+              {displayShowrooms
+                .filter(
+                  (sr) =>
+                    !sr.name.toLowerCase().includes('hà nội') &&
+                    !sr.name.toLowerCase().includes('nam định') &&
+                    (sr.isHeadquarter || sr.address?.includes('Phú Quốc') || !sr.name.toLowerCase().includes('chi nhánh'))
+                )
+                .map((sr, idx) => {
+                  const cleanedName = sr.name.includes('Phú Quốc') || sr.isHeadquarter
+                    ? 'Trụ sở & Showroom Phú Quốc'
+                    : sr.name;
+                  const displayPhone = sr.phone && !sr.phone.startsWith('1900') ? sr.phone : '0967 323 335';
+                  return (
+                    <div
+                      key={sr.id ? `showroom-${sr.id}-${idx}` : `showroom-${idx}`}
+                      className="p-4 rounded-none bg-white shadow-sm border border-[#eae1dd] hover-border-[#5d371f]/40 transition-colors"
+                    >
+                      <div className="flex items-start gap-3">
+                        <span className="material-symbols-outlined text-[#5d371f] text-[24px] shrink-0 mt-0.5">
+                          {sr.isHeadquarter ? 'storefront' : 'location_on'}
                         </span>
-                        {sr.phone && (
-                          <span className="font-mono text-[#5d371f] font-semibold">
-                            Hotline: {sr.phone}
-                          </span>
-                        )}
+                        <div className="flex flex-col">
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-title-md text-sm sm:text-base text-[#1f1b19] font-semibold m-0">
+                              {cleanedName}
+                            </h3>
+                            {sr.isHeadquarter && (
+                              <span className="text-[10px] font-bold px-2 py-0.5 bg-[#5d371f]/10 text-[#5d371f] rounded-none">
+                                HQ Flagship
+                              </span>
+                            )}
+                          </div>
+                          <p className="font-body-sm text-xs sm:text-sm text-[#51443d] mt-1 m-0">
+                            {sr.address || 'Ngã 4 Cửa Cạn, đặc khu Phú Quốc, tỉnh An Giang'}
+                          </p>
+                          <div className="flex items-center gap-3 text-[11px] text-[#83746c] mt-1.5 flex-wrap">
+                            <span className="font-data-mono">
+                              {sr.openingHours || '08:00 - 21:00 (Hàng ngày)'}
+                            </span>
+                            <span className="font-mono text-[#5d371f] font-semibold">
+                              Hotline: {displayPhone}
+                            </span>
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* CTA Buttons */}
-            <div className="flex flex-wrap items-center gap-4 pt-2">
-              <a
-                href={`tel:${rawPhone}`}
-                className="px-6 py-3 rounded-none bg-[#5d371f] text-white font-title-md text-sm sm:text-base hover:bg-[#784e34] shadow-md hover:shadow-lg transition-all cursor-pointer inline-flex items-center gap-2 no-underline"
-              >
-                <span className="material-symbols-outlined text-[20px]">phone_in_talk</span>
-                <span>Liên hệ tư vấn tiếp đón</span>
-              </a>
-              <a
-                className="font-title-md text-sm sm:text-base text-[#5d371f] hover:underline flex items-center gap-1 font-semibold no-underline"
-                href={`tel:${rawPhone}`}
-              >
-                <span>Hotline: {hotline}</span>
-              </a>
+                  );
+                })}
             </div>
           </div>
 

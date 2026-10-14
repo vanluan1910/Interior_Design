@@ -400,7 +400,7 @@ public static class InteriorSeedData
         StoreName = "KOMOREBI WOOD & LIVING",
         Hotline = "1900 6868",
         Email = "contact@komorebi.vn",
-        Address = "284 Nguyễn Tri Phương, Phường 4, Quận 10, TP. Hồ Chí Minh",
+        Address = "Ngã 4 Cửa Cạn, đặc khu Phú Quốc, tỉnh An Giang",
         LogoUrl = "/logo.svg",
         HeroBannerUrl = "/hero-interior.jpg",
         BankName = "MB Bank",

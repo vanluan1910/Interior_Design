@@ -21,6 +21,7 @@ import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { useCart } from '@/context/CartContext';
 import { productApi, FeaturedCatalogProduct } from '@/api/productApi';
+import { getProductStockForBranch } from '@/utils/branchHelper';
 
 function CartContent() {
   const { modal, message } = App.useApp();
@@ -57,14 +58,36 @@ function CartContent() {
     };
   }, []);
 
+  const [selectedBranch, setSelectedBranch] = useState<string>('');
+
+  useEffect(() => {
+    const saved = typeof window !== 'undefined'
+      ? (localStorage.getItem('d2_selected_branch') || localStorage.getItem('d2_customer_branch') || '')
+      : '';
+    if (saved && saved !== 'all') {
+      setSelectedBranch(saved);
+    }
+    const handleBranchChanged = (e: any) => {
+      const b = e.detail?.branch || e.detail?.branchName;
+      if (b && b !== 'all') {
+        setSelectedBranch(b);
+      }
+    };
+    window.addEventListener('customer_branch_changed', handleBranchChanged);
+    window.addEventListener('branch_changed', handleBranchChanged);
+    return () => {
+      window.removeEventListener('customer_branch_changed', handleBranchChanged);
+      window.removeEventListener('branch_changed', handleBranchChanged);
+    };
+  }, []);
+
   // Helper to get available stock
   const getItemAvailableStock = (item: { id: string; sku?: string; inStockQty?: number }) => {
     const found = catalogProducts.find(
       (p) => p.id === item.id || (p.code && item.sku && p.code.toLowerCase() === item.sku.toLowerCase())
     );
     if (found) {
-      const rawStock = typeof found.inStock === 'number' ? found.inStock : (found.inStockQty !== undefined ? found.inStockQty : undefined);
-      return rawStock !== undefined ? rawStock : (found.stockNote ? (parseInt(found.stockNote.replace(/\D/g, ''), 10) || 0) : 0);
+      return getProductStockForBranch(found, selectedBranch);
     }
     return item.inStockQty !== undefined ? item.inStockQty : 99;
   };
@@ -506,10 +529,10 @@ function CartContent() {
                       <p className="text-xs text-[#1f1b19] font-bold">Cần tư vấn phối cảnh 3D?</p>
                       <p className="text-[11px] text-[#83746c]">KTS D2 LUXURY hỗ trợ trực tiếp (08:00 - 22:00)</p>
                       <a
-                        href="tel:19008922"
+                        href="tel:0967323335"
                         className="font-serif text-base font-bold text-[#5d371f] tracking-tight block mt-0.5"
                       >
-                        1900 8922
+                        0967 323 335
                       </a>
                     </div>
                   </div>

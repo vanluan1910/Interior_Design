@@ -1,5 +1,6 @@
 using InteriorDesign.Application.Features.Products;
 using InteriorDesign.Domain.Entities;
+using InteriorDesign.Domain.Enums;
 using InteriorDesign.Infrastructure.Data;
 using InteriorDesign.Integration.Common;
 using InteriorDesign.Integration.Requests;
@@ -22,16 +23,23 @@ public sealed class ProductsController : ApiControllerBase
         [FromQuery] string? category = null,
         [FromQuery] string? status = null,
         [FromQuery] string? branch = null,
+        [FromQuery] string? material = null,
         CancellationToken cancellationToken = default)
     {
         try
         {
             var clampedPage = Math.Max(1, page);
             var clampedPageSize = Math.Max(1, pageSize);
-            var response = await Sender.Send(new GetProductsQuery(clampedPage, clampedPageSize, search, space, categoryId, category, status, branch), cancellationToken);
+            var response = await Sender.Send(new GetProductsQuery(clampedPage, clampedPageSize, search, space, categoryId, category, status, branch, material), cancellationToken);
 
             if (response.Success && response.Data?.Items != null && !string.IsNullOrWhiteSpace(branch) && !string.Equals(branch, "all", StringComparison.OrdinalIgnoreCase))
             {
+                var db = HttpContext.RequestServices.GetRequiredService<InteriorDbContext>();
+                var allBranches = await db.Branches.Where(b => !b.IsDeleted).ToListAsync(cancellationToken);
+                var allWarehouses = await db.Warehouses.Where(w => !w.IsDeleted).ToListAsync(cancellationToken);
+                var matchedBranch = BranchMatcher.FindMatchingBranch(allBranches, branch, allWarehouses);
+                var targetBranchName = matchedBranch?.Name ?? branch;
+
                 var adjustedItems = new List<ProductDto>();
                 foreach (var p in response.Data.Items)
                 {
@@ -43,7 +51,7 @@ public sealed class ProductsController : ApiControllerBase
                             var dict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, int>>(p.BranchStocksJson);
                             if (dict != null)
                             {
-                                var matchKey = dict.Keys.FirstOrDefault(k => IsBranchMatch(k, branch));
+                                var matchKey = dict.Keys.FirstOrDefault(k => BranchMatcher.IsBranchMatch(k, targetBranchName, allBranches, allWarehouses));
                                 branchQty = matchKey != null && dict.TryGetValue(matchKey, out var q) ? q : 0;
                             }
                         }
@@ -68,50 +76,63 @@ public sealed class ProductsController : ApiControllerBase
         }
     }
 
-    private static string RemoveDiacritics(string text)
+    /// <summary>
+    /// Lấy danh sách tất cả các loại chất liệu gỗ thực tế trong Database kèm số lượng sản phẩm
+    /// </summary>
+    [HttpGet("materials")]
+    public async Task<IActionResult> GetDistinctMaterials(
+        [FromQuery] string? space = null,
+        [FromServices] InteriorDbContext? context = null,
+        CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(text)) return string.Empty;
-        var normalizedString = text.Normalize(System.Text.NormalizationForm.FormD);
-        var sb = new System.Text.StringBuilder();
-        foreach (var c in normalizedString)
+        try
         {
-            var unicodeCategory = System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c);
-            if (unicodeCategory != System.Globalization.UnicodeCategory.NonSpacingMark)
+            var db = context ?? HttpContext.RequestServices.GetRequiredService<InteriorDbContext>();
+            var query = db.Products.AsNoTracking().Where(p => p.Status == ProductStatus.Active);
+
+            if (!string.IsNullOrWhiteSpace(space) && !space.Equals("all", StringComparison.OrdinalIgnoreCase))
             {
-                sb.Append(c);
+                var sp = space.Trim().ToLower();
+                if (sp == "living" || sp == "livingroom" || sp == "living-room" || sp.Contains("khách") || sp.Contains("khach") || sp == "kg01")
+                    query = query.Where(p => p.Space.Contains("khách") || p.Space.Contains("Living") || p.Space == "KG01");
+                else if (sp == "bedroom" || sp == "bed" || sp.Contains("ngủ") || sp.Contains("ngu") || sp == "kg03")
+                    query = query.Where(p => p.Space.Contains("ngủ") || p.Space.Contains("Bed") || p.Space == "KG03");
+                else if (sp == "dining" || sp == "diningroom" || sp == "dining-room" || sp.Contains("ăn") || sp.Contains("an") || sp.Contains("bếp") || sp == "kg02")
+                    query = query.Where(p => p.Space.Contains("ăn") || p.Space.Contains("bếp") || p.Space.Contains("Dining") || p.Space == "KG02");
+                else if (sp == "office" || sp == "work" || sp.Contains("việc") || sp.Contains("viec") || sp.Contains("sách") || sp == "kg04")
+                    query = query.Where(p => p.Space.Contains("việc") || p.Space.Contains("sách") || p.Space.Contains("Office") || p.Space == "KG04");
+                else
+                    query = query.Where(p => p.Space == space || p.Space.Contains(space));
             }
+
+            var rawMaterials = await query
+                .Where(p => !string.IsNullOrEmpty(p.WoodType) || !string.IsNullOrEmpty(p.Material))
+                .Select(p => new
+                {
+                    Wood = !string.IsNullOrEmpty(p.WoodType) ? p.WoodType : p.Material
+                })
+                .ToListAsync(cancellationToken);
+
+            var grouped = rawMaterials
+                .Where(x => !string.IsNullOrWhiteSpace(x.Wood))
+                .GroupBy(x => x.Wood.Trim())
+                .Select(g => new
+                {
+                    Name = g.Key,
+                    Count = g.Count()
+                })
+                .OrderByDescending(x => x.Count)
+                .ToList();
+
+            return Ok(ApiResponse<object>.Ok(grouped, "Lấy danh sách chất liệu gỗ thực tế từ database thành công."));
         }
-        return sb.ToString().Normalize(System.Text.NormalizationForm.FormC).Replace("đ", "d").Replace("Đ", "D");
-    }
-
-    private static bool IsBranchMatch(string storedBranch, string targetBranch)
-    {
-        if (string.IsNullOrWhiteSpace(storedBranch) || string.IsNullOrWhiteSpace(targetBranch)) return false;
-        if (string.Equals(storedBranch, targetBranch, StringComparison.OrdinalIgnoreCase)) return true;
-        if (storedBranch.Contains(targetBranch, StringComparison.OrdinalIgnoreCase) || targetBranch.Contains(storedBranch, StringComparison.OrdinalIgnoreCase)) return true;
-
-        var s = RemoveDiacritics(storedBranch).ToLower().Trim();
-        var t = RemoveDiacritics(targetBranch).ToLower().Trim();
-
-        if (s == t || s.Contains(t) || t.Contains(s)) return true;
-
-        string[] groups = [
-            "thao dien|thu duc|td01|quoc huong|kho thao dien|flagship",
-            "quan 10|q10|ba thang hai|3 thang 2|sr-q10|kho ba thang hai",
-            "binh chanh|bc01|le minh xuan|tong kho binh chanh",
-            "ecopark|ha noi|hung yen|van giang|eco|sr-eco|chi nhanh ha noi"
-        ];
-
-        foreach (var g in groups)
+        catch (Exception ex)
         {
-            var aliases = g.Split('|');
-            bool sIn = aliases.Any(a => s.Contains(a));
-            bool tIn = aliases.Any(a => t.Contains(a));
-            if (sIn && tIn) return true;
+            return StatusCode(500, ApiResponse<object>.Fail("Lỗi khi lấy chất liệu gỗ: " + ex.Message));
         }
-
-        return false;
     }
+
+
 
     [HttpGet("featured")]
     public async Task<IActionResult> GetFeaturedProducts([FromQuery] int limit = 8, CancellationToken cancellationToken = default)
@@ -365,7 +386,8 @@ public sealed class ProductsController : ApiControllerBase
             var product = await context.Products.FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
             if (product != null)
             {
-                var allBranches = await context.Branches.Where(b => !b.IsDeleted).Select(b => b.Name).ToListAsync(cancellationToken);
+                var dbBranches = await context.Branches.Where(b => !b.IsDeleted).ToListAsync(cancellationToken);
+                var dbWarehouses = await context.Warehouses.Where(w => !w.IsDeleted).ToListAsync(cancellationToken);
                 var dict = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
                 if (!string.IsNullOrWhiteSpace(product.BranchStocksJson) && product.BranchStocksJson != "{}")
@@ -379,16 +401,16 @@ public sealed class ProductsController : ApiControllerBase
                 else
                 {
                     // Sản phẩm dùng chung: trước khi gỡ khỏi chi nhánh này, giữ lại tồn kho cho các chi nhánh còn lại
-                    foreach (var bName in allBranches)
+                    foreach (var b in dbBranches)
                     {
-                        if (!IsBranchMatch(bName, branch))
+                        if (!BranchMatcher.IsBranchMatch(b.Name, branch, dbBranches, dbWarehouses))
                         {
-                            dict[bName] = product.InStock;
+                            dict[b.Name] = product.InStock;
                         }
                     }
                 }
 
-                var matchKey = dict.Keys.FirstOrDefault(k => IsBranchMatch(k, branch));
+                var matchKey = dict.Keys.FirstOrDefault(k => BranchMatcher.IsBranchMatch(k, branch, dbBranches, dbWarehouses));
                 if (matchKey != null)
                 {
                     dict.Remove(matchKey);

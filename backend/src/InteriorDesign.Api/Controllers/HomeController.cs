@@ -44,42 +44,59 @@ public sealed class HomeController : ApiControllerBase
                 Slogan: "Nội Thất Gỗ Tự Nhiên Cao Cấp",
                 Hotline: !string.IsNullOrWhiteSpace(storeSetting?.Hotline) ? storeSetting.Hotline : "0986.739.587",
                 Email: !string.IsNullOrWhiteSpace(storeSetting?.Email) ? storeSetting.Email : "contact@d2luxury.vn",
-                Address: !string.IsNullOrWhiteSpace(storeSetting?.Address) ? storeSetting.Address : "Số 88 Phố Huế, Quận Hai Bà Trưng, Hà Nội",
+                Address: !string.IsNullOrWhiteSpace(storeSetting?.Address) ? storeSetting.Address : "Ngã 4 Cửa Cạn, đặc khu Phú Quốc, tỉnh An Giang",
                 LogoUrl: !string.IsNullOrWhiteSpace(storeSetting?.LogoUrl) ? storeSetting.LogoUrl : "/logo.png",
                 Website: "https://d2luxury.vn"
             );
 
-            // 2. Lấy sản phẩm nổi bật từ DB theo từng không gian (Phòng khách, Phòng ngủ, Phòng ăn, Phòng làm việc)
-            var activeProductsQuery = _context.Products
-                .Include(p => p.Category)
+            // 2. Lấy sản phẩm nổi bật từ DB với Projection nhẹ (không load Description, Images, BranchStocksJson...)
+            var activeProductsProjection = _context.Products
                 .AsNoTracking()
-                .Where(p => p.Status == ProductStatus.Active);
+                .Where(p => p.Status == ProductStatus.Active)
+                .Select(p => new
+                {
+                    p.Id,
+                    p.Name,
+                    p.Slug,
+                    p.Sku,
+                    p.Space,
+                    CategoryName = p.Category != null ? p.Category.Name : "Tuyệt tác gỗ tự nhiên",
+                    p.Price,
+                    p.MainImageUrl,
+                    p.WoodType,
+                    p.Dimensions,
+                    p.Rating,
+                    p.ReviewCount,
+                    p.InStock,
+                    p.IsFeatured,
+                    p.CreatedAt
+                });
 
-            var livingProducts = await activeProductsQuery
+            var livingProducts = await activeProductsProjection
                 .Where(p => p.Space.Contains("khách") || p.Space.Contains("Living") || p.Space == "KG01")
                 .OrderByDescending(p => p.IsFeatured).ThenByDescending(p => p.CreatedAt)
                 .Take(8)
                 .ToListAsync(cancellationToken);
 
-            var bedroomProducts = await activeProductsQuery
+            var bedroomProducts = await activeProductsProjection
                 .Where(p => p.Space.Contains("ngủ") || p.Space.Contains("Bed") || p.Space == "KG02" || p.Space == "KG03")
                 .OrderByDescending(p => p.IsFeatured).ThenByDescending(p => p.CreatedAt)
                 .Take(8)
                 .ToListAsync(cancellationToken);
 
-            var diningProducts = await activeProductsQuery
+            var diningProducts = await activeProductsProjection
                 .Where(p => p.Space.Contains("ăn") || p.Space.Contains("bếp") || p.Space.Contains("Dining"))
                 .OrderByDescending(p => p.IsFeatured).ThenByDescending(p => p.CreatedAt)
                 .Take(8)
                 .ToListAsync(cancellationToken);
 
-            var officeProducts = await activeProductsQuery
+            var officeProducts = await activeProductsProjection
                 .Where(p => p.Space.Contains("việc") || p.Space.Contains("sách") || p.Space.Contains("Office") || p.Space == "KG04")
                 .OrderByDescending(p => p.IsFeatured).ThenByDescending(p => p.CreatedAt)
                 .Take(8)
                 .ToListAsync(cancellationToken);
 
-            var combinedFeatured = new List<Product>();
+            var combinedFeatured = new List<dynamic>();
             combinedFeatured.AddRange(livingProducts);
             combinedFeatured.AddRange(bedroomProducts);
             combinedFeatured.AddRange(diningProducts);
@@ -91,16 +108,16 @@ public sealed class HomeController : ApiControllerBase
                 Slug: p.Slug,
                 Sku: p.Sku,
                 Category: MapSpaceToCategoryKey(p.Space, p.Name, p.Sku),
-                CategoryName: p.Category != null ? p.Category.Name : "Tuyệt tác gỗ tự nhiên",
+                CategoryName: p.CategoryName,
                 Price: p.Price,
                 OriginalPrice: null,
-                Image: !string.IsNullOrWhiteSpace(p.MainImageUrl) ? p.MainImageUrl : "/images/placeholder.jpg",
-                WoodType: !string.IsNullOrWhiteSpace(p.WoodType) ? p.WoodType : "Gỗ tự nhiên",
-                Dimensions: !string.IsNullOrWhiteSpace(p.Dimensions) ? p.Dimensions : "Theo thiết kế",
+                Image: !string.IsNullOrWhiteSpace(p.MainImageUrl) ? (string)p.MainImageUrl : "/images/placeholder.jpg",
+                WoodType: !string.IsNullOrWhiteSpace(p.WoodType) ? (string)p.WoodType : "Gỗ tự nhiên",
+                Dimensions: !string.IsNullOrWhiteSpace(p.Dimensions) ? (string)p.Dimensions : "Theo thiết kế",
                 Tag: "",
-                Rating: p.Rating > 0 ? p.Rating : 5.0m,
-                ReviewCount: p.ReviewCount > 0 ? p.ReviewCount : 24,
-                InStock: p.InStock > 0
+                Rating: p.Rating > 0 ? (decimal)p.Rating : 5.0m,
+                ReviewCount: p.ReviewCount > 0 ? (int)p.ReviewCount : 24,
+                InStock: (bool)(p.InStock > 0)
             )).ToList();
 
 
@@ -120,12 +137,21 @@ public sealed class HomeController : ApiControllerBase
                 .Take(4)
                 .ToList();
 
-            var productCountBySpace = await _context.Products
+            var productCountRaw = await _context.Products
                 .AsNoTracking()
-                .Where(p => p.Status == ProductStatus.Active)
-                .GroupBy(p => p.Space.ToLower())
+                .Where(p => p.Status == ProductStatus.Active && !string.IsNullOrEmpty(p.Space))
+                .GroupBy(p => p.Space)
                 .Select(g => new { Space = g.Key, Count = g.Count() })
-                .ToDictionaryAsync(x => x.Space, x => x.Count, cancellationToken);
+                .ToListAsync(cancellationToken);
+
+            var productCountBySpace = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var item in productCountRaw)
+            {
+                if (!string.IsNullOrWhiteSpace(item.Space))
+                {
+                    productCountBySpace[item.Space.Trim().ToLower()] = item.Count;
+                }
+            }
 
             List<HomeSpaceDto> livingSpaces;
             if (spacesDb.Count > 0)
@@ -488,7 +514,7 @@ public sealed class HomeController : ApiControllerBase
     {
         return new List<HomeShowroomDto>
         {
-            new(Guid.NewGuid(), "Trụ sở & Showroom Flagship Hà Nội", "Số 88 Phố Huế, Quận Hai Bà Trưng, TP. Hà Nội", "0986.739.587", "08:00 - 21:00 (Tất cả các ngày)", "https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?w=800&q=80", true),
+            new(Guid.NewGuid(), "Trụ sở & Showroom Flagship Phú Quốc", "Ngã 4 Cửa Cạn, đặc khu Phú Quốc, tỉnh An Giang", "0986.739.587", "08:00 - 21:00 (Tất cả các ngày)", "https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?w=800&q=80", true),
             new(Guid.NewGuid(), "Showroom & Xưởng Mộc Nam Định", "Khu Công Nghiệp Ý Yên, Huyện Ý Yên, Tỉnh Nam Định", "0986.739.587", "07:30 - 18:30 (Thứ 2 - Thứ 7)", "https://images.unsplash.com/photo-1616486338812-3dadae4b4ace?w=800&q=80", false),
             new(Guid.NewGuid(), "Chi nhánh Showroom TP. Hồ Chí Minh", "215 Nguyễn Văn Trỗi, Phường 10, Quận Phú Nhuận, TP.HCM", "0986.739.587", "08:30 - 21:30 (Tất cả các ngày)", "https://images.unsplash.com/photo-1616046229478-9901c5536a45?w=800&q=80", false)
         };

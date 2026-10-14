@@ -20,8 +20,10 @@ import { type CategoryProduct } from '@/data/categoryProducts';
 import { Product, CartItem } from '@/types';
 import { useCart } from '@/context/CartContext';
 import { productApi, FeaturedCatalogProduct } from '@/api/productApi';
+import { WoodMaterialItem, groupDbMaterials, extractPrimaryWood, getMaterialQueryKey } from '@/data/woodMaterials';
+import { getProductStockForBranch } from '@/utils/branchHelper';
 
-function mapCatalogToCategoryProduct(item: FeaturedCatalogProduct): CategoryProduct {
+function mapCatalogToCategoryProduct(item: FeaturedCatalogProduct, currentBranch?: string): CategoryProduct {
   const rawSpace = (item.space || '').toLowerCase();
   let space: 'living' | 'bedroom' | 'dining' | 'office' = 'living';
   if (rawSpace.includes('bed') || rawSpace.includes('ngủ') || rawSpace === 'kg03') space = 'bedroom';
@@ -45,9 +47,10 @@ function mapCatalogToCategoryProduct(item: FeaturedCatalogProduct): CategoryProd
 
   const woodMaterialName = item.material || item.metaInfo || (woodMaterial === 'walnut' ? 'Gỗ óc chó Bắc Mỹ' : woodMaterial === 'oak' ? 'Gỗ sồi tự nhiên' : woodMaterial === 'ash' ? 'Gỗ tần bì tự nhiên' : 'Khung gỗ bọc da bò Ý');
 
-  const isOutOfStock = (typeof item.inStock === 'number' && item.inStock <= 0) || item.stockType === 'out_of_stock';
+  const branchStock = getProductStockForBranch(item, currentBranch);
+  const isOutOfStock = branchStock <= 0 || item.stockType === 'out_of_stock';
   const stockStatus = isOutOfStock ? 'out_of_stock' : (item.stockType === 'custom' ? 'custom' : 'showroom');
-  const stockLabel = isOutOfStock ? 'Hết hàng' : (item.stockType === 'custom' ? 'Đặt may đo' : 'Sẵn tại Showroom');
+  const stockLabel = isOutOfStock ? 'Hết hàng' : (item.stockType === 'custom' ? 'Đặt may đo' : '');
 
   return {
     id: item.id,
@@ -65,10 +68,10 @@ function mapCatalogToCategoryProduct(item: FeaturedCatalogProduct): CategoryProd
     stockStatus,
     stockLabel,
     inStock: !isOutOfStock,
-    inStockQty: typeof item.inStock === 'number' ? item.inStock : 0,
+    inStockQty: branchStock,
     image: item.image || '/logo.png',
     macroImage: item.images?.[1] || item.image || '/logo.png',
-    tag: isOutOfStock ? 'Hết hàng' : (item.stockNote || item.collection || 'Tuyệt tác mộc'),
+    tag: isOutOfStock ? 'Hết hàng' : (item.collection || 'Tuyệt tác mộc'),
     description: item.description || item.collection || `Sản phẩm ${item.name} chế tác tinh xảo từ gỗ tự nhiên`,
     dimensions: item.dimensions || 'Theo thiết kế',
     warranty: item.warranty || 'Bảo hành 5 năm',
@@ -366,21 +369,6 @@ export function resolveCategoryInfo(
   };
 }
 
-export function extractPrimaryWood(wood: string): string {
-  const str = (wood || '').trim();
-  if (!str) return 'Gỗ Tự Nhiên Cao Cấp';
-  const lower = str.toLowerCase();
-  if (lower.includes('me tây')) return 'Gỗ Me Tây Nguyên Tấm';
-  if (lower.includes('mây')) return 'Mây Tự Nhiên & Khung Gỗ';
-  if (lower.includes('tần bì') || lower.includes('ashwood')) return 'Gỗ Tần Bì & Veneer Sồi';
-  if (lower.includes('sồi') || lower.includes('oak')) return 'Gỗ Sồi Tự Nhiên (Ash / Oak)';
-  if (lower.includes('óc chó') || lower.includes('walnut')) return 'Gỗ Óc Chó Bắc Mỹ';
-  if (lower.includes('gõ đỏ')) return 'Gỗ Gõ Đỏ';
-  if (lower.includes('hương')) return 'Gỗ Hương';
-  if (lower.includes('gụ')) return 'Gỗ Gụ';
-  if (lower.includes('da bò') || lower.includes('leather')) return 'Khung Gỗ Bọc Da';
-  return str;
-}
 
 function ProductsContent() {
   const { message } = App.useApp();
@@ -438,18 +426,70 @@ function ProductsContent() {
   const [totalItems, setTotalItems] = useState<number>(0);
   const [pageSize, setPageSize] = useState<number>(9);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [selectedBranch, setSelectedBranch] = useState<string>('');
 
-  // Dynamically extract distinct wood materials from real database products
+  useEffect(() => {
+    const saved = typeof window !== 'undefined'
+      ? (localStorage.getItem('d2_selected_branch') || localStorage.getItem('d2_customer_branch') || '')
+      : '';
+    if (saved && saved !== 'all') {
+      setSelectedBranch(saved);
+    }
+    const handleBranchChanged = (e: any) => {
+      const b = e.detail?.branch || e.detail?.branchName;
+      if (b && b !== 'all') {
+        setSelectedBranch(b);
+      }
+    };
+    window.addEventListener('customer_branch_changed', handleBranchChanged);
+    window.addEventListener('branch_changed', handleBranchChanged);
+    return () => {
+      window.removeEventListener('customer_branch_changed', handleBranchChanged);
+      window.removeEventListener('branch_changed', handleBranchChanged);
+    };
+  }, []);
+
+  const [realDbMaterials, setRealDbMaterials] = useState<WoodMaterialItem[]>([]);
+
+  // Fetch real wood materials directly from Database API
+  useEffect(() => {
+    let isMounted = true;
+    async function fetchDbMaterials() {
+      try {
+        const querySpace = spaceParam || (pathname === '/living-room' ? 'living' : undefined);
+        const data = await productApi.getMaterials(querySpace && querySpace !== 'all' ? querySpace : undefined);
+        if (isMounted && data && data.length > 0) {
+          const grouped = groupDbMaterials(data);
+          setRealDbMaterials(grouped);
+          if (!materialParam) {
+            setSelectedMaterials((prev) => (prev.length === 0 ? grouped.map((m) => m.id) : prev));
+          }
+        }
+      } catch (err) {
+        console.warn('Could not load real materials from DB API:', err);
+      }
+    }
+    fetchDbMaterials();
+    return () => {
+      isMounted = false;
+    };
+  }, [spaceParam, pathname, materialParam]);
+
+  // Distinct wood materials derived directly from database API (/api/products/materials)
   const availableMaterials = useMemo(() => {
-    const map = new Map<string, number>();
-    catalogProducts.forEach((p) => {
-      const label = extractPrimaryWood(p.woodMaterialName || p.description);
-      map.set(label, (map.get(label) || 0) + 1);
-    });
-    return Array.from(map.entries())
-      .map(([label, count]) => ({ id: label, label, count }))
-      .sort((a, b) => b.count - a.count);
-  }, [catalogProducts]);
+    if (realDbMaterials.length > 0) {
+      return realDbMaterials.map((m) => ({
+        id: m.id,
+        label: m.shortName,
+        queryKey: m.queryKey,
+        count: m.count,
+      }));
+    }
+    return [];
+  }, [realDbMaterials]);
+
+  const selectedMaterialsKey = selectedMaterials.join(',');
+  const availableMaterialsCount = availableMaterials.length;
 
   // Reset page when URL parameters change
   useEffect(() => {
@@ -463,15 +503,24 @@ function ProductsContent() {
       setIsLoading(true);
       try {
         const querySpace = spaceParam || (pathname === '/living-room' ? 'living' : undefined);
+
+        // Determine if filtering by specific wood material
+        let queryMaterial: string | undefined = undefined;
+        if (selectedMaterials.length > 0 && availableMaterialsCount > 0 && selectedMaterials.length < availableMaterialsCount) {
+          queryMaterial = selectedMaterials.map((m) => getMaterialQueryKey(m)).join(',');
+        }
+
         const res = await productApi.getPagedProducts({
           page: currentPage,
           pageSize: pageSize,
           space: querySpace && querySpace !== 'all' ? querySpace : undefined,
           category: categoryParam || undefined,
           search: queryParam || searchQuery || undefined,
+          material: queryMaterial,
+          branch: selectedBranch && selectedBranch !== 'all' ? selectedBranch : undefined,
         });
         if (isMounted) {
-          setCatalogProducts(res.items.map(mapCatalogToCategoryProduct));
+          setCatalogProducts(res.items.map((i) => mapCatalogToCategoryProduct(i, selectedBranch)));
           setTotalItems(res.totalItems);
         }
       } catch (err) {
@@ -484,11 +533,11 @@ function ProductsContent() {
     return () => {
       isMounted = false;
     };
-  }, [currentPage, pageSize, spaceParam, categoryParam, queryParam, searchQuery, pathname]);
+  }, [currentPage, pageSize, spaceParam, categoryParam, queryParam, searchQuery, pathname, selectedMaterialsKey, availableMaterialsCount, selectedBranch]);
 
   // Synchronize state with URL parameters
   useEffect(() => {
-    const activeRoom = resolvedSpace?.key || null;
+    const activeRoom = activeSpecificRoom;
 
     if (activeRoom && SPACE_SUBCATEGORIES[activeRoom]) {
       setSelectedSpaces([activeRoom]);
@@ -518,8 +567,6 @@ function ProductsContent() {
       const decoded = decodeURIComponent(materialParam);
       const targetLabel = extractPrimaryWood(decoded);
       setSelectedMaterials([targetLabel]);
-    } else if (availableMaterials.length > 0 && selectedMaterials.length === 0) {
-      setSelectedMaterials(availableMaterials.map((m) => m.id));
     }
 
     if (categoryParam) {
@@ -533,7 +580,7 @@ function ProductsContent() {
     } else {
       setSearchQuery('');
     }
-  }, [spaceParam, pathname, materialParam, categoryParam, queryParam, availableMaterials, resolvedSpace]);
+  }, [spaceParam, pathname, materialParam, categoryParam, queryParam, activeSpecificRoom]);
 
   // Global Cart Context with localStorage
   const { cartCount, wishlistCount, wishlistIds, toggleWishlist: contextToggleWishlist, addToCart } = useCart();
@@ -553,9 +600,17 @@ function ProductsContent() {
   };
 
   const toggleMaterial = (mat: string) => {
-    setSelectedMaterials((prev) =>
-      prev.includes(mat) ? prev.filter((m) => m !== mat) : [...prev, mat]
-    );
+    setSelectedMaterials((prev) => {
+      if (prev.length === availableMaterials.length) {
+        return [mat];
+      }
+      if (prev.includes(mat)) {
+        const next = prev.filter((m) => m !== mat);
+        return next.length === 0 ? availableMaterials.map((m) => m.id) : next;
+      }
+      return [...prev, mat];
+    });
+    setCurrentPage(1);
   };
   const handleResetFilters = () => {
     if (activeSpecificRoom && SPACE_SUBCATEGORIES[activeSpecificRoom]) {
@@ -796,9 +851,23 @@ function ProductsContent() {
               {/* Filter: Materials */}
               {availableMaterials.length > 0 && (
                 <div className="flex flex-col gap-2.5">
-                  <span className="font-label-md text-xs text-[#1f1b19] uppercase tracking-wider font-bold">
-                    Chất Liệu Tuyển Chọn
-                  </span>
+                  <div className="flex items-center justify-between">
+                    <span className="font-label-md text-xs text-[#1f1b19] uppercase tracking-wider font-bold">
+                      Chất Liệu Tuyển Chọn
+                    </span>
+                    {selectedMaterials.length < availableMaterials.length && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedMaterials(availableMaterials.map((m) => m.id));
+                          setCurrentPage(1);
+                        }}
+                        className="text-[11px] text-[#83746c] hover:text-[#5d371f] cursor-pointer bg-transparent border-0 p-0 underline"
+                      >
+                        Chọn tất cả
+                      </button>
+                    )}
+                  </div>
                   <div className="flex flex-col gap-2">
                     {availableMaterials.map((item) => (
                       <Checkbox
@@ -892,8 +961,6 @@ function ProductsContent() {
                       { value: 'best-selling', label: 'Bán chạy nhất tuần' },
                       { value: 'price-asc', label: 'Giá: Từ thấp đến cao' },
                       { value: 'price-desc', label: 'Giá: Từ cao đến thấp' },
-                      { value: 'newest', label: 'Bộ sưu tập mới 2025' },
-                      { value: 'rating', label: 'Đánh giá cao nhất' },
                     ]}
                   />
                 </div>
@@ -961,14 +1028,16 @@ function ProductsContent() {
                           </div>
 
                           {/* Badges */}
-                          <div className="absolute top-3 left-3">
-                            <Tag
-                              color={isOutOfStock ? "#ba1a1a" : "rgba(255,255,255,0.9)"}
-                              className={`${isOutOfStock ? '!text-white !bg-[#ba1a1a] !border-[#ba1a1a]' : '!text-[#5d371f] !border-[#d5c3ba]/60'} font-bold text-xs rounded-none px-2.5 py-0.5 backdrop-blur-sm shadow-sm m-0`}
-                            >
-                              {isOutOfStock ? 'Hết hàng' : p.stockLabel}
-                            </Tag>
-                          </div>
+                          {Boolean(isOutOfStock || p.stockLabel) && (
+                            <div className="absolute top-3 left-3">
+                              <Tag
+                                color={isOutOfStock ? "#ba1a1a" : "rgba(255,255,255,0.9)"}
+                                className={`${isOutOfStock ? '!text-white !bg-[#ba1a1a] !border-[#ba1a1a]' : '!text-[#5d371f] !border-[#d5c3ba]/60'} font-bold text-xs rounded-none px-2.5 py-0.5 backdrop-blur-sm shadow-sm m-0`}
+                              >
+                                {isOutOfStock ? 'Hết hàng' : p.stockLabel}
+                              </Tag>
+                            </div>
+                          )}
 
                           {isOutOfStock && (
                             <div className="absolute inset-0 bg-black/30 flex items-center justify-center pointer-events-none">
@@ -997,6 +1066,16 @@ function ProductsContent() {
                               <span className="font-headline-sm text-base sm:text-lg text-[#5d371f] font-bold">
                                 {formatPrice(p.price)}
                               </span>
+                              {p.originalPrice && p.originalPrice > p.price && (
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                  <span className="text-xs text-[#a89b93] line-through font-mono">
+                                    {formatPrice(p.originalPrice)}
+                                  </span>
+                                  <span className="text-[10px] font-bold text-red-600 bg-red-100/80 px-1 py-0.5 rounded">
+                                    -{Math.round(((p.originalPrice - p.price) / p.originalPrice) * 100)}%
+                                  </span>
+                                </div>
+                              )}
                             </div>
 
                             <div className="flex items-center gap-1.5">

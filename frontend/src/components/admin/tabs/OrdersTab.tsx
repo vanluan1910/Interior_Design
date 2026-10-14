@@ -43,10 +43,11 @@ import {
   type DateRangeValue,
 } from '@/components/admin';
 import { exportToExcel } from '@/utils/exportExcel';
-import type { OrderRow, AdminCustomer, FeaturedCatalogProduct } from '@/types/admin';
+import type { OrderRow, AdminCustomer, FeaturedCatalogProduct, AdminBranch } from '@/types/admin';
 import { orderApi } from '@/api/orderApi';
 import { customerApi } from '@/api/customerApi';
 import { productApi } from '@/api/productApi';
+import { branchApi } from '@/api/branchApi';
 import { VIETNAM_PROVINCES } from '@/data/vietnamAddresses';
 import { isMatchBranch } from '@/utils/branchHelper';
 import { printOrderInvoice } from '@/utils/printHelper';
@@ -55,6 +56,7 @@ export interface OrdersTabProps {
   ordersList: OrderRow[];
   setOrdersList: React.Dispatch<React.SetStateAction<OrderRow[]>>;
   selectedGlobalBranch?: string;
+  branchesList?: AdminBranch[];
   catalogList?: FeaturedCatalogProduct[];
   customersList?: AdminCustomer[];
   onNavigateToProduct?: (productCodeOrName: string) => void;
@@ -124,6 +126,7 @@ export function OrdersTab({
   ordersList,
   setOrdersList,
   selectedGlobalBranch = 'all',
+  branchesList = [],
   catalogList = [],
   customersList = [],
   onNavigateToProduct,
@@ -189,13 +192,58 @@ export function OrdersTab({
     }
   }, [isOrderDrawerOpen, customersList.length, catalogList.length]);
 
+  // Local branch filter state with sync to selectedGlobalBranch
+  const [branchFilter, setBranchFilter] = useState<string>(selectedGlobalBranch || 'all');
+
+  // Load branches if not provided as prop
+  const [internalBranches, setInternalBranches] = useState<AdminBranch[]>([]);
+  const effectiveBranches = useMemo(() => {
+    return branchesList && branchesList.length > 0 ? branchesList : internalBranches;
+  }, [branchesList, internalBranches]);
+
+  React.useEffect(() => {
+    if (!branchesList || branchesList.length === 0) {
+      branchApi
+        .getBranches()
+        .then((list) => {
+          if (Array.isArray(list) && list.length > 0) {
+            setInternalBranches(list);
+          }
+        })
+        .catch((e) => console.warn('Could not load branches in OrdersTab:', e));
+    }
+  }, [branchesList]);
+
+  // Sync if selectedGlobalBranch prop changes
+  React.useEffect(() => {
+    if (selectedGlobalBranch) {
+      setBranchFilter(selectedGlobalBranch);
+    }
+  }, [selectedGlobalBranch]);
+
+  // Branch filter options combining registered branches and order branches
+  const branchFilterOptions = useMemo(() => {
+    const branchSet = new Set<string>();
+    effectiveBranches.forEach((b) => {
+      if (b.name) branchSet.add(b.name);
+    });
+    ordersList.forEach((o) => {
+      if (o.branch) branchSet.add(o.branch);
+      if (o.showroom) branchSet.add(o.showroom);
+    });
+    return [
+      { value: 'all', label: 'Tất cả chi nhánh' },
+      ...Array.from(branchSet).map((b) => ({ value: b, label: b })),
+    ];
+  }, [effectiveBranches, ordersList]);
+
   // Branch-scoped orders
   const branchScopedOrders = useMemo(() => {
-    if (!selectedGlobalBranch || selectedGlobalBranch === 'all') return ordersList;
+    if (!branchFilter || branchFilter === 'all') return ordersList;
     return ordersList.filter((item) =>
-      isMatchBranch(item.showroom || item.branch || item.customerAddress, selectedGlobalBranch)
+      isMatchBranch(item.showroom || item.branch || item.customerAddress, branchFilter)
     );
-  }, [ordersList, selectedGlobalBranch]);
+  }, [ordersList, branchFilter]);
 
   // Filtered orders calculation
   const filteredOrders = useMemo(() => {
@@ -533,13 +581,27 @@ export function OrdersTab({
               {/* Left Sidebar Filter */}
               <AdminFilterSidebar
                 title="Bộ lọc đơn hàng"
-                hasActiveFilters={Boolean(searchQuery || statusFilter !== 'all' || orderDateRange)}
+                hasActiveFilters={Boolean(searchQuery || statusFilter !== 'all' || branchFilter !== 'all' || orderDateRange)}
                 onResetFilters={() => {
                   setSearchQuery('');
                   setStatusFilter('all');
+                  setBranchFilter('all');
                   setOrderDateRange(null);
                 }}
               >
+                {/* Filter 0: Cơ sở / Chi nhánh */}
+                <div className="space-y-1.5">
+                  <div className="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">
+                    Cơ sở / Chi nhánh
+                  </div>
+                  <Select
+                    value={branchFilter}
+                    onChange={(val) => setBranchFilter(val)}
+                    className="w-full text-sm"
+                    options={branchFilterOptions}
+                  />
+                </div>
+
                 {/* Filter 1: Thời gian tạo đơn */}
                 <div>
                   <div className="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">
@@ -981,7 +1043,7 @@ export function OrdersTab({
                       title: 'Khách hàng',
                       dataIndex: 'customerName',
                       key: 'customerName',
-                      width: 185,
+                      width: 170,
                       render: (text, record: OrderRow) => (
                         <div className="flex flex-col">
                           <span className="font-semibold text-slate-900 text-sm">
@@ -992,13 +1054,23 @@ export function OrdersTab({
                               {record.customerPhone}
                             </span>
                           ) : null}
-                          {record.showroom || record.branch ? (
-                            <span className="text-[10px] text-[#784e34] font-medium mt-0.5">
-                              {record.showroom || record.branch}
-                            </span>
-                          ) : null}
                         </div>
                       ),
+                    },
+                    {
+                      title: 'Chi nhánh / Showroom',
+                      key: 'branch',
+                      width: 175,
+                      render: (_, record: OrderRow) => {
+                        const br = record.branch || record.showroom || 'Chi nhánh Hà Nội';
+                        return (
+                          <div className="flex items-center">
+                            <span className="inline-flex items-center px-2.5 py-1 rounded text-xs font-medium bg-[#784e34]/10 text-[#784e34] border border-[#784e34]/20 whitespace-nowrap">
+                              🏢 {br}
+                            </span>
+                          </div>
+                        );
+                      },
                     },
                     {
                       title: 'Sản phẩm may đo',

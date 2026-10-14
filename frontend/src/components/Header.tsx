@@ -1,15 +1,16 @@
 'use client';
 
-import React, { useState, useRef, useEffect, Suspense } from 'react';
+import React, { useState, useRef, useEffect, Suspense, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
-import { App, Modal } from 'antd';
+import { App, Modal, Select } from 'antd';
 import { useAuth } from '@/context/AuthContext';
 import ProfileModal from '@/components/ProfileModal';
 import { spaceApi } from '@/api/spaceApi';
 import { categoryApi } from '@/api/categoryApi';
 import { settingsApi } from '@/api/settingsApi';
-import { AdminSpace, AdminCategory } from '@/types/admin';
+import { branchApi } from '@/api/branchApi';
+import { AdminSpace, AdminCategory, AdminBranch } from '@/types/admin';
 
 interface HeaderProps {
   cartCount: number;
@@ -44,12 +45,82 @@ function HeaderContent({
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [spaces, setSpaces] = useState<AdminSpace[]>(() => cachedHeaderSpaces || []);
   const [categories, setCategories] = useState<AdminCategory[]>(() => cachedHeaderCategories || []);
+  const [branches, setBranches] = useState<AdminBranch[]>([]);
+  const [selectedBranch, setSelectedBranch] = useState<string>('Chi nhánh Hà Nội');
   const [storeInfo, setStoreInfo] = useState<{ logoUrl?: string | null; brandName?: string; companyName?: string }>({
     logoUrl: '/logo.png',
     brandName: 'D2 LUXURY',
     companyName: 'Nội Thất Gỗ Tự Nhiên',
   });
   const profileRef = useRef<HTMLDivElement>(null);
+
+  // Load branches and listen to changes
+  useEffect(() => {
+    let isMounted = true;
+    const loadBranches = async () => {
+      try {
+        const list = await branchApi.getBranches({ status: 'active' });
+        if (isMounted && Array.isArray(list) && list.length > 0) {
+          setBranches(list);
+          const saved = localStorage.getItem('d2_selected_branch') || localStorage.getItem('d2_customer_branch') || '';
+          if (saved && saved !== 'all' && list.some((b) => b.name === saved)) {
+            setSelectedBranch(saved);
+          } else {
+            const firstBranch = list[0].name;
+            setSelectedBranch(firstBranch);
+            localStorage.setItem('d2_selected_branch', firstBranch);
+            localStorage.setItem('d2_customer_branch', firstBranch);
+          }
+        }
+      } catch (err) {
+        console.warn('Could not load branches in header:', err);
+      }
+    };
+    loadBranches();
+
+    // Read stored branch
+    const saved = localStorage.getItem('d2_selected_branch') || localStorage.getItem('d2_customer_branch') || '';
+    if (saved && saved !== 'all') {
+      setSelectedBranch(saved);
+    }
+
+    const handleBranchChanged = (e: any) => {
+      const b = e.detail?.branch || e.detail?.branchName;
+      if (b && b !== 'all') setSelectedBranch(b);
+    };
+    window.addEventListener('customer_branch_changed', handleBranchChanged);
+    window.addEventListener('branch_changed', handleBranchChanged);
+    return () => {
+      isMounted = false;
+      window.removeEventListener('customer_branch_changed', handleBranchChanged);
+      window.removeEventListener('branch_changed', handleBranchChanged);
+    };
+  }, []);
+
+  // Branch options for Ant Design Select (Only specific branches, removed 'Tất cả chi nhánh')
+  const branchOptions = useMemo(() => {
+    const branchSet = new Set<string>();
+    branches.forEach((b) => {
+      if (b.name) branchSet.add(b.name);
+    });
+    if (branchSet.size === 0) {
+      branchSet.add('Chi nhánh Hà Nội');
+      branchSet.add('Chi nhánh Nam Định');
+      branchSet.add('Trụ sở & Showroom Phú Quốc');
+    }
+    return Array.from(branchSet).map((b) => ({ value: b, label: b }));
+  }, [branches]);
+
+  const handleSelectBranch = (branchName: string) => {
+    setSelectedBranch(branchName);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('d2_selected_branch', branchName);
+      localStorage.setItem('d2_customer_branch', branchName);
+      window.dispatchEvent(new CustomEvent('customer_branch_changed', { detail: { branch: branchName, branchName } }));
+      window.dispatchEvent(new CustomEvent('branch_changed', { detail: { branch: branchName, branchName } }));
+    }
+    message.success(`Đã chọn phục vụ tại: ${branchName}`);
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -278,22 +349,17 @@ function HeaderContent({
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-[#fff8f5]/95 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)] border-b border-[#eae1dd]/60">
-      <div className="h-20 w-full max-w-[1720px] mx-auto px-3 sm:px-5 md:px-6 lg:px-6 xl:px-10 2xl:px-12 flex items-center justify-between flex-nowrap whitespace-nowrap gap-2 lg:gap-3 xl:gap-4">
+      <div className="h-20 w-full px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-14 flex items-center justify-between flex-nowrap whitespace-nowrap gap-2 lg:gap-3 xl:gap-4">
         {/* Logo Thương Hiệu */}
-        <Link href="/" className="flex items-center gap-2 sm:gap-3 group shrink-0">
+        <Link href="/" className="flex items-center gap-2.5 sm:gap-3 group shrink-0">
           <img
             alt={storeInfo.brandName || 'Logo'}
             className="h-10 sm:h-11 md:h-12 w-auto object-contain transition-transform group-hover:scale-105"
             src={storeInfo.logoUrl || '/logo.png'}
           />
-          <div className="flex flex-col">
-            <span className="font-headline-sm text-sm sm:text-base md:text-lg xl:text-xl text-[#5d371f] leading-none tracking-tight font-bold">
-              {storeInfo.brandName || 'D2 LUXURY'}
-            </span>
-            <span className="font-label-sm text-[8.5px] sm:text-[9.5px] md:text-[10px] text-[#83746c] tracking-wider mt-0.5 font-medium">
-              {storeInfo.companyName || 'Nội Thất Gỗ Tự Nhiên'}
-            </span>
-          </div>
+          <span className="font-headline-sm text-base sm:text-lg md:text-xl xl:text-2xl text-[#5d371f] leading-none tracking-tight font-bold">
+            {storeInfo.brandName || 'D2 LUXURY'}
+          </span>
         </Link>
 
         {/* Thanh điều hướng chính với Dropdown Menu */}
@@ -341,6 +407,17 @@ function HeaderContent({
 
         {/* Action Controls (Strict 1 line) */}
         <div className="flex items-center gap-2 sm:gap-3 xl:gap-3.5 shrink-0 flex-nowrap">
+          {/* Quick Branch Select (Giống trang Admin) */}
+          <div className="shrink-0">
+            <Select
+              value={selectedBranch}
+              onChange={(val) => handleSelectBranch(val)}
+              className="w-36 sm:w-44 md:w-52 h-9 sm:h-10 [&_.ant-select-selector]:!h-9 sm:[&_.ant-select-selector]:!h-10 [&_.ant-select-selector]:!flex [&_.ant-select-selector]:!items-center [&_.ant-select-selection-item]:!flex [&_.ant-select-selection-item]:!items-center font-medium [&_.ant-select-selector]:!border-[#d5c3ba] hover:[&_.ant-select-selector]:!border-[#5d371f]"
+              options={branchOptions}
+              placeholder="Chọn chi nhánh"
+            />
+          </div>
+
           {/* Cart Button */}
           <Link
             href="/cart"
@@ -494,6 +571,23 @@ function HeaderContent({
       {/* Mobile Drawer Menu */}
       {mobileMenuOpen && (
         <div className="lg:hidden bg-[#fff8f5] border-b border-[#eae1dd] px-6 py-4 flex flex-col gap-3 shadow-lg max-h-[80vh] overflow-y-auto animate-in slide-in-from-top duration-200">
+          {/* Mobile Branch Selector */}
+          <div className="p-3 bg-[#fbf2ee] border border-[#d5c3ba] flex flex-col gap-1.5 shadow-xs">
+            <div className="flex items-center justify-between text-xs font-bold text-[#5d371f]">
+              <span>Chi nhánh phục vụ:</span>
+              <span className="text-[10px] text-[#83746c] font-normal">
+                {branches.length} chi nhánh
+              </span>
+            </div>
+            <Select
+              value={selectedBranch}
+              onChange={(val) => handleSelectBranch(val)}
+              className="w-full h-10 [&_.ant-select-selector]:!h-10 [&_.ant-select-selector]:!flex [&_.ant-select-selector]:!items-center [&_.ant-select-selection-item]:!flex [&_.ant-select-selection-item]:!items-center font-medium"
+              options={branchOptions}
+              placeholder="Chọn chi nhánh"
+            />
+          </div>
+
           {/* Trang chủ mobile */}
           <Link
             href="/"

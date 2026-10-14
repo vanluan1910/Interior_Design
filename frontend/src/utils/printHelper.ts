@@ -155,7 +155,7 @@ export function getStoredCompanyInfo() {
           brandName: parsed.brandName || parsed.BrandName || 'D2 LUXURY',
           businessSector: parsed.businessSector || parsed.BusinessSector || 'NỘI THẤT GỖ TỰ NHIÊN',
           companyName: parsed.companyName || parsed.CompanyName || 'CÔNG TY CỔ PHẦN NỘI THẤT D2 LUXURY',
-          address: parsed.address || parsed.Address || 'Showroom 01, KĐT Vinhomes Riverside, Long Biên, Hà Nội',
+          address: parsed.address || parsed.Address || 'Ngã 4 Cửa Cạn, đặc khu Phú Quốc, tỉnh An Giang',
           hotline: parsed.hotline || parsed.Hotline || parsed.phone || '0986.739.587 - 0985.166.393',
           taxCode: parsed.taxCode || parsed.TaxCode || '0109887766',
           email: parsed.email || parsed.Email || 'contact@d2luxury.vn',
@@ -168,7 +168,7 @@ export function getStoredCompanyInfo() {
     brandName: 'D2 LUXURY',
     businessSector: 'NỘI THẤT GỖ TỰ NHIÊN',
     companyName: 'CÔNG TY CỔ PHẦN NỘI THẤT D2 LUXURY',
-    address: 'Showroom 01, KĐT Vinhomes Riverside, Long Biên, Hà Nội',
+    address: 'Ngã 4 Cửa Cạn, đặc khu Phú Quốc, tỉnh An Giang',
     hotline: '0986.739.587 - 0985.166.393',
     taxCode: '0109887766',
     email: 'contact@d2luxury.vn',
@@ -541,7 +541,7 @@ export function printOrderInvoice(order: any, options?: { templateType?: 'invoic
         </div>
       ` : ''}
       <div class="font-bold text-slate-900 text-xs">${company.companyName || 'CÔNG TY CỔ PHẦN NỘI THẤT D2 LUXURY'}</div>
-      <div class="text-slate-600 text-[10px]">Đ/c: ${company.address || 'Showroom 01, KĐT Vinhomes Riverside, Long Biên, Hà Nội'}</div>
+      <div class="text-slate-600 text-[10px]">Đ/c: ${company.address || 'Ngã 4 Cửa Cạn, đặc khu Phú Quốc, tỉnh An Giang'}</div>
       <div class="text-slate-600 text-[10px]">Hotline: ${company.hotline || '0986.739.587'} ${company.taxCode ? `| MST: ${company.taxCode}` : ''}</div>
       ${headerNote ? `<div class="text-[10px] text-[#784e34] font-medium pt-0.5">${headerNote}</div>` : ''}
     </div>

@@ -9,6 +9,7 @@ import {
   Form,
   Input,
   InputNumber,
+  AutoComplete,
   Row,
   Col,
   Space,
@@ -61,6 +62,8 @@ import { categoryApi } from '@/api/categoryApi';
 import { uploadApi } from '@/api/uploadApi';
 import { uomApi } from '@/api/uomApi';
 import { spaceApi } from '@/api/spaceApi';
+import { WOOD_MATERIAL_AUTOCOMPLETE_OPTIONS } from '@/data/woodMaterials';
+import { getProductStockForBranch, isMatchBranch } from '@/utils/branchHelper';
 
 export interface InventoryTabProps {
   catalogList: FeaturedCatalogProduct[];
@@ -99,6 +102,13 @@ export function InventoryTab({
   const [searchQuery, setSearchQuery] = useState(initialSearch || '');
   const [inventoryCategoryFilter, setInventoryCategoryFilter] = useState('all');
   const [inventoryStockTag, setInventoryStockTag] = useState('all');
+  const [branchFilter, setBranchFilter] = useState<string>(selectedGlobalBranch || 'all');
+
+  useEffect(() => {
+    if (selectedGlobalBranch) {
+      setBranchFilter(selectedGlobalBranch);
+    }
+  }, [selectedGlobalBranch]);
 
   // Server-Side Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -164,6 +174,23 @@ export function InventoryTab({
     return Array.from(uniqueMap.entries()).map(([value, label]) => ({ value, label }));
   }, [currentSpaces]);
 
+  // Dynamic Real Wood Materials from Database for Form AutoComplete
+  const [dbWoodMaterials, setDbWoodMaterials] = useState<string[]>([]);
+  useEffect(() => {
+    productApi.getMaterials().then((res) => {
+      if (Array.isArray(res) && res.length > 0) {
+        setDbWoodMaterials(res.map((r) => r.name).filter(Boolean));
+      }
+    }).catch(() => {});
+  }, []);
+
+  const woodMaterialOptions = useMemo(() => {
+    const set = new Set<string>();
+    dbWoodMaterials.forEach((m) => set.add(m));
+    WOOD_MATERIAL_AUTOCOMPLETE_OPTIONS.forEach((o) => set.add(o.value));
+    return Array.from(set).map((m) => ({ value: m, label: m }));
+  }, [dbWoodMaterials]);
+
   // Expandable row state for Domaco POS detail panel
   const [expandedProductRowKeys, setExpandedProductRowKeys] = useState<string[]>([]);
   const [productRowTabs, setProductRowTabs] = useState<Record<string, 'info' | 'notes' | 'inventory'>>({});
@@ -183,7 +210,7 @@ export function InventoryTab({
 
   // Fetch products from backend with exact pagination and branch filter
   const fetchProducts = useCallback(
-    async (page: number, size: number, search: string, catId: string, status: string, branch: string = selectedGlobalBranch) => {
+    async (page: number, size: number, search: string, catId: string, status: string, branch: string = branchFilter) => {
       setLoading(true);
       try {
         const res = await productApi.getPagedProducts({
@@ -222,15 +249,15 @@ export function InventoryTab({
         setLoading(false);
       }
     },
-    [setCatalogList, selectedGlobalBranch]
+    [setCatalogList, branchFilter]
   );
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      fetchProducts(currentPage, pageSize, searchQuery, inventoryCategoryFilter, inventoryStockTag, selectedGlobalBranch);
+      fetchProducts(currentPage, pageSize, searchQuery, inventoryCategoryFilter, inventoryStockTag, branchFilter);
     }, 200);
     return () => clearTimeout(timer);
-  }, [fetchProducts, currentPage, pageSize, searchQuery, inventoryCategoryFilter, inventoryStockTag, selectedGlobalBranch]);
+  }, [fetchProducts, currentPage, pageSize, searchQuery, inventoryCategoryFilter, inventoryStockTag, branchFilter]);
 
   // Drawer State
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -466,6 +493,7 @@ export function InventoryTab({
         stockNote: undefined,
         unit: 'Bộ',
         originalPrice: undefined,
+        discountPercent: 0,
         price: undefined,
         image: undefined,
         subImages: undefined,
@@ -491,6 +519,12 @@ export function InventoryTab({
       ? product.images.join('\n')
       : (product.subImages || '');
 
+    const initialDiscount = product.discountPercent !== undefined && product.discountPercent !== null
+      ? product.discountPercent
+      : (product.originalPrice && product.price && product.originalPrice > product.price
+          ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)
+          : 0);
+
     form.setFieldsValue({
       name: product.name,
       code: product.code,
@@ -498,6 +532,7 @@ export function InventoryTab({
       space: product.space || 'LivingRoom',
       collection: product.collection,
       originalPrice: product.originalPrice !== undefined ? product.originalPrice : (product.costPrice !== undefined ? product.costPrice : product.price),
+      discountPercent: initialDiscount,
       price: product.price,
       stockType: product.stockType,
       stockNote: isNaN(rawNum) ? 1 : rawNum,
@@ -584,6 +619,34 @@ export function InventoryTab({
     }
   };
 
+  const handlePriceOrDiscountChange = (changedValues: any, allValues: any) => {
+    const orig = allValues.originalPrice;
+    if ('discountPercent' in changedValues) {
+      const disc = changedValues.discountPercent;
+      if (typeof orig === 'number' && orig > 0 && typeof disc === 'number' && disc >= 0 && disc <= 100) {
+        const calculatedPrice = Math.round(orig * (1 - disc / 100));
+        form.setFieldsValue({ price: calculatedPrice });
+      }
+    } else if ('originalPrice' in changedValues) {
+      const origVal = changedValues.originalPrice;
+      const disc = allValues.discountPercent;
+      if (typeof origVal === 'number' && origVal > 0 && typeof disc === 'number' && disc > 0 && disc <= 100) {
+        const calculatedPrice = Math.round(origVal * (1 - disc / 100));
+        form.setFieldsValue({ price: calculatedPrice });
+      } else if (typeof origVal === 'number' && origVal > 0 && (disc === undefined || disc === 0) && !allValues.price) {
+        form.setFieldsValue({ price: origVal });
+      }
+    } else if ('price' in changedValues) {
+      const curPrice = changedValues.price;
+      if (typeof orig === 'number' && orig > 0 && typeof curPrice === 'number' && orig > curPrice) {
+        const calculatedDisc = Math.round(((orig - curPrice) / orig) * 100);
+        form.setFieldsValue({ discountPercent: calculatedDisc });
+      } else if (typeof orig === 'number' && typeof curPrice === 'number' && curPrice >= orig) {
+        form.setFieldsValue({ discountPercent: 0 });
+      }
+    }
+  };
+
   const handleSaveProduct = async (values: any) => {
     const selectedCategory = categoriesList.find((c) => c.id === values.categoryId);
     const subImagesList = typeof values.subImages === 'string'
@@ -600,7 +663,8 @@ export function InventoryTab({
 
     if (editingProduct) {
       let updatedBranchStocksJson = editingProduct.branchStocksJson || '{}';
-      if (selectedGlobalBranch && selectedGlobalBranch !== 'all') {
+      const effectiveBranch = branchFilter !== 'all' ? branchFilter : (selectedGlobalBranch !== 'all' ? selectedGlobalBranch : undefined);
+      if (effectiveBranch) {
         try {
           const bDict = JSON.parse(updatedBranchStocksJson);
           if (Object.keys(bDict).length === 0 && branchesList && branchesList.length > 0) {
@@ -608,10 +672,10 @@ export function InventoryTab({
               if (b.name) bDict[b.name] = editingProduct.inStock || 0;
             });
           }
-          bDict[selectedGlobalBranch] = inputStockNum;
+          bDict[effectiveBranch] = inputStockNum;
           updatedBranchStocksJson = JSON.stringify(bDict);
         } catch {
-          updatedBranchStocksJson = JSON.stringify({ [selectedGlobalBranch]: inputStockNum });
+          updatedBranchStocksJson = JSON.stringify({ [effectiveBranch]: inputStockNum });
         }
       }
 
@@ -623,6 +687,7 @@ export function InventoryTab({
         space: values.space || editingProduct.space || 'LivingRoom',
         collection: values.collection || '',
         originalPrice: rawOriginalPrice,
+        discountPercent: values.discountPercent !== undefined ? Number(values.discountPercent) : 0,
         price: values.price || 0,
         stockType: values.stockType || 'in_stock',
         stockNote: `${inputStockNum} chiếc`,
@@ -662,6 +727,7 @@ export function InventoryTab({
         categoryName: selectedCategory?.name || 'Nội Thất Gỗ',
         categoryId: values.categoryId || categoriesList[0]?.id,
         originalPrice: rawOriginalPrice,
+        discountPercent: values.discountPercent !== undefined ? Number(values.discountPercent) : 0,
         price: values.price || 0,
         stockType: values.stockType || 'in_stock',
         stockNote: `${inputStockNum} chiếc`,
@@ -919,22 +985,27 @@ export function InventoryTab({
                     const displayBranches = (branchesList && branchesList.length > 0)
                       ? branchesList
                       : [
-                          { id: 'b1', name: 'Showroom Flagship Thảo Điền' },
-                          { id: 'b2', name: 'Showroom Trung Tâm Ba Tháng Hai' },
-                          { id: 'b3', name: 'Tổng Kho Phân Phối & Giao Vận Bình Chánh' },
-                          { id: 'b4', name: 'Showroom Trải Nghiệm Ecopark Hà Nội' },
+                          { id: 'b_hn', name: 'Chi nhánh Hà Nội' },
+                          { id: 'b_nd', name: 'Chi nhánh Nam Định' },
+                          { id: 'b_pq', name: 'Chi Nhánh Phú Quốc' },
                         ];
 
                     return displayBranches.map((b) => {
-                      const matchedKey = Object.keys(bStocks).find((k) =>
-                        k.toLowerCase() === b.name.toLowerCase() ||
-                        k.toLowerCase().includes(b.name.toLowerCase()) ||
-                        b.name.toLowerCase().includes(k.toLowerCase())
-                      );
-                      const qty = matchedKey ? (bStocks[matchedKey] ?? 0) : (Object.keys(bStocks).length === 0 ? stockCount : 0);
+                      const matchedKey = Object.keys(bStocks).find((k) => isMatchBranch(k, b.name));
+                      const qty = matchedKey !== undefined
+                        ? (bStocks[matchedKey] ?? 0)
+                        : getProductStockForBranch(prod, b.name);
+                      const isHighlighted = isMatchBranch(b.name, branchFilter);
                       return (
-                        <tr key={b.id} className="hover:bg-slate-50">
-                          <td className="px-3 py-2.5 text-slate-900 font-medium">{b.name}</td>
+                        <tr key={b.id || b.name} className={isHighlighted && branchFilter !== 'all' ? 'bg-amber-50/60 font-semibold' : 'hover:bg-slate-50'}>
+                          <td className="px-3 py-2.5 text-slate-900 font-medium">
+                            <span className="flex items-center gap-1.5">
+                              {b.name}
+                              {isHighlighted && branchFilter !== 'all' && (
+                                <Tag color="gold" className="m-0 text-[10px] leading-tight">Đang chọn</Tag>
+                              )}
+                            </span>
+                          </td>
                           <td className="px-3 py-2.5 text-center font-mono font-bold text-slate-900">{qty}</td>
                           <td className="px-3 py-2.5 text-center font-mono text-slate-400">0</td>
                           <td className="px-3 py-2.5 text-center font-mono font-bold text-[#784e34]">{qty}</td>
@@ -1032,17 +1103,42 @@ export function InventoryTab({
         {/* LEFT FILTER SIDEBAR */}
         <AdminFilterSidebar
           title="Bộ lọc sản phẩm"
-          hasActiveFilters={Boolean(searchQuery || inventoryCategoryFilter !== 'all' || inventoryStockTag !== 'all')}
+          hasActiveFilters={Boolean(searchQuery || inventoryCategoryFilter !== 'all' || inventoryStockTag !== 'all' || (branchFilter !== 'all' && branchFilter !== selectedGlobalBranch))}
           onResetFilters={() => {
             setSearchQuery('');
             setInventoryCategoryFilter('all');
             setInventoryStockTag('all');
+            setBranchFilter(selectedGlobalBranch || 'all');
             setSelectedProductKeys([]);
             setCurrentPage(1);
           }}
         >
-          {/* Filter 1: Danh mục thiết kế */}
+          {/* Filter 0: Chi nhánh */}
           <div className="space-y-1.5">
+            <label className="font-semibold text-slate-800 text-xs block">Chi nhánh</label>
+            <Select
+              value={branchFilter}
+              onChange={(v) => {
+                setBranchFilter(v);
+                setCurrentPage(1);
+              }}
+              className="w-full text-xs"
+              size="small"
+              options={[
+                { value: 'all', label: 'Tất cả chi nhánh' },
+                ...(branchesList && branchesList.length > 0
+                  ? branchesList.map((b) => ({ value: b.name, label: b.name }))
+                  : [
+                      { value: 'Chi nhánh Hà Nội', label: 'Chi nhánh Hà Nội' },
+                      { value: 'Chi nhánh Nam Định', label: 'Chi nhánh Nam Định' },
+                      { value: 'Chi Nhánh Phú Quốc', label: 'Chi Nhánh Phú Quốc' },
+                    ]),
+              ]}
+            />
+          </div>
+
+          {/* Filter 1: Danh mục thiết kế */}
+          <div className="space-y-1.5 pt-2 border-t border-slate-100">
             <label className="font-semibold text-slate-800 text-xs block">Danh mục thiết kế</label>
             <Select
               value={inventoryCategoryFilter}
@@ -1242,14 +1338,13 @@ export function InventoryTab({
                 ),
               },
               {
-                title: 'Tồn kho',
+                title: branchFilter !== 'all' ? `Tồn (${branchFilter.replace('Chi nhánh ', '').replace('Chi Nhánh ', '')})` : 'Tồn kho',
                 dataIndex: 'stockNote',
                 key: 'stockNote',
                 align: 'center',
                 width: 140,
                 render: (note, prod) => {
-                  const rawNum = prod.stockNote ? prod.stockNote.replace(/[^-0-9]/g, '') : '';
-                  const count = prod.inStock !== undefined ? prod.inStock : (rawNum !== '' ? parseInt(rawNum, 10) : 0);
+                  const count = getProductStockForBranch(prod, branchFilter);
                   if (count < 0) {
                     return (
                       <span className="font-mono font-bold text-xs text-red-600 bg-red-50 px-2 py-0.5 rounded border border-red-200 inline-block">
@@ -1281,16 +1376,33 @@ export function InventoryTab({
                 },
               },
               {
-                title: 'Giá bán niêm yết',
+                title: 'Giá bán',
                 dataIndex: 'price',
                 key: 'price',
                 align: 'right',
-                width: 150,
-                render: (p) => (
-                  <span className="font-mono font-bold text-xs sm:text-sm text-[#784e34]">
-                    {(p || 0).toLocaleString('vi-VN')} đ
-                  </span>
-                ),
+                width: 155,
+                render: (p, prod) => {
+                  const hasDiscount = prod.discountPercent && prod.discountPercent > 0;
+                  return (
+                    <div className="flex flex-col items-end">
+                      <span className="font-mono font-bold text-xs sm:text-sm text-[#784e34]">
+                        {(p || 0).toLocaleString('vi-VN')} đ
+                      </span>
+                      {hasDiscount ? (
+                        <div className="flex items-center gap-1 mt-0.5">
+                          {prod.originalPrice && prod.originalPrice > p && (
+                            <span className="font-mono text-[10px] text-slate-400 line-through">
+                              {prod.originalPrice.toLocaleString('vi-VN')} đ
+                            </span>
+                          )}
+                          <Tag className="!m-0 !px-1 !py-0 text-[10px] font-bold border-0 bg-red-50 text-red-600 rounded">
+                            -{prod.discountPercent}%
+                          </Tag>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                },
               },
               {
                 title: 'Tình trạng',
@@ -1378,6 +1490,7 @@ export function InventoryTab({
           form={form}
           layout="vertical"
           onFinish={handleSaveProduct}
+          onValuesChange={handlePriceOrDiscountChange}
           requiredMark={false}
           className="space-y-4"
         >
@@ -1455,39 +1568,59 @@ export function InventoryTab({
             </Col>
           </Row>
 
-          {/* DUAL PRICING: GIÁ GỐC (GIÁ VỐN / NHẬP HÀNG) & GIÁ BÁN (NIÊM YẾT) */}
+          {/* PRICING: GIÁ GỐC, GIẢM GIÁ (%), GIÁ BÁN THỰC TẾ */}
           <Row gutter={16}>
-            <Col span={12}>
+            <Col span={8}>
               <Form.Item
                 label={
                   <div className="flex items-center gap-1">
-                    <span className="text-xs font-semibold text-slate-700">Giá gốc / Giá vốn</span>
-                    <span className="text-[11px] text-slate-400 font-normal">(Giá nhập kho)</span>
+                    <span className="text-xs font-semibold text-slate-700">Giá gốc</span>
+                    <span className="text-[11px] text-slate-400 font-normal">(Giá ban đầu)</span>
                   </div>
                 }
                 name="originalPrice"
-                tooltip="Giá vốn dùng khi lập phiếu nhập hàng, xuất trả hàng hoặc tính giá vốn hàng bán"
+                tooltip="Giá gốc ban đầu của sản phẩm trước khi giảm giá"
               >
                 <InputNumber
                   className="!w-full h-10 text-sm rounded-lg font-mono font-medium"
                   controls={false}
                   formatter={(val) => (val !== undefined && val !== null ? `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '')}
                   parser={(val) => (val ? Number(val.replace(/\$\s?|(,*)/g, '')) : 0)}
-                  placeholder="VD: 25,000,000"
+                  placeholder="VD: 40,000,000"
                   suffix={<span className="text-xs text-slate-400 font-normal">VNĐ</span>}
                 />
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col span={8}>
               <Form.Item
                 label={
                   <div className="flex items-center gap-1">
-                    <span className="text-xs font-semibold text-slate-700">Giá bán niêm yết <span className="text-red-500">*</span></span>
-                    <span className="text-[11px] text-slate-400 font-normal">(Giá bán lẻ)</span>
+                    <span className="text-xs font-semibold text-slate-700">Giảm giá (%)</span>
+                    <span className="text-[11px] text-amber-600 font-semibold">(Khuyến mãi)</span>
+                  </div>
+                }
+                name="discountPercent"
+                tooltip="Phần trăm giảm giá (0% - 100%). Giá bán sẽ được tự động tính theo công thức"
+              >
+                <InputNumber
+                  className="!w-full h-10 text-sm rounded-lg font-mono font-bold text-amber-700"
+                  min={0}
+                  max={100}
+                  placeholder="0"
+                  suffix={<span className="text-xs text-amber-600 font-bold">%</span>}
+                />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item
+                label={
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs font-semibold text-slate-700">Giá bán thực tế <span className="text-red-500">*</span></span>
+                    <span className="text-[11px] text-slate-400 font-normal">(Sau giảm)</span>
                   </div>
                 }
                 name="price"
-                rules={[{ required: true, message: 'Vui lòng nhập giá bán niêm yết' }]}
+                rules={[{ required: true, message: 'Vui lòng nhập giá bán thực tế' }]}
                 tooltip="Giá bán tiêu chuẩn hiển thị cho khách hàng và lập đơn bán hàng"
               >
                 <InputNumber
@@ -1495,7 +1628,7 @@ export function InventoryTab({
                   controls={false}
                   formatter={(val) => (val !== undefined && val !== null ? `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '')}
                   parser={(val) => (val ? Number(val.replace(/\$\s?|(,*)/g, '')) : 0)}
-                  placeholder="VD: 38,500,000"
+                  placeholder="VD: 36,000,000"
                   suffix={<span className="text-xs text-slate-400 font-normal">VNĐ</span>}
                 />
               </Form.Item>
@@ -1674,8 +1807,18 @@ export function InventoryTab({
               <Form.Item
                 label={<span className="text-xs font-semibold text-slate-700">Chất liệu gỗ / đệm</span>}
                 name="material"
+                tooltip="Chọn từ danh sách gỗ chuẩn của thương hiệu hoặc nhập chất liệu tùy chỉnh"
               >
-                <Input placeholder="VD: Gỗ Sồi tự nhiên (Ash/Oak)" className="h-10 text-sm rounded-lg" />
+                <AutoComplete
+                  options={woodMaterialOptions}
+                  placeholder="VD: Gỗ Óc Chó Bắc Mỹ, Gỗ Sồi tự nhiên, Gỗ Tần Bì..."
+                  className="w-full text-sm"
+                  filterOption={(inputValue, option) =>
+                    (option?.value ?? '').toLowerCase().includes(inputValue.toLowerCase())
+                  }
+                >
+                  <Input className="h-10 text-sm rounded-lg" />
+                </AutoComplete>
               </Form.Item>
             </Col>
           </Row>

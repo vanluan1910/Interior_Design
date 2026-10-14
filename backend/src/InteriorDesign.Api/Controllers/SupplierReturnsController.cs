@@ -237,15 +237,16 @@ public sealed class SupplierReturnsController : ApiControllerBase
                     }
                 }
             }
+            var allBranches = await _context.Branches.Where(b => !b.IsDeleted).ToListAsync(cancellationToken);
+            var allWarehouses = await _context.Warehouses.Where(w => !w.IsDeleted).ToListAsync(cancellationToken);
+
             if (string.IsNullOrWhiteSpace(targetBranch))
             {
-                var defBr = await _context.Branches.FirstOrDefaultAsync(b => !b.IsDeleted, cancellationToken);
-                targetBranch = defBr?.Name ?? "Showroom Flagship Thảo Điền";
+                var defBr = allBranches.FirstOrDefault(b => b.Status == "active");
+                targetBranch = defBr?.Name ?? "Chi nhánh Hà Nội";
             }
 
-            // Match with official branch name from DB if possible
-            var allBranches = await _context.Branches.Where(b => !b.IsDeleted).ToListAsync(cancellationToken);
-            var matchedBranch = allBranches.FirstOrDefault(b => IsBranchMatch(b.Name, targetBranch) || IsBranchMatch(targetBranch, b.Name));
+            var matchedBranch = BranchMatcher.FindMatchingBranch(allBranches, targetBranch, allWarehouses);
             if (matchedBranch != null)
             {
                 targetBranch = matchedBranch.Name;
@@ -307,7 +308,7 @@ public sealed class SupplierReturnsController : ApiControllerBase
                             catch { }
                         }
 
-                        var existingKey = bStocks.Keys.FirstOrDefault(k => IsBranchMatch(k, targetBranch));
+                        var existingKey = bStocks.Keys.FirstOrDefault(k => BranchMatcher.IsBranchMatch(k, targetBranch, allBranches, allWarehouses));
                         if (existingKey != null && bStocks.TryGetValue(existingKey, out var curVal))
                         {
                             bStocks[existingKey] = Math.Max(0, curVal - (int)Math.Round(qty));
@@ -446,48 +447,4 @@ public sealed class SupplierReturnsController : ApiControllerBase
         return Ok(ApiResponse<int>.Ok(slips.Count, $"Đã xóa thành công {slips.Count} phiếu trả hàng."));
     }
 
-    private static string RemoveDiacritics(string text)
-    {
-        if (string.IsNullOrWhiteSpace(text)) return string.Empty;
-        var normalizedString = text.Normalize(System.Text.NormalizationForm.FormD);
-        var sb = new System.Text.StringBuilder();
-        foreach (var c in normalizedString)
-        {
-            var unicodeCategory = System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c);
-            if (unicodeCategory != System.Globalization.UnicodeCategory.NonSpacingMark)
-            {
-                sb.Append(c);
-            }
-        }
-        return sb.ToString().Normalize(System.Text.NormalizationForm.FormC).Replace("đ", "d").Replace("Đ", "D");
-    }
-
-    private static bool IsBranchMatch(string storedBranch, string targetBranch)
-    {
-        if (string.IsNullOrWhiteSpace(storedBranch) || string.IsNullOrWhiteSpace(targetBranch)) return false;
-        if (string.Equals(storedBranch, targetBranch, StringComparison.OrdinalIgnoreCase)) return true;
-        if (storedBranch.Contains(targetBranch, StringComparison.OrdinalIgnoreCase) || targetBranch.Contains(storedBranch, StringComparison.OrdinalIgnoreCase)) return true;
-
-        var s = RemoveDiacritics(storedBranch).ToLower().Trim();
-        var t = RemoveDiacritics(targetBranch).ToLower().Trim();
-
-        if (s == t || s.Contains(t) || t.Contains(s)) return true;
-
-        string[] groups = [
-            "thao dien|thu duc|td01|quoc huong|kho thao dien|flagship",
-            "quan 10|q10|ba thang hai|3 thang 2|sr-q10|kho ba thang hai",
-            "binh chanh|bc01|le minh xuan|tong kho binh chanh",
-            "ecopark|ha noi|hung yen|van giang|eco|sr-eco|chi nhanh ha noi"
-        ];
-
-        foreach (var g in groups)
-        {
-            var aliases = g.Split('|');
-            bool sIn = aliases.Any(a => s.Contains(a));
-            bool tIn = aliases.Any(a => t.Contains(a));
-            if (sIn && tIn) return true;
-        }
-
-        return false;
-    }
 }

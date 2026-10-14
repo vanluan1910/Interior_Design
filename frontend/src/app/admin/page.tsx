@@ -764,6 +764,7 @@ function AdminPageContent({
             setOrdersList={setOrdersList}
             catalogList={catalogList}
             customersList={customersList}
+            branchesList={branchesList}
             selectedGlobalBranch={selectedGlobalBranch}
             onNavigateToProduct={handleNavigateToProduct}
           />
@@ -818,6 +819,7 @@ function AdminPageContent({
             ordersList={ordersList}
             setOrdersList={setOrdersList}
             selectedGlobalBranch={selectedGlobalBranch}
+            branchesList={branchesList}
           />
         )}
 

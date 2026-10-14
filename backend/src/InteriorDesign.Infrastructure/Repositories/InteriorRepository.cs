@@ -10,14 +10,70 @@ namespace InteriorDesign.Infrastructure.Repositories;
 public sealed class InteriorRepository(InteriorDbContext db) : IInteriorRepository
 {
     // Products
-    public async Task<PagedResult<Product>> GetProductsAsync(int page, int pageSize, string? search, string? space, Guid? categoryId, string? category, ProductStatus? status, string? branch, CancellationToken cancellationToken)
+    public async Task<PagedResult<Product>> GetProductsAsync(int page, int pageSize, string? search, string? space, Guid? categoryId, string? category, ProductStatus? status, string? branch, string? material = null, CancellationToken cancellationToken = default)
     {
         var baseQuery = db.Products.Include(p => p.Category).AsNoTracking().AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(search))
         {
             var s = search.Trim();
-            baseQuery = baseQuery.Where(p => p.Name.Contains(s) || p.Sku.Contains(s) || p.Description.Contains(s));
+            baseQuery = baseQuery.Where(p => p.Name.Contains(s) || p.Sku.Contains(s) || p.WoodType.Contains(s) || p.Material.Contains(s) || p.Description.Contains(s));
+        }
+
+        if (!string.IsNullOrWhiteSpace(material) && !material.Equals("all", StringComparison.OrdinalIgnoreCase))
+        {
+            var parts = material.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                                .Select(x => x.ToLower())
+                                .ToList();
+
+            if (parts.Count == 1)
+            {
+                var m = parts[0];
+                if (m.Contains("sồi") || m.Contains("oak"))
+                    baseQuery = baseQuery.Where(p => p.WoodType.Contains("Sồi") || p.Material.Contains("Sồi"));
+                else if (m.Contains("tần bì") || m.Contains("ash"))
+                    baseQuery = baseQuery.Where(p => p.WoodType.Contains("Tần Bì") || p.Material.Contains("Tần Bì"));
+                else if (m.Contains("me tây"))
+                    baseQuery = baseQuery.Where(p => p.WoodType.Contains("Me Tây") || p.Material.Contains("Me Tây"));
+                else if (m.Contains("mây"))
+                    baseQuery = baseQuery.Where(p => p.WoodType.Contains("Mây") || p.Material.Contains("Mây"));
+                else if (m.Contains("óc chó") || m.Contains("walnut"))
+                    baseQuery = baseQuery.Where(p => p.WoodType.Contains("Óc Chó") || p.Material.Contains("Óc Chó"));
+                else if (m.Contains("gõ đỏ"))
+                    baseQuery = baseQuery.Where(p => p.WoodType.Contains("Gõ Đỏ") || p.Material.Contains("Gõ Đỏ"));
+                else if (m.Contains("hương"))
+                    baseQuery = baseQuery.Where(p => p.WoodType.Contains("Hương") || p.Material.Contains("Hương"));
+                else if (m.Contains("mun") || m.Contains("gụ"))
+                    baseQuery = baseQuery.Where(p => p.WoodType.Contains("Mun") || p.WoodType.Contains("Gụ") || p.Material.Contains("Mun") || p.Material.Contains("Gụ"));
+                else if (m.Contains("da"))
+                    baseQuery = baseQuery.Where(p => p.WoodType.Contains("Da") || p.Material.Contains("Da") || p.Description.Contains("da bò"));
+                else
+                    baseQuery = baseQuery.Where(p => p.WoodType.Contains(m) || p.Material.Contains(m));
+            }
+            else if (parts.Count > 1)
+            {
+                var hasSoi = parts.Any(m => m.Contains("sồi") || m.Contains("oak"));
+                var hasTanBi = parts.Any(m => m.Contains("tần bì") || m.Contains("ash"));
+                var hasMeTay = parts.Any(m => m.Contains("me tây"));
+                var hasMay = parts.Any(m => m.Contains("mây"));
+                var hasOcCho = parts.Any(m => m.Contains("óc chó") || m.Contains("walnut"));
+                var hasGoDo = parts.Any(m => m.Contains("gõ đỏ"));
+                var hasHuong = parts.Any(m => m.Contains("hương"));
+                var hasMunGu = parts.Any(m => m.Contains("mun") || m.Contains("gụ"));
+                var hasDa = parts.Any(m => m.Contains("da"));
+
+                baseQuery = baseQuery.Where(p =>
+                    (hasSoi && (p.WoodType.Contains("Sồi") || p.Material.Contains("Sồi"))) ||
+                    (hasTanBi && (p.WoodType.Contains("Tần Bì") || p.Material.Contains("Tần Bì"))) ||
+                    (hasMeTay && (p.WoodType.Contains("Me Tây") || p.Material.Contains("Me Tây"))) ||
+                    (hasMay && (p.WoodType.Contains("Mây") || p.Material.Contains("Mây"))) ||
+                    (hasOcCho && (p.WoodType.Contains("Óc Chó") || p.Material.Contains("Óc Chó"))) ||
+                    (hasGoDo && (p.WoodType.Contains("Gõ Đỏ") || p.Material.Contains("Gõ Đỏ"))) ||
+                    (hasHuong && (p.WoodType.Contains("Hương") || p.Material.Contains("Hương"))) ||
+                    (hasMunGu && (p.WoodType.Contains("Mun") || p.WoodType.Contains("Gụ") || p.Material.Contains("Mun") || p.Material.Contains("Gụ"))) ||
+                    (hasDa && (p.WoodType.Contains("Da") || p.Material.Contains("Da") || p.Description.Contains("da bò")))
+                );
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(space) && !space.Equals("all", StringComparison.OrdinalIgnoreCase))
@@ -73,57 +129,20 @@ public sealed class InteriorRepository(InteriorDbContext db) : IInteriorReposito
 
         if (!string.IsNullOrWhiteSpace(branch) && !string.Equals(branch, "all", StringComparison.OrdinalIgnoreCase))
         {
-            var b = branch.Trim();
-            var bLower = b.ToLower();
-            string keyword = b;
-            string keywordAlt1 = b;
-            string keywordAlt2 = b;
-            string keywordAlt3 = b;
+            var dbBranches = await db.Branches.AsNoTracking().Where(b => !b.IsDeleted).ToListAsync(cancellationToken);
+            var dbWarehouses = await db.Warehouses.AsNoTracking().Where(w => !w.IsDeleted).ToListAsync(cancellationToken);
+            var matchedBranch = BranchMatcher.FindMatchingBranch(dbBranches, branch, dbWarehouses);
 
-            if (bLower.Contains("nam định") || bLower.Contains("nam dinh"))
-            {
-                keyword = "Nam Định";
-                keywordAlt1 = "Nam \u0110\u1ECBnh";
-                keywordAlt2 = "Nam \\u0110\\u1ECBnh";
-                keywordAlt3 = "Nam";
-            }
-            else if (bLower.Contains("hà nội") || bLower.Contains("ha noi"))
-            {
-                keyword = "Hà Nội";
-                keywordAlt1 = "H\u00E0 N\u1ED9i";
-                keywordAlt2 = "H\\u00E0 N\\u1ED9i";
-                keywordAlt3 = "Hà Nội";
-            }
-            else if (bLower.Contains("bình chánh") || bLower.Contains("binh chanh"))
-            {
-                keyword = "Bình Chánh";
-                keywordAlt1 = "B\u00ECnh Ch\u00E1nh";
-                keywordAlt2 = "B\\u00ECnh Ch\\u00E1nh";
-                keywordAlt3 = "Bình Chánh";
-            }
-            else if (bLower.Contains("thảo điền") || bLower.Contains("thao dien"))
-            {
-                keyword = "Thảo Điền";
-                keywordAlt1 = "Th\u1EA3o \u0110i\u1EC7n";
-                keywordAlt2 = "Th\\u1EA3o \\u0110i\\u1EC7n";
-                keywordAlt3 = "Thảo Điền";
-            }
-            else if (bLower.Contains("quận 10") || bLower.Contains("quan 10"))
-            {
-                keyword = "Quận 10";
-                keywordAlt1 = "Qu\u1EADn 10";
-                keywordAlt2 = "Qu\\u1EADn 10";
-                keywordAlt3 = "Q10";
-            }
+            var targetName = matchedBranch != null ? matchedBranch.Name : branch.Trim();
+            var targetRaw = targetName;
+            var targetJsonEscaped = System.Text.Json.JsonSerializer.Serialize(targetName).Trim('"');
 
             baseQuery = baseQuery.Where(p =>
                 string.IsNullOrEmpty(p.BranchStocksJson) ||
                 p.BranchStocksJson == "{}" ||
-                p.BranchStocksJson.Contains(keyword) ||
-                p.BranchStocksJson.Contains(keywordAlt1) ||
-                p.BranchStocksJson.Contains(keywordAlt2) ||
-                p.BranchStocksJson.Contains(keywordAlt3) ||
-                p.BranchStocksJson.Contains(b));
+                p.BranchStocksJson.Contains(targetRaw) ||
+                p.BranchStocksJson.Contains(targetJsonEscaped) ||
+                p.BranchStocksJson.Contains(branch));
         }
 
         cancellationToken.ThrowIfCancellationRequested();
