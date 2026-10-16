@@ -64,7 +64,11 @@ function mapCatalogToCategoryProduct(item: FeaturedCatalogProduct, currentBranch
     woodMaterialName,
     colorTone: (item.color || '').toLowerCase().includes('nâu') ? 'chestnut' : 'light-oak',
     price: item.price,
-    originalPrice: item.originalPrice && item.originalPrice > item.price ? item.originalPrice : undefined,
+    originalPrice: item.originalPrice && item.originalPrice > item.price
+      ? item.originalPrice
+      : (item.discountPercent && item.discountPercent > 0 && item.price > 0
+          ? Math.round(item.price / (1 - item.discountPercent / 100))
+          : undefined),
     stockStatus,
     stockLabel,
     inStock: !isOutOfStock,
@@ -899,15 +903,15 @@ function ProductsContent() {
 
                 <div className="py-1">
                   <Slider
-                    min={5}
+                    min={1}
                     max={100}
-                    step={5}
+                    step={1}
                     value={maxPrice}
                     onChange={(val) => setMaxPrice(val)}
                     tooltip={{ formatter: (val) => `${val} triệu VNĐ` }}
                   />
                   <div className="flex justify-between font-data-mono text-[10px] text-[#83746c]">
-                    <span>5.000.000₫</span>
+                    <span>1.000.000₫</span>
                     <span>100.000.000₫</span>
                   </div>
                 </div>
@@ -915,10 +919,12 @@ function ProductsContent() {
                 {/* Quick Price Pills */}
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   {[
+                    { label: 'Dưới 5tr', val: 5 },
+                    { label: 'Dưới 10tr', val: 10 },
                     { label: 'Dưới 15tr', val: 15 },
-                    { label: '15 - 35tr', val: 35 },
-                    { label: '35 - 60tr', val: 60 },
-                    { label: 'Trên 60tr', val: 100 },
+                    { label: 'Dưới 25tr', val: 25 },
+                    { label: 'Dưới 50tr', val: 50 },
+                    { label: 'Tất cả (100tr)', val: 100 },
                   ].map((pill) => (
                     <Button
                       key={pill.label}
@@ -1028,16 +1034,21 @@ function ProductsContent() {
                           </div>
 
                           {/* Badges */}
-                          {Boolean(isOutOfStock || p.stockLabel) && (
-                            <div className="absolute top-3 left-3">
+                          <div className="absolute top-3 left-3 flex flex-col gap-1 items-start z-10 pointer-events-none">
+                            {p.originalPrice && p.originalPrice > p.price && !isOutOfStock && (
+                              <span className="px-2.5 py-0.5 bg-[#ba1a1a] text-white text-[11px] font-bold shadow-md">
+                                -{Math.round(((p.originalPrice - p.price) / p.originalPrice) * 100)}%
+                              </span>
+                            )}
+                            {Boolean(isOutOfStock || p.stockLabel) && (
                               <Tag
                                 color={isOutOfStock ? "#ba1a1a" : "rgba(255,255,255,0.9)"}
                                 className={`${isOutOfStock ? '!text-white !bg-[#ba1a1a] !border-[#ba1a1a]' : '!text-[#5d371f] !border-[#d5c3ba]/60'} font-bold text-xs rounded-none px-2.5 py-0.5 backdrop-blur-sm shadow-sm m-0`}
                               >
                                 {isOutOfStock ? 'Hết hàng' : p.stockLabel}
                               </Tag>
-                            </div>
-                          )}
+                            )}
+                          </div>
 
                           {isOutOfStock && (
                             <div className="absolute inset-0 bg-black/30 flex items-center justify-center pointer-events-none">

@@ -55,6 +55,14 @@ function detectCategory(space?: string, catName?: string, name?: string, sku?: s
 
 function mapHomeProductToProduct(item: HomeProductItem): Product {
   const cat = detectCategory(item.category, item.categoryName, item.name, item.sku);
+  const orig = item.originalPrice && item.originalPrice > item.price
+    ? item.originalPrice
+    : (item.discountPercent && item.discountPercent > 0 && item.price > 0
+        ? Math.round(item.price / (1 - item.discountPercent / 100))
+        : undefined);
+  const disc = item.discountPercent && item.discountPercent > 0
+    ? item.discountPercent
+    : (orig && orig > item.price ? Math.round(((orig - item.price) / orig) * 100) : undefined);
 
   return {
     id: item.id,
@@ -63,6 +71,9 @@ function mapHomeProductToProduct(item: HomeProductItem): Product {
     category: cat,
     categoryName: item.categoryName || (cat === 'living' ? 'Phòng Khách' : cat === 'bedroom' ? 'Phòng Ngủ' : cat === 'dining' ? 'Phòng Ăn' : 'Phòng Làm Việc'),
     price: item.price,
+    originalPrice: orig,
+    discountPercent: disc,
+    tag: disc && disc > 0 ? `-${disc}%` : item.tag,
     image: item.image || '/images/placeholder.jpg',
     woodType: item.woodType || 'Gỗ tự nhiên',
     rating: item.rating || 5.0,
@@ -78,6 +89,14 @@ function mapHomeProductToProduct(item: HomeProductItem): Product {
 
 function mapCatalogProductToProduct(item: FeaturedCatalogProduct): Product {
   const cat = detectCategory(item.space, item.categoryName, item.name, item.code);
+  const orig = item.originalPrice && item.originalPrice > item.price
+    ? item.originalPrice
+    : (item.discountPercent && item.discountPercent > 0 && item.price > 0
+        ? Math.round(item.price / (1 - item.discountPercent / 100))
+        : undefined);
+  const disc = item.discountPercent && item.discountPercent > 0
+    ? item.discountPercent
+    : (orig && orig > item.price ? Math.round(((orig - item.price) / orig) * 100) : undefined);
 
   return {
     id: item.id,
@@ -86,6 +105,9 @@ function mapCatalogProductToProduct(item: FeaturedCatalogProduct): Product {
     category: cat,
     categoryName: item.categoryName || (cat === 'living' ? 'Phòng Khách' : cat === 'bedroom' ? 'Phòng Ngủ' : cat === 'dining' ? 'Phòng Ăn' : 'Phòng Làm Việc'),
     price: item.price,
+    originalPrice: orig,
+    discountPercent: disc,
+    tag: disc && disc > 0 ? `-${disc}%` : (item.collection || 'Tuyệt tác mộc'),
     image: item.image || '/images/placeholder.jpg',
     woodType: item.metaInfo || item.material || 'Gỗ tự nhiên',
     rating: 5.0,
@@ -167,8 +189,18 @@ export default function HomePage() {
 
     fetchAllData();
 
+    const handleProductUpdated = () => {
+      try {
+        sessionStorage.removeItem('d2_homedata_cache');
+      } catch {}
+      fetchAllData();
+    };
+
+    window.addEventListener('d2_product_updated', handleProductUpdated);
+
     return () => {
       isMounted = false;
+      window.removeEventListener('d2_product_updated', handleProductUpdated);
     };
   }, []);
 

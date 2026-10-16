@@ -18,7 +18,7 @@ export interface AdminFormDrawerProps {
   onSubmit?: () => void;
   submitText?: string;
   cancelText?: string;
-  size?: 'default' | 'large';
+  size?: 'default' | 'large' | 'small' | 'xl';
   width?: number | string;
   extraHeader?: React.ReactNode;
   extraFooter?: React.ReactNode;
@@ -71,7 +71,9 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({
     }
   };
 
-  const computedWidth = width || (size === 'large' ? 760 : 580);
+  const computedWidth =
+    width ||
+    (size === 'small' ? 520 : size === 'large' ? 760 : size === 'xl' ? 840 : 640);
 
   if (!mounted) {
     return null;

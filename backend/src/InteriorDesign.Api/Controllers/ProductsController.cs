@@ -7,6 +7,7 @@ using InteriorDesign.Integration.Requests;
 using InteriorDesign.Integration.Responses;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace InteriorDesign.Api.Controllers;
 
@@ -200,8 +201,15 @@ public sealed class ProductsController : ApiControllerBase
     }
 
     [HttpPost]
-    public async Task<IActionResult> CreateProduct([FromBody] CreateProductRequest request, CancellationToken cancellationToken) =>
-        ToActionResult(await Sender.Send(new CreateProductCommand(request), cancellationToken));
+    public async Task<IActionResult> CreateProduct(
+        [FromBody] CreateProductRequest request,
+        [FromServices] IMemoryCache? memoryCache,
+        CancellationToken cancellationToken)
+    {
+        var result = await Sender.Send(new CreateProductCommand(request), cancellationToken);
+        if (result.Success) memoryCache?.Remove("home_data");
+        return ToActionResult(result);
+    }
 
     [HttpPost("bulk")]
     public async Task<IActionResult> BulkImportProducts(
@@ -371,14 +379,23 @@ public sealed class ProductsController : ApiControllerBase
     }
 
     [HttpPut("{id:guid}")]
-    public async Task<IActionResult> UpdateProduct(Guid id, [FromBody] UpdateProductRequest request, CancellationToken cancellationToken) =>
-        ToActionResult(await Sender.Send(new UpdateProductCommand(id, request), cancellationToken));
+    public async Task<IActionResult> UpdateProduct(
+        Guid id,
+        [FromBody] UpdateProductRequest request,
+        [FromServices] IMemoryCache? memoryCache,
+        CancellationToken cancellationToken)
+    {
+        var result = await Sender.Send(new UpdateProductCommand(id, request), cancellationToken);
+        if (result.Success) memoryCache?.Remove("home_data");
+        return ToActionResult(result);
+    }
 
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> DeleteProduct(
         Guid id,
         [FromQuery] string? branch = null,
         [FromServices] InteriorDbContext? context = null,
+        [FromServices] IMemoryCache? memoryCache = null,
         CancellationToken cancellationToken = default)
     {
         if (!string.IsNullOrWhiteSpace(branch) && !string.Equals(branch, "all", StringComparison.OrdinalIgnoreCase) && context != null)
@@ -422,11 +439,14 @@ public sealed class ProductsController : ApiControllerBase
                     product.BranchStocksJson = System.Text.Json.JsonSerializer.Serialize(dict, jsonOptions);
                     product.InStock = dict.Values.Sum();
                     await context.SaveChangesAsync(cancellationToken);
+                    memoryCache?.Remove("home_data");
                     return Ok(ApiResponse<bool>.Ok(true, $"Đã gỡ sản phẩm khỏi {branch}."));
                 }
             }
         }
 
-        return ToActionResult(await Sender.Send(new DeleteProductCommand(id), cancellationToken));
+        var delResult = await Sender.Send(new DeleteProductCommand(id), cancellationToken);
+        if (delResult.Success) memoryCache?.Remove("home_data");
+        return ToActionResult(delResult);
     }
 }

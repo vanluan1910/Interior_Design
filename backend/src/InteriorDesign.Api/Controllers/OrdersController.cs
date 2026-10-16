@@ -5,6 +5,7 @@ using InteriorDesign.Infrastructure.Data;
 using InteriorDesign.Integration.Common;
 using InteriorDesign.Integration.Requests;
 using InteriorDesign.Integration.Responses;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -24,6 +25,7 @@ public sealed class OrdersController : ApiControllerBase
     /// Lấy danh sách đơn hàng (hỗ trợ tìm kiếm, lọc theo trạng thái, loại đơn, chi nhánh, không gian)
     /// </summary>
     [HttpGet]
+    [Authorize(Roles = "Admin,Staff")]
     public async Task<IActionResult> GetOrders(
         [FromQuery] string? search = null,
         [FromQuery] string? status = null,
@@ -144,6 +146,7 @@ public sealed class OrdersController : ApiControllerBase
     /// Lấy chi tiết đơn hàng theo ID
     /// </summary>
     [HttpGet("{id:guid}")]
+    [Authorize(Roles = "Admin,Staff")]
     public async Task<IActionResult> GetOrderById(Guid id, CancellationToken cancellationToken)
     {
         var order = await _context.Orders
@@ -237,22 +240,37 @@ public sealed class OrdersController : ApiControllerBase
             deadlineDate = parsedDeadline;
         }
 
-        // Xác định chi nhánh đặt hàng chuẩn xác
-        var targetBranch = !string.IsNullOrWhiteSpace(request.Branch) ? request.Branch.Trim() : (!string.IsNullOrWhiteSpace(request.Showroom) ? request.Showroom.Trim() : null);
+        // Xác định chi nhánh đặt hàng & kho mặc định chuẩn xác
         var allBranches = await _context.Branches.AsNoTracking().Where(b => !b.IsDeleted).ToListAsync(cancellationToken);
-        if (!string.IsNullOrWhiteSpace(targetBranch))
+        var allWarehouses = await _context.Warehouses.AsNoTracking().Where(w => !w.IsDeleted).ToListAsync(cancellationToken);
+
+        var defaultWh = allWarehouses.FirstOrDefault(w => w.IsDefault)
+                     ?? allWarehouses.FirstOrDefault(w => w.Type == "main" || w.Type == "central" || w.Type == "transit")
+                     ?? allWarehouses.FirstOrDefault();
+
+        var defaultBranch = allBranches.FirstOrDefault(b => b.IsHeadquarter)
+                         ?? (defaultWh != null && !string.IsNullOrWhiteSpace(defaultWh.Branch)
+                                ? BranchMatcher.FindMatchingBranch(allBranches, defaultWh.Branch, allWarehouses)
+                                : null)
+                         ?? allBranches.FirstOrDefault();
+
+        string defaultTargetName = defaultBranch?.Name ?? defaultWh?.Branch ?? defaultWh?.Name ?? "Chi Nhánh Phú Quốc";
+        bool isRetailSale = string.Equals(request.OrderType, "retail", StringComparison.OrdinalIgnoreCase);
+
+        var targetBranch = !string.IsNullOrWhiteSpace(request.Branch) ? request.Branch.Trim() : (!string.IsNullOrWhiteSpace(request.Showroom) ? request.Showroom.Trim() : null);
+
+        if (isRetailSale && (string.IsNullOrWhiteSpace(targetBranch) || string.Equals(targetBranch, "default", StringComparison.OrdinalIgnoreCase) || string.Equals(targetBranch, "Mặc định", StringComparison.OrdinalIgnoreCase) || string.Equals(targetBranch, "all", StringComparison.OrdinalIgnoreCase)))
         {
-            var allWarehouses = await _context.Warehouses.AsNoTracking().Where(w => !w.IsDeleted).ToListAsync(cancellationToken);
+            targetBranch = defaultTargetName;
+        }
+        else if (!string.IsNullOrWhiteSpace(targetBranch))
+        {
             var mb = BranchMatcher.FindMatchingBranch(allBranches, targetBranch, allWarehouses);
             if (mb != null) targetBranch = mb.Name;
         }
-        else if (allBranches.Count > 0)
-        {
-            targetBranch = allBranches[0].Name;
-        }
         else
         {
-            targetBranch = "Chi nhánh Hà Nội";
+            targetBranch = defaultTargetName;
         }
 
         // Xử lý giỏ hàng & sản phẩm từ database thật
@@ -339,10 +357,10 @@ public sealed class OrdersController : ApiControllerBase
             });
         }
 
-        // Trừ tồn kho sản phẩm theo đúng chi nhánh đặt hàng
+        // Trừ tồn kho sản phẩm: Khách hàng mua hàng -> ưu tiên trừ kho mặc định trước
         if (orderStatus != OrderStatus.Cancelled && items.Count > 0)
         {
-            await DeductOrRestoreStockAsync(targetBranch, items, isRestoring: false, cancellationToken);
+            await DeductOrRestoreStockAsync(targetBranch, items, isRestoring: false, cancellationToken, preferDefaultWarehouse: isRetailSale);
         }
 
         var totalAmount = subTotal + request.ShippingFee - request.DiscountAmount;
@@ -367,9 +385,12 @@ public sealed class OrdersController : ApiControllerBase
             customer = await _context.Customers.FirstOrDefaultAsync(c => c.Phone == cleanPhone, cancellationToken);
         }
 
+        var orderDebt = paymentStatus == PaymentStatus.Paid ? 0 : Math.Max(0, totalAmount - depositAmount);
+
         if (customer != null)
         {
             customer.TotalSpent += totalAmount;
+            customer.Debt += orderDebt;
             customer.OrderCount += 1;
             customer.LastOrderDate = DateTimeOffset.UtcNow;
             customer.UpdatedAt = DateTimeOffset.UtcNow;
@@ -413,7 +434,7 @@ public sealed class OrdersController : ApiControllerBase
                 Type = "retail",
                 Tier = "standard",
                 TotalSpent = totalAmount,
-                Debt = 0,
+                Debt = orderDebt,
                 OrderCount = 1,
                 LastOrderDate = DateTimeOffset.UtcNow,
                 Status = "active",
@@ -469,6 +490,7 @@ public sealed class OrdersController : ApiControllerBase
     /// Cập nhật thông tin đơn hàng
     /// </summary>
     [HttpPut("{id:guid}")]
+    [Authorize(Roles = "Admin,Staff")]
     public async Task<IActionResult> UpdateOrder(Guid id, [FromBody] UpdateOrderRequest request, CancellationToken cancellationToken)
     {
         var order = await _context.Orders.Include(o => o.Items).FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
@@ -558,6 +580,7 @@ public sealed class OrdersController : ApiControllerBase
     /// Cập nhật nhanh trạng thái đơn hàng
     /// </summary>
     [HttpPatch("{id:guid}/status")]
+    [Authorize(Roles = "Admin,Staff")]
     public async Task<IActionResult> UpdateOrderStatus(Guid id, [FromBody] UpdateOrderStatusRequest request, CancellationToken cancellationToken)
     {
         var order = await _context.Orders.Include(o => o.Items).FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
@@ -577,11 +600,11 @@ public sealed class OrdersController : ApiControllerBase
 
         if (oldStatus != OrderStatus.Cancelled && parsedStatus == OrderStatus.Cancelled)
         {
-            await DeductOrRestoreStockAsync(order.Branch ?? order.Showroom, order.Items.ToList(), isRestoring: true, cancellationToken);
+            await DeductOrRestoreStockAsync(order.Branch ?? order.Showroom, order.Items.ToList(), isRestoring: true, cancellationToken, preferDefaultWarehouse: string.Equals(order.OrderType, "retail", StringComparison.OrdinalIgnoreCase));
         }
         else if (oldStatus == OrderStatus.Cancelled && parsedStatus != OrderStatus.Cancelled)
         {
-            await DeductOrRestoreStockAsync(order.Branch ?? order.Showroom, order.Items.ToList(), isRestoring: false, cancellationToken);
+            await DeductOrRestoreStockAsync(order.Branch ?? order.Showroom, order.Items.ToList(), isRestoring: false, cancellationToken, preferDefaultWarehouse: string.Equals(order.OrderType, "retail", StringComparison.OrdinalIgnoreCase));
         }
 
         await _context.SaveChangesAsync(cancellationToken);
@@ -592,6 +615,7 @@ public sealed class OrdersController : ApiControllerBase
     /// Cập nhật trạng thái thanh toán
     /// </summary>
     [HttpPatch("{id:guid}/payment-status")]
+    [Authorize(Roles = "Admin,Staff")]
     public async Task<IActionResult> UpdatePaymentStatus(Guid id, [FromBody] UpdatePaymentStatusRequest request, CancellationToken cancellationToken)
     {
         var order = await _context.Orders.Include(o => o.Items).FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
@@ -620,6 +644,7 @@ public sealed class OrdersController : ApiControllerBase
     /// Cập nhật trạng thái hàng loạt
     /// </summary>
     [HttpPost("bulk-status")]
+    [Authorize(Roles = "Admin,Staff")]
     public async Task<IActionResult> BulkUpdateOrderStatus([FromBody] BulkUpdateOrderStatusRequest request, CancellationToken cancellationToken)
     {
         if (request.OrderIds == null || request.OrderIds.Count == 0)
@@ -641,11 +666,11 @@ public sealed class OrdersController : ApiControllerBase
 
             if (oldStatus != OrderStatus.Cancelled && parsedStatus == OrderStatus.Cancelled)
             {
-                await DeductOrRestoreStockAsync(order.Branch ?? order.Showroom, order.Items.ToList(), isRestoring: true, cancellationToken);
+                await DeductOrRestoreStockAsync(order.Branch ?? order.Showroom, order.Items.ToList(), isRestoring: true, cancellationToken, preferDefaultWarehouse: string.Equals(order.OrderType, "retail", StringComparison.OrdinalIgnoreCase));
             }
             else if (oldStatus == OrderStatus.Cancelled && parsedStatus != OrderStatus.Cancelled)
             {
-                await DeductOrRestoreStockAsync(order.Branch ?? order.Showroom, order.Items.ToList(), isRestoring: false, cancellationToken);
+                await DeductOrRestoreStockAsync(order.Branch ?? order.Showroom, order.Items.ToList(), isRestoring: false, cancellationToken, preferDefaultWarehouse: string.Equals(order.OrderType, "retail", StringComparison.OrdinalIgnoreCase));
             }
         }
 
@@ -657,6 +682,7 @@ public sealed class OrdersController : ApiControllerBase
     /// Xóa đơn hàng (Soft Delete)
     /// </summary>
     [HttpDelete("{id:guid}")]
+    [Authorize(Roles = "Admin,Staff")]
     public async Task<IActionResult> DeleteOrder(Guid id, CancellationToken cancellationToken)
     {
         var order = await _context.Orders.Include(o => o.Items).FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
@@ -665,7 +691,7 @@ public sealed class OrdersController : ApiControllerBase
 
         if (!order.IsDeleted && order.Status != OrderStatus.Cancelled)
         {
-            await DeductOrRestoreStockAsync(order.Branch ?? order.Showroom, order.Items.ToList(), isRestoring: true, cancellationToken);
+            await DeductOrRestoreStockAsync(order.Branch ?? order.Showroom, order.Items.ToList(), isRestoring: true, cancellationToken, preferDefaultWarehouse: string.Equals(order.OrderType, "retail", StringComparison.OrdinalIgnoreCase));
         }
 
         order.IsDeleted = true;
@@ -675,25 +701,43 @@ public sealed class OrdersController : ApiControllerBase
         return Ok(ApiResponse<bool>.Ok(true, "Xóa đơn hàng thành công."));
     }
 
-    private async Task DeductOrRestoreStockAsync(string? targetBranch, List<OrderItem> items, bool isRestoring, CancellationToken cancellationToken)
+    private async Task DeductOrRestoreStockAsync(
+        string? targetBranch,
+        List<OrderItem> items,
+        bool isRestoring,
+        CancellationToken cancellationToken,
+        bool preferDefaultWarehouse = false)
     {
         if (items == null || items.Count == 0) return;
 
         var allBranches = await _context.Branches.AsNoTracking().Where(b => !b.IsDeleted).ToListAsync(cancellationToken);
         var allWarehouses = await _context.Warehouses.AsNoTracking().Where(w => !w.IsDeleted).ToListAsync(cancellationToken);
+
+        // 1. Xác định kho mặc định và chi nhánh mặc định
+        var defaultWh = allWarehouses.FirstOrDefault(w => w.IsDefault)
+                     ?? allWarehouses.FirstOrDefault(w => w.Type == "main" || w.Type == "central" || w.Type == "transit")
+                     ?? allWarehouses.FirstOrDefault();
+
+        var defaultBranch = allBranches.FirstOrDefault(b => b.IsHeadquarter)
+                         ?? (defaultWh != null && !string.IsNullOrWhiteSpace(defaultWh.Branch)
+                                ? BranchMatcher.FindMatchingBranch(allBranches, defaultWh.Branch, allWarehouses)
+                                : null)
+                         ?? allBranches.FirstOrDefault();
+
+        string defaultTargetName = defaultWh?.Name ?? defaultBranch?.Name ?? "Tổng Kho Mặc Định";
+
         string branchName = targetBranch?.Trim() ?? string.Empty;
-        var matchedBranch = BranchMatcher.FindMatchingBranch(allBranches, branchName, allWarehouses);
-        if (matchedBranch != null)
+        if (preferDefaultWarehouse || string.IsNullOrWhiteSpace(branchName) || string.Equals(branchName, "default", StringComparison.OrdinalIgnoreCase) || string.Equals(branchName, "Mặc định", StringComparison.OrdinalIgnoreCase))
         {
-            branchName = matchedBranch.Name;
+            branchName = defaultTargetName;
         }
-        else if (string.IsNullOrWhiteSpace(branchName) && allBranches.Count > 0)
+        else
         {
-            branchName = allBranches[0].Name;
-        }
-        if (string.IsNullOrWhiteSpace(branchName))
-        {
-            branchName = "Chi nhánh Hà Nội";
+            var matchedBranch = BranchMatcher.FindMatchingBranch(allBranches, branchName, allWarehouses);
+            if (matchedBranch != null)
+            {
+                branchName = matchedBranch.Name;
+            }
         }
 
         foreach (var item in items)
@@ -730,35 +774,108 @@ public sealed class OrdersController : ApiControllerBase
                 catch { }
             }
 
-            var matchKey = branchStocks.Keys.FirstOrDefault(k => BranchMatcher.IsBranchMatch(k, branchName, allBranches, allWarehouses));
-            if (matchKey == null)
+            // Tìm key đại diện cho Kho Mặc Định trong danh sách tồn kho của sản phẩm
+            string? primaryDefaultKey = null;
+
+            // a. Thử match defaultWh
+            if (defaultWh != null)
+            {
+                primaryDefaultKey = branchStocks.Keys.FirstOrDefault(k => BranchMatcher.IsBranchMatch(k, defaultWh.Name, allBranches, allWarehouses))
+                                 ?? branchStocks.Keys.FirstOrDefault(k => BranchMatcher.IsBranchMatch(k, defaultWh.Branch, allBranches, allWarehouses));
+            }
+
+            // b. Thử match defaultBranch (Trụ sở chính)
+            if (primaryDefaultKey == null && defaultBranch != null)
+            {
+                primaryDefaultKey = branchStocks.Keys.FirstOrDefault(k => BranchMatcher.IsBranchMatch(k, defaultBranch.Name, allBranches, allWarehouses));
+            }
+
+            // c. Thử match branchName
+            if (primaryDefaultKey == null && !string.IsNullOrWhiteSpace(branchName))
+            {
+                primaryDefaultKey = branchStocks.Keys.FirstOrDefault(k => BranchMatcher.IsBranchMatch(k, branchName, allBranches, allWarehouses));
+            }
+
+            // d. Tìm kho có chứa từ khóa Tổng Kho, Mặc Định, Trụ Sở, Phú Quốc
+            if (primaryDefaultKey == null)
+            {
+                primaryDefaultKey = branchStocks.Keys.FirstOrDefault(k =>
+                    k.Contains("Tổng Kho", StringComparison.OrdinalIgnoreCase) ||
+                    k.Contains("Mặc Định", StringComparison.OrdinalIgnoreCase) ||
+                    k.Contains("Trụ Sở", StringComparison.OrdinalIgnoreCase) ||
+                    k.Contains("Phú Quốc", StringComparison.OrdinalIgnoreCase));
+            }
+
+            // e. Fallback nếu chưa có key nào
+            if (primaryDefaultKey == null)
             {
                 if (branchStocks.Count == 0 && product.InStock > 0)
                 {
-                    foreach (var b in allBranches)
-                    {
-                        branchStocks[b.Name] = product.InStock;
-                    }
-                    matchKey = branchStocks.Keys.FirstOrDefault(k => BranchMatcher.IsBranchMatch(k, branchName, allBranches, allWarehouses)) ?? branchName;
-                    if (!branchStocks.ContainsKey(matchKey))
-                    {
-                        branchStocks[matchKey] = product.InStock;
-                    }
+                    primaryDefaultKey = defaultTargetName;
+                    branchStocks[primaryDefaultKey] = product.InStock;
+                }
+                else if (branchStocks.Count > 0)
+                {
+                    primaryDefaultKey = branchStocks.Keys.First();
                 }
                 else
                 {
-                    matchKey = branchName;
-                    branchStocks[matchKey] = 0;
+                    primaryDefaultKey = defaultTargetName;
+                    branchStocks[primaryDefaultKey] = 0;
                 }
             }
 
             if (isRestoring)
             {
-                branchStocks[matchKey] += qty;
+                // Hoàn lại số lượng đã bán về kho mặc định
+                if (!branchStocks.ContainsKey(primaryDefaultKey))
+                {
+                    branchStocks[primaryDefaultKey] = 0;
+                }
+                branchStocks[primaryDefaultKey] += qty;
             }
             else
             {
-                branchStocks[matchKey] -= qty;
+                // Bán hàng: ƯU TIÊN TRỪ KHO MẶC ĐỊNH TRƯỚC
+                int remainingToDeduct = qty;
+
+                // 1. Trừ tại kho mặc định trước
+                if (branchStocks.TryGetValue(primaryDefaultKey, out var defStock) && defStock > 0)
+                {
+                    int deduct = Math.Min(remainingToDeduct, defStock);
+                    branchStocks[primaryDefaultKey] = defStock - deduct;
+                    remainingToDeduct -= deduct;
+                }
+
+                // 2. Nếu kho mặc định chưa đủ số lượng, trừ tiếp từ các kho/chi nhánh khác có tồn > 0
+                if (remainingToDeduct > 0)
+                {
+                    var otherKeysWithStock = branchStocks
+                        .Where(kv => !string.Equals(kv.Key, primaryDefaultKey, StringComparison.OrdinalIgnoreCase) && kv.Value > 0)
+                        .OrderByDescending(kv => kv.Value)
+                        .Select(kv => kv.Key)
+                        .ToList();
+
+                    foreach (var key in otherKeysWithStock)
+                    {
+                        if (remainingToDeduct <= 0) break;
+                        int curStock = branchStocks[key];
+                        int deduct = Math.Min(remainingToDeduct, curStock);
+                        branchStocks[key] = curStock - deduct;
+                        remainingToDeduct -= deduct;
+                    }
+                }
+
+                // 3. Nếu các kho đều hết tồn mà vẫn còn số lượng cần trừ (bán âm / đặt trước)
+                if (remainingToDeduct > 0)
+                {
+                    if (!branchStocks.ContainsKey(primaryDefaultKey))
+                    {
+                        branchStocks[primaryDefaultKey] = 0;
+                    }
+                    branchStocks[primaryDefaultKey] -= remainingToDeduct;
+                    remainingToDeduct = 0;
+                }
             }
 
             var jsonOptions = new System.Text.Json.JsonSerializerOptions { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };

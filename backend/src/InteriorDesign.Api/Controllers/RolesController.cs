@@ -3,6 +3,7 @@ using InteriorDesign.Infrastructure.Data;
 using InteriorDesign.Integration.Common;
 using InteriorDesign.Integration.Requests;
 using InteriorDesign.Integration.Responses;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 

@@ -35,6 +35,79 @@ import { AdminBranch } from '@/types/admin';
 import { ADMIN_STORAGE_KEYS, getStoredAdminData, setStoredAdminData } from '@/utils/adminStorage';
 import { getProductStockForBranch } from '@/utils/branchHelper';
 
+interface ProfileAddressItem {
+  id: string;
+  isDefault: boolean;
+  title: string;
+  address: string;
+  city?: string;
+  district?: string;
+  detailAddress?: string;
+  note?: string;
+  recipient?: string;
+  phone?: string;
+  tag?: string;
+}
+
+interface LastShippingInfo {
+  fullName: string;
+  phone: string;
+  city: string;
+  district: string;
+  address: string;
+  specialNote?: string;
+  savedAt?: string;
+}
+
+function extractAddressComponents(addr: ProfileAddressItem): { city: string; district: string; detailAddress: string } {
+  if (addr.city && addr.district) {
+    return {
+      city: addr.city,
+      district: addr.district,
+      detailAddress: addr.detailAddress || (addr.address ? addr.address.split(',')[0].trim() : ''),
+    };
+  }
+
+  const raw = addr.address || '';
+  if (!raw) return { city: '', district: '', detailAddress: '' };
+
+  for (const prov of VIETNAM_PROVINCES) {
+    if (raw.toLowerCase().includes(prov.name.toLowerCase())) {
+      const matchedDist = prov.districts.find((d) =>
+        raw.toLowerCase().includes(d.name.toLowerCase())
+      );
+      if (matchedDist) {
+        const parts = raw.split(',');
+        let detail = parts[0]?.trim() || '';
+        if (parts.length > 2) {
+          detail = parts.slice(0, parts.length - 2).join(', ').trim();
+        }
+        return {
+          city: prov.name,
+          district: matchedDist.name,
+          detailAddress: detail,
+        };
+      }
+      return {
+        city: prov.name,
+        district: '',
+        detailAddress: raw,
+      };
+    }
+  }
+
+  const parts = raw.split(',').map((s) => s.trim());
+  if (parts.length >= 3) {
+    return {
+      city: parts[parts.length - 1],
+      district: parts[parts.length - 2],
+      detailAddress: parts.slice(0, parts.length - 2).join(', '),
+    };
+  }
+
+  return { city: '', district: '', detailAddress: raw };
+}
+
 function CheckoutContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -177,6 +250,40 @@ function CheckoutContent() {
   const [branches, setBranches] = useState<AdminBranch[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<string>('');
 
+  // Address source & profile address management
+  const [profileAddresses, setProfileAddresses] = useState<ProfileAddressItem[]>([]);
+  const [selectedAddressId, setSelectedAddressId] = useState<string>('');
+  const [addressSource, setAddressSource] = useState<'profile' | 'last_order' | 'manual'>('manual');
+
+  // Guest Checkout -> Login/Register modal state
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+
+  const saveCurrentDraft = () => {
+    try {
+      const draftData = {
+        fullName: fullName.trim(),
+        phone: phone.trim(),
+        city,
+        district,
+        address: address.trim(),
+        specialNote: specialNote.trim(),
+        paymentMethod,
+        selectedBranch,
+        savedAt: new Date().toISOString(),
+      };
+      localStorage.setItem('d2_checkout_pending_draft', JSON.stringify(draftData));
+    } catch (e) {
+      console.warn('Failed to save checkout draft:', e);
+    }
+  };
+
+  const handleRedirectAuth = (targetPath: string) => {
+    saveCurrentDraft();
+    const returnUrl = `/checkout${isDirectMode ? '?direct=1' : ''}`;
+    const sep = targetPath.includes('?') ? '&' : '?';
+    router.push(`${targetPath}${sep}redirect=${encodeURIComponent(returnUrl)}`);
+  };
+
   React.useEffect(() => {
     const loadBranches = async () => {
       try {
@@ -213,16 +320,144 @@ function CheckoutContent() {
     };
   }, []);
 
-  // Sync user info into checkout form
+  // Synchronize delivery address according to business rules:
+  // 1. If user has saved addresses in Profile -> use default profile address.
+  // 2. If NO address in Profile -> check and use address from the previous order (if any).
+  // 3. Otherwise -> user enters new address manually.
   React.useEffect(() => {
-    if (user) {
-      if (user.name) setFullName(user.name);
-      if (user.phone) setPhone(user.phone);
-    } else {
-      setFullName('');
-      setPhone('');
+    if (typeof window === 'undefined') return;
+
+    // Priority Rule 0: If there is a pending checkout draft (e.g. from guest who just logged in/registered)
+    try {
+      const draftStr = localStorage.getItem('d2_checkout_pending_draft');
+      if (draftStr) {
+        const draft = JSON.parse(draftStr);
+        if (draft && (draft.city || draft.address || draft.fullName || draft.phone)) {
+          setSelectedAddressId('manual');
+          setAddressSource('manual');
+          setFullName(draft.fullName || user?.name || '');
+          setPhone(draft.phone || user?.phone || '');
+          setCity(draft.city || '');
+          setDistrict(draft.district || '');
+          setAddress(draft.address || '');
+          if (draft.specialNote) setSpecialNote(draft.specialNote);
+          if (draft.paymentMethod) setPaymentMethod(draft.paymentMethod);
+          if (draft.selectedBranch) setSelectedBranch(draft.selectedBranch);
+          localStorage.removeItem('d2_checkout_pending_draft');
+          message.success('Đã tự động khôi phục toàn bộ thông tin nhận hàng quý khách vừa điền trước đó!');
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('Could not restore checkout draft:', e);
     }
+
+    let profileAddrs: ProfileAddressItem[] = [];
+    if (user?.id) {
+      try {
+        const raw = localStorage.getItem(`d2_addresses_${user.id}`);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            profileAddrs = parsed.filter(
+              (a: any) =>
+                a.id !== 'addr_01' &&
+                a.id !== 'addr_02' &&
+                !a.id?.startsWith('addr_order_') &&
+                !a.address?.includes('Đảo Kim Cương') &&
+                !a.address?.includes('Gamuda')
+            );
+          }
+        }
+      } catch {}
+    }
+
+    setProfileAddresses(profileAddrs);
+
+    // Rule 1: Profile has saved addresses
+    if (profileAddrs.length > 0) {
+      const defaultAddr = profileAddrs.find((a) => a.isDefault) || profileAddrs[0];
+      setSelectedAddressId(defaultAddr.id);
+      setAddressSource('profile');
+
+      setFullName(defaultAddr.recipient || user?.name || '');
+      setPhone(defaultAddr.phone || user?.phone || '');
+      const parsed = extractAddressComponents(defaultAddr);
+      setCity(parsed.city);
+      setDistrict(parsed.district);
+      setAddress(parsed.detailAddress);
+      if (defaultAddr.note && defaultAddr.note !== 'Không có ghi chú thêm.') {
+        setSpecialNote(defaultAddr.note);
+      }
+      return;
+    }
+
+    // Rule 2: No address in Profile -> Check previous order delivery address
+    const lastKey = user?.id ? `d2_last_checkout_shipping_${user.id}` : 'd2_last_checkout_shipping_guest';
+    let lastShipping: LastShippingInfo | null = null;
+    try {
+      const savedLast = localStorage.getItem(lastKey) || localStorage.getItem('d2_last_checkout_shipping_guest');
+      if (savedLast) {
+        lastShipping = JSON.parse(savedLast);
+      }
+    } catch {}
+
+    if (lastShipping && (lastShipping.address || lastShipping.city)) {
+      setSelectedAddressId('last_order');
+      setAddressSource('last_order');
+      setFullName(lastShipping.fullName || user?.name || '');
+      setPhone(lastShipping.phone || user?.phone || '');
+      setCity(lastShipping.city || '');
+      setDistrict(lastShipping.district || '');
+      setAddress(lastShipping.address || '');
+      if (lastShipping.specialNote) {
+        setSpecialNote(lastShipping.specialNote);
+      }
+      return;
+    }
+
+    // Rule 3: Manual address input
+    setSelectedAddressId('manual');
+    setAddressSource('manual');
+    setFullName(user?.name || '');
+    setPhone(user?.phone || '');
+    setCity('');
+    setDistrict('');
+    setAddress('');
   }, [user]);
+
+  const handleSelectProfileAddress = (addrId: string) => {
+    setSelectedAddressId(addrId);
+    if (addrId === 'manual') {
+      setAddressSource('manual');
+      setCity('');
+      setDistrict('');
+      setAddress('');
+      return;
+    }
+    const found = profileAddresses.find((a) => a.id === addrId);
+    if (found) {
+      setAddressSource('profile');
+      if (found.recipient) setFullName(found.recipient);
+      if (found.phone) setPhone(found.phone);
+      const parsed = extractAddressComponents(found);
+      setCity(parsed.city);
+      setDistrict(parsed.district);
+      setAddress(parsed.detailAddress);
+      if (found.note && found.note !== 'Không có ghi chú thêm.') {
+        setSpecialNote(found.note);
+      }
+    }
+  };
+
+  const handleClearToManual = () => {
+    setSelectedAddressId('manual');
+    setAddressSource('manual');
+    setCity('');
+    setDistrict('');
+    setAddress('');
+    setSpecialNote('');
+  };
 
   // Dynamic provinces & districts
   const currentDistricts = useMemo(() => {
@@ -294,16 +529,19 @@ function CheckoutContent() {
       return;
     }
 
+    // Yêu cầu đăng nhập trước khi tạo đơn để gắn tài khoản, kích hoạt bảo hành và theo dõi đơn hàng
+    if (!user) {
+      saveCurrentDraft();
+      setIsAuthModalOpen(true);
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const productNameSummary = activeItems.map((i) => i.name).join(', ');
       const fullShippingAddress = `${address}, ${district}, ${city}`;
 
       const isGuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      const finalBranch = selectedBranch || (typeof window !== 'undefined'
-        ? (localStorage.getItem('d2_selected_branch') || localStorage.getItem('d2_customer_branch') || (branches[0]?.name ?? 'Chi nhánh Hà Nội'))
-        : 'Chi nhánh Hà Nội');
-
       const isCod = paymentMethod === 'cod';
       const orderDepositAmount = isCod ? 0 : finalTotal;
       const orderDepositPercent = isCod ? 0 : 100;
@@ -312,8 +550,8 @@ function CheckoutContent() {
 
       const created = await orderApi.createOrder({
         orderType: 'retail',
-        branch: finalBranch,
-        showroom: finalBranch,
+        branch: undefined,
+        showroom: undefined,
         customerName: fullName.trim(),
         customerPhone: phone.trim(),
         customerEmail: user?.email || undefined,
@@ -365,9 +603,40 @@ function CheckoutContent() {
             status: 'pending',
           };
           localStorage.setItem(userOrderKey, JSON.stringify([newOrderRecord, ...existing]));
+
+          // Save delivery address for next checkout autofill (DO NOT save into personal profile address book!)
+          try {
+            const lastShippingData: LastShippingInfo = {
+              fullName: fullName.trim(),
+              phone: phone.trim(),
+              city,
+              district,
+              address: address.trim(),
+              specialNote: specialNote.trim(),
+              savedAt: new Date().toISOString(),
+            };
+            if (user?.id) {
+              localStorage.setItem(`d2_last_checkout_shipping_${user.id}`, JSON.stringify(lastShippingData));
+            }
+            localStorage.setItem('d2_last_checkout_shipping_guest', JSON.stringify(lastShippingData));
+          } catch {}
         } catch (e) {
           console.warn('Could not save local user order:', e);
         }
+      } else {
+        // Also remember for guest checkout
+        try {
+          const lastShippingData: LastShippingInfo = {
+            fullName: fullName.trim(),
+            phone: phone.trim(),
+            city,
+            district,
+            address: address.trim(),
+            specialNote: specialNote.trim(),
+            savedAt: new Date().toISOString(),
+          };
+          localStorage.setItem('d2_last_checkout_shipping_guest', JSON.stringify(lastShippingData));
+        } catch {}
       }
 
       // Sync to admin orders local storage if available
@@ -582,47 +851,120 @@ function CheckoutContent() {
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                    <div className="md:col-span-2 flex flex-col gap-1.5">
-                      <div className="flex items-center justify-between">
-                        <label className="font-semibold text-[#1f1b19]">
-                          Chi nhánh / Showroom xuất kho &amp; xử lý đơn *
-                        </label>
-                        <span className="text-[11px] text-[#5d371f] font-medium">
-                          Kho hàng xuất &amp; trừ tồn theo chi nhánh
-                        </span>
-                      </div>
-                      <select
-                        value={selectedBranch}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setSelectedBranch(val);
-                          if (typeof window !== 'undefined') {
-                            localStorage.setItem('d2_selected_branch', val);
-                            localStorage.setItem('d2_customer_branch', val);
-                            window.dispatchEvent(
-                              new CustomEvent('customer_branch_changed', {
-                                detail: { branch: val, branchName: val },
-                              })
+
+                    {/* Address Source Notification & Selection */}
+                    {profileAddresses.length > 0 ? (
+                      <div className="md:col-span-2 p-3.5 bg-[#fbf2ee] border border-[#d2b8aa] flex flex-col gap-2.5">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <div className="flex items-center gap-2">
+                            <HomeOutlined className="text-[#5d371f] text-sm" />
+                            <span className="font-bold text-xs text-[#5d371f] uppercase tracking-wider">
+                              Địa chỉ từ Sổ Thông Tin Cá Nhân ({profileAddresses.length})
+                            </span>
+                          </div>
+                          <Link
+                            href="/profile"
+                            target="_blank"
+                            className="text-[11px] text-[#5d371f] hover:underline font-semibold"
+                          >
+                            Quản lý sổ địa chỉ ↗
+                          </Link>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
+                          {profileAddresses.map((addr) => {
+                            const isSelected = selectedAddressId === addr.id;
+                            return (
+                              <div
+                                key={addr.id}
+                                onClick={() => handleSelectProfileAddress(addr.id)}
+                                className={`p-3 border transition-all cursor-pointer flex flex-col justify-between ${
+                                  isSelected
+                                    ? 'bg-white border-[#5d371f] ring-1 ring-[#5d371f] shadow-sm'
+                                    : 'bg-white/70 border-[#eae1dd] hover:border-[#5d371f]/50'
+                                }`}
+                              >
+                                <div>
+                                  <div className="flex items-center justify-between mb-1 gap-2">
+                                    <span className="font-bold text-xs text-[#1f1b19] truncate">{addr.title}</span>
+                                    {addr.isDefault && (
+                                      <span className="px-1.5 py-0.5 bg-[#5d371f] text-white text-[9px] font-bold uppercase shrink-0">
+                                        Mặc định
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-[11px] text-[#51443d] line-clamp-2 leading-relaxed">{addr.address}</p>
+                                </div>
+                                <div className="mt-2 pt-1.5 border-t border-[#eae1dd]/60 flex items-center justify-between text-[10px] text-[#83746c]">
+                                  <span>{addr.recipient}</span>
+                                  <span>{addr.phone}</span>
+                                </div>
+                              </div>
                             );
-                          }
-                        }}
-                        className="px-3.5 py-2.5 bg-[#fbf2ee] border border-[#eae1dd] text-[#1f1b19] font-medium focus:outline-none focus:border-[#5d371f] transition-colors cursor-pointer"
-                      >
-                        {branches.length > 0 ? (
-                          branches.map((b) => (
-                            <option key={b.id || b.name} value={b.name}>
-                              {b.name} {b.address ? `· ${b.address}` : ''}
-                            </option>
-                          ))
-                        ) : (
-                          <>
-                            <option value="Chi nhánh Hà Nội">Chi nhánh Hà Nội</option>
-                            <option value="Chi nhánh Nam Định">Chi nhánh Nam Định</option>
-                            <option value="Trụ sở & Showroom Phú Quốc">Trụ sở &amp; Showroom Phú Quốc</option>
-                          </>
-                        )}
-                      </select>
-                    </div>
+                          })}
+
+                          <div
+                            onClick={() => handleSelectProfileAddress('manual')}
+                            className={`p-3 border transition-all cursor-pointer flex items-center justify-center text-center ${
+                              selectedAddressId === 'manual'
+                                ? 'bg-white border-[#5d371f] ring-1 ring-[#5d371f]'
+                                : 'bg-white/40 border-dashed border-[#eae1dd] hover:border-[#5d371f]/50'
+                            }`}
+                          >
+                            <span className="text-xs font-semibold text-[#5d371f]">
+                              + Nhập địa chỉ khác cho riêng đơn này
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ) : addressSource === 'last_order' ? (
+                      <div className="md:col-span-2 p-3 bg-[#f5ece8] border border-[#d2b8aa] flex items-center justify-between gap-3 text-xs text-[#5d371f]">
+                        <div className="flex items-center gap-2">
+                          <span className="material-symbols-outlined text-[18px]">history</span>
+                          <span>
+                            Đã tự động điền địa chỉ từ <strong>lần mua hàng trước</strong> của quý khách.
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleClearToManual}
+                          className="text-[11px] font-bold underline hover:text-[#784e34] cursor-pointer shrink-0"
+                        >
+                          Xóa để nhập mới
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="md:col-span-2 p-3 bg-[#fbf2ee] border border-[#d2b8aa] flex items-center justify-between flex-wrap gap-2 text-xs text-[#5d371f]">
+                        <div className="flex items-center gap-2">
+                          <span className="material-symbols-outlined text-[18px] text-[#5d371f]">account_circle</span>
+                          <span>
+                            {!user ? (
+                              <>
+                                Quý khách đang đặt hàng với tư cách <strong>Khách vãng lai</strong>. Hãy{' '}
+                                <button
+                                  type="button"
+                                  onClick={() => handleRedirectAuth('/login')}
+                                  className="underline font-bold text-[#5d371f] hover:text-[#784e34] cursor-pointer bg-transparent border-0 p-0"
+                                >
+                                  Đăng nhập
+                                </button>{' '}
+                                hoặc{' '}
+                                <button
+                                  type="button"
+                                  onClick={() => handleRedirectAuth('/login?tab=register')}
+                                  className="underline font-bold text-[#5d371f] hover:text-[#784e34] cursor-pointer bg-transparent border-0 p-0"
+                                >
+                                  Đăng ký tài khoản
+                                </button>{' '}
+                                để bảo lưu đơn hàng &amp; kích hoạt bảo hành. Mọi thông tin quý khách đang nhập sẽ được tự động bảo toàn.
+                              </>
+                            ) : (
+                              'Quý khách chưa lưu sổ địa chỉ cá nhân. Vui lòng nhập địa chỉ bên dưới, hệ thống sẽ tự động nhớ cho lần mua hàng tiếp theo.'
+                            )}
+                          </span>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="flex flex-col gap-1.5">
                       <label className="font-semibold text-[#1f1b19]">
@@ -1102,6 +1444,68 @@ function CheckoutContent() {
           >
             Hoàn tất &amp; Về trang chủ
           </button>
+        </div>
+      </Modal>
+
+      {/* Modal Yêu cầu Đăng nhập / Đăng ký để bảo toàn thông tin đặt hàng */}
+      <Modal
+        open={isAuthModalOpen}
+        onCancel={() => setIsAuthModalOpen(false)}
+        footer={null}
+        centered
+        width={480}
+        styles={{
+          body: {
+            padding: '28px 24px',
+            backgroundColor: '#fff8f5',
+          },
+        }}
+      >
+        <div className="flex flex-col items-center text-center">
+          <div className="w-14 h-14 rounded-full bg-[#f5ece8] border border-[#d2b8aa] flex items-center justify-center mb-3.5">
+            <SafetyCertificateOutlined className="text-2xl text-[#5d371f]" />
+          </div>
+
+          <h3 className="font-serif text-xl font-bold text-[#1f1b19] tracking-tight mb-1.5">
+            Đăng nhập để hoàn tất đơn hàng
+          </h3>
+          <p className="text-xs text-[#83746c] max-w-sm leading-relaxed mb-4">
+            Để đảm bảo quyền lợi bảo hành 10 năm mộng gỗ thủ công D2 LUXURY, xuất hóa đơn hợp đồng và theo dõi tiến độ thi công bàn giao, quý khách vui lòng đăng nhập hoặc tạo tài khoản.
+          </p>
+
+          <div className="w-full bg-white border border-[#d2b8aa] p-3 text-left mb-5 flex items-start gap-2.5 shadow-xs">
+            <CheckCircleFilled className="text-emerald-700 text-sm mt-0.5 shrink-0" />
+            <div className="text-[11px] text-[#5d371f] leading-relaxed">
+              <strong className="block text-[#1f1b19]">Thông tin nhận hàng của quý khách đã được lưu tạm:</strong>
+              <div className="text-[#83746c] mt-0.5 truncate">
+                {fullName || 'Chưa nhập tên'} &bull; {phone || 'Chưa nhập SĐT'} &bull; {address ? `${address}, ${district}, ${city}` : 'Địa chỉ nhận hàng'}
+              </div>
+            </div>
+          </div>
+
+          <div className="w-full flex flex-col gap-2.5">
+            <button
+              type="button"
+              onClick={() => handleRedirectAuth('/login')}
+              className="w-full py-3 bg-[#5d371f] hover:bg-[#784e34] text-white text-xs font-bold uppercase tracking-wider transition-all cursor-pointer border-0 shadow-sm"
+            >
+              Đăng nhập tài khoản gia chủ
+            </button>
+            <button
+              type="button"
+              onClick={() => handleRedirectAuth('/login?tab=register')}
+              className="w-full py-2.5 bg-white hover:bg-[#f5ece8] text-[#5d371f] border border-[#d2b8aa] text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
+            >
+              Đăng ký tài khoản mới (Tự động đăng nhập)
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsAuthModalOpen(false)}
+              className="text-[11px] text-[#83746c] hover:text-[#1f1b19] underline cursor-pointer bg-transparent border-0 mt-1"
+            >
+              Quay lại chỉnh sửa thêm thông tin đơn hàng
+            </button>
+          </div>
         </div>
       </Modal>
     </div>

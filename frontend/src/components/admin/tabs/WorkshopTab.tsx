@@ -4940,7 +4940,7 @@ export function WorkshopTab({
         title={<span className="font-bold text-base text-[#1f1b19]">📋 Tạo phiếu kiểm kê kho mới</span>}
         open={showCreateSlipModal}
         onClose={() => setShowCreateSlipModal(false)}
-        styles={{ wrapper: { width: 620, maxWidth: '100vw' } }}
+        styles={{ wrapper: { width: 640, maxWidth: '100vw' } }}
         forceRender
         className="[&_.ant-drawer-header]:px-5 [&_.ant-drawer-header]:py-3.5 [&_.ant-drawer-header]:border-b [&_.ant-drawer-header]:border-slate-200 [&_.ant-drawer-body]:px-5 [&_.ant-drawer-body]:py-5 [&_.ant-drawer-footer]:px-5 [&_.ant-drawer-footer]:py-3 [&_.ant-drawer-footer]:border-t [&_.ant-drawer-footer]:border-slate-200"
         footer={
@@ -5121,7 +5121,7 @@ export function WorkshopTab({
         title={<span className="font-bold text-base text-[#1f1b19]">📝 Thêm Dòng Vào Phiếu Kiểm</span>}
         open={showAddItemModal}
         onClose={() => setShowAddItemModal(false)}
-        styles={{ wrapper: { width: 560, maxWidth: '100vw' } }}
+        styles={{ wrapper: { width: 520, maxWidth: '100vw' } }}
         forceRender
         className="[&_.ant-drawer-header]:px-5 [&_.ant-drawer-header]:py-3.5 [&_.ant-drawer-header]:border-b [&_.ant-drawer-header]:border-slate-200 [&_.ant-drawer-body]:px-5 [&_.ant-drawer-body]:py-5 [&_.ant-drawer-footer]:px-5 [&_.ant-drawer-footer]:py-3 [&_.ant-drawer-footer]:border-t [&_.ant-drawer-footer]:border-slate-200"
         footer={
@@ -5230,7 +5230,7 @@ export function WorkshopTab({
         title={<span className="font-bold text-base text-[#1f1b19]">🔄 Tạo Phiếu Điều Chuyển Kho Nội Bộ</span>}
         open={showTransferModal}
         onClose={() => setShowTransferModal(false)}
-        styles={{ wrapper: { width: 560, maxWidth: '100vw' } }}
+        styles={{ wrapper: { width: 520, maxWidth: '100vw' } }}
         forceRender
         className="[&_.ant-drawer-header]:px-5 [&_.ant-drawer-header]:py-3.5 [&_.ant-drawer-header]:border-b [&_.ant-drawer-header]:border-slate-200 [&_.ant-drawer-body]:px-5 [&_.ant-drawer-body]:py-5 [&_.ant-drawer-footer]:px-5 [&_.ant-drawer-footer]:py-3 [&_.ant-drawer-footer]:border-t [&_.ant-drawer-footer]:border-slate-200"
         footer={
@@ -5323,7 +5323,7 @@ export function WorkshopTab({
       <Drawer
         open={!!selectedReturnSlipForPrint}
         onClose={() => setSelectedReturnSlipForPrint(null)}
-        styles={{ wrapper: { width: 820, maxWidth: '100vw' } }}
+        styles={{ wrapper: { width: 840, maxWidth: '100vw' } }}
         destroyOnHidden
         title={
           <div className="flex items-center gap-2">
@@ -5533,7 +5533,7 @@ export function WorkshopTab({
       <Drawer
         open={!!selectedImportSlipForPrint}
         onClose={() => setSelectedImportSlipForPrint(null)}
-        styles={{ wrapper: { width: 820, maxWidth: '100vw' } }}
+        styles={{ wrapper: { width: 840, maxWidth: '100vw' } }}
         destroyOnHidden
         title={
           <div className="flex items-center gap-2">

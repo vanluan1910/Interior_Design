@@ -73,7 +73,7 @@ export const AdminDetailDrawer: React.FC<AdminDetailDrawerProps> = ({
       onClose={onClose}
       closable={false}
       styles={{
-        wrapper: { width: width || 720, maxWidth: '100vw' },
+        wrapper: { width: width || 760, maxWidth: '100vw' },
         header: { display: 'none' },
         body: { padding: 0, backgroundColor: '#fcfbf9' },
         footer: { padding: '12px 16px', backgroundColor: '#ffffff', borderTop: '1px solid #f1ece7' },

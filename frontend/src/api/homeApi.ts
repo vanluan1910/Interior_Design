@@ -42,6 +42,7 @@ export interface HomeProductItem {
   categoryName: string;
   price: number;
   originalPrice?: number;
+  discountPercent?: number;
   image: string;
   woodType: string;
   dimensions: string;

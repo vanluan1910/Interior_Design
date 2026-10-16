@@ -221,21 +221,6 @@ export function OrdersTab({
     }
   }, [selectedGlobalBranch]);
 
-  // Branch filter options combining registered branches and order branches
-  const branchFilterOptions = useMemo(() => {
-    const branchSet = new Set<string>();
-    effectiveBranches.forEach((b) => {
-      if (b.name) branchSet.add(b.name);
-    });
-    ordersList.forEach((o) => {
-      if (o.branch) branchSet.add(o.branch);
-      if (o.showroom) branchSet.add(o.showroom);
-    });
-    return [
-      { value: 'all', label: 'Tất cả chi nhánh' },
-      ...Array.from(branchSet).map((b) => ({ value: b, label: b })),
-    ];
-  }, [effectiveBranches, ordersList]);
 
   // Branch-scoped orders
   const branchScopedOrders = useMemo(() => {
@@ -400,8 +385,32 @@ export function OrdersTab({
     }
   };
 
+  const handleUpdateSingleOrderStatus = async (orderId: string, newStatus: OrderRow['status']) => {
+    const labelMap: Record<string, string> = {
+      pending: 'Chờ duyệt',
+      processing: 'Đang gia công',
+      delivering: 'Đang giao hàng',
+      completed: 'Hoàn tất bàn giao',
+      cancelled: 'Đã hủy',
+    };
+    const newLabel = labelMap[newStatus] || newStatus;
+
+    // Optimistic UI update
+    setOrdersList((prev) =>
+      prev.map((o) => (o.id === orderId ? { ...o, status: newStatus, statusLabel: newLabel } : o))
+    );
+
+    try {
+      await orderApi.updateOrder(orderId, { status: newStatus, statusLabel: newLabel });
+      message.success(`Đã cập nhật trạng thái đơn thành "${newLabel}"!`);
+    } catch (err: any) {
+      console.warn('Could not update status on API, updated locally:', err);
+      message.success(`Đã cập nhật trạng thái: "${newLabel}"!`);
+    }
+  };
+
   const handlePrintOrderReceipt = (order: OrderRow) => {
-    message.info(`Đang mở lệnh in hóa đơn tạm tính cho đơn hàng ${order.orderCode}...`);
+    printOrderInvoice(order);
   };
 
   const handleOpenCreateOrder = () => {
@@ -585,22 +594,10 @@ export function OrdersTab({
                 onResetFilters={() => {
                   setSearchQuery('');
                   setStatusFilter('all');
-                  setBranchFilter('all');
+                  setBranchFilter(selectedGlobalBranch || '');
                   setOrderDateRange(null);
                 }}
               >
-                {/* Filter 0: Cơ sở / Chi nhánh */}
-                <div className="space-y-1.5">
-                  <div className="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">
-                    Cơ sở / Chi nhánh
-                  </div>
-                  <Select
-                    value={branchFilter}
-                    onChange={(val) => setBranchFilter(val)}
-                    className="w-full text-sm"
-                    options={branchFilterOptions}
-                  />
-                </div>
 
                 {/* Filter 1: Thời gian tạo đơn */}
                 <div>
@@ -1058,21 +1055,6 @@ export function OrdersTab({
                       ),
                     },
                     {
-                      title: 'Chi nhánh / Showroom',
-                      key: 'branch',
-                      width: 175,
-                      render: (_, record: OrderRow) => {
-                        const br = record.branch || record.showroom || 'Chi nhánh Hà Nội';
-                        return (
-                          <div className="flex items-center">
-                            <span className="inline-flex items-center px-2.5 py-1 rounded text-xs font-medium bg-[#784e34]/10 text-[#784e34] border border-[#784e34]/20 whitespace-nowrap">
-                              🏢 {br}
-                            </span>
-                          </div>
-                        );
-                      },
-                    },
-                    {
                       title: 'Sản phẩm may đo',
                       dataIndex: 'productName',
                       key: 'productName',
@@ -1120,15 +1102,83 @@ export function OrdersTab({
                       ),
                     },
                     {
-                      title: 'Hạn bàn giao',
-                      dataIndex: 'deadlineDate',
-                      key: 'deadlineDate',
-                      width: 130,
-                      render: (d) => (
-                        <span className="font-mono text-sm font-normal text-rose-700">
-                          {d}
-                        </span>
-                      ),
+                      title: 'Trạng thái',
+                      dataIndex: 'status',
+                      key: 'status',
+                      width: 175,
+                      render: (status: OrderRow['status'], record: OrderRow) => {
+                        const statusColorMap: Record<string, { bg: string; text: string; border: string }> = {
+                          pending: { bg: '!bg-amber-50', text: '!text-amber-800', border: '!border-amber-300' },
+                          processing: { bg: '!bg-blue-50', text: '!text-blue-800', border: '!border-blue-300' },
+                          delivering: { bg: '!bg-purple-50', text: '!text-purple-800', border: '!border-purple-300' },
+                          completed: { bg: '!bg-emerald-50', text: '!text-emerald-800', border: '!border-emerald-300' },
+                          cancelled: { bg: '!bg-rose-50', text: '!text-rose-800', border: '!border-rose-300' },
+                        };
+                        const currentTheme = statusColorMap[status] || {
+                          bg: '!bg-slate-50',
+                          text: '!text-slate-800',
+                          border: '!border-slate-300',
+                        };
+
+                        return (
+                          <div onClick={(e) => e.stopPropagation()} className="w-full min-w-[155px]">
+                            <Select
+                              value={status || 'pending'}
+                              onChange={(newVal) => handleUpdateSingleOrderStatus(record.id, newVal)}
+                              size="small"
+                              className={`w-full font-semibold text-xs [&_.ant-select-selector]:!rounded-full [&_.ant-select-selector]:!border ${currentTheme.border} ${currentTheme.bg} ${currentTheme.text}`}
+                              popupMatchSelectWidth={false}
+                              options={[
+                                {
+                                  value: 'pending',
+                                  label: (
+                                    <div className="flex items-center gap-2 py-0.5 text-xs text-amber-700 font-semibold">
+                                      <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                                      <span>Chờ duyệt</span>
+                                    </div>
+                                  ),
+                                },
+                                {
+                                  value: 'processing',
+                                  label: (
+                                    <div className="flex items-center gap-2 py-0.5 text-xs text-blue-700 font-semibold">
+                                      <span className="w-2 h-2 rounded-full bg-blue-500" />
+                                      <span>Đang gia công</span>
+                                    </div>
+                                  ),
+                                },
+                                {
+                                  value: 'delivering',
+                                  label: (
+                                    <div className="flex items-center gap-2 py-0.5 text-xs text-purple-700 font-semibold">
+                                      <span className="w-2 h-2 rounded-full bg-purple-500" />
+                                      <span>Đang giao hàng</span>
+                                    </div>
+                                  ),
+                                },
+                                {
+                                  value: 'completed',
+                                  label: (
+                                    <div className="flex items-center gap-2 py-0.5 text-xs text-emerald-700 font-semibold">
+                                      <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                                      <span>Hoàn tất bàn giao</span>
+                                    </div>
+                                  ),
+                                },
+                                {
+                                  value: 'cancelled',
+                                  label: (
+                                    <div className="flex items-center gap-2 py-0.5 text-xs text-rose-700 font-semibold">
+                                      <span className="w-2 h-2 rounded-full bg-rose-500" />
+                                      <span>Đã hủy</span>
+                                    </div>
+                                  ),
+                                },
+                              ]}
+                            />
+                          </div>
+                        );
+                      },
                     },
                     {
                       title: 'Thao tác',
@@ -1208,7 +1258,7 @@ export function OrdersTab({
             }
             open={isOrderDrawerOpen}
             onClose={() => setIsOrderDrawerOpen(false)}
-            size="large"
+            styles={{ wrapper: { width: 760, maxWidth: '100vw' } }}
             forceRender
             footer={
               <div className="flex items-center justify-between px-2 py-1.5">

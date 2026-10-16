@@ -72,6 +72,7 @@ public sealed class SettingsController : ApiControllerBase
     }
 
     [HttpPut]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> UpdateSettings([FromBody] UpdateStoreSettingRequest request, CancellationToken cancellationToken)
     {
         var settings = await GetOrCreateSettingsAsync(cancellationToken);
@@ -154,6 +155,7 @@ public sealed class SettingsController : ApiControllerBase
     }
 
     [HttpPut("company")]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> UpdateCompanyInfo([FromBody] UpdateCompanyInfoRequest request, CancellationToken cancellationToken)
     {
         var settings = await GetOrCreateSettingsAsync(cancellationToken);
@@ -221,6 +223,7 @@ public sealed class SettingsController : ApiControllerBase
     }
 
     [HttpPut("payment")]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> UpdatePaymentConfig([FromBody] UpdatePaymentConfigRequest request, CancellationToken cancellationToken)
     {
         var settings = await GetOrCreateSettingsAsync(cancellationToken);
@@ -281,7 +284,11 @@ public sealed class SettingsController : ApiControllerBase
             new("invoice", "Hóa đơn bán hàng", "Mẫu hóa đơn thanh toán Showroom", "HÓA ĐƠN BÁN HÀNG & DỊCH VỤ NỘI THẤT", "HD", "k80", true, true, true, true, "Hệ thống Showroom Nội Thất Cao Cấp D2 LUXURY", "Cảm ơn Quý khách! Sản phẩm gỗ tự nhiên được bảo hành chính hãng 05 năm.", null),
             new("order", "Phiếu đặt hàng / Cọc", "Mẫu hợp đồng đặt cọc may đo", "PHIẾU ĐẶT HÀNG & TẠM ỨNG MAY ĐO", "DH", "a4", true, true, true, true, "Xưởng Sản Xuất & Gia Công Nội Thất Mộc Gia Atelier", "Tiến độ sản xuất từ 15-20 ngày làm việc kể từ ngày duyệt bản vẽ 3D kỹ thuật.", null),
             new("delivery", "Phiếu giao hàng / Lắp đặt", "Mẫu biên bản bàn giao công trình", "BIÊN BẢN BÀN GIAO & LẮP ĐẶT NỘI THẤT", "BG", "a4", true, false, true, true, "Đội Thi Công & Lắp Đặt Hoàn Thiện Công Trình", "Quý khách vui lòng kiểm tra kỹ hiện trạng sản phẩm, phụ kiện trước khi ký nhận bàn giao.", null),
-            new("return", "Phiếu trả hàng / Bảo hành", "Mẫu phiếu đổi trả hàng bảo hành", "PHIẾU TIẾP NHẬN BẢO HÀNH & ĐỔI TRẢ", "TH", "a5", true, false, true, true, "Trung Tâm Chăm Sóc Khách Hàng & Dịch Vụ Sau Bán Hàng", "Thời gian xử lý thẩm định và khắc phục lỗi kỹ thuật trong vòng 48-72 giờ làm việc.", null)
+            new("purchase", "Phiếu nhập kho vật tư", "Mẫu phiếu nhập kho hàng hóa", "PHIẾU NHẬP KHO VẬT TƯ & HÀNG HÓA", "PNK", "a4", true, false, false, true, "Kho Tổng Vật Tư & Nguyên Liệu Gỗ Tự Nhiên", "Thủ kho và người giao hàng chịu trách nhiệm về số lượng và quy cách thực nhập.", null),
+            new("stocktake", "Biên bản kiểm kê kho", "Mẫu kiểm kê tồn kho hàng hóa", "PHIẾU KIỂM KÊ TỒN KHO HÀNG HÓA", "KK", "a4", true, false, false, true, "Phân hệ Quản lý Kho Vật tư & Xưởng Sản Xuất", "Biên bản kiểm kê có giá trị làm căn cứ đối soát sổ sách kho và xử lý tồn kho.", null),
+            new("return", "Phiếu xuất trả NCC", "Mẫu phiếu xuất trả hàng & bảo hành NCC", "PHIẾU XUẤT TRẢ HÀNG & BẢO HÀNH NCC", "TH", "a5", true, false, true, true, "Trung Tâm Dịch Vụ Khách Hàng D2 LUXURY", "Cam kết xử lý và phản hồi tình trạng sản phẩm trong vòng 48h làm việc.", null),
+            new("receipt", "Phiếu thu tiền", "Mẫu phiếu thu tiền tạm ứng / thanh toán", "PHIẾU THU TIỀN TẠM ỨNG DỰ ÁN", "PT", "a5", true, true, true, true, "Phòng Kế Toán - Tài Chính D2 LUXURY", "Phiếu thu có giá trị xác nhận thanh toán khi có đủ chữ ký của thủ quỹ và người nộp tiền.", null),
+            new("payment", "Phiếu chi tiền", "Mẫu phiếu chi thanh toán NCC / xưởng", "PHIẾU CHI TIỀN THANH TOÁN VẬT TƯ", "PC", "a5", true, false, false, true, "Phòng Kế Toán - Tài Chính D2 LUXURY", "Đề nghị người nhận tiền kiểm đếm đủ trước khi rời khỏi quầy thủ quỹ.", null)
         };
     }
 
@@ -342,6 +349,7 @@ public sealed class SettingsController : ApiControllerBase
     }
 
     [HttpPut("print-templates/{key}")]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> UpdatePrintTemplate(string key, [FromBody] PrintTemplateDto request, CancellationToken cancellationToken)
     {
         var settings = await GetOrCreateSettingsAsync(cancellationToken);
@@ -375,6 +383,7 @@ public sealed class SettingsController : ApiControllerBase
     }
 
     [HttpPost("print-templates")]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> BulkSavePrintTemplates([FromBody] SavePrintTemplatesRequest request, CancellationToken cancellationToken)
     {
         var settings = await GetOrCreateSettingsAsync(cancellationToken);
@@ -387,6 +396,7 @@ public sealed class SettingsController : ApiControllerBase
     }
 
     [HttpPost("print-templates/reset")]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> ResetPrintTemplates(CancellationToken cancellationToken)
     {
         var settings = await GetOrCreateSettingsAsync(cancellationToken);

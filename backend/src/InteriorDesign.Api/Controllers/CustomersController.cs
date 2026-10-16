@@ -1,4 +1,5 @@
 using InteriorDesign.Domain.Entities;
+using InteriorDesign.Domain.Enums;
 using InteriorDesign.Infrastructure.Data;
 using InteriorDesign.Integration.Common;
 using InteriorDesign.Integration.Requests;
@@ -90,6 +91,30 @@ public sealed class CustomersController : ApiControllerBase
             }
 
             var entities = await query.ToListAsync(cancellationToken);
+
+            // Tự động đồng bộ số công nợ thực tế từ các đơn hàng chưa thanh toán đủ
+            var customerIds = entities.Select(x => x.Id).ToList();
+            var customerPhones = entities.Where(x => !string.IsNullOrWhiteSpace(x.Phone)).Select(x => x.Phone.Trim()).ToList();
+
+            var unpaidOrders = await _context.Orders
+                .Where(o => o.Status != OrderStatus.Cancelled && o.PaymentStatus != PaymentStatus.Paid)
+                .Where(o => (o.CustomerId != null && customerIds.Contains(o.CustomerId.Value)) || customerPhones.Contains(o.CustomerPhone))
+                .Select(o => new { o.CustomerId, CustomerPhone = o.CustomerPhone.Trim(), Debt = Math.Max(0, o.TotalAmount - o.DepositAmount) })
+                .ToListAsync(cancellationToken);
+
+            foreach (var c in entities)
+            {
+                var cleanPhone = c.Phone?.Trim() ?? string.Empty;
+                var calculatedDebt = unpaidOrders
+                    .Where(o => (o.CustomerId.HasValue && o.CustomerId.Value == c.Id) || (!string.IsNullOrEmpty(cleanPhone) && o.CustomerPhone == cleanPhone))
+                    .Sum(o => o.Debt);
+
+                if (calculatedDebt > 0 && c.Debt == 0)
+                {
+                    c.Debt = calculatedDebt;
+                }
+            }
+
             var dtos = entities.Select(MapToDto).ToList();
 
             return Ok(ApiResponse<List<CustomerDto>>.Ok(dtos));
@@ -134,6 +159,19 @@ public sealed class CustomersController : ApiControllerBase
         var customer = await _context.Customers.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (customer is null)
             return NotFound(ApiResponse<CustomerDto>.Fail("Không tìm thấy khách hàng."));
+
+        if (customer.Debt == 0)
+        {
+            var calculatedDebt = await _context.Orders
+                .Where(o => o.Status != OrderStatus.Cancelled && o.PaymentStatus != PaymentStatus.Paid)
+                .Where(o => o.CustomerId == id || (!string.IsNullOrEmpty(customer.Phone) && o.CustomerPhone == customer.Phone.Trim()))
+                .SumAsync(o => (decimal?)Math.Max(0, o.TotalAmount - o.DepositAmount), cancellationToken) ?? 0;
+
+            if (calculatedDebt > 0)
+            {
+                customer.Debt = calculatedDebt;
+            }
+        }
 
         return Ok(ApiResponse<CustomerDto>.Ok(MapToDto(customer)));
     }

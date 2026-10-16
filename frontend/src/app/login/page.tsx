@@ -25,7 +25,8 @@ function AuthPageContent() {
   const { message } = App.useApp();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const initialTab = searchParams.get('tab') === 'register' ? 'register' : 'login';
+  const isRegisterPath = typeof window !== 'undefined' && window.location.pathname.includes('/register');
+  const initialTab = searchParams.get('tab') === 'register' || isRegisterPath ? 'register' : 'login';
 
   const { login, register, loginWithGoogle } = useAuth();
 
@@ -153,7 +154,8 @@ function AuthPageContent() {
       const success = await login(loginIdentifier, loginPassword);
       if (success) {
         message.success('Đăng nhập thành công! Chào mừng quý khách trở lại.');
-        router.push('/');
+        const redirectTarget = searchParams.get('redirect') || searchParams.get('returnUrl') || '/';
+        router.push(redirectTarget);
       }
     } catch (err: any) {
       message.error(err?.message || 'Đăng nhập thất bại.');
@@ -211,15 +213,15 @@ function AuthPageContent() {
         password: regPassword,
       });
 
-      message.success('Đăng ký tài khoản gia chủ thành công! Vui lòng đăng nhập.');
-      setLoginIdentifier(regPhone.trim() || regEmail.trim());
-      setLoginPassword('');
-      setRegName('');
-      setRegPhone('');
-      setRegEmail('');
-      setRegPassword('');
-      setRegErrors({});
-      setActiveTab('login');
+      const redirectTarget = searchParams.get('redirect') || searchParams.get('returnUrl');
+      if (redirectTarget) {
+        message.success('Đăng ký tài khoản gia chủ thành công! Đang chuyển đến màn hình thanh toán...');
+        router.push(redirectTarget);
+        return;
+      }
+
+      message.success('Đăng ký tài khoản gia chủ thành công! Chào mừng quý khách.');
+      router.push('/');
     } catch (err: any) {
       message.error(err?.message || 'Đăng ký tài khoản thất bại.');
     } finally {
@@ -312,7 +314,8 @@ function AuthPageContent() {
           const success = await loginWithGoogle(credentialToken);
           if (success) {
             message.success('Đăng nhập bằng Google thành công! Chào mừng quý khách.');
-            router.push('/');
+            const redirectTarget = searchParams.get('redirect') || searchParams.get('returnUrl') || '/';
+            router.push(redirectTarget);
           } else {
             message.error('Không thể xác thực tài khoản Google.');
           }

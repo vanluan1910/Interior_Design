@@ -1,6 +1,7 @@
 import type { AdminCompanyInfo } from '@/types/admin';
 import type { PrintTemplateConfig } from '@/components/admin/tabs/PrintTemplatesSettings';
 import { cachedFetch, invalidateApiCache } from './shared/apiCache';
+import { getAuthHeaders } from './shared/authHeaders';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
@@ -53,7 +54,7 @@ export const settingsApi = {
     return cachedFetch('store_settings', async () => {
       try {
         const res = await fetch(`${API_BASE_URL}/api/settings`, {
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAuthHeaders(),
         });
         if (!res.ok) return null;
         const json = await res.json();
@@ -68,7 +69,7 @@ export const settingsApi = {
     try {
       const res = await fetch(`${API_BASE_URL}/api/settings`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify(data),
       });
       if (!res.ok) {
@@ -89,7 +90,7 @@ export const settingsApi = {
     return cachedFetch('company_info', async () => {
       try {
         const res = await fetch(`${API_BASE_URL}/api/settings/company`, {
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAuthHeaders(),
         });
         if (!res.ok) return null;
         const json = await res.json();
@@ -104,7 +105,7 @@ export const settingsApi = {
     try {
       const res = await fetch(`${API_BASE_URL}/api/settings/company`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify(data),
       });
       if (!res.ok) {
@@ -125,7 +126,7 @@ export const settingsApi = {
     return cachedFetch('payment_config', async () => {
       try {
         const res = await fetch(`${API_BASE_URL}/api/settings/payment`, {
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAuthHeaders(),
         });
         if (!res.ok) return null;
         const json = await res.json();
@@ -168,7 +169,7 @@ export const settingsApi = {
 
       const res = await fetch(`${API_BASE_URL}/api/settings/payment`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
@@ -189,7 +190,7 @@ export const settingsApi = {
   getPrintTemplates: async (): Promise<PrintTemplateConfig[] | null> => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/settings/print-templates`, {
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
       });
       if (!res.ok) return null;
       const json = await res.json();
@@ -202,7 +203,7 @@ export const settingsApi = {
   getPrintTemplateByKey: async (key: string): Promise<PrintTemplateConfig | null> => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/settings/print-templates/${key}`, {
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
       });
       if (!res.ok) return null;
       const json = await res.json();
@@ -216,7 +217,7 @@ export const settingsApi = {
     try {
       const res = await fetch(`${API_BASE_URL}/api/settings/print-templates/${key}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify(data),
       });
       if (!res.ok) {
@@ -235,7 +236,7 @@ export const settingsApi = {
     try {
       const res = await fetch(`${API_BASE_URL}/api/settings/print-templates`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ templates }),
       });
       if (!res.ok) {
@@ -254,7 +255,7 @@ export const settingsApi = {
     try {
       const res = await fetch(`${API_BASE_URL}/api/settings/print-templates/reset`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));

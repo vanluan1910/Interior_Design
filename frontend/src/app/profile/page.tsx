@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { App, Modal, Input, Select, DatePicker } from 'antd';
+import { App, Modal, Drawer, Input, Select, DatePicker } from 'antd';
 import dayjs, { Dayjs } from 'dayjs';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
 import 'dayjs/locale/vi';
@@ -27,6 +27,8 @@ import {
   CarOutlined,
   ArrowRightOutlined,
   IdcardOutlined,
+  FileSearchOutlined,
+  LoadingOutlined,
 } from '@ant-design/icons';
 
 dayjs.extend(customParseFormat);
@@ -37,6 +39,7 @@ import Footer from '@/components/Footer';
 import { useAuth } from '@/context/AuthContext';
 import { useCart } from '@/context/CartContext';
 import { authApi } from '@/api/authApi';
+import { orderApi } from '@/api/orderApi';
 import { VIETNAM_PROVINCES } from '@/data/vietnamAddresses';
 
 const { TextArea } = Input;
@@ -46,34 +49,14 @@ interface AddressItem {
   isDefault: boolean;
   title: string;
   address: string;
+  city?: string;
+  district?: string;
+  detailAddress?: string;
   note: string;
   recipient: string;
   phone: string;
   tag: string;
 }
-
-const INITIAL_ADDRESSES: AddressItem[] = [
-  {
-    id: 'addr_01',
-    isDefault: true,
-    title: 'Căn hộ Penthouse A18.04',
-    address: 'Tháp Maldives, Đảo Kim Cương, Phường Bình Trưng Tây, TP. Thủ Đức, TP. Hồ Chí Minh',
-    note: 'Lưu ý: Thang máy vận chuyển hàng 2.4m, hẹn bàn giao cuối tuần.',
-    recipient: 'Nguyễn Hoàng Minh',
-    phone: '0918 345 678',
-    tag: 'Căn hộ chính',
-  },
-  {
-    id: 'addr_02',
-    isDefault: false,
-    title: 'Biệt thự Đơn lập Gamuda Gardens',
-    address: 'Khu đô thị Gamuda City, Phường Trần Phú, Quận Hoàng Mai, Hà Nội',
-    note: 'Xe tải xưởng mộc 3.5 tấn có thể tiếp cận trực tiếp sân trước.',
-    recipient: 'Minh (KTS)',
-    phone: '0918 345 678',
-    tag: 'Nhà vườn nghỉ dưỡng',
-  },
-];
 
 function ProfilePageContent() {
   const { message } = App.useApp();
@@ -95,6 +78,7 @@ function ProfilePageContent() {
   // Addresses state (isolated per user)
   const [addresses, setAddresses] = useState<AddressItem[]>([]);
   const [userOrders, setUserOrders] = useState<any[]>([]);
+  const [isLoadingOrders, setIsLoadingOrders] = useState(false);
   const [isAddAddressOpen, setIsAddAddressOpen] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newRecipient, setNewRecipient] = useState('');
@@ -120,47 +104,98 @@ function ProfilePageContent() {
         setDob(null);
       }
 
-      // Load isolated addresses for this user
+      // Load user saved addresses from localStorage (clean up any legacy mock data)
+      const userAddrKey = `d2_addresses_${user.id}`;
+      let initialUserAddrs: AddressItem[] = [];
       try {
-        const userAddrKey = `d2_addresses_${user.id}`;
         const saved = localStorage.getItem(userAddrKey);
         if (saved) {
-          setAddresses(JSON.parse(saved));
-        } else if (user.role === 'admin') {
-          setAddresses(INITIAL_ADDRESSES);
-        } else {
-          setAddresses([]);
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            // Clean out legacy mock addresses or auto-order entries
+            initialUserAddrs = parsed.filter(
+              (a: AddressItem) =>
+                a.id !== 'addr_01' &&
+                a.id !== 'addr_02' &&
+                !a.id?.startsWith('addr_order_') &&
+                !a.address?.includes('Đảo Kim Cương') &&
+                !a.address?.includes('Gamuda')
+            );
+            localStorage.setItem(userAddrKey, JSON.stringify(initialUserAddrs));
+          }
         }
       } catch {
-        setAddresses([]);
+        initialUserAddrs = [];
       }
+      setAddresses(initialUserAddrs);
 
-      // Load isolated orders for this user
-      try {
-        const userOrderKey = `d2_orders_${user.id}`;
-        const savedOrders = localStorage.getItem(userOrderKey);
-        if (savedOrders) {
-          setUserOrders(JSON.parse(savedOrders));
-        } else if (user.role === 'admin') {
-          setUserOrders([
-            {
-              id: 'ord_admin_01',
-              orderCode: 'MG-2024-89240',
-              createdAt: '10/10/2026',
-              value: 148500000,
-              productName: 'Sofa Gỗ Óc Chó Kyoto (3 chỗ) + Bàn Trà Nami',
-              productSpec: 'Quy cách: Gỗ Walnut nhập khẩu hạng 1, hoàn thiện dầu thực vật hữu cơ Osmo Đức',
-              image:
-                'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?w=800&auto=format&fit=crop&q=80',
-              status: 'pending',
-            },
-          ]);
-        } else {
-          setUserOrders([]);
-        }
-      } catch {
-        setUserOrders([]);
-      }
+      // Load real orders for this user from Backend API (with local fallback/merge)
+      setIsLoadingOrders(true);
+      const userPhone = user.phone?.trim() || '';
+      const userEmail = user.email?.trim() || '';
+      const userName = user.name?.trim() || '';
+
+      Promise.all([
+        orderApi.getOrders({ search: userPhone || userEmail || userName || undefined }).catch(() => []),
+      ])
+        .then(([apiOrders]) => {
+          let localOrders: any[] = [];
+          try {
+            const userOrderKey = `d2_orders_${user.id}`;
+            const savedOrders = localStorage.getItem(userOrderKey);
+            if (savedOrders) localOrders = JSON.parse(savedOrders);
+          } catch {}
+
+          const codeMap = new Set<string>();
+          const merged: any[] = [];
+
+          // 1. Add API orders first
+          if (Array.isArray(apiOrders)) {
+            for (const ord of apiOrders) {
+              const code = (ord.orderCode || ord.id || '').toUpperCase();
+              if (code && !codeMap.has(code)) {
+                codeMap.add(code);
+                merged.push({
+                  id: ord.id,
+                  orderCode: ord.orderCode,
+                  createdAt: ord.orderDate ? dayjs(ord.orderDate).format('DD/MM/YYYY') : 'Gần đây',
+                  value: ord.value || 0,
+                  depositAmount: ord.depositAmount || 0,
+                  productName: ord.productName || ord.items?.[0]?.productName || 'Tác phẩm Nội thất D2 LUXURY',
+                  productSpec: ord.productSpec || (ord.woodType ? `Gỗ ${ord.woodType} tuyển chọn hạng 1` : 'Chế tác mộng mòi Bắc Mỹ'),
+                  image: ord.items?.[0]?.productImage || 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?w=800&auto=format&fit=crop&q=80',
+                  status: ord.status || 'pending',
+                  statusLabel: ord.statusLabel || (ord.status === 'completed' ? 'Đã hoàn thành' : ord.status === 'processing' ? 'Đang gia công xưởng' : 'Đang xử lý'),
+                  branch: ord.branch || ord.showroom || 'Showroom Trung tâm',
+                  items: ord.items || [],
+                  shippingAddress: ord.shippingAddress || ord.customerAddress || '',
+                });
+              }
+            }
+          }
+
+          // 2. Add local storage orders
+          for (const ord of localOrders) {
+            const code = (ord.orderCode || ord.id || '').toUpperCase();
+            if (code && !codeMap.has(code)) {
+              codeMap.add(code);
+              merged.push(ord);
+            }
+          }
+
+          setUserOrders(merged);
+        })
+        .catch(() => {
+          // If network failed, try loading local storage
+          try {
+            const userOrderKey = `d2_orders_${user.id}`;
+            const savedOrders = localStorage.getItem(userOrderKey);
+            if (savedOrders) setUserOrders(JSON.parse(savedOrders));
+          } catch {}
+        })
+        .finally(() => {
+          setIsLoadingOrders(false);
+        });
     } else {
       router.push('/login');
     }
@@ -256,6 +291,9 @@ function ProfilePageContent() {
       isDefault: addresses.length === 0,
       title: newTitle.trim(),
       address: fullFormattedAddress,
+      city: newCity,
+      district: newDistrict,
+      detailAddress: newAddress.trim(),
       note: newNote.trim() || 'Không có ghi chú thêm.',
       recipient: newRecipient.trim(),
       phone: newPhone.trim(),
@@ -610,65 +648,82 @@ function ProfilePageContent() {
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {addresses.map((addr) => (
-                      <div
-                        key={addr.id}
-                        className={`p-4 border flex flex-col justify-between shadow-sm transition-all ${
-                          addr.isDefault
-                            ? 'bg-[#fbf2ee] border-[#5d371f]'
-                            : 'bg-white border-[#eae1dd] hover:border-[#5d371f]/50'
-                        }`}
+                  {addresses.length === 0 ? (
+                    <div className="p-8 text-center bg-[#fbf2ee] border border-[#eae1dd] flex flex-col items-center justify-center">
+                      <span className="material-symbols-outlined text-[36px] text-[#83746c] mb-2">home_pin</span>
+                      <h4 className="font-bold text-sm text-[#1f1b19]">Quý khách chưa lưu địa chỉ công trình nào</h4>
+                      <p className="text-xs text-[#83746c] mt-1 max-w-sm">
+                        Quý khách có thể thêm địa chỉ nhận hàng để tiện cho việc may đo và bàn giao nội thất tận nhà.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setIsAddAddressOpen(true)}
+                        className="mt-4 px-4 py-2 bg-[#5d371f] hover:bg-[#784e34] text-white text-xs font-bold transition-colors inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
                       >
-                        <div>
-                          <div className="flex items-center justify-between mb-2">
-                            <span
-                              className={`px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider ${
-                                addr.isDefault
-                                  ? 'bg-[#5d371f] text-white'
-                                  : 'bg-[#f5ece8] text-[#51443d]'
-                              }`}
-                            >
-                              {addr.isDefault ? 'Địa chỉ mặc định' : addr.tag}
-                            </span>
-                            <div className="flex items-center gap-1.5">
-                              {!addr.isDefault && (
+                        <PlusOutlined /> Thêm địa chỉ mới
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {addresses.map((addr) => (
+                        <div
+                          key={addr.id}
+                          className={`p-4 border flex flex-col justify-between shadow-sm transition-all ${
+                            addr.isDefault
+                              ? 'bg-[#fbf2ee] border-[#5d371f]'
+                              : 'bg-white border-[#eae1dd] hover:border-[#5d371f]/50'
+                          }`}
+                        >
+                          <div>
+                            <div className="flex items-center justify-between mb-2">
+                              <span
+                                className={`px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider ${
+                                  addr.isDefault
+                                    ? 'bg-[#5d371f] text-white'
+                                    : 'bg-[#f5ece8] text-[#51443d]'
+                                }`}
+                              >
+                                {addr.isDefault ? 'Địa chỉ mặc định' : addr.tag}
+                              </span>
+                              <div className="flex items-center gap-1.5">
+                                {!addr.isDefault && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSetDefaultAddress(addr.id)}
+                                    className="text-[11px] text-[#5d371f] hover:underline font-semibold cursor-pointer"
+                                  >
+                                    Đặt mặc định
+                                  </button>
+                                )}
                                 <button
                                   type="button"
-                                  onClick={() => handleSetDefaultAddress(addr.id)}
-                                  className="text-[11px] text-[#5d371f] hover:underline font-semibold cursor-pointer"
+                                  onClick={() => handleDeleteAddress(addr.id)}
+                                  className="p-1 text-[#83746c] hover:text-red-600 transition-colors cursor-pointer"
+                                  title="Xóa địa chỉ"
                                 >
-                                  Đặt mặc định
+                                  <DeleteOutlined />
                                 </button>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteAddress(addr.id)}
-                                className="p-1 text-[#83746c] hover:text-red-600 transition-colors cursor-pointer"
-                                title="Xóa địa chỉ"
-                              >
-                                <DeleteOutlined />
-                              </button>
+                              </div>
+                            </div>
+
+                            <h4 className="font-bold text-sm text-[#1f1b19]">{addr.title}</h4>
+                            <p className="text-xs text-[#51443d] mt-1 leading-relaxed">
+                              {addr.address}
+                            </p>
+                            <div className="mt-2.5 p-2 bg-white/80 border border-[#eae1dd] text-[11px] text-[#83746c] flex items-center gap-1.5">
+                              <span className="material-symbols-outlined text-[16px] text-[#5d371f]">info</span>
+                              <span>{addr.note}</span>
                             </div>
                           </div>
 
-                          <h4 className="font-bold text-sm text-[#1f1b19]">{addr.title}</h4>
-                          <p className="text-xs text-[#51443d] mt-1 leading-relaxed">
-                            {addr.address}
-                          </p>
-                          <div className="mt-2.5 p-2 bg-white/80 border border-[#eae1dd] text-[11px] text-[#83746c] flex items-center gap-1.5">
-                            <span className="material-symbols-outlined text-[16px] text-[#5d371f]">info</span>
-                            <span>{addr.note}</span>
+                          <div className="pt-3 mt-3 border-t border-[#eae1dd]/60 flex items-center justify-between font-data-mono text-xs text-[#83746c]">
+                            <span>Người nhận: <strong>{addr.recipient}</strong></span>
+                            <span>{addr.phone}</span>
                           </div>
                         </div>
-
-                        <div className="pt-3 mt-3 border-t border-[#eae1dd]/60 flex items-center justify-between font-data-mono text-xs text-[#83746c]">
-                          <span>Người nhận: <strong>{addr.recipient}</strong></span>
-                          <span>{addr.phone}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  )}
                 </section>
 
                 {/* SECTION 3: Đơn Hàng Gần Nhất */}
@@ -686,7 +741,12 @@ function ProfilePageContent() {
                     </div>
                   </div>
 
-                  {userOrders.length === 0 ? (
+                  {isLoadingOrders ? (
+                    <div className="p-8 text-center bg-[#fbf2ee] border border-[#eae1dd] flex flex-col items-center justify-center gap-2">
+                      <LoadingOutlined className="text-2xl text-[#5d371f] animate-spin" />
+                      <span className="text-xs font-semibold text-[#5d371f]">Đang đồng bộ danh sách đơn hàng thực tế...</span>
+                    </div>
+                  ) : userOrders.length === 0 ? (
                     <div className="p-8 text-center bg-[#fbf2ee] border border-[#eae1dd] flex flex-col items-center justify-center">
                       <span className="material-symbols-outlined text-[36px] text-[#83746c] mb-2">shopping_bag</span>
                       <h4 className="font-bold text-sm text-[#1f1b19]">Quý khách chưa có đơn hàng nào</h4>
@@ -695,7 +755,7 @@ function ProfilePageContent() {
                       </p>
                       <Link
                         href="/products"
-                        className="mt-4 px-5 py-2 bg-[#5d371f] hover:bg-[#784e34] text-white text-xs font-bold transition-colors inline-flex items-center gap-1.5"
+                        className="mt-4 px-5 py-2 bg-[#5d371f] hover:bg-[#784e34] text-white text-xs font-bold transition-colors inline-flex items-center gap-1.5 shadow-sm"
                       >
                         <span>Khám phá bộ sưu tập</span>
                         <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
@@ -703,67 +763,104 @@ function ProfilePageContent() {
                     </div>
                   ) : (
                     <div className="flex flex-col gap-4">
-                      {userOrders.map((ord: any) => (
-                        <div key={ord.id || ord.orderCode} className="bg-[#fbf2ee] border border-[#eae1dd] p-5">
-                          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-[#eae1dd]">
-                            <div>
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-data-mono font-bold text-sm text-[#5d371f]">
-                                  #{ord.orderCode || 'D2-ORDER'}
+                      {userOrders.map((ord: any) => {
+                        const statusColors: Record<string, { bg: string; text: string; label: string }> = {
+                          completed: { bg: 'bg-[#e1e5ce]', text: 'text-[#3f4332]', label: 'Đã hoàn tất & Bảo hành' },
+                          processing: { bg: 'bg-sky-100', text: 'text-sky-800', label: 'Đang gia công xưởng' },
+                          delivering: { bg: 'bg-indigo-100', text: 'text-indigo-800', label: 'Đang giao lắp tại nhà' },
+                          cancelled: { bg: 'bg-slate-200', text: 'text-slate-700', label: 'Đã hủy đơn' },
+                          pending: { bg: 'bg-amber-100', text: 'text-amber-800', label: 'Chờ duyệt & Giữ gỗ' },
+                        };
+                        const currentStatus = statusColors[ord.status] || {
+                          bg: 'bg-[#f5ece8]',
+                          text: 'text-[#5d371f]',
+                          label: ord.statusLabel || 'Đang xử lý',
+                        };
+
+                        return (
+                          <div key={ord.id || ord.orderCode} className="bg-[#fbf2ee] border border-[#eae1dd] p-5 shadow-xs">
+                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-[#eae1dd]">
+                              <div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-data-mono font-bold text-sm text-[#5d371f]">
+                                    #{ord.orderCode || 'D2-ORDER'}
+                                  </span>
+                                  <span className="text-[11px] text-[#83746c] font-data-mono">
+                                    Ngày đặt: {ord.createdAt || 'Gần đây'}
+                                  </span>
+                                  <span className={`px-2 py-0.5 text-[10px] font-bold uppercase ${currentStatus.bg} ${currentStatus.text}`}>
+                                    {currentStatus.label}
+                                  </span>
+                                  {ord.branch && (
+                                    <span className="text-[11px] text-[#83746c] font-medium hidden sm:inline">
+                                      • Cơ sở: {ord.branch}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="text-left md:text-right">
+                                <span className="text-[10px] text-[#83746c] uppercase tracking-wider block">
+                                  Tổng giá trị đơn hàng
                                 </span>
-                                <span className="text-[11px] text-[#83746c] font-data-mono">
-                                  Ngày đặt: {ord.createdAt || 'Gần đây'}
+                                <span className="font-serif text-lg font-bold text-[#5d371f] font-data-mono">
+                                  {Number(ord.value || 0).toLocaleString('vi-VN')}₫
                                 </span>
-                                <span className="px-2 py-0.5 bg-[#e1e5ce] text-[#3f4332] text-[10px] font-bold uppercase">
-                                  {ord.status === 'completed' ? 'Đã hoàn thành' : 'Đang gia công'}
-                                </span>
+                                {ord.depositAmount > 0 && (
+                                  <span className="text-[10px] text-emerald-700 block font-medium">
+                                    Đã cọc: {Number(ord.depositAmount).toLocaleString('vi-VN')}₫
+                                  </span>
+                                )}
                               </div>
                             </div>
-                            <div className="text-left md:text-right">
-                              <span className="text-[10px] text-[#83746c] uppercase tracking-wider block">
-                                Tổng giá trị đơn hàng
-                              </span>
-                              <span className="font-serif text-lg font-bold text-[#5d371f] font-data-mono">
-                                {Number(ord.value || 0).toLocaleString('vi-VN')}₫
-                              </span>
-                            </div>
-                          </div>
 
-                          <div className="pt-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-                            <div className="flex items-center gap-3.5 w-full sm:w-auto">
-                              <img
-                                src={
-                                  ord.image ||
-                                  ord.items?.[0]?.image ||
-                                  'https://images.unsplash.com/photo-1617806118233-18e1de247200?w=800&auto=format&fit=crop&q=80'
-                                }
-                                alt={ord.productName || 'Nội thất D2 Luxury'}
-                                className="w-16 h-16 object-cover border border-[#eae1dd] shrink-0"
-                              />
-                              <div className="min-w-0">
-                                <h5 className="font-bold text-xs text-[#1f1b19] truncate">
-                                  {ord.productName || 'Đơn hàng may đo D2 Luxury'}
-                                </h5>
-                                <p className="text-[11px] text-[#51443d] mt-0.5">
-                                  {ord.productSpec || 'Quy cách: Gỗ tự nhiên Bắc Mỹ cao cấp'}
-                                </p>
+                            <div className="pt-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+                              <div className="flex items-center gap-3.5 w-full sm:w-auto">
+                                <img
+                                  src={
+                                    ord.image ||
+                                    ord.items?.[0]?.productImage ||
+                                    'https://images.unsplash.com/photo-1617806118233-18e1de247200?w=800&auto=format&fit=crop&q=80'
+                                  }
+                                  alt={ord.productName || 'Nội thất D2 Luxury'}
+                                  className="w-16 h-16 object-cover border border-[#eae1dd] shrink-0"
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).src =
+                                      'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?w=800&auto=format&fit=crop&q=80';
+                                  }}
+                                />
+                                <div className="min-w-0">
+                                  <h5 className="font-bold text-xs text-[#1f1b19] truncate">
+                                    {ord.productName || 'Đơn hàng may đo D2 Luxury'}
+                                  </h5>
+                                  <p className="text-[11px] text-[#51443d] mt-0.5">
+                                    {ord.productSpec || 'Quy cách: Gỗ tự nhiên Bắc Mỹ cao cấp'}
+                                  </p>
+                                  {Array.isArray(ord.items) && ord.items.length > 1 && (
+                                    <span className="text-[10px] text-[#83746c] block mt-0.5">
+                                      + {ord.items.length - 1} tác phẩm khác trong đơn
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2 w-full sm:w-auto shrink-0 flex-wrap sm:flex-nowrap">
+                                <Link
+                                  href="/products"
+                                  className="w-full sm:w-auto text-center px-4 py-2 bg-[#5d371f] hover:bg-[#784e34] text-white font-bold text-xs transition-colors shrink-0 flex items-center justify-center gap-1.5 shadow-sm"
+                                >
+                                  <span>Khám phá bộ sưu tập</span>
+                                  <ArrowRightOutlined className="text-xs" />
+                                </Link>
                               </div>
                             </div>
 
-                            <Link
-                              href="/products"
-                              className="w-full sm:w-auto text-center px-4 py-2 bg-white hover:bg-[#5d371f] hover:text-white border border-[#eae1dd] text-[#5d371f] font-bold text-xs transition-colors shrink-0 flex items-center justify-center gap-1"
-                            >
-                              Xem sản phẩm <ArrowRightOutlined />
-                            </Link>
+                            <div className="mt-4 pt-3 border-t border-[#eae1dd]/60 flex items-center gap-2 text-xs text-[#51443d]">
+                              <span className="material-symbols-outlined text-[#5d371f] text-[18px]">verified</span>
+                              <span>Bảo hành kết cấu mộng gỗ 5 năm • Bảo trì lớp dầu dưỡng gỗ miễn phí định kỳ hàng năm</span>
+                            </div>
                           </div>
-
-                          <div className="mt-4 pt-3 border-t border-[#eae1dd]/60 flex items-center gap-2 text-xs text-[#51443d]">
-                            <span className="material-symbols-outlined text-[#5d371f] text-[18px]">verified</span>
-                            <span>Bảo hành kết cấu mộng gỗ 5 năm • Bảo trì lớp dầu dưỡng gỗ miễn phí định kỳ hàng năm</span>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </section>
@@ -874,148 +971,185 @@ function ProfilePageContent() {
       {/* Footer */}
       <Footer />
 
-      {/* Modal: Add New Address */}
-      <Modal
+      {/* Drawer: Add New Address */}
+      <Drawer
+        title={
+          <div className="flex items-center gap-2.5 py-1">
+            <div className="w-8 h-8 bg-[#f5ece8] text-[#5d371f] flex items-center justify-center font-bold shrink-0">
+              <HomeOutlined className="text-[16px]" />
+            </div>
+            <div>
+              <h3 className="font-serif text-base font-bold text-[#1f1b19] leading-tight">
+                Thêm Địa Chỉ Công Trình / Nhận Hàng
+              </h3>
+              <p className="text-[11px] text-[#83746c] font-normal mt-0.5">
+                Lưu vào sổ địa chỉ cá nhân để thuận tiện cho việc bàn giao nội thất
+              </p>
+            </div>
+          </div>
+        }
+        placement="right"
+        onClose={() => setIsAddAddressOpen(false)}
         open={isAddAddressOpen}
-        onCancel={() => setIsAddAddressOpen(false)}
-        footer={null}
-        width={520}
-        centered
         styles={{
+          wrapper: {
+            width: 480,
+            maxWidth: '100vw',
+          },
+          header: {
+            borderBottom: '1px solid #eae1dd',
+            padding: '16px 20px',
+            backgroundColor: '#ffffff',
+          },
           body: {
-            padding: '28px',
-            backgroundColor: '#fff8f5',
+            padding: '24px 20px',
+            backgroundColor: '#fffbf9',
+          },
+          footer: {
+            borderTop: '1px solid #eae1dd',
+            padding: '14px 20px',
+            backgroundColor: '#ffffff',
           },
         }}
-      >
-        <div className="flex flex-col gap-4">
-          <div className="border-b border-[#eae1dd] pb-3">
-            <h3 className="font-serif text-lg font-bold text-[#1f1b19]">
-              Thêm Địa Chỉ Công Trình / Nhận Hàng
-            </h3>
-          </div>
-
-          <div className="flex flex-col gap-3.5 text-xs">
-            <div className="flex flex-col gap-1">
-              <label className="font-semibold text-[#1f1b19]">Tên gợi nhớ công trình *</label>
-              <Input
-                value={newTitle}
-                onChange={(e) => setNewTitle(e.target.value)}
-                placeholder="VD: Căn hộ Duplex Thảo Điền, Biệt thự Ecopark..."
-                prefix={<HomeOutlined className="text-[#83746c] mr-1" />}
-                className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2 !px-3"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-1">
-                <label className="font-semibold text-[#1f1b19]">Người nhận *</label>
-                <Input
-                  value={newRecipient}
-                  onChange={(e) => setNewRecipient(e.target.value)}
-                  placeholder="Họ và tên..."
-                  prefix={<UserOutlined className="text-[#83746c] mr-1" />}
-                  className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2 !px-3"
-                />
-              </div>
-
-              <div className="flex flex-col gap-1">
-                <label className="font-semibold text-[#1f1b19]">Số điện thoại *</label>
-                <Input
-                  value={newPhone}
-                  onChange={(e) => setNewPhone(e.target.value)}
-                  placeholder="0918 345 678"
-                  prefix={<PhoneOutlined className="text-[#83746c] mr-1" />}
-                  className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2 !px-3"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {/* Province Select */}
-              <div className="flex flex-col gap-1">
-                <label className="font-semibold text-[#1f1b19]">Tỉnh / Thành phố *</label>
-                <Select
-                  showSearch
-                  placeholder="-- Chọn Tỉnh / Thành phố --"
-                  optionFilterProp="label"
-                  value={newCity || undefined}
-                  onChange={(val) => handleNewCityChange(val)}
-                  options={VIETNAM_PROVINCES.map((prov) => ({
-                    value: prov.name,
-                    label: prov.name,
-                  }))}
-                  className="w-full !rounded-none"
-                  style={{ height: 38 }}
-                />
-              </div>
-
-              {/* District Select */}
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center justify-between">
-                  <label className="font-semibold text-[#1f1b19]">Quận / Huyện *</label>
-                  {!newCity && (
-                    <span className="text-[10px] text-[#83746c] italic">(Chọn Tỉnh trước)</span>
-                  )}
-                </div>
-                <Select
-                  showSearch
-                  disabled={!newCity}
-                  placeholder={!newCity ? '-- Chọn Tỉnh/Thành trước --' : '-- Chọn Quận / Huyện --'}
-                  optionFilterProp="label"
-                  value={newDistrict || undefined}
-                  onChange={(val) => setNewDistrict(val)}
-                  options={newDistricts.map((d) => ({
-                    value: d.name,
-                    label: d.name,
-                  }))}
-                  className="w-full !rounded-none"
-                  style={{ height: 38 }}
-                />
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="font-semibold text-[#1f1b19]">Địa chỉ chi tiết *</label>
-              <Input
-                value={newAddress}
-                onChange={(e) => setNewAddress(e.target.value)}
-                placeholder="Số nhà, tên đường, tòa tháp, căn hộ..."
-                prefix={<EnvironmentOutlined className="text-[#83746c] mr-1" />}
-                className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2 !px-3"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="font-semibold text-[#1f1b19]">Lưu ý đặc thù vận chuyển</label>
-              <Input
-                value={newNote}
-                onChange={(e) => setNewNote(e.target.value)}
-                placeholder="VD: Thang máy tải hàng 2.4m, hẹn bàn giao cuối tuần..."
-                prefix={<CarOutlined className="text-[#83746c] mr-1" />}
-                className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2 !px-3"
-              />
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-2.5 pt-3 border-t border-[#eae1dd]">
+        footer={
+          <div className="flex justify-end items-center gap-2.5">
             <button
               type="button"
               onClick={() => setIsAddAddressOpen(false)}
-              className="px-4 py-2 border border-[#eae1dd] font-semibold text-xs text-[#51443d] hover:bg-[#f5ece8] cursor-pointer"
+              className="px-4 py-2 border border-[#eae1dd] font-semibold text-xs text-[#51443d] hover:bg-[#f5ece8] transition-colors cursor-pointer"
             >
               Hủy
             </button>
             <button
               type="button"
               onClick={handleAddAddress}
-              className="px-5 py-2 bg-[#5d371f] hover:bg-[#784e34] text-white font-semibold text-xs transition-colors cursor-pointer"
+              className="px-6 py-2 bg-[#5d371f] hover:bg-[#784e34] text-white font-semibold text-xs transition-colors cursor-pointer shadow-sm flex items-center gap-1.5"
             >
-              Lưu Địa Chỉ
+              <SaveOutlined /> Lưu Địa Chỉ
             </button>
           </div>
+        }
+      >
+        <div className="flex flex-col gap-4 text-xs">
+          <div className="flex flex-col gap-1.5">
+            <label className="font-semibold text-[#1f1b19] uppercase tracking-wider text-[11px]">
+              Tên gợi nhớ công trình *
+            </label>
+            <Input
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              placeholder="VD: Căn hộ Duplex Thảo Điền, Biệt thự Ecopark..."
+              prefix={<HomeOutlined className="text-[#83746c] mr-1" />}
+              className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2.5 !px-3"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <label className="font-semibold text-[#1f1b19] uppercase tracking-wider text-[11px]">
+                Người nhận *
+              </label>
+              <Input
+                value={newRecipient}
+                onChange={(e) => setNewRecipient(e.target.value)}
+                placeholder="Họ và tên..."
+                prefix={<UserOutlined className="text-[#83746c] mr-1" />}
+                className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2.5 !px-3"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="font-semibold text-[#1f1b19] uppercase tracking-wider text-[11px]">
+                Số điện thoại *
+              </label>
+              <Input
+                value={newPhone}
+                onChange={(e) => setNewPhone(e.target.value)}
+                placeholder="0918 345 678"
+                prefix={<PhoneOutlined className="text-[#83746c] mr-1" />}
+                className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2.5 !px-3"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Province Select */}
+            <div className="flex flex-col gap-1.5">
+              <label className="font-semibold text-[#1f1b19] uppercase tracking-wider text-[11px]">
+                Tỉnh / Thành phố *
+              </label>
+              <Select
+                showSearch
+                placeholder="-- Chọn Tỉnh / Thành phố --"
+                optionFilterProp="label"
+                value={newCity || undefined}
+                onChange={(val) => handleNewCityChange(val)}
+                options={VIETNAM_PROVINCES.map((prov) => ({
+                  value: prov.name,
+                  label: prov.name,
+                }))}
+                className="w-full !rounded-none"
+                style={{ height: 40 }}
+              />
+            </div>
+
+            {/* District Select */}
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <label className="font-semibold text-[#1f1b19] uppercase tracking-wider text-[11px]">
+                  Quận / Huyện *
+                </label>
+                {!newCity && (
+                  <span className="text-[10px] text-[#83746c] italic">(Chọn Tỉnh trước)</span>
+                )}
+              </div>
+              <Select
+                showSearch
+                disabled={!newCity}
+                placeholder={!newCity ? '-- Chọn Tỉnh/Thành trước --' : '-- Chọn Quận / Huyện --'}
+                optionFilterProp="label"
+                value={newDistrict || undefined}
+                onChange={(val) => setNewDistrict(val)}
+                options={newDistricts.map((d) => ({
+                  value: d.name,
+                  label: d.name,
+                }))}
+                className="w-full !rounded-none"
+                style={{ height: 40 }}
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="font-semibold text-[#1f1b19] uppercase tracking-wider text-[11px]">
+              Địa chỉ chi tiết (số nhà, tòa nhà, căn hộ...) *
+            </label>
+            <Input
+              value={newAddress}
+              onChange={(e) => setNewAddress(e.target.value)}
+              placeholder="Số nhà, tên đường, tòa tháp, căn hộ..."
+              prefix={<EnvironmentOutlined className="text-[#83746c] mr-1" />}
+              className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2.5 !px-3"
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between">
+              <label className="font-semibold text-[#1f1b19] uppercase tracking-wider text-[11px]">
+                Lưu ý đặc thù vận chuyển / bàn giao
+              </label>
+              <span className="text-[10px] text-[#83746c]">Không bắt buộc</span>
+            </div>
+            <TextArea
+              rows={3}
+              value={newNote}
+              onChange={(e) => setNewNote(e.target.value)}
+              placeholder="VD: Thang máy tải hàng 2.4m, hẹn bàn giao cuối tuần, đăng ký ban quản lý trước 24h..."
+              className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !p-3 leading-relaxed"
+            />
+          </div>
         </div>
-      </Modal>
+      </Drawer>
 
       {/* Modal: Change Password */}
       <Modal

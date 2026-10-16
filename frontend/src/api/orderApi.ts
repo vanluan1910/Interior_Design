@@ -1,5 +1,6 @@
 import { OrderRow } from '@/types/admin';
 import { cachedFetch, invalidateApiCache } from './shared/apiCache';
+import { getAuthHeaders } from './shared/authHeaders';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
@@ -66,7 +67,7 @@ export const orderApi = {
     const cacheKey = `orders:${query.toString()}`;
     return cachedFetch(cacheKey, async () => {
       const res = await fetch(`${API_BASE_URL}/api/orders?${query.toString()}`, {
-        headers: { Accept: 'application/json' },
+        headers: getAuthHeaders(),
       });
 
       if (!res.ok) {
@@ -83,7 +84,7 @@ export const orderApi = {
    */
   async getStats(): Promise<OrderStats> {
     const res = await fetch(`${API_BASE_URL}/api/orders/stats`, {
-      headers: { Accept: 'application/json' },
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -99,7 +100,7 @@ export const orderApi = {
    */
   async getOrderById(id: string): Promise<OrderRow> {
     const res = await fetch(`${API_BASE_URL}/api/orders/${id}`, {
-      headers: { Accept: 'application/json' },
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -115,7 +116,7 @@ export const orderApi = {
    */
   async getOrderByCode(code: string): Promise<OrderRow> {
     const res = await fetch(`${API_BASE_URL}/api/orders/by-code/${encodeURIComponent(code)}`, {
-      headers: { Accept: 'application/json' },
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -132,10 +133,7 @@ export const orderApi = {
   async createOrder(payload: CreateOrderPayload): Promise<OrderRow> {
     const res = await fetch(`${API_BASE_URL}/api/orders`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
+      headers: getAuthHeaders(),
       body: JSON.stringify(payload),
     });
 
@@ -159,10 +157,7 @@ export const orderApi = {
   async updateOrder(id: string, payload: CreateOrderPayload): Promise<OrderRow> {
     const res = await fetch(`${API_BASE_URL}/api/orders/${id}`, {
       method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
+      headers: getAuthHeaders(),
       body: JSON.stringify(payload),
     });
 
@@ -186,10 +181,7 @@ export const orderApi = {
   async updateOrderStatus(id: string, status: string, note?: string): Promise<OrderRow> {
     const res = await fetch(`${API_BASE_URL}/api/orders/${id}/status`, {
       method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
+      headers: getAuthHeaders(),
       body: JSON.stringify({ status, note }),
     });
 
@@ -213,10 +205,7 @@ export const orderApi = {
   async updatePaymentStatus(id: string, paymentStatus: string, paidAmount?: number, paymentMethod?: string): Promise<OrderRow> {
     const res = await fetch(`${API_BASE_URL}/api/orders/${id}/payment-status`, {
       method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
+      headers: getAuthHeaders(),
       body: JSON.stringify({ paymentStatus, paidAmount, paymentMethod }),
     });
 
@@ -240,10 +229,7 @@ export const orderApi = {
   async bulkUpdateStatus(orderIds: string[], status: string, note?: string): Promise<boolean> {
     const res = await fetch(`${API_BASE_URL}/api/orders/bulk-status`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
+      headers: getAuthHeaders(),
       body: JSON.stringify({ orderIds, status, note }),
     });
 
@@ -263,7 +249,7 @@ export const orderApi = {
   async deleteOrder(id: string): Promise<boolean> {
     const res = await fetch(`${API_BASE_URL}/api/orders/${id}`, {
       method: 'DELETE',
-      headers: { Accept: 'application/json' },
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {

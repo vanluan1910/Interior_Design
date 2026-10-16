@@ -84,13 +84,22 @@ function AdminPageContent({
   const { message } = App.useApp();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, logout, hasPermission, hasAnyPermission } = useAuth();
+  const { user, isLoading, logout, hasPermission, hasAnyPermission } = useAuth();
 
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Route Guard: Chặn khách vãng lai và tài khoản khách hàng, chỉ cho phép quản trị viên / nhân viên
+  useEffect(() => {
+    if (!mounted || isLoading) return;
+    if (!user || user.role !== 'admin') {
+      const returnUrl = typeof window !== 'undefined' ? window.location.pathname + window.location.search : '/admin';
+      router.push(`/login?redirect=${encodeURIComponent(returnUrl)}`);
+    }
+  }, [mounted, isLoading, user, router]);
 
   interface AdminNavTab {
     key: string;
@@ -582,6 +591,17 @@ function AdminPageContent({
     },
   ];
 
+  if (!mounted || isLoading || !user || user.role !== 'admin') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#fff8f5]">
+        <div className="flex flex-col items-center gap-2">
+          <div className="w-8 h-8 border-2 border-[#5d371f] border-t-transparent rounded-full animate-spin" />
+          <span className="text-xs text-[#83746c]">Đang kiểm tra quyền quản trị D2 LUXURY...</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <Layout className="min-h-screen bg-[#fff8f5] flex flex-col">
       <Header
@@ -701,7 +721,7 @@ function AdminPageContent({
             {/* Global Branch Selector Dropdown */}
             <div className="flex items-center shrink-0">
               <Select
-                value={selectedGlobalBranch || displayBranches[0]?.name || undefined}
+                value={selectedGlobalBranch && selectedGlobalBranch !== 'all' ? selectedGlobalBranch : (displayBranches[0]?.name || undefined)}
                 onChange={(val) => {
                   setSelectedGlobalBranch(val);
                   setStoredAdminData(ADMIN_STORAGE_KEYS.SELECTED_BRANCH, val);

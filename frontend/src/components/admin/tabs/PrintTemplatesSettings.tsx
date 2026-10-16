@@ -44,7 +44,7 @@ export interface PrintTemplateConfig {
 const DEFAULT_PRINT_TEMPLATES: PrintTemplateConfig[] = [
   {
     key: 'invoice',
-    tab: 'Đơn hàng',
+    tab: 'Hóa đơn bán lẻ',
     select: 'Mẫu Hóa đơn / Phiếu bán hàng (Màn hình Đơn hàng)',
     title: 'HÓA ĐƠN BÁN HÀNG & DỊCH VỤ NỘI THẤT',
     codePrefix: 'HD',
@@ -57,9 +57,37 @@ const DEFAULT_PRINT_TEMPLATES: PrintTemplateConfig[] = [
     footerNote: 'Cảm ơn Quý khách! Sản phẩm gỗ tự nhiên được bảo hành chính hãng 05 năm.',
   },
   {
+    key: 'order',
+    tab: 'Đặt hàng may đo',
+    select: 'Mẫu Phiếu đặt hàng / Cọc may đo (Màn hình Đơn hàng)',
+    title: 'PHIẾU ĐẶT HÀNG & TẠM ỨNG MAY ĐO',
+    codePrefix: 'DH',
+    paperSize: 'a4',
+    showLogo: true,
+    showQr: true,
+    showCustomer: true,
+    showSignature: true,
+    headerNote: 'Xưởng Sản Xuất & Gia Công Nội Thất Mộc Gia Atelier',
+    footerNote: 'Tiến độ sản xuất từ 15-20 ngày làm việc kể từ ngày duyệt bản vẽ 3D kỹ thuật.',
+  },
+  {
+    key: 'delivery',
+    tab: 'Bàn giao & Lắp đặt',
+    select: 'Mẫu Biên bản bàn giao & Lắp đặt hoàn thiện (Màn hình Đơn hàng)',
+    title: 'BIÊN BẢN BÀN GIAO & LẮP ĐẶT NỘI THẤT',
+    codePrefix: 'BG',
+    paperSize: 'a4',
+    showLogo: true,
+    showQr: false,
+    showCustomer: true,
+    showSignature: true,
+    headerNote: 'Đội Thi Công & Lắp Đặt Hoàn Thiện Công Trình',
+    footerNote: 'Quý khách vui lòng kiểm tra kỹ hiện trạng sản phẩm, phụ kiện trước khi ký nhận bàn giao.',
+  },
+  {
     key: 'purchase',
-    tab: 'Nhập kho',
-    select: 'Mẫu Phiếu nhập kho (Màn hình Kho & Xưởng)',
+    tab: 'Phiếu nhập kho',
+    select: 'Mẫu Phiếu nhập kho vật tư & Hàng hóa (Màn hình Kho & Xưởng)',
     title: 'PHIẾU NHẬP KHO VẬT TƯ & HÀNG HÓA',
     codePrefix: 'PNK',
     paperSize: 'a4',
@@ -73,7 +101,7 @@ const DEFAULT_PRINT_TEMPLATES: PrintTemplateConfig[] = [
   {
     key: 'stocktake',
     tab: 'Kiểm kho',
-    select: 'Mẫu Biên bản kiểm kê kho (Màn hình Kho & Xưởng)',
+    select: 'Mẫu Biên bản kiểm kê tồn kho (Màn hình Kho & Xưởng)',
     title: 'PHIẾU KIỂM KÊ TỒN KHO HÀNG HÓA',
     codePrefix: 'KK',
     paperSize: 'a4',
@@ -83,6 +111,48 @@ const DEFAULT_PRINT_TEMPLATES: PrintTemplateConfig[] = [
     showSignature: true,
     headerNote: 'Phân hệ Quản lý Kho Vật tư & Xưởng Sản Xuất',
     footerNote: 'Biên bản kiểm kê có giá trị làm căn cứ đối soát sổ sách kho và xử lý tồn kho.',
+  },
+  {
+    key: 'return',
+    tab: 'Xuất trả NCC',
+    select: 'Mẫu Phiếu xuất trả hàng & Bảo hành NCC (Màn hình Kho & Xưởng)',
+    title: 'PHIẾU XUẤT TRẢ HÀNG & BẢO HÀNH NCC',
+    codePrefix: 'TH',
+    paperSize: 'a5',
+    showLogo: true,
+    showQr: false,
+    showCustomer: true,
+    showSignature: true,
+    headerNote: 'Trung Tâm Dịch Vụ Khách Hàng D2 LUXURY',
+    footerNote: 'Cam kết xử lý và phản hồi tình trạng sản phẩm trong vòng 48h làm việc.',
+  },
+  {
+    key: 'receipt',
+    tab: 'Phiếu thu tiền',
+    select: 'Mẫu Phiếu thu tiền tạm ứng / thanh toán (Màn hình Sổ quỹ)',
+    title: 'PHIẾU THU TIỀN TẠM ỨNG DỰ ÁN',
+    codePrefix: 'PT',
+    paperSize: 'a5',
+    showLogo: true,
+    showQr: true,
+    showCustomer: true,
+    showSignature: true,
+    headerNote: 'Phòng Kế Toán - Tài Chính D2 LUXURY',
+    footerNote: 'Phiếu thu có giá trị xác nhận thanh toán khi có đủ chữ ký của thủ quỹ và người nộp tiền.',
+  },
+  {
+    key: 'payment',
+    tab: 'Phiếu chi tiền',
+    select: 'Mẫu Phiếu chi thanh toán NCC / Xưởng (Màn hình Sổ quỹ)',
+    title: 'PHIẾU CHI TIỀN THANH TOÁN VẬT TƯ',
+    codePrefix: 'PC',
+    paperSize: 'a5',
+    showLogo: true,
+    showQr: false,
+    showCustomer: false,
+    showSignature: true,
+    headerNote: 'Phòng Kế Toán - Tài Chính D2 LUXURY',
+    footerNote: 'Đề nghị người nhận tiền kiểm đếm đủ trước khi rời khỏi quầy thủ quỹ.',
   },
 ];
 
@@ -635,6 +705,30 @@ export function PrintTemplatesSettings() {
                 </div>
                 <div><strong className="text-slate-800">Mục đích:</strong> Kiểm kê định kỳ tháng đối soát sổ sách và thực tế tồn kho</div>
               </div>
+            ) : activeTemplate.key === 'return' ? (
+              <div className="py-2.5 px-3 bg-slate-50/80 rounded-md border border-slate-200 text-[11px] space-y-1 mb-3">
+                <div className="flex justify-between">
+                  <span><strong className="text-slate-800">Nhà cung cấp nhận lại:</strong> Tổng Kho Phụ Kiện Hafele &amp; Blum VN</span>
+                  <span className="font-mono font-semibold text-slate-700">028.3997.7777</span>
+                </div>
+                <div><strong className="text-slate-800">Lý do xuất trả:</strong> Lỗi kỹ thuật ray trượt giảm chấn, đổi mới theo chính sách bảo hành</div>
+                <div className="flex justify-between text-slate-600 text-[10px]">
+                  <span><strong>Người lập phiếu:</strong> Nguyễn Văn Nam</span>
+                  <span><strong>Kho xuất trả:</strong> Kho Tổng Thạch Thất</span>
+                </div>
+              </div>
+            ) : activeTemplate.key === 'receipt' || activeTemplate.key === 'payment' ? (
+              <div className="py-2.5 px-3 bg-slate-50/80 rounded-md border border-slate-200 text-[11px] space-y-1 mb-3">
+                <div className="flex justify-between">
+                  <span><strong className="text-slate-800">{activeTemplate.key === 'receipt' ? 'Họ tên người nộp tiền:' : 'Họ tên người nhận tiền:'}</strong> {activeTemplate.key === 'receipt' ? 'Ông Nguyễn Văn Luân' : 'Đại diện NCC Gỗ An Cường'}</span>
+                  <span className="font-mono font-semibold text-slate-700">0912.888.999</span>
+                </div>
+                <div><strong className="text-slate-800">Lý do {activeTemplate.key === 'receipt' ? 'thu:' : 'chi:'}</strong> {activeTemplate.key === 'receipt' ? 'Tạm ứng đợt 1 hợp đồng may đo nội thất biệt thự Vinhomes' : 'Thanh toán tiền gỗ Óc Chó nhập kho đợt 2 theo hợp đồng'}</div>
+                <div className="flex justify-between text-slate-600 text-[10px]">
+                  <span><strong>Kèm theo chứng từ:</strong> Hợp đồng thi công số DH-2026-0889</span>
+                  <span><strong>Hình thức:</strong> Tiền mặt / Chuyển khoản</span>
+                </div>
+              </div>
             ) : (
               activeTemplate.showCustomer && (
                 <div className="py-2.5 px-3 bg-slate-50/80 rounded-md border border-slate-200 text-[11px] space-y-1 mb-3">
@@ -754,13 +848,33 @@ export function PrintTemplatesSettings() {
             {activeTemplate.showSignature && (
               <div className="mt-6 pt-2 grid grid-cols-3 text-center text-[10px] text-slate-700 font-semibold gap-2">
                 <div>
-                  <div>{activeTemplate.key === 'purchase' || activeTemplate.key === 'return' ? 'Đại diện Đối tác' : 'Khách hàng / Đại diện'}</div>
+                  <div>
+                    {activeTemplate.key === 'purchase' || activeTemplate.key === 'return'
+                      ? 'Đại diện Đối tác / NCC'
+                      : activeTemplate.key === 'receipt'
+                      ? 'Người nộp tiền'
+                      : activeTemplate.key === 'payment'
+                      ? 'Người nhận tiền'
+                      : activeTemplate.key === 'delivery'
+                      ? 'Người nhận hàng'
+                      : 'Khách hàng / Đại diện'}
+                  </div>
                   <div className="text-[9px] font-normal italic text-slate-400 mt-0.5">(Ký &amp; ghi rõ họ tên)</div>
                   <div className="h-12"></div>
-                  <div className="font-normal text-slate-800">Nguyễn Văn Luân</div>
+                  <div className="font-normal text-slate-800">
+                    {activeTemplate.key === 'payment' ? 'Đại diện NCC' : 'Nguyễn Văn Luân'}
+                  </div>
                 </div>
                 <div>
-                  <div>{activeTemplate.key === 'purchase' || activeTemplate.key === 'stocktake' ? 'Thủ kho / KCS' : 'Kỹ sư giám sát'}</div>
+                  <div>
+                    {activeTemplate.key === 'purchase' || activeTemplate.key === 'stocktake'
+                      ? 'Thủ kho / KCS'
+                      : activeTemplate.key === 'receipt' || activeTemplate.key === 'payment'
+                      ? 'Thủ quỹ / Kế toán'
+                      : activeTemplate.key === 'delivery'
+                      ? 'Đội thi công & Lắp đặt'
+                      : 'Kỹ sư giám sát'}
+                  </div>
                   <div className="text-[9px] font-normal italic text-slate-400 mt-0.5">(Ký &amp; ghi rõ họ tên)</div>
                   <div className="h-12"></div>
                   <div className="font-normal text-slate-800">Trần Quang Huy</div>

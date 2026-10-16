@@ -147,6 +147,22 @@ export function CategoriesTab({
   const [editingCategory, setEditingCategory] = useState<AdminCategory | null>(null);
   const [categoryForm] = Form.useForm();
   const [importingCategoryExcel, setImportingCategoryExcel] = useState(false);
+  const [uploadingCategoryImage, setUploadingCategoryImage] = useState(false);
+  const currentCategoryImage = Form.useWatch('image', categoryForm);
+
+  const handleUploadCategoryImage = async (file: File) => {
+    setUploadingCategoryImage(true);
+    try {
+      const url = await uploadApi.uploadFile(file);
+      categoryForm.setFieldsValue({ image: url });
+      message.success('Tải ảnh đại diện danh mục thành công!');
+    } catch (err: any) {
+      message.error(err?.message || 'Tải ảnh thất bại.');
+    } finally {
+      setUploadingCategoryImage(false);
+    }
+    return false;
+  };
 
   // --- SPACES STATE ---
   const [selectedSpaceKeys, setSelectedSpaceKeys] = useState<React.Key[]>([]);
@@ -1529,6 +1545,56 @@ export function CategoriesTab({
           >
             <Input.TextArea rows={3} placeholder="Mô tả về phong cách, vật liệu hoặc bộ sưu tập..." className="text-sm rounded-lg" />
           </Form.Item>
+
+          {/* ẢNH ĐẠI DIỆN DANH MỤC (TẢI TỪ MÁY / URL) */}
+          <div className="space-y-1.5 p-3 rounded-xl bg-slate-50 border border-slate-200/80 mb-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-xs font-semibold text-slate-700 block">Ảnh đại diện danh mục</span>
+                <span className="text-[11px] text-slate-400">Tải ảnh từ máy tính hoặc dán URL ảnh</span>
+              </div>
+              <Upload
+                showUploadList={false}
+                beforeUpload={handleUploadCategoryImage}
+                accept="image/*"
+              >
+                <Button
+                  size="small"
+                  icon={<UploadOutlined />}
+                  loading={uploadingCategoryImage}
+                  className="text-xs rounded-lg border-slate-300 hover:text-[#784e34] hover:border-[#784e34]"
+                >
+                  Tải ảnh từ máy
+                </Button>
+              </Upload>
+            </div>
+            <Form.Item name="image" className="!mb-0">
+              <Input
+                placeholder="https://images.unsplash.com/... hoặc bấm nút tải ảnh từ máy"
+                className="h-10 text-sm rounded-lg bg-white"
+              />
+            </Form.Item>
+            {currentCategoryImage && (
+              <div className="relative inline-block mt-2">
+                <img
+                  src={currentCategoryImage}
+                  alt="Ảnh danh mục"
+                  className="w-16 h-16 object-cover rounded-lg border border-slate-200 bg-white shadow-xs"
+                  onError={(e) => {
+                    (e.target as HTMLElement).style.display = 'none';
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => categoryForm.setFieldsValue({ image: '' })}
+                  className="absolute -top-1.5 -right-1.5 bg-white rounded-full text-slate-400 hover:text-red-500 border-0 p-0 cursor-pointer shadow-xs"
+                  title="Gỡ ảnh"
+                >
+                  <CloseCircleFilled className="text-base text-red-500 hover:text-red-600" />
+                </button>
+              </div>
+            )}
+          </div>
 
           <Row gutter={16}>
             <Col span={12}>

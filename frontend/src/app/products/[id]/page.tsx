@@ -77,7 +77,12 @@ function mapCatalogToDetailProduct(item: FeaturedCatalogProduct, currentBranch?:
     spaceName: spaceNames[space],
     subCategoryName,
     price: item.price,
-    originalPrice: item.originalPrice && item.originalPrice > item.price ? item.originalPrice : undefined,
+    originalPrice: item.originalPrice && item.originalPrice > item.price
+      ? item.originalPrice
+      : (item.discountPercent && item.discountPercent > 0 && item.price > 0
+          ? Math.round(item.price / (1 - item.discountPercent / 100))
+          : undefined),
+    discountPercent: item.discountPercent || (item.originalPrice && item.originalPrice > item.price ? Math.round(((item.originalPrice - item.price) / item.originalPrice) * 100) : undefined),
     image: item.image || (images.length > 0 ? images[0] : '/logo.png'),
     images: images.length > 0 ? images : (item.image ? [item.image] : []),
     subImages: item.subImages,
@@ -419,6 +424,11 @@ export default function ProductDetailPage({
 
                 {/* Badges */}
                 <div className="absolute top-4 left-4 flex flex-col gap-2">
+                  {calculatedStrike && calculatedStrike > calculatedPrice && (
+                    <span className="px-3 py-1 bg-[#ba1a1a] text-white text-[11px] font-bold uppercase tracking-wider shadow-sm">
+                      GIẢM {Math.round(((calculatedStrike - calculatedPrice) / calculatedStrike) * 100)}%
+                    </span>
+                  )}
                   <span className="px-3 py-1 bg-[#5d371f] text-white text-[11px] font-semibold uppercase tracking-wider shadow-sm">
                     Nghệ nhân D2 LUXURY
                   </span>
@@ -475,17 +485,36 @@ export default function ProductDetailPage({
               </div>
 
               {/* Price Banner */}
-              <div className="p-4 bg-[#fbf2ee] border border-[#eae1dd] flex flex-col gap-1.5 shadow-sm">
+              <div className="p-4 bg-[#fbf2ee] border border-[#eae1dd] flex flex-col gap-2 shadow-sm">
                 <div className="flex items-baseline gap-3 flex-wrap">
                   <span className="font-headline-lg text-2xl sm:text-3xl text-[#5d371f] font-bold">
                     {formatPrice(calculatedPrice)}
                   </span>
+                  {calculatedStrike && calculatedStrike > calculatedPrice && (
+                    <span className="text-base sm:text-lg text-[#a89b93] line-through font-mono">
+                      {formatPrice(calculatedStrike)}
+                    </span>
+                  )}
+                  {calculatedStrike && calculatedStrike > calculatedPrice && (
+                    <span className="px-2 py-0.5 bg-red-600 text-white text-xs font-bold uppercase tracking-wide rounded-none shadow-sm">
+                      -{Math.round(((calculatedStrike - calculatedPrice) / calculatedStrike) * 100)}%
+                    </span>
+                  )}
                   {!currentProduct.inStock && (
                     <span className="px-2.5 py-0.5 bg-[#ba1a1a] text-white text-xs font-bold uppercase tracking-wide">
                       Hết hàng
                     </span>
                   )}
                 </div>
+                {calculatedStrike && calculatedStrike > calculatedPrice && (
+                  <div className="text-xs text-[#5d371f] font-medium flex items-center gap-1.5 pt-1.5 border-t border-[#eae1dd]/60">
+                    <span>Tiết kiệm:</span>
+                    <span className="font-bold text-red-600 font-mono text-sm">
+                      {formatPrice(calculatedStrike - calculatedPrice)}
+                    </span>
+                    <span className="text-[#83746c] text-[11px]">(Ưu đãi giá tốt nhất trực tiếp từ xưởng D2)</span>
+                  </div>
+                )}
               </div>
 
 
@@ -847,9 +876,23 @@ export default function ProductDetailPage({
                       </div>
 
                       <div className="flex items-center justify-between pt-2 border-t border-[#eae1dd]/60">
-                        <span className="font-bold text-sm sm:text-base text-[#5d371f]">
-                          {formatPrice(p.price)}
-                        </span>
+                        <div className="flex flex-col">
+                          <div className="flex items-baseline gap-1.5">
+                            <span className="font-bold text-sm sm:text-base text-[#5d371f]">
+                              {formatPrice(p.price)}
+                            </span>
+                            {p.originalPrice && p.originalPrice > p.price && (
+                              <span className="text-[11px] text-[#a89b93] line-through font-mono">
+                                {formatPrice(p.originalPrice)}
+                              </span>
+                            )}
+                          </div>
+                          {p.originalPrice && p.originalPrice > p.price && (
+                            <span className="text-[10px] font-bold text-red-600">
+                              -{Math.round(((p.originalPrice - p.price) / p.originalPrice) * 100)}%
+                            </span>
+                          )}
+                        </div>
 
                         <div className="flex items-center gap-1.5">
                           <Button

@@ -33,11 +33,15 @@ export interface OrderRow {
   depositNote?: string;
   status: 'pending' | 'processing' | 'delivering' | 'completed' | 'cancelled';
   statusLabel: string;
+  paymentStatus?: string;
+  paymentMethod?: string;
   spaceType?: 'living' | 'dining' | 'bedroom' | 'office' | 'full';
   spaceLabel?: string;
   branch?: string;
   showroom?: string;
   items?: OrderItem[];
+  shippingAddress?: string;
+  note?: string;
 }
 
 export interface AdminCustomer {

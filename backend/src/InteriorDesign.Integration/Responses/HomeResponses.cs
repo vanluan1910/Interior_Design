@@ -57,7 +57,8 @@ public sealed record HomeProductDto(
     string Tag,
     decimal Rating,
     int ReviewCount,
-    bool InStock
+    bool InStock,
+    int DiscountPercent = 0
 );
 
 public sealed record HomeCommitmentDto(

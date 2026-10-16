@@ -304,6 +304,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         joinDate: new Date().toLocaleDateString('vi-VN'),
         bio: '',
       };
+      if (result.token) {
+        authStorage.setToken(result.token);
+      }
+      setUser(mappedUser);
+      authStorage.setUser(mappedUser);
       return mappedUser;
     }
 

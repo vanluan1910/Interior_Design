@@ -116,25 +116,6 @@ export function CustomersTab({
     }
   }, [selectedGlobalBranch]);
 
-  // Branch filter options combining registered branches, customer branches, and order branches
-  const branchFilterOptions = useMemo(() => {
-    const branchSet = new Set<string>();
-    effectiveBranches.forEach((b) => {
-      if (b.name) branchSet.add(b.name);
-    });
-    customersList.forEach((c) => {
-      if (c.branch) branchSet.add(c.branch);
-      if (c.branchName) branchSet.add(c.branchName);
-    });
-    ordersList.forEach((o) => {
-      if (o.branch) branchSet.add(o.branch);
-      if (o.showroom) branchSet.add(o.showroom);
-    });
-    return [
-      { value: 'all', label: 'Tất cả chi nhánh' },
-      ...Array.from(branchSet).map((b) => ({ value: b, label: b })),
-    ];
-  }, [effectiveBranches, customersList, ordersList]);
 
   // Table Selection & Accordion Expansion States
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
@@ -156,10 +137,91 @@ export function CustomersTab({
   const [importModalOpen, setImportModalOpen] = useState(false);
 
   // Merge orders customers so any customer who placed an order is always included
+  // and dynamically compute accurate debt & totalSpent from actual orders for EVERY customer
   const allMergedCustomers = useMemo(() => {
-    const list = [...customersList];
-    const existingPhones = new Set(list.map((c) => (c.phone || '').replace(/\s+/g, '')));
-    const existingNames = new Set(list.map((c) => (c.name || '').trim().toLowerCase()));
+    // 1. Map orders by phone, name, and customerId for quick lookup
+    const ordersByPhone = new Map<string, OrderRow[]>();
+    const ordersByName = new Map<string, OrderRow[]>();
+    const ordersById = new Map<string, OrderRow[]>();
+
+    ordersList.forEach((ord) => {
+      const cleanPhone = (ord.customerPhone || '').replace(/\s+/g, '');
+      const cleanName = (ord.customerName || '').trim().toLowerCase();
+      const custId = (ord as any).customerId;
+
+      if (cleanPhone) {
+        if (!ordersByPhone.has(cleanPhone)) ordersByPhone.set(cleanPhone, []);
+        ordersByPhone.get(cleanPhone)!.push(ord);
+      }
+      if (cleanName) {
+        if (!ordersByName.has(cleanName)) ordersByName.set(cleanName, []);
+        ordersByName.get(cleanName)!.push(ord);
+      }
+      if (custId) {
+        if (!ordersById.has(custId)) ordersById.set(custId, []);
+        ordersById.get(custId)!.push(ord);
+      }
+    });
+
+    const calculateOrderDebtAndSpent = (c: { id?: string; phone?: string; name?: string; debt?: number; totalSpent?: number }) => {
+      const cleanPhone = (c.phone || '').replace(/\s+/g, '');
+      const cleanName = (c.name || '').trim().toLowerCase();
+      const matchedOrdersSet = new Set<OrderRow>();
+
+      if (cleanPhone && ordersByPhone.has(cleanPhone)) {
+        ordersByPhone.get(cleanPhone)!.forEach((o) => matchedOrdersSet.add(o));
+      }
+      if (cleanName && ordersByName.has(cleanName)) {
+        ordersByName.get(cleanName)!.forEach((o) => matchedOrdersSet.add(o));
+      }
+      if (c.id && ordersById.has(c.id)) {
+        ordersById.get(c.id)!.forEach((o) => matchedOrdersSet.add(o));
+      }
+
+      const matchedOrders = Array.from(matchedOrdersSet);
+      if (matchedOrders.length === 0) {
+        return {
+          debt: Number(c.debt || 0),
+          totalSpent: Number(c.totalSpent || 0),
+          ordersCount: 0,
+        };
+      }
+
+      // Debt is calculated from non-cancelled, non-fully-paid orders
+      const orderDebt = matchedOrders.reduce((sum, o) => {
+        if (o.status === 'cancelled' || o.paymentStatus?.toLowerCase() === 'paid') return sum;
+        const val = Number(o.value) || 0;
+        const dep = Number(o.depositAmount) || 0;
+        return sum + Math.max(0, val - dep);
+      }, 0);
+
+      const orderSpent = matchedOrders.reduce((sum, o) => {
+        if (o.status === 'cancelled') return sum;
+        return sum + (Number(o.value) || 0);
+      }, 0);
+
+      return {
+        debt: orderDebt > 0 ? orderDebt : Number(c.debt || 0),
+        totalSpent: Math.max(Number(c.totalSpent || 0), orderSpent),
+        ordersCount: matchedOrders.length,
+      };
+    };
+
+    // 2. Map existing customers from customersList with accurate computed debt & spent
+    const list: AdminCustomer[] = customersList.map((c) => {
+      const { debt, totalSpent, ordersCount } = calculateOrderDebtAndSpent(c);
+      return {
+        ...c,
+        debt,
+        totalSpent,
+        totalOrders: ordersCount > 0 ? ordersCount : (c.totalOrders || c.ordersCount || 0),
+        ordersCount: ordersCount > 0 ? ordersCount : (c.ordersCount || c.totalOrders || 0),
+      };
+    });
+
+    // 3. Find any customers in ordersList who are not yet in customersList
+    const existingPhones = new Set(customersList.map((c) => (c.phone || '').replace(/\s+/g, '')));
+    const existingNames = new Set(customersList.map((c) => (c.name || '').trim().toLowerCase()));
 
     ordersList.forEach((ord) => {
       const cleanPhone = (ord.customerPhone || '').replace(/\s+/g, '');
@@ -171,19 +233,30 @@ export function CustomersTab({
         if (cleanPhone) existingPhones.add(cleanPhone);
         if (cleanName) existingNames.add(cleanName);
 
-        list.unshift({
+        const dummyCust = {
           id: (ord as any).customerId || `cust_${ord.id}`,
-          code: `KH-${(list.length + 1).toString().padStart(3, '0')}`,
-          name: ord.customerName || 'Khách hàng mới',
           phone: ord.customerPhone || '',
+          name: ord.customerName || 'Khách hàng mới',
+          debt: 0,
+          totalSpent: 0,
+        };
+        const { debt, totalSpent, ordersCount } = calculateOrderDebtAndSpent(dummyCust);
+
+        list.unshift({
+          id: dummyCust.id,
+          code: `KH-${(list.length + 1).toString().padStart(3, '0')}`,
+          name: dummyCust.name,
+          phone: dummyCust.phone,
           email: (ord as any).customerEmail || '',
           address: ord.customerAddress || (ord as any).shippingAddress || '',
           customerType: 'individual',
           status: 'active',
           branch: ord.branch || ord.showroom || '',
-          totalSpent: ord.value || 0,
-          debt: Math.max(0, (ord.value || 0) - (ord.depositAmount || 0)),
-          rewardPoints: Math.floor((ord.value || 0) / 1000000) * 10,
+          totalSpent,
+          debt,
+          totalOrders: ordersCount,
+          ordersCount,
+          rewardPoints: Math.floor(totalSpent / 1000000) * 10,
           createdAt: ord.orderDate || new Date().toLocaleDateString('vi-VN'),
         } as AdminCustomer);
       }
@@ -218,17 +291,21 @@ export function CustomersTab({
 
       let matchBranch = true;
       if (branchFilter && branchFilter !== 'all') {
-        const hasOrderInBranch = ordersList.some((o) => {
-          const isSameCustomer =
-            (c.phone && o.customerPhone && o.customerPhone.replace(/\s+/g, '') === c.phone.replace(/\s+/g, '')) ||
-            (c.name && o.customerName && o.customerName.trim().toLowerCase() === c.name.trim().toLowerCase()) ||
-            ((o as any).customerId && (o as any).customerId === c.id);
-          return isSameCustomer && isMatchBranch(o.branch || o.showroom, branchFilter);
-        });
-
-        const hasBranchDirect = isMatchBranch(c.branch || c.branchName || c.salesRep || c.address, branchFilter);
-
-        matchBranch = hasOrderInBranch || hasBranchDirect;
+        const custBranch = c.branch || c.branchName;
+        if (custBranch && custBranch !== 'Toàn hệ thống' && custBranch.toLowerCase() !== 'all') {
+          // Khách hàng đã gán chi nhánh cụ thể: bắt buộc phải khớp chi nhánh đang chọn
+          matchBranch = isMatchBranch(custBranch, branchFilter);
+        } else {
+          // Khách hàng toàn hệ thống hoặc chưa gán chi nhánh: kiểm tra có đơn hàng tại chi nhánh này không
+          const hasOrderInBranch = ordersList.some((o) => {
+            const isSameCustomer =
+              (c.phone && o.customerPhone && o.customerPhone.replace(/\s+/g, '') === c.phone.replace(/\s+/g, '')) ||
+              (c.name && o.customerName && o.customerName.trim().toLowerCase() === c.name.trim().toLowerCase()) ||
+              ((o as any).customerId && (o as any).customerId === c.id);
+            return isSameCustomer && isMatchBranch(o.branch || o.showroom, branchFilter);
+          });
+          matchBranch = hasOrderInBranch || custBranch === 'Toàn hệ thống';
+        }
       }
 
       return matchSearch && matchStatus && matchDebt && matchBranch;
@@ -589,20 +666,6 @@ export function CustomersTab({
           />
         </div>
 
-        {/* Quick Branch Select */}
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="text-xs font-semibold text-slate-700 whitespace-nowrap flex items-center gap-1">
-            <span className="material-symbols-outlined text-base text-[#784e34]">storefront</span>
-            Chi nhánh:
-          </span>
-          <Select
-            value={branchFilter}
-            onChange={(v) => setBranchFilter(v)}
-            className="w-56 h-10 [&_.ant-select-selector]:!h-10 [&_.ant-select-selector]:!flex [&_.ant-select-selector]:!items-center [&_.ant-select-selection-item]:!flex [&_.ant-select-selection-item]:!items-center font-medium"
-            options={branchFilterOptions}
-            placeholder="Chọn chi nhánh"
-          />
-        </div>
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2 flex-wrap">
@@ -707,19 +770,9 @@ export function CustomersTab({
             setCustomerSearchQuery('');
             setDebtFilter('all');
             setStatusFilter('all');
-            setBranchFilter('all');
+            setBranchFilter(selectedGlobalBranch || '');
           }}
         >
-          {/* Cơ sở / Chi nhánh */}
-          <div className="space-y-1.5">
-            <label className="font-semibold text-slate-600 text-xs uppercase tracking-wider block">Cơ sở / Chi nhánh</label>
-            <Select
-              value={branchFilter}
-              onChange={(v) => setBranchFilter(v)}
-              className="w-full text-sm"
-              options={branchFilterOptions}
-            />
-          </div>
 
           {/* Tình trạng công nợ */}
           <div className="space-y-1.5 pt-2 border-t border-slate-100">
@@ -850,21 +903,7 @@ export function CustomersTab({
                   </div>
                 ),
               },
-              {
-                title: 'Chi nhánh',
-                key: 'branch',
-                width: 170,
-                render: (_, r: AdminCustomer) => {
-                  const br = r.branch || r.branchName;
-                  return br ? (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium bg-amber-50 text-amber-900 border border-amber-200">
-                      📍 {br}
-                    </span>
-                  ) : (
-                    <span className="text-slate-400 text-xs italic">Toàn hệ thống</span>
-                  );
-                },
-              },
+
               {
                 title: 'Địa chỉ / Công trình',
                 dataIndex: 'address',
@@ -900,34 +939,16 @@ export function CustomersTab({
                 key: 'debt',
                 align: 'right',
                 width: 140,
-                render: (debt: number, r: AdminCustomer) => {
+                render: (debt: number) => {
                   const hasDebt = Number(debt || 0) > 0;
                   return (
-                    <div className="flex items-center justify-end gap-1">
-                      <span
-                        className={`font-mono font-semibold text-sm ${
-                          hasDebt ? 'text-rose-600 bg-rose-50 px-2 py-0.5 rounded' : 'text-slate-400'
-                        }`}
-                      >
-                        {hasDebt ? `${Number(debt).toLocaleString('vi-VN')} đ` : '0 đ'}
-                      </span>
-                      {hasDebt && (
-                        <Tooltip title="Thu tiền nợ ngay">
-                          <Button
-                            type="text"
-                            size="small"
-                            icon={<WalletOutlined className="text-rose-600 text-xs" />}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setCollectDebtCustomer(r);
-                              setCollectAmount(Number(r.debt || 0));
-                              setCollectNote(`Thu nợ đơn may đo KH ${r.code}`);
-                            }}
-                            className="w-6 h-6 flex items-center justify-center p-0 hover:bg-rose-100"
-                          />
-                        </Tooltip>
-                      )}
-                    </div>
+                    <span
+                      className={`font-mono font-semibold text-sm ${
+                        hasDebt ? 'text-rose-600 bg-rose-50 px-2 py-0.5 rounded' : 'text-slate-400'
+                      }`}
+                    >
+                      {hasDebt ? `${Number(debt).toLocaleString('vi-VN')} đ` : '0 đ'}
+                    </span>
                   );
                 },
               },
@@ -1004,7 +1025,7 @@ export function CustomersTab({
         }
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        styles={{ wrapper: { width: 720, maxWidth: '100vw' } }}
+        styles={{ wrapper: { width: 760, maxWidth: '100vw' } }}
         forceRender
         className="[&_.ant-drawer-header]:px-6 [&_.ant-drawer-header]:py-4 [&_.ant-drawer-header]:border-b [&_.ant-drawer-header]:border-slate-200 [&_.ant-drawer-body]:px-6 [&_.ant-drawer-body]:py-5 [&_.ant-drawer-footer]:px-6 [&_.ant-drawer-footer]:py-3 [&_.ant-drawer-footer]:border-t [&_.ant-drawer-footer]:border-slate-200"
         footer={
@@ -1598,16 +1619,6 @@ function CustomerExpandedDetailRow({
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2">
-          {totalCalculatedDebt > 0 && (
-            <Button
-              type="primary"
-              icon={<WalletOutlined />}
-              onClick={() => onCollectDebt(totalCalculatedDebt, `Thu nợ khách hàng ${customer.code}`)}
-              className="h-8 px-3 text-xs font-semibold rounded-lg bg-rose-600 hover:!bg-rose-700 text-white border-none shadow-xs flex items-center gap-1.5"
-            >
-              Thu nợ ({totalCalculatedDebt.toLocaleString('vi-VN')} đ)
-            </Button>
-          )}
           <Button
             icon={<EditOutlined />}
             onClick={onEdit}
@@ -1710,6 +1721,28 @@ function CustomerExpandedDetailRow({
               <span className="text-slate-400 block mb-0.5">Phong cách ưa thích:</span>
               <span className="font-medium text-[#784e34]">{customer.preferredStyle || '—'}</span>
             </div>
+
+            {/* Financial Metrics Summary Bar */}
+            <div className="lg:col-span-4 grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 bg-[#fbf8f5] border border-[#e8ded6] mt-1">
+              <div className="flex flex-col">
+                <span className="text-slate-500 text-[11px] font-medium">Tổng giá trị đơn hàng:</span>
+                <span className="text-sm font-mono font-bold text-[#5d371f]">
+                  {(Number(customer.totalSpent) || 0).toLocaleString('vi-VN')} đ
+                </span>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-slate-500 text-[11px] font-medium">Tổng tiền đã thu / tạm ứng:</span>
+                <span className="text-sm font-mono font-bold text-emerald-700">
+                  {Math.max(0, (Number(customer.totalSpent) || 0) - totalCalculatedDebt).toLocaleString('vi-VN')} đ
+                </span>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-slate-500 text-[11px] font-medium">Công nợ còn lại:</span>
+                <span className={`text-sm font-mono font-bold ${totalCalculatedDebt > 0 ? 'text-rose-600' : 'text-slate-600'}`}>
+                  {totalCalculatedDebt > 0 ? `${totalCalculatedDebt.toLocaleString('vi-VN')} đ` : '0 đ (Đã thanh toán đủ)'}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -1733,28 +1766,45 @@ function CustomerExpandedDetailRow({
                     <th className="py-2 px-3 font-medium text-center whitespace-nowrap">Số lượng</th>
                     <th className="py-2 px-3 font-medium text-right whitespace-nowrap">Tổng giá trị</th>
                     <th className="py-2 px-3 font-medium text-right whitespace-nowrap">Đã thanh toán</th>
+                    <th className="py-2 px-3 font-medium text-right whitespace-nowrap">Còn nợ</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {relatedOrders.map((ord) => (
-                    <tr key={ord.id} className="hover:bg-slate-50/50">
-                      <td className="py-2.5 px-3 font-mono font-medium text-[#784e34] whitespace-nowrap">{ord.orderCode}</td>
-                      <td className="py-2.5 px-3 font-mono text-slate-700 whitespace-nowrap">{ord.orderDate}</td>
-                      <td className="py-2.5 px-3">
-                        <div className="font-medium text-slate-900">{getCleanProductName(ord.productName)}</div>
-                        <div className="text-[11px] text-slate-500 mt-0.5">{ord.productSpec}</div>
-                      </td>
-                      <td className="py-2.5 px-3 text-center font-bold text-slate-900 whitespace-nowrap">
-                        {getOrderQuantity(ord)}
-                      </td>
-                      <td className="py-2.5 px-3 text-right font-mono font-medium text-slate-900 whitespace-nowrap">
-                        {(Number(ord.value) || 0).toLocaleString('vi-VN')} đ
-                      </td>
-                      <td className="py-2.5 px-3 text-right font-mono font-medium text-emerald-700 whitespace-nowrap">
-                        {(Number(ord.depositAmount) || 0).toLocaleString('vi-VN')} đ
-                      </td>
-                    </tr>
-                  ))}
+                  {relatedOrders.map((ord) => {
+                    const ordVal = Number(ord.value) || 0;
+                    const ordDep = Number(ord.depositAmount) || 0;
+                    const ordDebt = ord.status === 'cancelled' || ord.paymentStatus?.toLowerCase() === 'paid' ? 0 : Math.max(0, ordVal - ordDep);
+                    return (
+                      <tr key={ord.id} className="hover:bg-slate-50/50">
+                        <td className="py-2.5 px-3 font-mono font-medium text-[#784e34] whitespace-nowrap">{ord.orderCode}</td>
+                        <td className="py-2.5 px-3 font-mono text-slate-700 whitespace-nowrap">{ord.orderDate}</td>
+                        <td className="py-2.5 px-3">
+                          <div className="font-medium text-slate-900">{getCleanProductName(ord.productName)}</div>
+                          <div className="text-[11px] text-slate-500 mt-0.5">{ord.productSpec}</div>
+                        </td>
+                        <td className="py-2.5 px-3 text-center font-bold text-slate-900 whitespace-nowrap">
+                          {getOrderQuantity(ord)}
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono font-medium text-slate-900 whitespace-nowrap">
+                          {ordVal.toLocaleString('vi-VN')} đ
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono font-medium text-emerald-700 whitespace-nowrap">
+                          {ordDep.toLocaleString('vi-VN')} đ
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono font-medium whitespace-nowrap">
+                          {ordDebt > 0 ? (
+                            <span className="text-rose-600 bg-rose-50 px-2 py-0.5 rounded font-semibold">
+                              {ordDebt.toLocaleString('vi-VN')} đ
+                            </span>
+                          ) : (
+                            <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
+                              0 đ
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

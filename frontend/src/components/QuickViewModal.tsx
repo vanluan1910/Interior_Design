@@ -52,26 +52,33 @@ export default function QuickViewModal({
       }}
     >
       <div className="flex flex-col md:flex-row gap-6 pt-2">
-        {/* Product Image */}
+          {/* Product Image */}
         <div className="md:w-1/2 aspect-square rounded-none bg-[#eae1dd] overflow-hidden relative shadow-inner">
           <img
             alt={product.name}
             className={`w-full h-full object-cover ${isOutOfStock ? 'grayscale-[40%] opacity-80' : ''}`}
             src={product.image}
           />
-          {isOutOfStock ? (
-            <div className="absolute top-3 left-3">
-              <Tag color="#ba1a1a" className="px-3 py-1 rounded-none font-bold text-xs border-0 shadow text-white">
+          <div className="absolute top-3 left-3 flex flex-col gap-1 items-start z-10 pointer-events-none">
+            {isOutOfStock ? (
+              <Tag color="#ba1a1a" className="px-3 py-1 rounded-none font-bold text-xs border-0 shadow text-white m-0">
                 Hết hàng
               </Tag>
-            </div>
-          ) : product.tag ? (
-            <div className="absolute top-3 left-3">
-              <Tag color="#5d371f" className="px-3 py-1 rounded-none font-bold text-xs border-0 shadow">
-                {product.tag}
-              </Tag>
-            </div>
-          ) : null}
+            ) : (
+              <>
+                {product.originalPrice && product.originalPrice > product.price && (
+                  <span className="px-2.5 py-1 bg-[#ba1a1a] text-white font-bold text-xs shadow">
+                    -{product.discountPercent || Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)}%
+                  </span>
+                )}
+                {product.tag && (
+                  <Tag color="#5d371f" className="px-3 py-1 rounded-none font-bold text-xs border-0 shadow m-0">
+                    {product.tag}
+                  </Tag>
+                )}
+              </>
+            )}
+          </div>
 
           {isOutOfStock && (
             <div className="absolute inset-0 bg-black/20 flex items-center justify-center pointer-events-none">
@@ -105,10 +112,20 @@ export default function QuickViewModal({
               <span className="font-data-mono text-xs text-[#83746c] font-semibold">(42 đánh giá)</span>
             </div>
 
-            <div className="flex items-center gap-3 pt-1">
+            <div className="flex items-baseline gap-3 pt-1 flex-wrap">
               <span className="font-title-lg text-2xl text-[#5d371f] font-bold">
                 {formatPrice(product.price)}
               </span>
+              {product.originalPrice && product.originalPrice > product.price && (
+                <span className="text-base text-[#a89b93] line-through font-mono">
+                  {formatPrice(product.originalPrice)}
+                </span>
+              )}
+              {product.originalPrice && product.originalPrice > product.price && (
+                <span className="px-2 py-0.5 bg-red-600 text-white text-xs font-bold uppercase rounded-none shadow-sm">
+                  -{product.discountPercent || Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)}%
+                </span>
+              )}
             </div>
 
             <p className="font-body-sm text-xs sm:text-sm text-[#51443d] mt-1 leading-relaxed">

@@ -317,7 +317,10 @@ export function SettingsTab({
           companyName: companyInfo.companyName || (companyInfo as any).CompanyName || '',
           taxId: companyInfo.taxId || (companyInfo as any).TaxId || '',
           phone: companyInfo.phone || (companyInfo as any).Phone || '',
+          hotline: companyInfo.hotline || (companyInfo as any).Hotline || '',
           email: companyInfo.email || (companyInfo as any).Email || '',
+          website: companyInfo.website || (companyInfo as any).Website || '',
+          representative: companyInfo.representative || (companyInfo as any).Representative || '',
           headquarters: companyInfo.headquarters || (companyInfo as any).Headquarters || (companyInfo as any).address || '',
           logoUrl: companyInfo.logoUrl || (companyInfo as any).LogoUrl || null,
           status: (companyInfo.status ?? (companyInfo as any).Status) !== false,
@@ -370,11 +373,15 @@ export function SettingsTab({
 
   // Initial load from storage on mount
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem(ADMIN_STORAGE_KEYS.COMPANY_INFO);
-      localStorage.removeItem(ADMIN_STORAGE_KEYS.PAYMENT_SETTINGS);
-      localStorage.removeItem('domaco_pos_company_info');
-      localStorage.removeItem('domaco_pos_payment_settings');
+    const storedCompany = getStoredAdminData<AdminCompanyInfo | null>(ADMIN_STORAGE_KEYS.COMPANY_INFO, null);
+    if (storedCompany) {
+      setCompanyInfo(storedCompany);
+      companyForm.setFieldsValue(storedCompany);
+    }
+    const storedPayment = getStoredAdminData<any>(ADMIN_STORAGE_KEYS.PAYMENT_SETTINGS, null);
+    if (storedPayment) {
+      setPaymentSettings(storedPayment);
+      paymentForm.setFieldsValue(storedPayment);
     }
     setCurrentEmployees(getStoredAdminData(ADMIN_STORAGE_KEYS.EMPLOYEES, employeesList || INITIAL_EMPLOYEES));
   }, []);
@@ -1378,6 +1385,8 @@ export function SettingsTab({
       companyForm.submit();
     } else if (settingsActiveTab === 'payment') {
       paymentForm.submit();
+    } else if (settingsActiveTab === 'permissions') {
+      handleSavePermissions();
     } else {
       message.success('Cấu hình đã được đồng bộ!');
     }
@@ -1632,7 +1641,10 @@ export function SettingsTab({
                   companyName: companyInfo.companyName || '',
                   taxId: companyInfo.taxId || '',
                   phone: companyInfo.phone || '',
+                  hotline: companyInfo.hotline || '',
                   email: companyInfo.email || '',
+                  website: companyInfo.website || '',
+                  representative: companyInfo.representative || '',
                   headquarters: companyInfo.headquarters || '',
                   logoUrl: companyInfo.logoUrl || null,
                   status: companyInfo.status !== false,
@@ -1756,24 +1768,46 @@ export function SettingsTab({
                 {/* 3. THÔNG TIN LIÊN HỆ */}
                 <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs">
                   <div className="border-b border-slate-200 px-4 py-3.5 sm:px-6 sm:py-5">
-                    <h2 className="m-0 text-sm font-semibold text-slate-900">Thông tin liên hệ</h2>
+                    <h2 className="m-0 text-sm font-semibold text-slate-900">Thông tin liên hệ &amp; Pháp lý</h2>
                   </div>
                   <div className="px-4 py-4 sm:px-6 sm:py-5">
-                    <div className="grid grid-cols-1 gap-x-4 gap-y-1">
+                    <div className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
                       <Form.Item label="Email hỗ trợ" name="email">
                         <Input
+                          prefix={<MailOutlined className="text-slate-400 mr-1" />}
                           placeholder="Nhập email hỗ trợ"
                           className="h-9 sm:h-10 rounded-lg text-xs sm:text-sm"
                         />
                       </Form.Item>
-                      <Form.Item label="Địa chỉ trụ sở chính" name="headquarters">
-                        <Input.TextArea
-                          rows={3}
-                          placeholder="Nhập địa chỉ trụ sở chính"
-                          className="rounded-lg text-xs sm:text-sm"
+                      <Form.Item label="Hotline CSKH / Bán hàng" name="hotline">
+                        <Input
+                          prefix={<PhoneOutlined className="text-slate-400 mr-1" />}
+                          placeholder="VD: 0986.739.587"
+                          className="h-9 sm:h-10 rounded-lg text-xs sm:text-sm"
+                        />
+                      </Form.Item>
+                      <Form.Item label="Website thương hiệu" name="website">
+                        <Input
+                          prefix={<GlobalOutlined className="text-slate-400 mr-1" />}
+                          placeholder="VD: https://d2luxury.vn"
+                          className="h-9 sm:h-10 rounded-lg text-xs sm:text-sm"
+                        />
+                      </Form.Item>
+                      <Form.Item label="Người đại diện pháp luật" name="representative">
+                        <Input
+                          prefix={<UserOutlined className="text-slate-400 mr-1" />}
+                          placeholder="Nhập tên người đại diện"
+                          className="h-9 sm:h-10 rounded-lg text-xs sm:text-sm"
                         />
                       </Form.Item>
                     </div>
+                    <Form.Item label="Địa chỉ trụ sở chính" name="headquarters">
+                      <Input.TextArea
+                        rows={2}
+                        placeholder="Nhập địa chỉ trụ sở chính"
+                        className="rounded-lg text-xs sm:text-sm"
+                      />
+                    </Form.Item>
                   </div>
 
                   <div className="border-t border-slate-200">

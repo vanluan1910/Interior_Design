@@ -148,16 +148,16 @@ const DEFAULT_TEMPLATES_FALLBACK: Record<string, Partial<StoredPrintTemplate>> =
 export function getStoredCompanyInfo() {
   if (typeof window !== 'undefined') {
     try {
-      const saved = localStorage.getItem('d2_admin_company_info');
+      const saved = localStorage.getItem('interior_admin_company_info') || localStorage.getItem('d2_admin_company_info');
       if (saved) {
         const parsed = JSON.parse(saved);
         return {
-          brandName: parsed.brandName || parsed.BrandName || 'D2 LUXURY',
+          brandName: parsed.brandName || parsed.BrandName || parsed.companyName || 'D2 LUXURY',
           businessSector: parsed.businessSector || parsed.BusinessSector || 'NỘI THẤT GỖ TỰ NHIÊN',
           companyName: parsed.companyName || parsed.CompanyName || 'CÔNG TY CỔ PHẦN NỘI THẤT D2 LUXURY',
-          address: parsed.address || parsed.Address || 'Ngã 4 Cửa Cạn, đặc khu Phú Quốc, tỉnh An Giang',
+          address: parsed.headquarters || parsed.address || parsed.Address || 'Ngã 4 Cửa Cạn, đặc khu Phú Quốc, tỉnh An Giang',
           hotline: parsed.hotline || parsed.Hotline || parsed.phone || '0986.739.587 - 0985.166.393',
-          taxCode: parsed.taxCode || parsed.TaxCode || '0109887766',
+          taxCode: parsed.taxId || parsed.taxCode || parsed.TaxCode || '0109887766',
           email: parsed.email || parsed.Email || 'contact@d2luxury.vn',
           logoUrl: parsed.logoUrl || parsed.LogoUrl || '/logo.png',
         };
@@ -182,14 +182,14 @@ export function getStoredCompanyInfo() {
 export function getStoredBankPayment() {
   if (typeof window !== 'undefined') {
     try {
-      const saved = localStorage.getItem('d2_admin_payment_settings');
+      const saved = localStorage.getItem('interior_admin_payment_settings') || localStorage.getItem('d2_admin_payment_settings');
       if (saved) {
         const parsed = JSON.parse(saved);
         return {
           bankName: parsed.bankName || parsed.BankName || 'MBBank',
-          bankBranch: parsed.bankBranch || parsed.BankBranch || 'Hà Nội',
+          bankBranch: parsed.branchName || parsed.bankBranch || parsed.BankBranch || 'Hà Nội',
           accountNumber: parsed.accountNumber || parsed.AccountNumber || '0986739587',
-          accountHolder: parsed.accountHolder || parsed.AccountHolder || 'CTCP NOI THAT D2 LUXURY',
+          accountHolder: parsed.accountName || parsed.accountHolder || parsed.AccountHolder || 'CTCP NOI THAT D2 LUXURY',
         };
       }
     } catch {}

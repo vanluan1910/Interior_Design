@@ -123,7 +123,7 @@ export default function WishlistDrawer({ isOpen, onClose }: WishlistDrawerProps)
       closable={false}
       styles={{
         wrapper: {
-          width: 460,
+          width: 480,
           maxWidth: '100vw',
         },
         body: {
@@ -251,9 +251,21 @@ export default function WishlistDrawer({ isOpen, onClose }: WishlistDrawerProps)
 
                   <div className="mt-2 pt-2 border-t border-[#f5ece8] flex items-center justify-between gap-2">
                     <div>
-                      <span className="text-xs font-bold text-[#5d371f] font-data-mono block">
-                        {item.price.toLocaleString('vi-VN')}đ
-                      </span>
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-xs font-bold text-[#5d371f] font-data-mono block">
+                          {item.price.toLocaleString('vi-VN')}đ
+                        </span>
+                        {item.originalPrice && item.originalPrice > item.price && (
+                          <span className="text-[10px] text-[#a89b93] line-through font-data-mono">
+                            {item.originalPrice.toLocaleString('vi-VN')}đ
+                          </span>
+                        )}
+                      </div>
+                      {item.originalPrice && item.originalPrice > item.price && (
+                        <span className="text-[9px] font-bold text-red-600 block">
+                          -{item.discountPercent || Math.round(((item.originalPrice - item.price) / item.originalPrice) * 100)}%
+                        </span>
+                      )}
                     </div>
 
                     <button
