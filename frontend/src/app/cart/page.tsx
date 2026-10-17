@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { App, Tooltip } from 'antd';
 import {
@@ -8,7 +8,6 @@ import {
   DeleteOutlined,
   PlusOutlined,
   MinusOutlined,
-  CheckOutlined,
   ArrowRightOutlined,
   SafetyCertificateOutlined,
   FileProtectOutlined,
@@ -16,138 +15,95 @@ import {
   CustomerServiceOutlined,
   GiftOutlined,
   CarOutlined,
-  CloseOutlined,
   TagOutlined,
 } from '@ant-design/icons';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
-
-interface CartProductItem {
-  id: string;
-  sku: string;
-  name: string;
-  collection: string;
-  badge: string;
-  image: string;
-  price: number;
-  originalPrice: number;
-  quantity: number;
-  selected: boolean;
-  isFavorite: boolean;
-  specs: string[];
-  giftInfo?: string;
-}
-
-const INITIAL_CART_ITEMS: CartProductItem[] = [
-  {
-    id: 'sofa-kyoto-01',
-    sku: 'KYOTO-SF-01',
-    name: 'Sofa Góc Chữ L Gỗ Óc Chó Kyoto',
-    collection: 'Bộ sưu tập Kyoto 2025',
-    badge: '12% Nghệ nhân',
-    image:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuDQRsgCBkXk2ENFvYz1MIvU_LUcCG4-zF_TKp8yQCWu2qEXucWTkueS1S9rYlrjYAVmEdiu9vVFawmJ5igwK_qHnmxyyKsofyqVlCXuNphzYECqgVniDeVda96x74jNeCfJ-TT1q3XRvC44hrCcfeviKISqf9x1ybDmzEVo-mO56aOxr--k0fKaPXeeIQ-Vl8f_ebRuZZp3AKyfwnZ3gOad9HgP40QyVwfe6DwrQNzZoeKtQDjz03yc',
-    price: 38500000,
-    originalPrice: 44000000,
-    quantity: 1,
-    selected: true,
-    isFavorite: false,
-    specs: ['Gỗ óc chó Bắc Mỹ FAS', 'Đệm Linen Oatmeal Bỉ', 'Phân hướng: Góc Phải (R)'],
-    giftInfo: 'Tặng kèm: 2 gối tựa lông vũ Mộc Gia nguyên bản (Trị giá 1.800.000đ)',
-  },
-  {
-    id: 'ban-tra-nami-02',
-    sku: 'NAMI-TB-02',
-    name: 'Bàn Trà Tròn Đôi Mộc Gia',
-    collection: 'Bộ sưu tập Sóng Nami',
-    badge: 'Nami Series',
-    image:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuD1eUFJm5O0CveRHXEq2DjzxskTcpkaicfB3U-olNREZdP1oq_Ywvo6qgZTpo38bsQ9dnUi7K9obB-nrhixenuyfNAkUUUq8sPc22O3Wx4C6pyq5sjvvl5u--CAqkkt--92J156F7tBRMtMIE0gSk-dHtU_z5i7j-5GiPgULfNvWNKjmhzaM1masM2uHvVXw0gExIB4Qavij4W0lBuZgowrlLt_zg_JkO8yuYPu1ITMjGJZKR3A5m5S',
-    price: 11800000,
-    originalPrice: 14200000,
-    quantity: 1,
-    selected: true,
-    isFavorite: false,
-    specs: ['Gỗ sồi trắng Bắc Mỹ', 'Dầu mộc Osmo Đức', 'Đường kính D800 + D500mm', 'Vát bo 45° lượn sóng'],
-  },
-  {
-    id: 'ghe-asahi-03',
-    sku: 'ASAHI-CH-03',
-    name: 'Ghế Đơn Thư Giãn Asahi',
-    collection: 'Ghế bành thư giãn',
-    badge: 'Tuyệt phẩm mộc',
-    image:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuCeYxctmB1Dxdn8V4AgUwcZwDxyrTW-PD8eaXagufX9ZMRkovl0piwtfzujF_c3DEaI7p019YQuMg79N_yRabORZjBes6C9T6PjAY11rC9KS_dRcSz-AcMj9oH5tcZ8sgZDOR4j8OLTsw4GiVFQpbrSVI4fvH65cEp2ZPJKpylJXWLox37mmjjkS8FSNioYKRxa5MUYIvUXsOOS_7qA73gWeuK22kArdl6yXDvB7P-ZOSi8KDm3XpkK',
-    price: 15500000,
-    originalPrice: 18000000,
-    quantity: 1,
-    selected: true,
-    isFavorite: true,
-    specs: ['Khung gỗ sồi uốn mộng', 'Vải Bouclé lông cừu thô', 'Sấy chân không 45 ngày (ẩm 9-11%)'],
-  },
-];
-
-const CROSS_SELL_ITEMS = [
-  {
-    id: 'cross-kaze-tray',
-    sku: 'KAZE-TRY-01',
-    name: 'Khay Trà Thủ Công Kaze',
-    tag: 'Nguyên khối',
-    desc: 'Gỗ óc chó nguyên khối chạm sóng gợn nước, phủ dầu mộc kháng nước tự nhiên an toàn.',
-    price: 1250000,
-    originalPrice: 1500000,
-    image:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuD319-cDweyMPD8117ZPiMqCyLRDIU_L8eoEWbOmlGAO0veNA6SFRAP7QDBW0DmRRHvgfVTU4PtTYFquAI3Gz-yUmO5k07319MCPvmXkGDwBQjoUlUtuJwvwa7L48nhqCPgM_ywsa3I-6-U0_86qdSiHkbCLqjd3fm8U2_fhzVoEMXqp-aDwizfe6NZi4D07FauxxeILFdwAmk0BNQM8I6cFXKDKCOfWlU9vSeC84fYT-8zICtVGbxd',
-    specs: ['Gỗ óc chó FAS', 'Chạm khắc thủ công CNC'],
-  },
-  {
-    id: 'cross-lamp-oak',
-    sku: 'WABI-LMP-02',
-    name: 'Đèn Sàn Đứng Gỗ Sồi Wabi-Sabi',
-    tag: 'Ánh sáng ấm',
-    desc: 'Khung sồi uốn nhiệt thủ công kết hợp chao vải dệt thô mộc, ánh sáng dịu 2700K êm ái.',
-    price: 3450000,
-    originalPrice: 4200000,
-    image:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuCviooxRvRYw4GwA7NoVuVnLDUakrH09moQ95wkxLzq-WGjog-PQXCtIvEQWFYOcB6SM1qqVfruyt5JvX3E8kS_95WkEEcSnT3C4cFh4lHdqngh7J-jpsQrVJICp8PQ1dFWv7XXj3gPbIMgdx-P7ObvNyxJd3sdK7fUFVv7uG5aQY1EHQIjA89MdUmQ1O7rQ88euj1XDl34SBfklW_Te2H8dSoKRKzSKTqUmWqlGgVa2mAW20VV_P2I',
-    specs: ['Khung sồi tự nhiên', 'Chao vải dệt Linen'],
-  },
-  {
-    id: 'cross-osmo-oil',
-    sku: 'OSMO-KIT-03',
-    name: 'Bộ Tinh Dầu & Sáp Dưỡng Osmo',
-    tag: 'Chăm sóc mộc',
-    desc: 'Chiết xuất sáp Carnauba & dầu đậu nành tự nhiên giúp sớ gỗ thở và lưu giữ sắc óc chó.',
-    price: 650000,
-    originalPrice: 850000,
-    image:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuDZpZ9z1mTWf7auKg7SFK28u_7elE7ODom-yDBNr7FWhE-E0OI8OOWpbvK5NrimzdC-ZLj6j9wMFnCh-uNCCSMT-DpU45k52TouwoHc1HqAqqdjhMwLu_gU-JTggel2nRvpG8Ygs0zbMYzSmRbx46MtfgGViYOCAqy_VtD6sMAAcPezYPr57_W9nb60B33dWlWF29pjTDSIFFAXAjQ6_YmheZPcFlC8kLgIXhL86JEYFiNG-OG7s3rh',
-    specs: ['Sáp Carnauba Đức', 'Khăn cotton chuyên dụng'],
-  },
-];
-
-import { useCart, CartItemData } from '@/context/CartContext';
+import { useCart } from '@/context/CartContext';
+import { productApi, FeaturedCatalogProduct } from '@/api/productApi';
+import { getProductStockForBranch } from '@/utils/branchHelper';
 
 function CartContent() {
   const { modal, message } = App.useApp();
   const {
     cartItems,
     cartCount,
-    wishlistIds,
     wishlistCount,
     updateQuantity,
     removeFromCart,
     removeSelected,
     toggleItemSelect,
     toggleSelectAll,
-    toggleWishlist,
     addToCart,
   } = useCart();
+
+  const [catalogProducts, setCatalogProducts] = useState<FeaturedCatalogProduct[]>([]);
+  const [crossSellProducts, setCrossSellProducts] = useState<FeaturedCatalogProduct[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    productApi
+      .getProducts()
+      .then((res) => {
+        if (isMounted && res.length) {
+          setCatalogProducts(res);
+          setCrossSellProducts(res.slice(0, 3));
+        }
+      })
+      .catch(() => {
+        // Silent catch
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const [selectedBranch, setSelectedBranch] = useState<string>('');
+
+  useEffect(() => {
+    const saved = typeof window !== 'undefined'
+      ? (localStorage.getItem('d2_selected_branch') || localStorage.getItem('d2_customer_branch') || '')
+      : '';
+    if (saved && saved !== 'all') {
+      setSelectedBranch(saved);
+    }
+    const handleBranchChanged = (e: any) => {
+      const b = e.detail?.branch || e.detail?.branchName;
+      if (b && b !== 'all') {
+        setSelectedBranch(b);
+      }
+    };
+    window.addEventListener('customer_branch_changed', handleBranchChanged);
+    window.addEventListener('branch_changed', handleBranchChanged);
+    return () => {
+      window.removeEventListener('customer_branch_changed', handleBranchChanged);
+      window.removeEventListener('branch_changed', handleBranchChanged);
+    };
+  }, []);
+
+  // Helper to get available stock
+  const getItemAvailableStock = (item: { id: string; sku?: string; inStockQty?: number }) => {
+    const found = catalogProducts.find(
+      (p) => p.id === item.id || (p.code && item.sku && p.code.toLowerCase() === item.sku.toLowerCase())
+    );
+    if (found) {
+      return getProductStockForBranch(found, selectedBranch);
+    }
+    return item.inStockQty !== undefined ? item.inStockQty : 99;
+  };
+
+  // Check real-time stock
+  const isItemOutOfStock = (_item?: any) => false;
+  const isItemExceedingStock = (_item?: any) => false;
 
   // Toggle select all
   const allSelected = useMemo(() => {
     return cartItems.length > 0 && cartItems.every((item) => item.selected);
   }, [cartItems]);
+
+  const handleUpdateQuantity = (item: { id: string; name: string; quantity: number; sku?: string; inStockQty?: number }, delta: number) => {
+    updateQuantity(item.id, delta);
+  };
 
   const handleRemoveItem = (id: string, name: string) => {
     modal.confirm({
@@ -185,23 +141,29 @@ function CartContent() {
   };
 
   // Cross-sell quick add
-  const handleAddCrossSell = (item: (typeof CROSS_SELL_ITEMS)[0]) => {
-    addToCart({
-      id: item.id,
-      sku: item.sku,
-      name: item.name,
-      collection: 'Phụ kiện bổ trợ mộc',
-      badge: item.tag,
-      image: item.image,
-      price: item.price,
-      originalPrice: item.originalPrice,
-      specs: item.specs,
-    }, 1);
+  const handleAddCrossSell = (item: FeaturedCatalogProduct) => {
+    addToCart(
+      {
+        id: item.id,
+        sku: item.code || item.id,
+        name: item.name,
+        collection: item.categoryName || 'Nội thất Mộc Gia',
+        badge: '',
+        image: item.image,
+        price: item.price,
+        specs: [item.material || item.metaInfo, item.dimensions].filter(Boolean) as string[],
+        inStockQty: item.inStockQty || (typeof item.inStock === 'number' ? item.inStock : 99),
+      },
+      1
+    );
     message.success(`Đã thêm "${item.name}" vào giỏ hàng!`);
   };
 
   // Financial Calculations
   const selectedItems = useMemo(() => cartItems.filter((i) => i.selected), [cartItems]);
+  const hasOutOfStockSelected = false;
+  const hasExceededStockSelected = false;
+  const hasInvalidSelected = false;
 
   const subtotal = useMemo(() => {
     return selectedItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
@@ -210,10 +172,6 @@ function CartContent() {
   const finalTotal = useMemo(() => {
     return Math.max(0, subtotal);
   }, [subtotal]);
-
-  const monthlyInstallment = useMemo(() => {
-    return finalTotal > 0 ? Math.round(finalTotal / 12) : 0;
-  }, [finalTotal]);
 
   return (
     <div className="min-h-screen flex flex-col bg-[#fff8f5] text-[#1f1b19] font-body-md selection:bg-[#ffdbc8] selection:text-[#311301]">
@@ -228,7 +186,7 @@ function CartContent() {
       <main className="w-full pt-20 flex-1">
         {/* Top Breadcrumb & Spatial Status Bar */}
         <section className="w-full bg-[#fbf2ee] py-3.5 border-b border-[#eae1dd]">
-          <div className="w-full max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs font-medium text-[#83746c]">
+          <div className="w-full max-w-[1720px] mx-auto px-4 sm:px-6 lg:px-10 xl:px-14 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs font-medium text-[#83746c]">
             <nav aria-label="Breadcrumb" className="flex items-center gap-2 flex-wrap text-xs font-medium text-[#83746c]">
               <Link href="/" className="hover:text-[#5d371f] transition-colors">
                 Trang chủ
@@ -251,7 +209,7 @@ function CartContent() {
         </section>
 
         {/* Main Architecture Grid: 8 Cols Cart / 4 Cols Summary */}
-        <section className="max-w-7xl mx-auto w-full px-4 sm:px-8 lg:px-12 py-6">
+        <section className="max-w-[1720px] mx-auto w-full px-4 sm:px-6 lg:px-10 xl:px-14 py-6">
           {cartItems.length === 0 ? (
             /* Empty Cart State */
             <div className="bg-white border border-[#eae1dd] p-12 text-center my-8 shadow-sm">
@@ -260,7 +218,7 @@ function CartContent() {
               </div>
               <h3 className="font-serif text-2xl font-bold text-[#1f1b19] mb-2">Giỏ hàng của bạn đang trống</h3>
               <p className="text-sm text-[#83746c] max-w-md mx-auto mb-6">
-                Hãy khám phá các tuyệt tác nội thất gỗ tự nhiên mộng truyền thống từ Bộ sưu tập D2 LUXURY 2025.
+                Hãy khám phá các tuyệt tác nội thất gỗ tự nhiên mộng truyền thống từ Bộ sưu tập D2 LUXURY.
               </p>
               <Link
                 href="/products"
@@ -299,119 +257,147 @@ function CartContent() {
                 </div>
 
                 {/* Product Items List */}
-                {cartItems.map((item) => (
-                  <article
-                    key={item.id}
-                    className="bg-[#ffffff] border border-[#eae1dd] p-6 flex flex-col gap-5 shadow-sm transition-all hover:border-[#5d371f]/40 hover-lift"
-                  >
-                    <div className="flex flex-col sm:flex-row gap-5">
-                      <div className="flex items-start gap-3">
-                        <input
-                          checked={item.selected}
-                          onChange={() => toggleItemSelect(item.id)}
-                          type="checkbox"
-                          className="w-4 h-4 mt-2 rounded-none accent-[#5d371f] text-[#5d371f] cursor-pointer shrink-0"
-                        />
-                        <div className="w-32 h-32 sm:w-40 sm:h-40 bg-[#f5ece8] overflow-hidden shrink-0 relative border border-[#eae1dd]">
-                          <img
-                            src={item.image}
-                            alt={item.name}
-                            className="w-full h-full object-cover"
+                {cartItems.map((item) => {
+                  const outOfStock = isItemOutOfStock(item);
+                  return (
+                    <article
+                      key={item.id}
+                      className={`bg-[#ffffff] border p-6 flex flex-col gap-5 shadow-sm transition-all hover-lift ${
+                        outOfStock ? 'border-[#ba1a1a]/40 bg-[#fff5f5]/30' : 'border-[#eae1dd] hover:border-[#5d371f]/40'
+                      }`}
+                    >
+                      <div className="flex flex-col sm:flex-row gap-5">
+                        <div className="flex items-start gap-3">
+                          <input
+                            checked={item.selected}
+                            onChange={() => toggleItemSelect(item.id)}
+                            type="checkbox"
+                            className="w-4 h-4 mt-2 rounded-none accent-[#5d371f] text-[#5d371f] cursor-pointer shrink-0"
                           />
-                          <span className="absolute top-2 left-2 bg-[#784e34] text-white text-[10px] font-bold px-2 py-0.5 shadow-sm">
-                            {item.badge}
-                          </span>
+                          <div className="w-32 h-32 sm:w-40 sm:h-40 bg-[#f5ece8] overflow-hidden shrink-0 relative border border-[#eae1dd]">
+                            <img
+                              src={item.image}
+                              alt={item.name}
+                              className={`w-full h-full object-cover ${outOfStock ? 'grayscale-[40%] opacity-80' : ''}`}
+                            />
+                            {outOfStock && (
+                              <div className="absolute inset-0 bg-black/25 flex items-center justify-center pointer-events-none">
+                                <span className="px-2 py-0.5 bg-[#ba1a1a] text-white text-[11px] font-bold uppercase tracking-wider shadow-md">
+                                  Hết hàng
+                                </span>
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
 
-                      <div className="flex-1 flex flex-col justify-between">
-                        <div>
-                          <div className="flex items-start justify-between gap-4">
-                            <div>
-                              <span className="text-xs text-[#3f4332] font-semibold block">
-                                {item.collection}
-                              </span>
-                              <Link
-                                href={`/products/${item.id}`}
-                                className="font-serif text-lg sm:text-xl font-bold text-[#1f1b19] mt-0.5 hover:text-[#5d371f] transition-colors block"
-                              >
-                                {item.name}
-                              </Link>
-                            </div>
-
-                            <div className="flex items-center gap-2">
-                              <Tooltip title="Bỏ sản phẩm">
-                                <button
-                                  onClick={() => handleRemoveItem(item.id, item.name)}
-                                  type="button"
-                                  className="text-[#83746c] hover:text-[#ba1a1a] transition-colors p-1 cursor-pointer"
+                        <div className="flex-1 flex flex-col justify-between">
+                          <div>
+                            <div className="flex items-start justify-between gap-4">
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs text-[#3f4332] font-semibold block">
+                                    {item.collection}
+                                  </span>
+                                  {outOfStock && (
+                                    <span className="px-2 py-0.5 bg-[#ffdad6] text-[#ba1a1a] font-bold text-[10px] uppercase">
+                                      Tạm hết hàng
+                                    </span>
+                                  )}
+                                </div>
+                                <Link
+                                  href={`/products/${item.id}`}
+                                  className="font-serif text-lg sm:text-xl font-bold text-[#1f1b19] mt-0.5 hover:text-[#5d371f] transition-colors block"
                                 >
-                                  <DeleteOutlined className="text-lg" />
-                                </button>
-                              </Tooltip>
+                                  {item.name}
+                                </Link>
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <Tooltip title="Bỏ sản phẩm">
+                                  <button
+                                    onClick={() => handleRemoveItem(item.id, item.name)}
+                                    type="button"
+                                    className="text-[#83746c] hover:text-[#ba1a1a] transition-colors p-1 cursor-pointer"
+                                  >
+                                    <DeleteOutlined className="text-lg" />
+                                  </button>
+                                </Tooltip>
+                              </div>
                             </div>
-                          </div>
 
-                          {/* Material & Spec Tags */}
-                          <div className="mt-3 flex flex-wrap gap-1.5 text-xs text-[#51443d]">
-                            {item.specs.map((sp, idx) => (
-                              <span
-                                key={idx}
-                                className="bg-[#f5ece8] border border-[#eae1dd] px-2.5 py-1 text-[11px] font-medium"
-                              >
-                                {sp}
-                              </span>
-                            ))}
-                          </div>
+                            {/* Material & Spec Tags */}
+                            {item.specs && item.specs.length > 0 && (
+                              <div className="mt-3 flex flex-wrap gap-1.5 text-xs text-[#51443d]">
+                                {item.specs.map((sp, idx) => (
+                                  <span
+                                    key={idx}
+                                    className="bg-[#f5ece8] border border-[#eae1dd] px-2.5 py-1 text-[11px] font-medium"
+                                  >
+                                    {sp}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
 
-                          {/* Gift Addon info if available */}
-                          {item.giftInfo && (
-                            <div className="mt-2.5 flex items-center gap-2 text-xs text-[#5d371f] font-semibold bg-[#fff8f5] p-2 border border-[#fcc2a1]/60">
-                              <GiftOutlined className="text-[#5d371f]" />
-                              <span>{item.giftInfo}</span>
-                            </div>
-                          )}
-                        </div>
+                            {outOfStock && (
+                              <div className="mt-2.5 p-2 bg-[#ffdad6]/40 border border-[#ffdad6] text-xs text-[#ba1a1a] font-semibold flex items-center gap-1.5">
+                                <span>⚠️ Sản phẩm hiện đã hết hàng trong kho. Vui lòng bỏ chọn hoặc xóa khỏi giỏ để thanh toán các sản phẩm khác.</span>
+                              </div>
+                            )}
 
-                        {/* Price & Quantity Controls */}
-                        <div className="mt-5 flex items-center justify-between pt-3 border-t border-[#eae1dd] bg-[#fbf2ee] px-4 py-2.5">
-                          <div className="flex items-baseline gap-2">
-                            <span className="text-base sm:text-lg font-bold text-[#5d371f] font-data-mono">
-                              {item.price.toLocaleString('vi-VN')}đ
-                            </span>
-                            {item.originalPrice > item.price && (
-                              <span className="text-xs text-[#83746c] line-through font-data-mono">
-                                {item.originalPrice.toLocaleString('vi-VN')}đ
-                              </span>
+                            {!outOfStock && isItemExceedingStock(item) && (
+                              <div className="mt-2.5 p-2 bg-[#fff3cd] border border-[#ffeeba] text-xs text-[#856404] font-semibold flex items-center gap-1.5">
+                                <span>⚠️ Bạn đang chọn {item.quantity} sản phẩm nhưng kho chỉ còn {getItemAvailableStock(item)} sản phẩm. Vui lòng giảm số lượng.</span>
+                              </div>
+                            )}
+
+                            {/* Gift Addon info if available */}
+                            {item.giftInfo && (
+                              <div className="mt-2.5 flex items-center gap-2 text-xs text-[#5d371f] font-semibold bg-[#fff8f5] p-2 border border-[#fcc2a1]/60">
+                                <GiftOutlined className="text-[#5d371f]" />
+                                <span>{item.giftInfo}</span>
+                              </div>
                             )}
                           </div>
 
-                          {/* Quantity Counter */}
-                          <div className="flex items-center bg-white border border-[#eae1dd] p-0.5 shadow-sm">
-                            <button
-                              onClick={() => updateQuantity(item.id, -1)}
-                              disabled={item.quantity <= 1}
-                              type="button"
-                              className="w-7 h-7 flex items-center justify-center text-[#51443d] hover:bg-[#f5ece8] disabled:opacity-40 cursor-pointer"
-                            >
-                              <MinusOutlined className="text-xs" />
-                            </button>
-                            <span className="w-8 text-center font-data-mono text-xs font-bold text-[#1f1b19]">
-                              {item.quantity}
-                            </span>
-                            <button
-                              onClick={() => updateQuantity(item.id, 1)}
-                              type="button"
-                              className="w-7 h-7 flex items-center justify-center text-[#51443d] hover:bg-[#f5ece8] cursor-pointer"
-                            >
-                              <PlusOutlined className="text-xs" />
-                            </button>
+                          {/* Price & Quantity Controls */}
+                          <div className="mt-5 flex items-center justify-between pt-3 border-t border-[#eae1dd] bg-[#fbf2ee] px-4 py-2.5">
+                            <div className="flex items-baseline gap-2">
+                              <span className="text-base sm:text-lg font-bold text-[#5d371f] font-data-mono">
+                                {item.price.toLocaleString('vi-VN')}đ
+                              </span>
+                            </div>
+
+                            {/* Quantity Counter */}
+                            <div className="flex items-center gap-2">
+                              <div className="flex items-center bg-white border border-[#eae1dd] p-0.5 shadow-sm">
+                                <button
+                                  onClick={() => handleUpdateQuantity(item, -1)}
+                                  disabled={item.quantity <= 1}
+                                  type="button"
+                                  className="w-7 h-7 flex items-center justify-center text-[#51443d] hover:bg-[#f5ece8] disabled:opacity-40 cursor-pointer"
+                                >
+                                  <MinusOutlined className="text-xs" />
+                                </button>
+                                <span className="w-8 text-center font-data-mono text-xs font-bold text-[#1f1b19]">
+                                  {item.quantity}
+                                </span>
+                                <button
+                                  onClick={() => handleUpdateQuantity(item, 1)}
+                                  type="button"
+                                  className="w-7 h-7 flex items-center justify-center text-[#51443d] hover:bg-[#f5ece8] cursor-pointer"
+                                  title="Tăng số lượng"
+                                >
+                                  <PlusOutlined className="text-xs" />
+                                </button>
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  </article>
-                ))}
+                    </article>
+                  );
+                })}
 
                 {/* White-glove Logistics Notice */}
                 <div className="bg-[#fbf2ee] border border-[#eae1dd] p-5 flex items-start gap-4 shadow-sm">
@@ -486,14 +472,20 @@ function CartContent() {
                   {/* CTA Buttons */}
                   <div className="flex flex-col gap-3">
                     <Link
-                      href="/checkout"
-                      style={{ backgroundColor: '#5d371f', color: '#ffffff' }}
-                      className={`w-full !bg-[#5d371f] !text-white py-3.5 px-6 font-semibold text-sm hover:!bg-[#784e34] transition-all flex items-center justify-center gap-2 shadow-md cursor-pointer hover-lift ${
-                        selectedItems.length === 0 ? 'pointer-events-none opacity-50' : ''
+                      href={selectedItems.length === 0 ? '#' : '/checkout'}
+                      style={
+                        selectedItems.length === 0
+                          ? { backgroundColor: '#eae1dd', color: '#83746c' }
+                          : { backgroundColor: '#5d371f', color: '#ffffff' }
+                      }
+                      className={`w-full py-3.5 px-6 font-semibold text-sm transition-all flex items-center justify-center gap-2 shadow-md ${
+                        selectedItems.length === 0
+                          ? 'cursor-not-allowed opacity-60 pointer-events-none'
+                          : '!bg-[#5d371f] !text-white hover:!bg-[#784e34] cursor-pointer hover-lift'
                       }`}
                     >
-                      <span className="!text-white font-bold">Tiến hành đặt hàng &amp; Giữ phôi gỗ</span>
-                      <ArrowRightOutlined className="text-sm !text-white" />
+                      <span className="font-bold">Tiến hành đặt hàng &amp; Giữ phôi gỗ</span>
+                      <ArrowRightOutlined className="text-sm" />
                     </Link>
 
                     <Link
@@ -525,11 +517,7 @@ function CartContent() {
                     <div className="flex items-start gap-3">
                       <CreditCardOutlined className="text-[#5d371f] text-base shrink-0 mt-0.5" />
                       <p className="text-xs text-[#51443d] leading-snug">
-                        <strong>Trả góp 0% linh hoạt</strong> qua thẻ tín dụng chỉ từ{' '}
-                        <span className="font-data-mono font-bold text-[#1f1b19]">
-                          {monthlyInstallment.toLocaleString('vi-VN')}đ/tháng
-                        </span>
-                        .
+                        <strong>Bảo hành kết cấu 5 năm</strong> &amp; bảo dưỡng đánh sáp tự nhiên định kỳ miễn phí tại nhà.
                       </p>
                     </div>
                   </div>
@@ -541,10 +529,10 @@ function CartContent() {
                       <p className="text-xs text-[#1f1b19] font-bold">Cần tư vấn phối cảnh 3D?</p>
                       <p className="text-[11px] text-[#83746c]">KTS D2 LUXURY hỗ trợ trực tiếp (08:00 - 22:00)</p>
                       <a
-                        href="tel:19008922"
+                        href="tel:0967323335"
                         className="font-serif text-base font-bold text-[#5d371f] tracking-tight block mt-0.5"
                       >
-                        1900 8922
+                        0967 323 335
                       </a>
                     </div>
                   </div>
@@ -555,68 +543,87 @@ function CartContent() {
         </section>
 
         {/* Cross-sell Gallery Section: Complete the Living Space */}
-        <section className="max-w-7xl mx-auto w-full px-4 sm:px-8 lg:px-12 pt-16 pb-12">
-          <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
-            <div>
-              <span className="text-xs text-[#5d371f] font-semibold block">
-                Bản Giao Hưởng Không Gian
-              </span>
-              <h2 className="font-serif text-2xl sm:text-3xl font-bold text-[#1f1b19] mt-1">
-                Hoàn Thiện Không Gian Cùng Sofa &amp; Bàn Trà Của Bạn
-              </h2>
-            </div>
-            <Link
-              href="/products"
-              className="inline-flex items-center gap-1 text-xs text-[#5d371f] hover:text-[#784e34] transition-colors font-semibold"
-            >
-              <span>Xem toàn bộ phụ kiện</span>
-              <RightOutlined className="text-[10px]" />
-            </Link>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {CROSS_SELL_ITEMS.map((item) => (
-              <div
-                key={item.id}
-                className="bg-[#ffffff] border border-[#eae1dd] overflow-hidden flex flex-col justify-between group hover:border-[#5d371f]/50 transition-all shadow-sm hover-lift"
-              >
-                <div className="aspect-[4/3] bg-[#f5ece8] overflow-hidden relative">
-                  <img
-                    src={item.image}
-                    alt={item.name}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                  />
-                  <div className="absolute top-3 right-3 bg-white/90 backdrop-blur px-2.5 py-1 text-[10px] font-bold text-[#1f1b19] border border-[#eae1dd]">
-                    {item.tag}
-                  </div>
-                </div>
-
-                <div className="p-5 flex flex-col gap-3">
-                  <div>
-                    <h3 className="font-serif text-base font-bold text-[#1f1b19]">{item.name}</h3>
-                    <p className="text-xs text-[#83746c] mt-1 leading-relaxed line-clamp-2">
-                      {item.desc}
-                    </p>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-2 border-t border-[#eae1dd]">
-                    <span className="font-data-mono text-sm font-bold text-[#5d371f]">
-                      {item.price.toLocaleString('vi-VN')}đ
-                    </span>
-                    <button
-                      onClick={() => handleAddCrossSell(item)}
-                      type="button"
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-[#f5ece8] border border-[#eae1dd] text-[#1f1b19] hover:bg-[#5d371f] hover:text-white transition-colors text-xs font-semibold cursor-pointer"
-                    >
-                      <PlusOutlined className="text-[10px]" />
-                      <span>Thêm nhanh</span>
-                    </button>
-                  </div>
-                </div>
+        {crossSellProducts.length > 0 && (
+          <section className="max-w-7xl mx-auto w-full px-4 sm:px-8 lg:px-12 pt-16 pb-12">
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
+              <div>
+                <span className="text-xs text-[#5d371f] font-semibold block">
+                  Bản Giao Hưởng Không Gian
+                </span>
+                <h2 className="font-serif text-2xl sm:text-3xl font-bold text-[#1f1b19] mt-1">
+                  Gợi Ý Tác Phẩm Phù Hợp Không Gian Của Bạn
+                </h2>
               </div>
-            ))}
-          </div>
-        </section>
+              <Link
+                href="/products"
+                className="inline-flex items-center gap-1 text-xs text-[#5d371f] hover:text-[#784e34] transition-colors font-semibold"
+              >
+                <span>Xem toàn bộ bộ sưu tập</span>
+                <RightOutlined className="text-[10px]" />
+              </Link>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {crossSellProducts.map((item) => {
+                const isCrossOut = item.stockType === 'out_of_stock' || (item.inStockQty !== undefined && item.inStockQty <= 0);
+                return (
+                  <div
+                    key={item.id}
+                    className="bg-[#ffffff] border border-[#eae1dd] overflow-hidden flex flex-col justify-between group hover:border-[#5d371f]/50 transition-all shadow-sm hover-lift"
+                  >
+                    <Link href={`/products/${item.id}`} className="aspect-[4/3] bg-[#f5ece8] overflow-hidden relative block">
+                      <img
+                        src={item.image}
+                        alt={item.name}
+                        className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ${
+                          isCrossOut ? 'grayscale-[40%] opacity-80' : ''
+                        }`}
+                      />
+                      <div className="absolute top-3 right-3 bg-white/90 backdrop-blur px-2.5 py-1 text-[10px] font-bold text-[#1f1b19] border border-[#eae1dd]">
+                        {item.categoryName || 'D2 LUXURY'}
+                      </div>
+                      {isCrossOut && (
+                        <div className="absolute top-3 left-3 bg-[#ba1a1a] text-white text-[10px] font-bold px-2 py-0.5">
+                          Hết hàng
+                        </div>
+                      )}
+                    </Link>
+
+                    <div className="p-5 flex flex-col gap-3">
+                      <div>
+                        <Link href={`/products/${item.id}`} className="font-serif text-base font-bold text-[#1f1b19] hover:text-[#5d371f] transition-colors">
+                          {item.name}
+                        </Link>
+                        <p className="text-xs text-[#83746c] mt-1 leading-relaxed line-clamp-2">
+                          {item.material || item.metaInfo} {item.dimensions ? `· ${item.dimensions}` : ''}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-2 border-t border-[#eae1dd]">
+                        <span className="font-data-mono text-sm font-bold text-[#5d371f]">
+                          {item.price.toLocaleString('vi-VN')}đ
+                        </span>
+                        <button
+                          onClick={() => handleAddCrossSell(item)}
+                          disabled={isCrossOut}
+                          type="button"
+                          className={`flex items-center gap-1.5 px-3 py-1.5 border text-xs font-semibold transition-colors ${
+                            isCrossOut
+                              ? 'bg-[#eae1dd] text-[#83746c] border-[#eae1dd] cursor-not-allowed'
+                              : 'bg-[#f5ece8] border-[#eae1dd] text-[#1f1b19] hover:bg-[#5d371f] hover:text-white cursor-pointer'
+                          }`}
+                        >
+                          <PlusOutlined className="text-[10px]" />
+                          <span>{isCrossOut ? 'Hết hàng' : 'Thêm nhanh'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
       </main>
 
       {/* Global Footer */}

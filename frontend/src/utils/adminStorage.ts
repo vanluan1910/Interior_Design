@@ -12,9 +12,14 @@ export const ADMIN_STORAGE_KEYS = {
   BRANCHES: 'interior_admin_branches',
   UOMS: 'interior_admin_uoms',
   CATEGORIES: 'interior_admin_categories',
+  SPACES: 'interior_admin_spaces',
   WAREHOUSES: 'interior_admin_warehouses',
+  STOCK_IMPORTS: 'interior_admin_stock_imports',
+  SUPPLIER_RETURNS: 'interior_admin_supplier_returns',
+  STOCK_AUDITS: 'interior_admin_stock_audits',
   COMPANY_INFO: 'interior_admin_company_info',
   PAYMENT_SETTINGS: 'interior_admin_payment_settings',
+  SELECTED_BRANCH: 'interior_admin_selected_branch',
 } as const;
 
 export function getStoredAdminData<T>(key: string, defaultValue: T): T {

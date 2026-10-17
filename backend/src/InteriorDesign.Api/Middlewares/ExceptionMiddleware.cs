@@ -23,6 +23,19 @@ public sealed class ExceptionMiddleware(RequestDelegate next, ILogger<ExceptionM
             var response = ApiResponse<object>.Fail("Dữ liệu đầu vào không hợp lệ.", errors);
             await context.Response.WriteAsync(JsonSerializer.Serialize(response));
         }
+        catch (Exception ex) when (ex is OperationCanceledException ||
+            context.RequestAborted.IsCancellationRequested ||
+            (ex is InvalidOperationException && ex.Message.Contains("The connection is closed", StringComparison.OrdinalIgnoreCase)))
+        {
+            logger.LogInformation("Request cancelled or connection closed: {Message}", ex.Message);
+            if (!context.Response.HasStarted)
+            {
+                context.Response.StatusCode = 499;
+                context.Response.ContentType = "application/json";
+                var response = ApiResponse<object>.Fail("Yêu cầu đã bị hủy hoặc kết nối đã đóng.");
+                await context.Response.WriteAsync(JsonSerializer.Serialize(response));
+            }
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "An unhandled exception occurred.");

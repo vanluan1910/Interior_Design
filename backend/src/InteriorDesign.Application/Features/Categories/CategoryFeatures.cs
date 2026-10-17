@@ -90,7 +90,8 @@ public sealed class UpdateCategoryCommandHandler(IInteriorRepository repo)
         existing.Icon = req.Icon ?? existing.Icon;
         existing.Space = req.Space ?? existing.Space;
         existing.DisplayOrder = req.DisplayOrder;
-        existing.IsActive = req.IsActive;
+        existing.Status = string.IsNullOrWhiteSpace(req.Status) ? existing.Status : req.Status;
+        existing.IsActive = existing.Status != "hidden";
 
         var updated = await repo.UpdateCategoryAsync(existing, cancellationToken);
         return ApiResponse<CategoryDto>.Ok(CategoryMapper.ToDto(updated!), "Cập nhật danh mục thành công.");

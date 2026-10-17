@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { App, Modal, Tooltip } from 'antd';
 import {
   RightOutlined,
@@ -23,20 +23,149 @@ import {
 } from '@ant-design/icons';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
-import { useCart } from '@/context/CartContext';
+import { useCart, CartItemData } from '@/context/CartContext';
+import { useAuth } from '@/context/AuthContext';
 import { VIETNAM_PROVINCES } from '@/data/vietnamAddresses';
+import { orderApi } from '@/api/orderApi';
+import { branchApi } from '@/api/branchApi';
+import { productApi, FeaturedCatalogProduct } from '@/api/productApi';
+import { settingsApi, PaymentConfigData } from '@/api/settingsApi';
+import { getBankBin } from '@/components/common/VietQrCard';
+import { AdminBranch } from '@/types/admin';
+import { ADMIN_STORAGE_KEYS, getStoredAdminData, setStoredAdminData } from '@/utils/adminStorage';
+import { getProductStockForBranch } from '@/utils/branchHelper';
 
 function CheckoutContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const isDirectMode = searchParams.get('direct') === '1';
+
   const { message, modal } = App.useApp();
+  const { user } = useAuth();
   const { cartItems, cartCount, updateQuantity, removeFromCart, clearCart } = useCart();
 
-  // Filter items in cart
+  const [mounted, setMounted] = useState(false);
+
+  // Direct checkout items (When clicking "Mua ngay", does not affect shopping cart)
+  const [directItems, setDirectItems] = useState<CartItemData[]>([]);
+
+  useEffect(() => {
+    setMounted(true);
+    if (isDirectMode && typeof window !== 'undefined') {
+      try {
+        const stored = sessionStorage.getItem('d2_direct_checkout_item');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setDirectItems(parsed);
+          }
+        }
+      } catch (e) {
+        console.warn('Could not parse direct checkout items', e);
+      }
+    }
+  }, [isDirectMode]);
+
+  // Real-time catalog products for stock validation
+  const [catalogProducts, setCatalogProducts] = useState<FeaturedCatalogProduct[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    productApi
+      .getProducts()
+      .then((res) => {
+        if (isMounted && res.length) {
+          setCatalogProducts(res);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Payment configuration from Admin Settings
+  const [paymentConfig, setPaymentConfig] = useState<PaymentConfigData | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    settingsApi
+      .getPaymentConfig()
+      .then((res) => {
+        if (isMounted && res) {
+          setPaymentConfig(res);
+        }
+      })
+      .catch((err) => {
+        console.warn('Could not load payment config from API:', err);
+        const stored = getStoredAdminData<any>(ADMIN_STORAGE_KEYS.PAYMENT_SETTINGS, null);
+        if (isMounted && stored) {
+          setPaymentConfig(stored);
+        }
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const getItemAvailableStock = (item: { id: string; sku?: string; inStockQty?: number }) => {
+    const found = catalogProducts.find(
+      (p) => p.id === item.id || (p.code && item.sku && p.code.toLowerCase() === item.sku.toLowerCase())
+    );
+    if (found) {
+      return getProductStockForBranch(found, selectedBranch);
+    }
+    return item.inStockQty !== undefined ? item.inStockQty : 99;
+  };
+
+  const isItemOutOfStock = (_item?: any) => false;
+  const isItemExceedingStock = (_item?: any) => false;
+
+  // Filter items in cart vs direct mode
   const selectedItems = useMemo(() => {
     return cartItems.filter((i) => i.selected);
   }, [cartItems]);
 
-  const activeItems = selectedItems.length > 0 ? selectedItems : cartItems;
+  const activeItems = useMemo(() => {
+    if (isDirectMode) {
+      return directItems;
+    }
+    return selectedItems.length > 0 ? selectedItems : cartItems;
+  }, [isDirectMode, directItems, selectedItems, cartItems]);
+
+  const handleUpdateItemQuantity = (id: string, delta: number) => {
+    if (isDirectMode) {
+      setDirectItems((prev) => {
+        const updated = prev.map((item) =>
+          item.id === id ? { ...item, quantity: Math.max(1, item.quantity + delta) } : item
+        );
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem('d2_direct_checkout_item', JSON.stringify(updated));
+        }
+        return updated;
+      });
+    } else {
+      updateQuantity(id, delta);
+    }
+  };
+
+  const handleRemoveCheckoutItem = (id: string) => {
+    if (isDirectMode) {
+      setDirectItems((prev) => {
+        const updated = prev.filter((item) => item.id !== id);
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem('d2_direct_checkout_item', JSON.stringify(updated));
+        }
+        return updated;
+      });
+    } else {
+      removeFromCart(id);
+    }
+  };
+
+  const hasOutOfStockInCheckout = false;
+  const hasExceededStockInCheckout = false;
+  const hasInvalidInCheckout = false;
 
   // Form states
   const [fullName, setFullName] = useState('');
@@ -45,6 +174,55 @@ function CheckoutContent() {
   const [district, setDistrict] = useState('');
   const [address, setAddress] = useState('');
   const [specialNote, setSpecialNote] = useState('');
+  const [branches, setBranches] = useState<AdminBranch[]>([]);
+  const [selectedBranch, setSelectedBranch] = useState<string>('');
+
+  React.useEffect(() => {
+    const loadBranches = async () => {
+      try {
+        const list = await branchApi.getBranches();
+        if (list && Array.isArray(list) && list.length > 0) {
+          setBranches(list);
+          const savedBranch = localStorage.getItem('d2_selected_branch') || localStorage.getItem('d2_customer_branch') || '';
+          if (savedBranch && list.some((b) => b.name === savedBranch)) {
+            setSelectedBranch(savedBranch);
+          } else {
+            setSelectedBranch(list[0].name);
+          }
+          return;
+        }
+      } catch (err) {
+        console.warn('Could not load branches for checkout:', err);
+      }
+      const fallback = localStorage.getItem('d2_selected_branch') || localStorage.getItem('d2_customer_branch') || 'Chi nhánh Hà Nội';
+      setSelectedBranch(fallback);
+    };
+    loadBranches();
+
+    const handleBranchChanged = (e: any) => {
+      const b = e.detail?.branch || e.detail?.branchName;
+      if (b && b !== 'all') {
+        setSelectedBranch(b);
+      }
+    };
+    window.addEventListener('customer_branch_changed', handleBranchChanged);
+    window.addEventListener('branch_changed', handleBranchChanged);
+    return () => {
+      window.removeEventListener('customer_branch_changed', handleBranchChanged);
+      window.removeEventListener('branch_changed', handleBranchChanged);
+    };
+  }, []);
+
+  // Sync user info into checkout form
+  React.useEffect(() => {
+    if (user) {
+      if (user.name) setFullName(user.name);
+      if (user.phone) setPhone(user.phone);
+    } else {
+      setFullName('');
+      setPhone('');
+    }
+  }, [user]);
 
   // Dynamic provinces & districts
   const currentDistricts = useMemo(() => {
@@ -58,9 +236,8 @@ function CheckoutContent() {
     setDistrict(''); // Reset district so user is required to select district for newly selected province
   };
 
-  // Payment method: 'qr' | 'installment' | 'deposit'
-  const [paymentMethod, setPaymentMethod] = useState<'qr' | 'installment' | 'deposit'>('qr');
-  const [installmentMonths, setInstallmentMonths] = useState<number>(12);
+  // Payment method: 'qr' | 'cod'
+  const [paymentMethod, setPaymentMethod] = useState<'qr' | 'cod'>('qr');
 
   // Pricing calculations
   const subtotal = useMemo(() => {
@@ -71,19 +248,15 @@ function CheckoutContent() {
     return subtotal;
   }, [subtotal]);
 
-  // 30% deposit calculation
-  const depositAmount = useMemo(() => {
-    return Math.round(finalTotal * 0.3);
-  }, [finalTotal]);
+  // Dynamic Bank and VietQR details from Store Configuration
+  const activeBankName = paymentConfig?.bankName || 'MB Bank';
+  const activeAccountNumber = (paymentConfig?.accountNumber || paymentConfig?.bankAccountNumber || '0379241075').trim();
+  const activeAccountName = (paymentConfig?.accountName || paymentConfig?.bankAccountName || 'Nguyễn Văn Luân').trim();
+  const activeBankBin = paymentConfig?.bankBin || getBankBin(activeBankName);
+  const transferMemo = `D2 ${phone.replace(/\s+/g, '') || 'LUXURY'}`;
+  const qrTemplate = paymentConfig?.vietQrTemplate || 'compact';
 
-  const remainingAmount = useMemo(() => {
-    return Math.max(0, finalTotal - depositAmount);
-  }, [finalTotal, depositAmount]);
-
-  // Monthly installment calculation
-  const monthlyAmount = useMemo(() => {
-    return installmentMonths > 0 ? Math.round(finalTotal / installmentMonths) : 0;
-  }, [finalTotal, installmentMonths]);
+  const dynamicQrUrl = `https://img.vietqr.io/image/${activeBankBin}-${activeAccountNumber}-${qrTemplate}.png?amount=${finalTotal}&addInfo=${encodeURIComponent(transferMemo)}&accountName=${encodeURIComponent(activeAccountName)}`;
 
   // Order Success Modal
   const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
@@ -99,7 +272,7 @@ function CheckoutContent() {
   };
 
   // Submit Order
-  const handleSubmitOrder = () => {
+  const handleSubmitOrder = async () => {
     if (!fullName.trim()) {
       message.warning('Vui lòng nhập Họ & Tên người nhận hàng.');
       return;
@@ -122,20 +295,128 @@ function CheckoutContent() {
     }
 
     setIsSubmitting(true);
-    const orderCode = `D2-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
-    setCreatedOrderCode(orderCode);
+    try {
+      const productNameSummary = activeItems.map((i) => i.name).join(', ');
+      const fullShippingAddress = `${address}, ${district}, ${city}`;
 
-    setTimeout(() => {
-      setIsSubmitting(false);
+      const isGuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const finalBranch = selectedBranch || (typeof window !== 'undefined'
+        ? (localStorage.getItem('d2_selected_branch') || localStorage.getItem('d2_customer_branch') || (branches[0]?.name ?? 'Chi nhánh Hà Nội'))
+        : 'Chi nhánh Hà Nội');
+
+      const isCod = paymentMethod === 'cod';
+      const orderDepositAmount = isCod ? 0 : finalTotal;
+      const orderDepositPercent = isCod ? 0 : 100;
+      const orderPaymentMethod = isCod ? 'COD' : 'VietQR';
+      const orderPaymentStatus = 'Pending';
+
+      const created = await orderApi.createOrder({
+        orderType: 'retail',
+        branch: finalBranch,
+        showroom: finalBranch,
+        customerName: fullName.trim(),
+        customerPhone: phone.trim(),
+        customerEmail: user?.email || undefined,
+        customerAddress: fullShippingAddress,
+        shippingAddress: fullShippingAddress,
+        city: city,
+        district: district,
+        productName: productNameSummary || 'Nội thất D2 Luxury',
+        productSpec: activeItems.map((i) => i.specs?.[0]).filter(Boolean).join('; ') || 'Theo thiết kế',
+        value: finalTotal,
+        depositAmount: orderDepositAmount,
+        depositPercent: orderDepositPercent,
+        paymentMethod: orderPaymentMethod,
+        paymentStatus: orderPaymentStatus,
+        status: 'pending',
+        note: specialNote.trim() || undefined,
+        items: activeItems.map((i) => ({
+          productId: isGuidRegex.test(i.id) ? i.id : undefined,
+          productSku: i.sku || undefined,
+          productImage: i.image || undefined,
+          productName: i.name,
+          unitPrice: i.price,
+          quantity: i.quantity,
+          dimensions: i.specs?.[0] || '',
+          material: i.specs?.[1] || 'Gỗ tự nhiên cao cấp',
+        })),
+      });
+
+      setCreatedOrderCode(created.orderCode);
+
+      // Save order into user's isolated order storage
+      if (user?.id) {
+        try {
+          const userOrderKey = `d2_orders_${user.id}`;
+          const existing = JSON.parse(localStorage.getItem(userOrderKey) || '[]');
+          const newOrderRecord = {
+            id: created.id || `ord_${Date.now()}`,
+            orderCode: created.orderCode,
+            createdAt: new Date().toLocaleDateString('vi-VN'),
+            value: finalTotal,
+            depositAmount: orderDepositAmount,
+            depositPercent: orderDepositPercent,
+            paymentMethod: orderPaymentMethod,
+            paymentStatus: orderPaymentStatus,
+            productName: productNameSummary || 'Nội thất D2 Luxury',
+            productSpec: activeItems.map((i) => i.specs?.[0]).filter(Boolean).join('; ') || 'Theo quy cách may đo',
+            items: activeItems,
+            shippingAddress: fullShippingAddress,
+            status: 'pending',
+          };
+          localStorage.setItem(userOrderKey, JSON.stringify([newOrderRecord, ...existing]));
+        } catch (e) {
+          console.warn('Could not save local user order:', e);
+        }
+      }
+
+      // Sync to admin orders local storage if available
+      try {
+        const currentAdminOrders = getStoredAdminData<any[]>(ADMIN_STORAGE_KEYS.ORDERS, []);
+        if (Array.isArray(currentAdminOrders)) {
+          setStoredAdminData(ADMIN_STORAGE_KEYS.ORDERS, [created, ...currentAdminOrders.filter((o) => o.id !== created.id)]);
+        }
+      } catch {}
+
+      if (isDirectMode && typeof window !== 'undefined') {
+        sessionStorage.removeItem('d2_direct_checkout_item');
+      }
+
       setIsSuccessModalOpen(true);
-    }, 800);
+    } catch (err: any) {
+      console.error('Error creating order:', err);
+      message.error(err.message || 'Đặt hàng thất bại. Vui lòng thử lại.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleFinishAndReturnHome = () => {
-    clearCart();
+    if (isDirectMode) {
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('d2_direct_checkout_item');
+      }
+    } else {
+      clearCart();
+    }
     setIsSuccessModalOpen(false);
     router.push('/');
   };
+
+  if (!mounted) {
+    return (
+      <div className="min-h-screen flex flex-col bg-[#fff8f5] text-[#1f1b19] font-body-md">
+        <Header cartCount={0} onOpenBooking={() => {}} />
+        <main className="w-full pt-28 flex-1 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-4 py-24">
+            <div className="w-10 h-10 border-4 border-[#5d371f] border-t-transparent rounded-full animate-spin" />
+            <p className="text-xs font-serif text-[#83746c] tracking-wider uppercase">Đang tải thông tin đơn hàng...</p>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-[#fff8f5] text-[#1f1b19] font-body-md selection:bg-[#ffdbc8] selection:text-[#311301]">
@@ -148,15 +429,21 @@ function CheckoutContent() {
       <main className="w-full pt-20 flex-1">
         {/* Top Breadcrumb & SSL Security Notice */}
         <section className="w-full bg-[#fbf2ee] py-3.5 border-b border-[#eae1dd]">
-          <div className="w-full max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs font-medium text-[#83746c]">
+          <div className="w-full max-w-[1720px] mx-auto px-4 sm:px-6 lg:px-10 xl:px-14 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs font-medium text-[#83746c]">
             <nav aria-label="Breadcrumb" className="flex items-center gap-2 flex-wrap text-xs text-[#83746c]">
               <Link href="/" className="hover:text-[#5d371f] transition-colors">
                 Trang chủ
               </Link>
               <span className="text-[#d5c3ba]">/</span>
-              <Link href="/cart" className="hover:text-[#5d371f] transition-colors">
-                Giỏ hàng
-              </Link>
+              {isDirectMode ? (
+                <Link href="/products" className="hover:text-[#5d371f] transition-colors">
+                  Sản phẩm
+                </Link>
+              ) : (
+                <Link href="/cart" className="hover:text-[#5d371f] transition-colors">
+                  Giỏ hàng
+                </Link>
+              )}
               <span className="text-[#d5c3ba]">/</span>
               <span className="text-[#5d371f] font-bold">Thanh toán &amp; Lập lịch bàn giao</span>
             </nav>
@@ -169,7 +456,7 @@ function CheckoutContent() {
         </section>
 
         {/* Main Grid: 7 Cols Left Form / 5 Cols Sticky Summary */}
-        <section className="max-w-7xl mx-auto w-full px-4 sm:px-8 lg:px-12 py-6">
+        <section className="max-w-[1720px] mx-auto w-full px-4 sm:px-6 lg:px-10 xl:px-14 py-6">
           {activeItems.length === 0 ? (
             <div className="bg-white border border-[#eae1dd] p-12 text-center my-8 shadow-sm">
               <div className="w-16 h-16 mx-auto mb-4 bg-[#f5ece8] flex items-center justify-center text-[#5d371f] text-2xl">
@@ -177,7 +464,7 @@ function CheckoutContent() {
               </div>
               <h3 className="font-serif text-2xl font-bold text-[#1f1b19] mb-2">Không có sản phẩm nào cần thanh toán</h3>
               <p className="text-sm text-[#83746c] max-w-md mx-auto mb-6">
-                Vui lòng chọn các tác phẩm nội thất vào giỏ hàng để tiến hành thanh toán và đặt lịch bàn giao.
+                Vui lòng chọn các tác phẩm nội thất vào giỏ hàng hoặc chọn Mua ngay để tiến hành thanh toán và đặt lịch bàn giao.
               </p>
               <Link
                 href="/products"
@@ -199,81 +486,87 @@ function CheckoutContent() {
                         1
                       </span>
                       <h2 className="font-serif text-lg font-bold text-[#1f1b19]">
-                        Tác phẩm tuyển chọn trong đơn hàng ({activeItems.length})
+                        {isDirectMode ? 'Tác phẩm mua trực tiếp' : 'Tác phẩm tuyển chọn trong đơn hàng'} ({activeItems.length})
                       </h2>
                     </div>
-                    <Link
-                      href="/cart"
-                      className="text-xs text-[#5d371f] hover:text-[#784e34] font-semibold transition-colors"
-                    >
-                      Chỉnh sửa giỏ hàng
-                    </Link>
+                    {!isDirectMode && (
+                      <Link
+                        href="/cart"
+                        className="text-xs text-[#5d371f] hover:text-[#784e34] font-semibold transition-colors"
+                      >
+                        Chỉnh sửa giỏ hàng
+                      </Link>
+                    )}
                   </div>
 
                   <div className="flex flex-col gap-3">
-                    {activeItems.map((item) => (
-                      <div
-                        key={item.id}
-                        className="flex flex-col sm:flex-row gap-4 p-3.5 bg-[#fbf2ee] border border-[#eae1dd] transition-all hover:border-[#5d371f]/30"
-                      >
-                        <div className="w-20 h-20 bg-[#f5ece8] overflow-hidden shrink-0 border border-[#eae1dd]">
-                          <img
-                            src={item.image}
-                            alt={item.name}
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
-
-                        <div className="flex-1 flex flex-col justify-between">
-                          <div className="flex items-start justify-between gap-2">
-                            <div>
-                              <h3 className="font-serif text-base font-bold text-[#1f1b19]">
-                                {item.name}
-                              </h3>
-                              <p className="text-xs text-[#83746c] mt-0.5">
-                                {item.specs?.[0] || 'Gỗ tự nhiên nguyên khối'}
-                              </p>
-                            </div>
-                            <button
-                              onClick={() => removeFromCart(item.id)}
-                              type="button"
-                              className="text-[#83746c] hover:text-[#ba1a1a] transition-colors p-1 cursor-pointer"
-                              title="Xóa tác phẩm"
-                            >
-                              <DeleteOutlined className="text-sm" />
-                            </button>
+                    {activeItems.map((item) => {
+                      return (
+                        <div
+                          key={item.id}
+                          className="flex flex-col sm:flex-row gap-4 p-3.5 border transition-all bg-[#fbf2ee] border-[#eae1dd] hover:border-[#5d371f]/30"
+                        >
+                          <div className="w-20 h-20 bg-[#f5ece8] overflow-hidden shrink-0 border border-[#eae1dd] relative">
+                            <img
+                              src={item.image}
+                              alt={item.name}
+                              className="w-full h-full object-cover"
+                            />
                           </div>
 
-                          <div className="flex items-center justify-between pt-2 mt-2 border-t border-[#eae1dd]/60">
-                            {/* Quantity Counter */}
-                            <div className="flex items-center bg-white border border-[#eae1dd] p-0.5 shadow-sm">
+                          <div className="flex-1 flex flex-col justify-between">
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <h3 className="font-serif text-base font-bold text-[#1f1b19]">
+                                    {item.name}
+                                  </h3>
+                                </div>
+                                <p className="text-xs text-[#83746c] mt-0.5">
+                                  {item.specs?.[0] || 'Gỗ tự nhiên nguyên khối'}
+                                </p>
+                              </div>
                               <button
-                                onClick={() => updateQuantity(item.id, -1)}
-                                disabled={item.quantity <= 1}
+                                onClick={() => handleRemoveCheckoutItem(item.id)}
                                 type="button"
-                                className="w-6 h-6 flex items-center justify-center text-[#51443d] hover:bg-[#f5ece8] disabled:opacity-30 cursor-pointer"
+                                className="text-[#83746c] hover:text-[#ba1a1a] transition-colors p-1 cursor-pointer"
+                                title="Xóa tác phẩm"
                               >
-                                <MinusOutlined className="text-[10px]" />
+                                <DeleteOutlined className="text-sm" />
                               </button>
-                              <span className="w-7 text-center font-data-mono text-xs font-bold text-[#1f1b19]">
-                                {item.quantity}
+                            </div>
+
+                            <div className="flex items-center justify-between pt-2 mt-2 border-t border-[#eae1dd]/60">
+                              {/* Quantity Counter */}
+                              <div className="flex items-center bg-white border border-[#eae1dd] p-0.5 shadow-sm">
+                                <button
+                                  onClick={() => handleUpdateItemQuantity(item.id, -1)}
+                                  disabled={item.quantity <= 1}
+                                  type="button"
+                                  className="w-6 h-6 flex items-center justify-center text-[#51443d] hover:bg-[#f5ece8] disabled:opacity-30 cursor-pointer"
+                                >
+                                  <MinusOutlined className="text-[10px]" />
+                                </button>
+                                <span className="w-7 text-center font-data-mono text-xs font-bold text-[#1f1b19]">
+                                  {item.quantity}
+                                </span>
+                                <button
+                                  onClick={() => handleUpdateItemQuantity(item.id, 1)}
+                                  type="button"
+                                  className="w-6 h-6 flex items-center justify-center text-[#51443d] hover:bg-[#f5ece8] cursor-pointer"
+                                >
+                                  <PlusOutlined className="text-[10px]" />
+                                </button>
+                              </div>
+
+                              <span className="font-data-mono text-sm font-bold text-[#5d371f]">
+                                {(item.price * item.quantity).toLocaleString('vi-VN')}đ
                               </span>
-                              <button
-                                onClick={() => updateQuantity(item.id, 1)}
-                                type="button"
-                                className="w-6 h-6 flex items-center justify-center text-[#51443d] hover:bg-[#f5ece8] cursor-pointer"
-                              >
-                                <PlusOutlined className="text-[10px]" />
-                              </button>
                             </div>
-
-                            <span className="font-data-mono text-sm font-bold text-[#5d371f]">
-                              {(item.price * item.quantity).toLocaleString('vi-VN')}đ
-                            </span>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -289,6 +582,48 @@ function CheckoutContent() {
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                    <div className="md:col-span-2 flex flex-col gap-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="font-semibold text-[#1f1b19]">
+                          Chi nhánh / Showroom xuất kho &amp; xử lý đơn *
+                        </label>
+                        <span className="text-[11px] text-[#5d371f] font-medium">
+                          Kho hàng xuất &amp; trừ tồn theo chi nhánh
+                        </span>
+                      </div>
+                      <select
+                        value={selectedBranch}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setSelectedBranch(val);
+                          if (typeof window !== 'undefined') {
+                            localStorage.setItem('d2_selected_branch', val);
+                            localStorage.setItem('d2_customer_branch', val);
+                            window.dispatchEvent(
+                              new CustomEvent('customer_branch_changed', {
+                                detail: { branch: val, branchName: val },
+                              })
+                            );
+                          }
+                        }}
+                        className="px-3.5 py-2.5 bg-[#fbf2ee] border border-[#eae1dd] text-[#1f1b19] font-medium focus:outline-none focus:border-[#5d371f] transition-colors cursor-pointer"
+                      >
+                        {branches.length > 0 ? (
+                          branches.map((b) => (
+                            <option key={b.id || b.name} value={b.name}>
+                              {b.name} {b.address ? `· ${b.address}` : ''}
+                            </option>
+                          ))
+                        ) : (
+                          <>
+                            <option value="Chi nhánh Hà Nội">Chi nhánh Hà Nội</option>
+                            <option value="Chi nhánh Nam Định">Chi nhánh Nam Định</option>
+                            <option value="Trụ sở & Showroom Phú Quốc">Trụ sở &amp; Showroom Phú Quốc</option>
+                          </>
+                        )}
+                      </select>
+                    </div>
+
                     <div className="flex flex-col gap-1.5">
                       <label className="font-semibold text-[#1f1b19]">
                         Họ &amp; Tên người nhận *
@@ -449,8 +784,8 @@ function CheckoutContent() {
                               <div className="flex flex-col items-center gap-2 shrink-0">
                                 <div className="bg-white p-2 border border-[#eae1dd] shadow-sm">
                                   <img
-                                    src={`https://img.vietqr.io/image/vietinbank-113366668888-compact.jpg?amount=${finalTotal}&addInfo=${encodeURIComponent(`D2 ${phone.replace(/\s+/g, '') || 'LUXURY'}`)}&accountName=D2%20LUXURY`}
-                                    alt="Mã QR Chuyển khoản VietinBank"
+                                    src={dynamicQrUrl}
+                                    alt={`Mã QR Chuyển khoản ${activeBankName}`}
                                     className="w-44 h-auto object-contain"
                                   />
                                 </div>
@@ -462,24 +797,24 @@ function CheckoutContent() {
                               <div className="flex flex-col gap-2 text-xs flex-1 w-full">
                                 <div className="pb-2 border-b border-[#eae1dd]">
                                   <span className="text-[10px] uppercase font-bold text-[#83746c] block tracking-wider">Ngân hàng thụ hưởng</span>
-                                  <p className="font-bold text-sm text-[#1f1b19]">VietinBank (Ngân hàng TMCP Công Thương VN)</p>
+                                  <p className="font-bold text-sm text-[#1f1b19]">{activeBankName}</p>
                                 </div>
 
                                 <div className="flex items-center justify-between py-1 border-b border-[#eae1dd]/60">
                                   <div>
                                     <span className="text-[10px] text-[#83746c] block">Chủ tài khoản:</span>
-                                    <strong className="font-serif text-[#5d371f] text-xs">CÔNG TY CỔ PHẦN NỘI THẤT D2 LUXURY</strong>
+                                    <strong className="font-serif text-[#5d371f] text-xs uppercase">{activeAccountName}</strong>
                                   </div>
                                 </div>
 
                                 <div className="flex items-center justify-between py-1 border-b border-[#eae1dd]/60">
                                   <div>
                                     <span className="text-[10px] text-[#83746c] block">Số tài khoản:</span>
-                                    <strong className="font-data-mono text-sm text-[#1f1b19]">113366668888</strong>
+                                    <strong className="font-data-mono text-sm text-[#1f1b19]">{activeAccountNumber}</strong>
                                   </div>
                                   <button
                                     type="button"
-                                    onClick={() => handleCopy('113366668888', 'Số tài khoản')}
+                                    onClick={() => handleCopy(activeAccountNumber, 'Số tài khoản')}
                                     className="px-2.5 py-1 bg-[#fbf2ee] hover:bg-[#eae1dd] border border-[#eae1dd] text-[11px] font-bold text-[#5d371f] flex items-center gap-1 transition-colors cursor-pointer"
                                   >
                                     <CopyOutlined /> Sao chép
@@ -503,11 +838,11 @@ function CheckoutContent() {
                                 <div className="flex items-center justify-between pt-1">
                                   <div>
                                     <span className="text-[10px] text-[#83746c] block">Nội dung chuyển khoản:</span>
-                                    <strong className="font-data-mono text-xs text-[#5d371f]">D2 {phone.replace(/\s+/g, '') || 'LUXURY'}</strong>
+                                    <strong className="font-data-mono text-xs text-[#5d371f]">{transferMemo}</strong>
                                   </div>
                                   <button
                                     type="button"
-                                    onClick={() => handleCopy(`D2 ${phone.replace(/\s+/g, '') || 'LUXURY'}`, 'Nội dung chuyển khoản')}
+                                    onClick={() => handleCopy(transferMemo, 'Nội dung chuyển khoản')}
                                     className="px-2.5 py-1 bg-[#fbf2ee] hover:bg-[#eae1dd] border border-[#eae1dd] text-[11px] font-bold text-[#5d371f] flex items-center gap-1 transition-colors cursor-pointer"
                                   >
                                     <CopyOutlined /> Sao chép
@@ -520,11 +855,11 @@ function CheckoutContent() {
                       </div>
                     </div>
 
-                    {/* Option 2: 0% Installment */}
+                    {/* Option 2: COD Payment */}
                     <div
-                      onClick={() => setPaymentMethod('installment')}
+                      onClick={() => setPaymentMethod('cod')}
                       className={`p-4 border transition-all cursor-pointer ${
-                        paymentMethod === 'installment'
+                        paymentMethod === 'cod'
                           ? 'border-[#5d371f] bg-[#fbf2ee]'
                           : 'border-[#eae1dd] bg-white hover:border-[#5d371f]/40'
                       }`}
@@ -533,86 +868,22 @@ function CheckoutContent() {
                         <input
                           type="radio"
                           name="payment"
-                          checked={paymentMethod === 'installment'}
-                          onChange={() => setPaymentMethod('installment')}
-                          className="w-4 h-4 mt-1 accent-[#5d371f] cursor-pointer"
-                        />
-                        <div className="flex-1">
-                          <div className="flex items-center justify-between">
-                            <span className="font-bold text-sm text-[#1f1b19]">
-                              Trả góp 0% Lãi suất qua Thẻ Tín Dụng
-                            </span>
-                            <CreditCardOutlined className="text-lg text-[#5d371f]" />
-                          </div>
-
-                          <p className="text-xs text-[#51443d] mt-1 leading-relaxed">
-                            Kỳ hạn linh hoạt 3, 6, 9 hoặc 12 tháng qua cổng liên kết 28 ngân hàng nội địa và quốc tế.
-                          </p>
-
-                          {paymentMethod === 'installment' && (
-                            <div className="mt-3 pt-3 border-t border-[#eae1dd] flex flex-col gap-2.5 animate-scale-in">
-                              <span className="text-xs font-semibold text-[#1f1b19]">Chọn kỳ hạn trả góp:</span>
-                              <div className="grid grid-cols-4 gap-2">
-                                {[3, 6, 9, 12].map((m) => (
-                                  <button
-                                    key={m}
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setInstallmentMonths(m);
-                                    }}
-                                    className={`py-2 px-3 text-center border font-data-mono text-xs font-bold transition-colors cursor-pointer ${
-                                      installmentMonths === m
-                                        ? 'bg-[#5d371f] text-white border-[#5d371f]'
-                                        : 'bg-white text-[#1f1b19] border-[#eae1dd] hover:bg-[#f5ece8]'
-                                    }`}
-                                  >
-                                    {m} tháng
-                                  </button>
-                                ))}
-                              </div>
-                              <p className="text-xs text-[#5d371f] font-medium mt-1">
-                                Số tiền thanh toán mỗi tháng:{' '}
-                                <strong className="font-data-mono">{monthlyAmount.toLocaleString('vi-VN')}đ / tháng</strong>
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Option 3: 30% Deposit */}
-                    <div
-                      onClick={() => setPaymentMethod('deposit')}
-                      className={`p-4 border transition-all cursor-pointer ${
-                        paymentMethod === 'deposit'
-                          ? 'border-[#5d371f] bg-[#fbf2ee]'
-                          : 'border-[#eae1dd] bg-white hover:border-[#5d371f]/40'
-                      }`}
-                    >
-                      <div className="flex items-start gap-3">
-                        <input
-                          type="radio"
-                          name="payment"
-                          checked={paymentMethod === 'deposit'}
-                          onChange={() => setPaymentMethod('deposit')}
+                          checked={paymentMethod === 'cod'}
+                          onChange={() => setPaymentMethod('cod')}
                           className="w-4 h-4 mt-1 accent-[#5d371f] cursor-pointer"
                         />
                         <div className="flex-1">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
                               <span className="font-bold text-sm text-[#1f1b19]">
-                                Đặt cọc 30% giữ phôi gỗ &amp; Hoàn tất khi nghiệm thu
-                              </span>
-                              <span className="text-xs font-semibold text-[#5d371f] bg-[#f5ece8] px-2 py-0.5">
-                                Khuyên dùng
+                                Thanh toán khi nhận hàng &amp; Nghiệm thu (COD)
                               </span>
                             </div>
                             <SafetyCertificateOutlined className="text-lg text-[#5d371f]" />
                           </div>
 
                           <p className="text-xs text-[#51443d] mt-1 leading-relaxed">
-                            Thanh toán trước <strong className="text-[#1f1b19] font-data-mono font-bold">{depositAmount.toLocaleString('vi-VN')}đ</strong> để xưởng giữ phôi gỗ và hoàn thiện tinh dầu. Số còn lại ({remainingAmount.toLocaleString('vi-VN')}đ) thanh toán sau khi lắp đặt hoàn thiện và ký biên bản hài lòng.
+                            Quý khách trực tiếp kiểm tra vân gỗ, kết cấu và đường hoàn thiện tinh dầu tại nhà trước khi thanh toán cho đội ngũ giao lắp D2 LUXURY.
                           </p>
                         </div>
                       </div>
@@ -678,24 +949,29 @@ function CheckoutContent() {
                         </span>
                       </div>
                     </div>
-
-                    {paymentMethod === 'deposit' && (
-                      <div className="mt-2 pt-2 border-t border-[#eae1dd] flex justify-between text-xs text-[#5d371f] font-bold">
-                        <span>Số tiền cọc trước (30%):</span>
-                        <span className="font-data-mono">{depositAmount.toLocaleString('vi-VN')}đ</span>
-                      </div>
-                    )}
                   </div>
 
                   <button
                     onClick={handleSubmitOrder}
                     disabled={isSubmitting || activeItems.length === 0}
                     type="button"
-                    style={{ backgroundColor: '#5d371f', color: '#ffffff' }}
-                    className="w-full !bg-[#5d371f] !text-white py-3.5 px-6 font-semibold text-sm hover:!bg-[#784e34] disabled:opacity-50 transition-all flex items-center justify-center gap-2 shadow-md cursor-pointer hover-lift"
+                    style={
+                      activeItems.length === 0
+                        ? { backgroundColor: '#eae1dd', color: '#83746c' }
+                        : { backgroundColor: '#5d371f', color: '#ffffff' }
+                    }
+                    className={`w-full py-3.5 px-6 font-semibold text-sm transition-all flex items-center justify-center gap-2 shadow-md ${
+                      activeItems.length === 0
+                        ? 'cursor-not-allowed opacity-60'
+                        : '!bg-[#5d371f] !text-white hover:!bg-[#784e34] cursor-pointer hover-lift'
+                    }`}
                   >
-                    <span className="!text-white font-bold">{isSubmitting ? 'Đang kích hoạt lịch bàn giao...' : 'Xác nhận đặt hàng & Giữ lịch giao'}</span>
-                    <ArrowRightOutlined className="text-sm !text-white" />
+                    <span className="font-bold">
+                      {isSubmitting
+                        ? 'Đang kích hoạt lịch bàn giao...'
+                        : 'Xác nhận đặt hàng & Giữ lịch giao'}
+                    </span>
+                    <ArrowRightOutlined className="text-sm" />
                   </button>
 
                   <p className="text-[11px] text-[#83746c] text-center leading-relaxed">
@@ -735,10 +1011,10 @@ function CheckoutContent() {
                       </div>
                     </div>
                     <a
-                      href="tel:19008922"
+                      href="tel:0967323335"
                       className="px-3 py-1.5 bg-white border border-[#eae1dd] text-xs font-bold text-[#5d371f] hover:bg-[#5d371f] hover:text-white transition-colors"
                     >
-                      1900 8922
+                      0967 323 335
                     </a>
                   </div>
                 </div>
@@ -794,11 +1070,7 @@ function CheckoutContent() {
             <div className="flex justify-between">
               <span className="text-[#83746c]">Phương thức:</span>
               <span className="font-semibold text-[#5d371f]">
-                {paymentMethod === 'qr'
-                  ? 'Chuyển khoản VietQR'
-                  : paymentMethod === 'installment'
-                  ? `Trả góp 0% (${installmentMonths} tháng)`
-                  : 'Đặt cọc 30% giữ phôi gỗ'}
+                {paymentMethod === 'qr' ? 'Chuyển khoản VietQR' : 'Thanh toán khi nhận hàng (COD)'}
               </span>
             </div>
             <div className="flex justify-between pt-2 border-t border-[#eae1dd]">
@@ -811,13 +1083,15 @@ function CheckoutContent() {
 
           {paymentMethod === 'qr' && (
             <div className="w-full bg-[#fbf2ee] border border-[#eae1dd] p-4 flex flex-col items-center gap-2">
-              <span className="text-xs font-bold text-[#5d371f]">Quét mã VietQR VietinBank để thanh toán ngay</span>
+              <span className="text-xs font-bold text-[#5d371f]">Quét mã VietQR {activeBankName} để thanh toán ngay</span>
               <img
-                src={`https://img.vietqr.io/image/vietinbank-113366668888-compact.jpg?amount=${finalTotal}&addInfo=${encodeURIComponent(`D2 ${phone.replace(/\s+/g, '') || 'LUXURY'}`)}&accountName=D2%20LUXURY`}
-                alt="VietQR VietinBank"
+                src={dynamicQrUrl}
+                alt={`VietQR ${activeBankName}`}
                 className="w-40 h-auto rounded border border-[#eae1dd] shadow-sm bg-white p-1"
               />
-              <span className="text-[11px] text-[#83746c]">STK: <strong>113366668888</strong> • Nội dung: <strong>D2 {phone.replace(/\s+/g, '') || 'LUXURY'}</strong></span>
+              <span className="text-[11px] text-[#83746c]">
+                STK: <strong>{activeAccountNumber}</strong> ({activeBankName}) • Chủ TK: <strong>{activeAccountName}</strong> • Nội dung: <strong>{transferMemo}</strong>
+              </span>
             </div>
           )}
 
@@ -837,7 +1111,15 @@ function CheckoutContent() {
 export default function CheckoutPage() {
   return (
     <App>
-      <CheckoutContent />
+      <Suspense
+        fallback={
+          <div className="min-h-screen flex items-center justify-center bg-[#fff8f5]">
+            <div className="text-[#5d371f] font-serif text-sm">Đang tải thông tin thanh toán...</div>
+          </div>
+        }
+      >
+        <CheckoutContent />
+      </Suspense>
     </App>
   );
 }

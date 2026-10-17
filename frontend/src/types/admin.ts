@@ -1,3 +1,16 @@
+export interface OrderItem {
+  id?: string;
+  productId?: string;
+  productName: string;
+  productSku?: string;
+  productImage?: string;
+  material?: string;
+  dimensions?: string;
+  unitPrice: number;
+  quantity: number;
+  totalPrice: number;
+}
+
 export interface OrderRow {
   id: string;
   orderCode: string;
@@ -11,6 +24,7 @@ export interface OrderRow {
   productName: string;
   productSpec: string;
   woodType?: string;
+  quantity?: number;
   orderDate: string;
   deadlineDate: string;
   value: number;
@@ -23,6 +37,7 @@ export interface OrderRow {
   spaceLabel?: string;
   branch?: string;
   showroom?: string;
+  items?: OrderItem[];
 }
 
 export interface AdminCustomer {
@@ -89,20 +104,37 @@ export interface FeaturedCatalogProduct {
   code: string;
   collection: string;
   name: string;
-  price: number;
+  price: number; // Giá bán niêm yết
+  originalPrice?: number; // Giá gốc / Giá vốn / Giá nhập
+  costPrice?: number; // Alias giá gốc
+  discountPercent?: number; // % giảm giá khuyến mãi
   stockNote: string;
-  stockType: 'in_stock' | 'low' | 'custom';
+  stockType: 'in_stock' | 'low' | 'custom' | 'out_of_stock';
   image: string;
+  images?: string[];
+  subImages?: string;
   metaInfo?: string;
   metaIcon?: string;
   categoryId?: string;
   categoryName?: string;
+  space?: string;
+  unit?: string;
   branch?: string;
+  branchStocksJson?: string;
+  inStock?: number;
+  inStockQty?: number;
   location?: string;
+  description?: string;
+  dimensions?: string;
+  material?: string;
+  color?: string;
+  warranty?: string;
+  shippingNote?: string;
 }
 
 export interface StockAuditItem {
   id: string;
+  productId?: string;
   code: string;
   name: string;
   type: 'furniture' | 'product' | 'accessory' | string;
@@ -145,6 +177,7 @@ export interface AdminWarehouse {
   branch: string;
   province?: string;
   district?: string;
+  ward?: string;
   streetAddress?: string;
   address: string;
   managerName: string;
@@ -160,11 +193,40 @@ export interface AdminWarehouse {
   totalValue: number;
 }
 
+export interface StockImportSlipItem {
+  id?: string;
+  code: string;
+  name: string;
+  spec?: string;
+  unit: string;
+  batch?: string;
+  expiryDate?: string;
+  quantity: number;
+  unitPrice: number;
+  discount?: number;
+  importPrice?: number;
+  total: number;
+}
+
+export interface StockImportPaymentHistory {
+  id: string;
+  code: string;
+  date: string;
+  amount: number;
+  method: string;
+  creator: string;
+  status: string;
+  note?: string;
+}
+
 export interface StockImportSlip {
   id: string;
   code: string;
   supplier: string;
+  supplierCode?: string;
+  supplierPhone?: string;
   warehouseName: string;
+  warehouseCode?: string;
   itemName: string;
   spec: string;
   quantity: number;
@@ -172,15 +234,22 @@ export interface StockImportSlip {
   unit: string;
   mc: string;
   totalValue: number;
+  discount?: number;
   paidAmount?: number;
   debtAmount?: number;
+  remainingDebt?: number;
+  returnStatus?: string;
   paymentMethod?: string;
   invoiceNumber?: string;
+  creator?: string;
   note?: string;
   importDate: string;
   inspector: string;
   status: 'completed' | 'inspecting' | 'draft';
   statusLabel: string;
+  itemsJson?: string;
+  items?: StockImportSlipItem[];
+  payments?: StockImportPaymentHistory[];
 }
 
 export interface AdminSupplier {
@@ -191,6 +260,7 @@ export interface AdminSupplier {
   phone: string;
   email: string;
   address: string;
+  branch?: string;
   totalPurchased: number;
   currentDebt?: number;
   totalCollected?: number;
@@ -362,6 +432,8 @@ export interface AdminEmployee {
   status: 'working' | 'resigned';
   workingDate?: string;
   area?: string;
+  province?: string;
+  district?: string;
   ward?: string;
   addressDetail?: string;
   debt?: number;
@@ -370,6 +442,22 @@ export interface AdminEmployee {
   zalo?: string;
   linkedUsernames?: string | string[];
   skills?: string[];
+}
+
+export interface AdminSpace {
+  id: string;
+  code: string;
+  name: string;
+  slug: string;
+  tagline?: string;
+  description?: string;
+  image?: string;
+  icon?: string;
+  displayOrder: number;
+  status: 'active' | 'hidden';
+  showOnHome: boolean;
+  showOnHeader: boolean;
+  categoryCount?: number;
 }
 
 export interface AdminCategory {
@@ -381,6 +469,7 @@ export interface AdminCategory {
   featuredProduct: string;
   image: string;
   space: string;
+  spaceId?: string;
   displayOrder: number;
   status: 'active' | 'hidden';
   showOnHome: boolean;

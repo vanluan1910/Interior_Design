@@ -3,7 +3,7 @@
 import React from 'react';
 import { Drawer, Button, Space } from 'antd';
 import type { FormInstance } from 'antd';
-import { CloseOutlined, SaveOutlined, CheckOutlined } from '@ant-design/icons';
+import { CheckOutlined } from '@ant-design/icons';
 
 export interface AdminFormDrawerProps {
   open: boolean;
@@ -45,9 +45,15 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({
   extraHeader,
   extraFooter,
   children,
-  destroyOnHidden = true,
+  destroyOnHidden = false,
   className = '',
 }) => {
+  const [mounted, setMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const displayTitle =
     title ||
     (isEditing
@@ -67,10 +73,15 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({
 
   const computedWidth = width || (size === 'large' ? 760 : 580);
 
+  if (!mounted) {
+    return null;
+  }
+
   return (
     <Drawer
       open={open}
       onClose={onClose}
+      forceRender
       destroyOnHidden={destroyOnHidden}
       className={`admin-form-drawer ${className}`}
       styles={{
@@ -102,28 +113,7 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({
           )}
         </div>
       }
-      extra={
-        <Space size="small">
-          {extraHeader}
-          <Button
-            htmlType="button"
-            onClick={onClose}
-            className="!h-8 px-3 rounded-lg border-slate-300 bg-white text-slate-700 text-xs font-medium hover:text-slate-900"
-          >
-            {cancelText}
-          </Button>
-          <Button
-            htmlType="button"
-            type="primary"
-            loading={loading}
-            onClick={handleSubmit}
-            icon={<SaveOutlined />}
-            className="!h-8 px-3.5 !bg-[#784e34] hover:!bg-[#5d371f] text-white border-none font-bold text-xs rounded-lg shadow-xs inline-flex items-center justify-center gap-1.5"
-          >
-            {defaultSubmitText}
-          </Button>
-        </Space>
-      }
+      extra={extraHeader ? <Space size="small">{extraHeader}</Space> : undefined}
       footer={
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="text-xs text-slate-400 font-normal">

@@ -16,6 +16,11 @@ export default function BookingModal({ isOpen, onClose }: BookingModalProps) {
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [submittedName, setSubmittedName] = useState('');
+  const [mounted, setMounted] = useState(false);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const onFinish = (values: any) => {
     setLoading(true);
@@ -42,6 +47,10 @@ export default function BookingModal({ isOpen, onClose }: BookingModalProps) {
     }, 800);
   };
 
+  if (!mounted) {
+    return null;
+  }
+
   return (
     <Modal
       open={isOpen}
@@ -49,7 +58,7 @@ export default function BookingModal({ isOpen, onClose }: BookingModalProps) {
       footer={null}
       centered
       width={560}
-      destroyOnHidden
+      forceRender
       styles={{
         body: {
           backgroundColor: '#fff8f5',
@@ -90,7 +99,7 @@ export default function BookingModal({ isOpen, onClose }: BookingModalProps) {
               layout="vertical"
               onFinish={onFinish}
               initialValues={{
-                location: 'hanoi',
+                location: 'phuquoc',
                 date: dayjs().add(1, 'day'),
               }}
               requiredMark="optional"
@@ -128,8 +137,7 @@ export default function BookingModal({ isOpen, onClose }: BookingModalProps) {
                   <Select
                     size="large"
                     options={[
-                      { value: 'hanoi', label: 'Hà Nội (48 Tràng Tiền)' },
-                      { value: 'saigon', label: 'TP. HCM (126 Nguyễn Thị Minh Khai)' },
+                      { value: 'phuquoc', label: 'Trụ sở & Showroom Phú Quốc (Ngã 4 Cửa Cạn)' },
                     ]}
                   />
                 </Form.Item>

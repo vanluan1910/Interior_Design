@@ -20,11 +20,16 @@ public sealed class Product
     public string Dimensions { get; set; } = string.Empty;
     public string Material { get; set; } = string.Empty;
     public string WoodType { get; set; } = string.Empty;
+    public string Color { get; set; } = string.Empty;
+    public string Warranty { get; set; } = string.Empty;
+    public string ShippingNote { get; set; } = string.Empty;
     public decimal Rating { get; set; } = 5.0m;
     public int ReviewCount { get; set; } = 0;
     public bool IsFeatured { get; set; } = false;
     public bool IsNew { get; set; } = false;
     public int InStock { get; set; } = 10;
+    public string Unit { get; set; } = "Bộ";
+    public string BranchStocksJson { get; set; } = "{}";
     public string ShortDescription { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;

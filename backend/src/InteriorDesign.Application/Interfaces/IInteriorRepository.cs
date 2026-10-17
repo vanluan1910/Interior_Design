@@ -7,13 +7,16 @@ namespace InteriorDesign.Application.Interfaces;
 public interface IInteriorRepository
 {
     // Products
-    Task<PagedResult<Product>> GetProductsAsync(int page, int pageSize, string? search, string? space, Guid? categoryId, ProductStatus? status, CancellationToken cancellationToken);
+    Task<PagedResult<Product>> GetProductsAsync(int page, int pageSize, string? search, string? space, Guid? categoryId, string? category, ProductStatus? status, string? branch, string? material = null, CancellationToken cancellationToken = default);
     Task<Product?> GetProductByIdAsync(Guid id, CancellationToken cancellationToken);
     Task<Product?> GetProductBySlugAsync(string slug, CancellationToken cancellationToken);
+    Task<Product?> GetProductByIdentifierAsync(string identifier, CancellationToken cancellationToken);
+    Task<IReadOnlyList<Product>> GetRelatedProductsAsync(Guid productId, string? space, Guid? categoryId, int limit, CancellationToken cancellationToken);
     Task<IReadOnlyList<Product>> GetFeaturedProductsAsync(int limit, CancellationToken cancellationToken);
     Task<Product> AddProductAsync(Product product, CancellationToken cancellationToken);
     Task<Product?> UpdateProductAsync(Product product, CancellationToken cancellationToken);
     Task<bool> DeleteProductAsync(Guid id, CancellationToken cancellationToken);
+    Task<IReadOnlyList<Branch>> GetBranchesAsync(CancellationToken cancellationToken);
 
     // Categories
     Task<IReadOnlyList<Category>> GetCategoriesAsync(CancellationToken cancellationToken);

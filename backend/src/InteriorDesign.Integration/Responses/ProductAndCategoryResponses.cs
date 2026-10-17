@@ -17,11 +17,16 @@ public sealed record ProductDto(
     string Dimensions,
     string Material,
     string WoodType,
+    string Color,
+    string Warranty,
+    string ShippingNote,
     decimal Rating,
     int ReviewCount,
     bool IsFeatured,
     bool IsNew,
     int InStock,
+    string Unit,
+    string? BranchStocksJson,
     string ShortDescription,
     string Description,
     DateTimeOffset CreatedAt,
@@ -39,4 +44,9 @@ public sealed record CategoryDto(
     int DisplayOrder,
     bool IsActive,
     int ProductCount
+);
+
+public sealed record ProductDetailDto(
+    ProductDto Product,
+    IReadOnlyList<ProductDto> RelatedProducts
 );

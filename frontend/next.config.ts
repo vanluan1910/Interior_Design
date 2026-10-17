@@ -62,6 +62,26 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  async rewrites() {
+    return [
+      {
+        source: "/api/:path*",
+        destination: "http://localhost:5000/api/:path*",
+      },
+      {
+        source: "/uploads/:path*",
+        destination: "http://localhost:5000/uploads/:path*",
+      },
+      {
+        source: "/swagger/:path*",
+        destination: "http://localhost:5000/swagger/:path*",
+      },
+      {
+        source: "/openapi/:path*",
+        destination: "http://localhost:5000/openapi/:path*",
+      },
+    ];
+  },
 };
 
 export default nextConfig;

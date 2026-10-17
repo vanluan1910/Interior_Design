@@ -1,27 +1,14 @@
 'use client';
 
-import React, { useState } from 'react';
-import Link from 'next/link';
+import React from 'react';
 
 export default function Footer() {
-  const [email, setEmail] = useState('');
-  const [subscribed, setSubscribed] = useState(false);
-
-  const handleSubscribe = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (email) {
-      setSubscribed(true);
-      setEmail('');
-      setTimeout(() => setSubscribed(false), 4000);
-    }
-  };
-
   return (
-    <footer className="w-full bg-[#fbf2ee] text-[#1f1b19] pt-16 pb-8 border-t border-[#eae1dd]">
+    <footer className="w-full bg-[#fbf2ee] text-[#1f1b19] pt-8 pb-8 border-t border-[#eae1dd]">
       <div className="w-full max-w-[1720px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-16">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-8 lg:gap-10 pb-12 border-b border-[#eae1dd]">
-          {/* Brand Info */}
-          <div className="lg:col-span-4 flex flex-col gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-8 lg:gap-8 pb-12 border-b border-[#eae1dd] items-start">
+          {/* Cột 1: Thương hiệu & Liên hệ */}
+          <div className="lg:col-span-3 flex flex-col gap-3.5">
             <div className="flex items-center gap-3.5">
               <img
                 alt="D2 Luxury Design Logo"
@@ -37,118 +24,99 @@ export default function Footer() {
                 </span>
               </div>
             </div>
+
             <p className="font-body-sm text-xs sm:text-sm text-[#51443d] leading-relaxed">
-              Giao hưởng giữa triết lý tối giản Wabi-Sabi Nhật Bản và công năng tinh tế Scandinavian. Từng thớ gỗ tự nhiên được chế tác bởi nghệ nhân giàu tâm huyết, gìn giữ vẻ đẹp nguyên bản của không gian sống.
+              Kiến tạo không gian sống thượng lưu từ tinh hoa gỗ tự nhiên nguyên bản. Chế tác thủ công bởi nghệ nhân giàu tâm huyết.
             </p>
-            <div className="flex items-center gap-2 pt-1 text-[#5d371f]">
-              <span className="material-symbols-outlined text-[20px]">verified</span>
-              <span className="font-label-sm text-xs text-[#51443d]">
-                Chứng chỉ FSC 100% Gỗ rừng trồng bền vững
-              </span>
+
+            <div className="flex flex-col gap-1.5 text-xs text-[#51443d] pt-1 border-t border-[#ebdcd2]">
+              <div className="flex items-center gap-2">
+                <span className="text-[#83746c] shrink-0">Tư vấn KTS:</span>
+                <a href="tel:0967323335" className="hover:text-[#5d371f] transition-colors font-bold text-[#5d371f]">
+                  0967 323 335
+                </a>
+              </div>
             </div>
           </div>
 
-          {/* Collections */}
-          <div className="lg:col-span-2 flex flex-col gap-3">
-            <h3 className="font-title-md text-sm text-[#5d371f] font-semibold uppercase tracking-wider">
-              Bộ sưu tập
-            </h3>
-            <ul className="flex flex-col gap-2 font-body-sm text-xs sm:text-sm text-[#51443d]">
-              <li>
-                <Link href="#living-spaces" className="hover:text-[#5d371f] transition-colors">
-                  Phòng khách
-                </Link>
-              </li>
-              <li>
-                <Link href="#living-spaces" className="hover:text-[#5d371f] transition-colors">
-                  Phòng ngủ
-                </Link>
-              </li>
-              <li>
-                <Link href="#living-spaces" className="hover:text-[#5d371f] transition-colors">
-                  Phòng ăn
-                </Link>
-              </li>
-              <li>
-                <Link href="#featured-products" className="hover:text-[#5d371f] transition-colors">
-                  Bộ sưu tập Kyoto
-                </Link>
-              </li>
-              <li>
-                <Link href="#featured-products" className="hover:text-[#5d371f] transition-colors">
-                  Bộ sưu tập Nordic Calm
-                </Link>
-              </li>
-            </ul>
-          </div>
-
-          {/* Experience Spaces */}
-          <div className="lg:col-span-3 flex flex-col gap-3">
+          {/* Cột 2: Không gian trải nghiệm */}
+          <div className="lg:col-span-3 flex flex-col gap-3.5">
             <h3 className="font-title-md text-sm text-[#5d371f] font-semibold uppercase tracking-wider">
               Không gian trải nghiệm
             </h3>
-            <div className="flex flex-col gap-2 font-body-sm text-xs sm:text-sm text-[#51443d]">
-              <p className="font-title-md text-xs text-[#1f1b19] font-bold">Showroom Hà Nội:</p>
-              <p>48 Phố Tràng Tiền, Quận Hoàn Kiếm, Hà Nội</p>
-              <p className="font-title-md text-xs text-[#1f1b19] font-bold pt-2">
-                Showroom TP. Hồ Chí Minh:
+            <div className="flex flex-col gap-1 text-xs sm:text-sm text-[#51443d]">
+              <p className="font-title-md text-xs text-[#1f1b19] font-bold">Trụ sở &amp; Showroom trải nghiệm:</p>
+              <p className="text-xs">Ngã 4 Cửa Cạn, đặc khu Phú Quốc, tỉnh An Giang</p>
+              <p className="text-[#83746c] font-data-mono text-xs">
+                Hotline &amp; Zalo: 0967 323 335 (8:30 - 21:00)
               </p>
-              <p>126 Nguyễn Thị Minh Khai, Phường Võ Thị Sáu, Quận 3</p>
-              <p className="pt-2 text-[#83746c] font-data-mono text-xs">
-                Hotline: 1900 8922 (8:30 - 21:00)
-              </p>
+            </div>
+            <div className="flex flex-col gap-1 text-xs sm:text-sm text-[#51443d] pt-2 border-t border-[#ebdcd2]">
+              <p className="font-title-md text-xs text-[#1f1b19] font-bold">Nhà máy &amp; Xưởng chế tác:</p>
+              <p className="text-xs">Xưởng mộc chế tác nội thất cao cấp D2 LUXURY</p>
+              <p className="text-[#83746c] text-xs">Nhận may đo &amp; lên bản vẽ 3D theo yêu cầu</p>
             </div>
           </div>
 
-          {/* Privileges & Newsletter */}
-          <div className="lg:col-span-3 flex flex-col gap-3">
+          {/* Cột 3: Chính sách hỗ trợ */}
+          <div className="lg:col-span-2 flex flex-col gap-3">
             <h3 className="font-title-md text-sm text-[#5d371f] font-semibold uppercase tracking-wider">
-              Đặc quyền D2 LUXURY
+              Chính sách hỗ trợ
             </h3>
-            <ul className="flex flex-col gap-1.5 font-body-sm text-xs sm:text-sm text-[#51443d] mb-2">
-              <li className="flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#5d371f]"></span>
-                <span>Bảo hành cấu trúc gỗ 5 năm tận tâm</span>
+            <ul className="flex flex-col gap-2 font-body-sm text-xs sm:text-sm text-[#51443d]">
+              <li>
+                <a href="#" className="hover:text-[#5d371f] transition-colors inline-block">
+                  Chính sách bảo hành gỗ
+                </a>
               </li>
-              <li className="flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#5d371f]"></span>
-                <span>Vận chuyển &amp; lắp đặt chuyên nghiệp toàn quốc</span>
+              <li>
+                <a href="#" className="hover:text-[#5d371f] transition-colors inline-block">
+                  Vận chuyển &amp; Lắp đặt
+                </a>
               </li>
-              <li className="flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#5d371f]"></span>
-                <span>Bảo dưỡng định kỳ tinh dầu gỗ hàng năm</span>
+              <li>
+                <a href="#" className="hover:text-[#5d371f] transition-colors inline-block">
+                  Chính sách đổi trả
+                </a>
+              </li>
+              <li>
+                <a href="#" className="hover:text-[#5d371f] transition-colors inline-block">
+                  Bảo mật thông tin
+                </a>
+              </li>
+              <li>
+                <a href="#" className="hover:text-[#5d371f] transition-colors inline-block">
+                  Quy trình may đo 3D
+                </a>
               </li>
             </ul>
+          </div>
 
-            <div className="flex flex-col gap-1.5 pt-2">
-              <span className="font-label-md text-xs text-[#1f1b19] font-semibold">
-                Bản tin không gian sống
-              </span>
-              <p className="font-body-sm text-xs text-[#83746c]">
-                Nhận ấn phẩm phong cách &amp; ưu đãi giới hạn 10%.
-              </p>
-              <form onSubmit={handleSubscribe} className="flex gap-1.5 mt-1">
-                <input
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-3 py-2 rounded-none bg-white font-body-sm text-xs text-[#1f1b19] placeholder:text-[#83746c] border border-[#d5c3ba]/60 focus:outline-none focus:ring-1 focus:ring-[#5d371f]"
-                  placeholder="Email của quý khách..."
-                  type="email"
-                  required
+          {/* Cột 4: Fanpage Facebook */}
+          <div className="lg:col-span-4 flex flex-col gap-3">
+            <h3 className="font-title-md text-sm text-[#5d371f] font-semibold uppercase tracking-wider">
+              Fanpage Facebook
+            </h3>
+            <a
+              href="https://www.facebook.com/profile.php?id=61575009790250&mibextid=wwXIfr"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Fanpage Facebook Nội Thất D2 Luxury Design"
+              title="Ghé thăm Fanpage Facebook Nội Thất D2 Luxury Design"
+              className="group block overflow-hidden rounded-none border border-[#d5c3ba] bg-white shadow-sm hover:shadow-md hover:border-[#5d371f] transition-all duration-300 cursor-pointer"
+            >
+              <div className="relative overflow-hidden">
+                <img
+                  src="/facebook-banner.png"
+                  alt="Fanpage Nội Thất D2 Luxury Design"
+                  className="w-full h-auto object-cover block group-hover:scale-[1.02] transition-transform duration-500 ease-out"
                 />
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-none bg-[#5d371f] text-white font-label-md text-xs hover:bg-[#784e34] transition-colors shrink-0 shadow-sm cursor-pointer"
-                >
-                  Đăng ký
-                </button>
-              </form>
-              {subscribed && (
-                <span className="text-xs text-emerald-700 font-medium animate-in fade-in">
-                  ✓ Cảm ơn Quý khách đã đăng ký thành công!
-                </span>
-              )}
-            </div>
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors duration-300 pointer-events-none" />
+              </div>
+            </a>
+            <p className="text-[11px] text-[#83746c] italic">
+              * Nhấn vào ảnh để cập nhật hình ảnh công trình thực tế &amp; video bàn giao mới nhất.
+            </p>
           </div>
         </div>
 

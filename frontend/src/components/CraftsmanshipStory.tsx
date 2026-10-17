@@ -19,7 +19,7 @@ export default function CraftsmanshipStory({ onOpenBooking }: CraftsmanshipStory
               <img
                 alt="Vietnamese master artisan woodworker hand-planing a large solid walnut timber"
                 className="w-full h-full object-cover"
-                src="https://lh3.googleusercontent.com/aida-public/AB6AXuCvcO1QTckez-o7vQqpBrVFSVf7p58XizbNa3ZQ5Hlj9POeh9kHR4h_n7JY899W08FBcJBicOZ8AB8vllLqIHwN1ZtxOkE9G9Uxkjeq2kUPNYc9nzi5PD_O60dyLo_dz-ffP_hX1ZcKkNjMu7XgK65tt0EoU4JTdHMSWgDteaKIkhj1t6gCvRgPd19W8WcxX_cqHiW5RdRcj7sK3R7UhfDcIrY27p6VFaOip9gKQ2hB0aRSYixlOTY4"
+                src="https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?w=800&auto=format&fit=crop&q=80"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-[#1f1b19]/80 via-transparent to-transparent"></div>
 
@@ -139,7 +139,7 @@ export default function CraftsmanshipStory({ onOpenBooking }: CraftsmanshipStory
                 <img
                   alt="Hình ảnh phim xưởng chế tác gỗ"
                   className="w-full h-full object-cover opacity-70"
-                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuCvcO1QTckez-o7vQqpBrVFSVf7p58XizbNa3ZQ5Hlj9POeh9kHR4h_n7JY899W08FBcJBicOZ8AB8vllLqIHwN1ZtxOkE9G9Uxkjeq2kUPNYc9nzi5PD_O60dyLo_dz-ffP_hX1ZcKkNjMu7XgK65tt0EoU4JTdHMSWgDteaKIkhj1t6gCvRgPd19W8WcxX_cqHiW5RdRcj7sK3R7UhfDcIrY27p6VFaOip9gKQ2hB0aRSYixlOTY4"
+                  src="https://images.unsplash.com/photo-1617806118233-18e1de247200?w=800&auto=format&fit=crop&q=80"
                 />
                 <div className="absolute flex flex-col items-center gap-3">
                   <div className="w-16 h-16 rounded-none bg-[#5d371f]/90 text-white flex items-center justify-center shadow-xl hover:scale-105 transition-transform">

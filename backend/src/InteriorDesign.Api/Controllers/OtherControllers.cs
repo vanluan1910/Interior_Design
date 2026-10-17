@@ -48,21 +48,9 @@ public sealed class DashboardController : ApiControllerBase
         Ok(await Sender.Send(new GetDashboardSummaryQuery(), cancellationToken));
 }
 
-[Route("api/settings")]
-public sealed class SettingsController : ApiControllerBase
-{
-    [HttpGet]
-    public async Task<IActionResult> GetSettings(CancellationToken cancellationToken) =>
-        Ok(await Sender.Send(new GetSettingsQuery(), cancellationToken));
 
-    [HttpPut]
-    [Authorize(Roles = "Admin")]
-    public async Task<IActionResult> UpdateSettings([FromBody] UpdateStoreSettingRequest request, CancellationToken cancellationToken) =>
-        ToActionResult(await Sender.Send(new UpdateSettingsCommand(request), cancellationToken));
-}
 
 [Route("api/upload")]
-[Authorize(Roles = "Admin,Staff")]
 public sealed class UploadController : ApiControllerBase
 {
     private readonly IWebHostEnvironment _env;

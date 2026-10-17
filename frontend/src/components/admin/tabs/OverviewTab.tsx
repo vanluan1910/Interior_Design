@@ -21,6 +21,7 @@ import {
 } from '@ant-design/icons';
 import type { OrderRow } from '@/types/admin';
 import { isMatchBranch } from '@/utils/branchHelper';
+import { getCleanProductName, getOrderQuantity } from './OrdersTab';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -625,12 +626,29 @@ export function OverviewTab({ ordersList, selectedGlobalBranch = 'all', onNaviga
                     title: 'Tác phẩm / Sản phẩm',
                     dataIndex: 'productName',
                     key: 'productName',
-                    render: (text, record) => (
-                      <div>
-                        <div className="font-medium text-[#1f1b19]">{text}</div>
-                        <div className="text-xs text-[#83746c]">{record.productSpec}</div>
-                      </div>
-                    ),
+                    render: (text, record) => {
+                      const clean = getCleanProductName(text);
+                      return (
+                        <div>
+                          <div className="font-medium text-[#1f1b19]">{clean}</div>
+                          <div className="text-xs text-[#83746c]">{record.productSpec}</div>
+                        </div>
+                      );
+                    },
+                  },
+                  {
+                    title: 'Số lượng',
+                    key: 'quantity',
+                    align: 'center',
+                    width: 90,
+                    render: (_, record) => {
+                      const qty = getOrderQuantity(record);
+                      return (
+                        <span className="font-mono font-bold text-xs text-slate-800 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded inline-block">
+                          {qty}
+                        </span>
+                      );
+                    },
                   },
                   {
                     title: 'Giá trị',

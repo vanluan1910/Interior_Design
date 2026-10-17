@@ -15,6 +15,11 @@ export default function SampleBoxModal({ isOpen, onClose }: SampleBoxModalProps)
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [submittedAddress, setSubmittedAddress] = useState('');
+  const [mounted, setMounted] = useState(false);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const onFinish = (values: any) => {
     setLoading(true);
@@ -41,6 +46,10 @@ export default function SampleBoxModal({ isOpen, onClose }: SampleBoxModalProps)
     }, 800);
   };
 
+  if (!mounted) {
+    return null;
+  }
+
   return (
     <Modal
       open={isOpen}
@@ -48,7 +57,7 @@ export default function SampleBoxModal({ isOpen, onClose }: SampleBoxModalProps)
       footer={null}
       centered
       width={560}
-      destroyOnHidden
+      forceRender
       styles={{
         body: {
           backgroundColor: '#fff8f5',
@@ -95,14 +104,15 @@ export default function SampleBoxModal({ isOpen, onClose }: SampleBoxModalProps)
               requiredMark="optional"
             >
               <Form.Item
-                label={<span className="font-label-md text-xs font-semibold text-[#1f1b19]">Chọn mẫu gỗ quan tâm:</span>}
+                label={<span className="font-label-md text-xs font-semibold text-[#1f1b19]">Chọn mẫu vật liệu quan tâm:</span>}
                 name="woods"
-                rules={[{ required: true, message: 'Vui lòng chọn ít nhất 1 loại gỗ!' }]}
+                rules={[{ required: true, message: 'Vui lòng chọn ít nhất 1 loại vật liệu!' }]}
               >
-                <Checkbox.Group className="grid grid-cols-3 gap-2">
-                  <Checkbox value="walnut" className="font-medium text-xs">Gỗ Óc Chó Tự Nhiên</Checkbox>
-                  <Checkbox value="oak" className="font-medium text-xs">Gỗ Sồi Trắng</Checkbox>
-                  <Checkbox value="ash" className="font-medium text-xs">Gỗ Tần Bì Tự Nhiên</Checkbox>
+                <Checkbox.Group className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <Checkbox value="oak" className="font-medium text-xs">Gỗ Sồi Tự Nhiên</Checkbox>
+                  <Checkbox value="ash" className="font-medium text-xs">Gỗ Tần Bì</Checkbox>
+                  <Checkbox value="metay" className="font-medium text-xs">Gỗ Me Tây</Checkbox>
+                  <Checkbox value="rattan" className="font-medium text-xs">Mây Tự Nhiên</Checkbox>
                 </Checkbox.Group>
               </Form.Item>
 
