@@ -1054,33 +1054,19 @@ export function SuppliersTab({
               </Col>
             </Row>
 
-            {/* Live VietQR Preview */}
+            {/* Live VietQR Preview - Only QR code */}
             {watchedBankAccount && (
-              <div className="bg-slate-50 p-3.5 rounded-xl border border-dashed border-slate-300 flex flex-col sm:flex-row items-center gap-4">
-                <div className="shrink-0">
-                  <VietQrCard
-                    bankName={watchedBankName || 'MBBank'}
-                    accountNumber={watchedBankAccount}
-                    accountName={watchedCompanyName || 'NHÀ CUNG CẤP'}
-                    paymentPrefix="THANH TOAN"
-                    orderCode={form.getFieldValue('code') || 'NCC'}
-                    amount={0}
-                    showDetails={false}
-                    className="max-w-[140px] p-1.5 bg-white border-slate-200"
-                  />
-                </div>
-                <div className="text-xs space-y-1 text-slate-600 flex-1">
-                  <div className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
-                    <span>Mã VietQR Thanh Toán Động</span>
-                    <Tag color="success" className="text-[10px] m-0">Tự động tạo</Tag>
-                  </div>
-                  <p className="text-[11px] text-slate-500 m-0">
-                    Mã VietQR này sẽ được sử dụng trực tiếp khi lập phiếu chi, thanh toán tiền hàng hoặc quét QR chuyển khoản qua ứng dụng ngân hàng.
-                  </p>
-                  <div className="font-mono text-[11px] text-[#784e34] bg-white p-1.5 rounded border border-slate-200">
-                    Ngân hàng: <strong>{watchedBankName || '---'}</strong> • STK: <strong>{watchedBankAccount}</strong>
-                  </div>
-                </div>
+              <div className="bg-slate-50/70 p-3.5 rounded-xl border border-dashed border-slate-300 flex items-center justify-center">
+                <VietQrCard
+                  bankName={watchedBankName || 'MBBank'}
+                  accountNumber={watchedBankAccount}
+                  accountName={watchedCompanyName || 'NHÀ CUNG CẤP'}
+                  paymentPrefix="THANH TOAN"
+                  orderCode={form.getFieldValue('code') || 'NCC'}
+                  amount={0}
+                  showDetails={false}
+                  className="max-w-[170px] p-1.5 bg-white border-slate-200 shadow-2xs"
+                />
               </div>
             )}
           </div>
@@ -1427,7 +1413,7 @@ function SupplierExpandedDetailRow({
                       <td className="px-3 py-2 text-slate-700">{po.warehouseName}</td>
                       <td className="px-3 py-2">
                         <div className="font-medium text-slate-900">{po.itemName}</div>
-                        <div className="text-[11px] text-slate-500">{po.quantity} {po.unit}</div>
+                        <div className="text-[11px] text-slate-500">Số lượng: {po.quantity}</div>
                       </td>
                       <td className="px-3 py-2 text-right font-mono font-bold text-slate-900">
                         {(po.totalAmount || 0).toLocaleString('vi-VN')} đ

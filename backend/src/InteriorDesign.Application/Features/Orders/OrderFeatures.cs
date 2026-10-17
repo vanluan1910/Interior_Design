@@ -43,12 +43,28 @@ public static class OrderMapper
 
         var statusLabel = o.Status switch
         {
-            OrderStatus.Pending => "Chờ xử lý",
-            OrderStatus.Processing => "Đang xử lý / SX",
+            OrderStatus.Pending => "Chờ duyệt",
+            OrderStatus.Confirmed => "Chờ duyệt",
+            OrderStatus.Processing => "Đang gia công",
             OrderStatus.Delivering => "Đang giao hàng",
-            OrderStatus.Completed => "Hoàn thành",
+            OrderStatus.Completed => "Hoàn tất bàn giao",
             OrderStatus.Cancelled => "Đã hủy",
-            _ => o.Status.ToString()
+            OrderStatus.Returned => "Khách trả hàng",
+            OrderStatus.ReturnCompleted => "Hoàn hàng thành công",
+            _ => "Chờ duyệt"
+        };
+
+        var statusStr = o.Status switch
+        {
+            OrderStatus.Pending => "pending",
+            OrderStatus.Confirmed => "pending",
+            OrderStatus.Processing => "processing",
+            OrderStatus.Delivering => "delivering",
+            OrderStatus.Completed => "completed",
+            OrderStatus.Cancelled => "cancelled",
+            OrderStatus.Returned => "returned",
+            OrderStatus.ReturnCompleted => "returned_success",
+            _ => "pending"
         };
 
         var spaceLabel = o.SpaceType switch
@@ -88,7 +104,7 @@ public static class OrderMapper
             Note: o.Note,
             PaymentMethod: o.PaymentMethod,
             PaymentStatus: o.PaymentStatus.ToString(),
-            Status: o.Status.ToString().ToLower(),
+            Status: statusStr,
             StatusLabel: statusLabel,
             SubTotal: o.SubTotal,
             Value: val,

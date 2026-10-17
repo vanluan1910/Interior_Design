@@ -25,6 +25,7 @@ import type { OrderRow } from '@/types/admin';
 import { isMatchBranch } from '@/utils/branchHelper';
 import { getCleanProductName, getOrderQuantity } from './OrdersTab';
 import { dashboardApi, type OverviewDataResponse } from '@/api/dashboardApi';
+import { normalizeOrderStatus } from '@/api/orderApi';
 
 const { Title } = Typography;
 const { Option } = Select;
@@ -81,10 +82,17 @@ export function OverviewTab({ ordersList, selectedGlobalBranch = 'all', onNaviga
     );
   }, [ordersList, selectedGlobalBranch]);
 
-  // Fallback calculated metrics purely based on real scoped orders
-  const fallbackRevenue = React.useMemo(() => {
-    return scopedOrders.reduce((sum, o) => sum + (o.value || 0), 0);
+  // Fallback calculated metrics purely based on real scoped orders (Đã trừ đơn hủy & hoàn hàng)
+  const activeScopedOrders = React.useMemo(() => {
+    return scopedOrders.filter((o) => {
+      const s = normalizeOrderStatus(o.status);
+      return s !== 'cancelled' && s !== 'returned' && s !== 'returned_success';
+    });
   }, [scopedOrders]);
+
+  const fallbackRevenue = React.useMemo(() => {
+    return activeScopedOrders.reduce((sum, o) => sum + (o.value || 0), 0);
+  }, [activeScopedOrders]);
 
   const fallbackCogs = Math.round(fallbackRevenue * 0.57);
   const fallbackProfit = fallbackRevenue - fallbackCogs;

@@ -397,17 +397,17 @@ public static class InteriorSeedData
     public static StoreSetting GetStoreSetting() => new()
     {
         Id = Guid.Parse("88888888-8888-8888-8888-888888888888"),
-        StoreName = "KOMOREBI WOOD & LIVING",
-        Hotline = "1900 6868",
-        Email = "contact@komorebi.vn",
-        Address = "Ngã 4 Cửa Cạn, đặc khu Phú Quốc, tỉnh An Giang",
-        LogoUrl = "/logo.svg",
+        StoreName = "D2 LUXURY DESIGN",
+        Hotline = "0967 323 335",
+        Email = "contact@d2luxury.vn",
+        Address = "Ngã 4 Cửa Cạn, Đặc khu Phú Quốc, tỉnh Kiên Giang",
+        LogoUrl = "/logo.png",
         HeroBannerUrl = "/hero-interior.jpg",
         BankName = "MB Bank",
-        BankAccountName = "CONG TY TNHH NOI THAT KOMOREBI",
-        BankAccountNumber = "999988886666",
+        BankAccountName = "Nguyễn Văn Luận",
+        BankAccountNumber = "0379241075",
         VietQrCodeUrl = "",
-        SocialLinksJson = "{\"facebook\":\"https://facebook.com/komorebi\",\"instagram\":\"https://instagram.com/komorebi\",\"tiktok\":\"https://tiktok.com/@komorebi\"}",
+        SocialLinksJson = "{\"facebook\":\"https://www.facebook.com/profile.php?id=61575009790250\",\"instagram\":\"https://instagram.com/d2luxury\",\"tiktok\":\"https://tiktok.com/@d2luxury\"}",
         UpdatedAt = DateTimeOffset.UtcNow
     };
 

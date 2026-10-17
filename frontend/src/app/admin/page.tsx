@@ -45,9 +45,8 @@ import { categoryApi } from '@/api/categoryApi';
 import { spaceApi } from '@/api/spaceApi';
 import { productApi } from '@/api/productApi';
 import { supplierApi } from '@/api/supplierApi';
-import { uomApi } from '@/api/uomApi';
 import { customerApi } from '@/api/customerApi';
-import { orderApi } from '@/api/orderApi';
+import { orderApi, normalizeOrderRow } from '@/api/orderApi';
 import { settingsApi } from '@/api/settingsApi';
 import { roleApi } from '@/api/roleApi';
 import { employeeApi } from '@/api/employeeApi';
@@ -60,7 +59,6 @@ import {
   type AdminSupplier,
   type AdminEmployee,
   type AdminBranch,
-  type AdminUom,
   type AdminRole,
   type AdminSpace,
 } from '@/types/admin';
@@ -70,7 +68,6 @@ import {
   INITIAL_BRANCHES,
   INITIAL_CUSTOMERS,
   INITIAL_SUPPLIERS,
-  INITIAL_UOMS,
   INITIAL_ROLES,
 } from '@/data/admin/mockData';
 
@@ -113,9 +110,9 @@ function AdminPageContent({
     { key: 'orders', label: 'Đơn hàng', permission: 'orders.view' },
     { key: 'inventory', label: 'Sản phẩm', permission: 'catalog.products.view' },
     { key: 'categories', label: 'Danh mục', permissions: ['catalog.categories.view', 'catalog.spaces.view'] },
-    { key: 'workshop', label: 'Kho & Showroom', permissions: ['inventory.warehouses.view', 'inventory.imports.view', 'inventory.returns.view', 'inventory.stocktake.view'] },
+    { key: 'workshop', label: 'Mua hàng', permissions: ['inventory.imports.view', 'inventory.returns.view', 'inventory.stocktake.view', 'inventory.warehouses.view'] },
     { key: 'customers', label: 'Khách hàng', permissions: ['customers.profile.view', 'customers.consult.view'] },
-    { key: 'settings', label: 'Cài đặt', permissions: ['settings.brand.view', 'settings.payment.view', 'settings.print.view', 'settings.branches.view', 'settings.uom.view', 'settings.employees.view', 'settings.rbac.view'] },
+    { key: 'settings', label: 'Cài đặt', permissions: ['settings.brand.view', 'settings.payment.view', 'settings.print.view', 'settings.branches.view', 'inventory.warehouses.view', 'settings.employees.view', 'settings.rbac.view'] },
   ], []);
 
   const accessibleNavTabs: AdminNavTab[] = useMemo(() => {
@@ -185,7 +182,6 @@ function AdminPageContent({
   const [branchesList, setBranchesList] = useState<AdminBranch[]>(INITIAL_BRANCHES);
   const [customersList, setCustomersList] = useState<AdminCustomer[]>([]);
   const [suppliersList, setSuppliersList] = useState<AdminSupplier[]>([]);
-  const [uomsList, setUomsList] = useState<AdminUom[]>([]);
   const [rolesList, setRolesList] = useState<AdminRole[]>(INITIAL_ROLES);
   const [storeHeaderInfo, setStoreHeaderInfo] = useState<{ logoUrl?: string | null; brandName?: string; companyName?: string }>({
     logoUrl: '/logo.png',
@@ -275,7 +271,6 @@ function AdminPageContent({
     setEmployeesList(getStoredAdminData(ADMIN_STORAGE_KEYS.EMPLOYEES, INITIAL_EMPLOYEES));
     setCustomersList(getStoredAdminData(ADMIN_STORAGE_KEYS.CUSTOMERS, []));
     setSuppliersList(getStoredAdminData(ADMIN_STORAGE_KEYS.SUPPLIERS, []));
-    setUomsList(getStoredAdminData(ADMIN_STORAGE_KEYS.UOMS, []));
     setRolesList(getStoredAdminData(ADMIN_STORAGE_KEYS.ROLES, INITIAL_ROLES));
     const storedBranch = getStoredAdminData(ADMIN_STORAGE_KEYS.SELECTED_BRANCH, '');
     if (storedBranch && storedBranch !== 'all') {
@@ -406,20 +401,6 @@ function AdminPageContent({
       setSuppliersList(getStoredAdminData(ADMIN_STORAGE_KEYS.SUPPLIERS, []));
     };
 
-    // Fetch UOMs directly from Backend API (Real Data)
-    const loadUoms = async () => {
-      try {
-        const uoms = await uomApi.getUoms();
-        if (uoms && Array.isArray(uoms)) {
-          setUomsList(uoms);
-          setStoredAdminData(ADMIN_STORAGE_KEYS.UOMS, uoms);
-          return;
-        }
-      } catch (err) {
-        console.warn('Could not fetch UOMs from API, using fallback:', err);
-      }
-      setUomsList(getStoredAdminData(ADMIN_STORAGE_KEYS.UOMS, []));
-    };
 
     // Fetch Customers directly from Backend API (Real Data)
     const loadCustomers = async () => {
@@ -441,14 +422,16 @@ function AdminPageContent({
       try {
         const orders = await orderApi.getOrders();
         if (orders && Array.isArray(orders)) {
-          setOrdersList(orders);
-          setStoredAdminData(ADMIN_STORAGE_KEYS.ORDERS, orders);
+          const normalized = orders.map(normalizeOrderRow);
+          setOrdersList(normalized);
+          setStoredAdminData(ADMIN_STORAGE_KEYS.ORDERS, normalized);
           return;
         }
       } catch (err) {
         console.warn('Could not fetch orders from API, using fallback:', err);
       }
-      setOrdersList(getStoredAdminData(ADMIN_STORAGE_KEYS.ORDERS, []));
+      const cached = getStoredAdminData(ADMIN_STORAGE_KEYS.ORDERS, []);
+      setOrdersList(Array.isArray(cached) ? cached.map(normalizeOrderRow) : []);
     };
 
     // Fetch Roles directly from Backend API (Real Data)
@@ -483,7 +466,6 @@ function AdminPageContent({
 
     // 1. Always load common master data (branches, uoms)
     loadBranches();
-    loadUoms();
 
     // 2. Load tab-specific datasets lazily based on active tab
     if (activeNav === 'inventory' || activeNav === 'categories') {
@@ -510,7 +492,7 @@ function AdminPageContent({
 
   // Settings Sub-tab state
   const urlSettingsTab = searchParams.get('settingsTab');
-  const validSettingsTab = (urlSettingsTab && ['store', 'company', 'payment', 'print-templates', 'branches', 'uom', 'roles', 'users', 'employees', 'permissions'].includes(urlSettingsTab))
+  const validSettingsTab = (urlSettingsTab && ['store', 'company', 'payment', 'print-templates', 'branches', 'warehouses', 'roles', 'users', 'employees', 'permissions'].includes(urlSettingsTab))
     ? (urlSettingsTab as any)
     : null;
   const [settingsActiveTabState, setSettingsActiveTabState] = useState<string | null>(validSettingsTab);
@@ -611,20 +593,12 @@ function AdminPageContent({
         <div className="h-20 w-full px-3 sm:px-5 lg:px-6 xl:px-8 flex items-center justify-between flex-nowrap whitespace-nowrap gap-2 sm:gap-4">
           {/* Left: Brand + Main Nav */}
           <div className="flex items-center gap-3 xl:gap-5 2xl:gap-6 min-w-0">
-            <Link href="/admin" className="flex items-center gap-2 sm:gap-2.5 group shrink-0 select-none">
+            <Link href="/admin" className="flex items-center group shrink-0 select-none py-1">
               <img
                 alt={storeHeaderInfo.brandName || 'Logo'}
-                className="h-9 sm:h-10 w-auto object-contain transition-transform group-hover:scale-105"
+                className="h-14 sm:h-16 lg:h-[66px] w-auto max-h-[72px] object-contain transition-transform group-hover:scale-105"
                 src={storeHeaderInfo.logoUrl || '/logo.png'}
               />
-              <div className="flex flex-col justify-center">
-                <span className="font-headline-sm text-sm sm:text-base text-[#5d371f] leading-none tracking-tight font-medium">
-                  {storeHeaderInfo.brandName || 'D2 LUXURY'}
-                </span>
-                <span className="font-label-sm text-[8px] text-[#83746c] tracking-wider mt-0.5 font-normal">
-                  {storeHeaderInfo.companyName || 'Nội Thất Gỗ Tự Nhiên'}
-                </span>
-              </div>
             </Link>
 
             {/* Desktop Navigation (XL screens >= 1280px show all permitted tabs directly) */}
@@ -796,7 +770,6 @@ function AdminPageContent({
             setCatalogList={setCatalogList}
             categoriesList={categoriesList}
             spacesList={spacesList}
-            uomsList={uomsList}
             branchesList={branchesList}
             selectedGlobalBranch={selectedGlobalBranch}
             initialSearch={targetProductSearch || undefined}
@@ -821,10 +794,9 @@ function AdminPageContent({
             setCatalogList={setCatalogList}
             suppliersList={suppliersList}
             setSuppliersList={setSuppliersList}
-            uomsList={uomsList}
             branchesList={branchesList}
             selectedGlobalBranch={selectedGlobalBranch}
-            initialSubTab={(searchParams.get('subTab') as any) || (targetCreateImportProduct ? 'imports' : 'warehouses')}
+            initialSubTab={(searchParams.get('subTab') as any) || 'imports'}
             initialImportProduct={targetCreateImportProduct}
             initialImportMode={searchParams.get('mode') === 'create' || Boolean(targetCreateImportProduct) ? 'create' : 'list'}
             onClearInitialImportProduct={() => setTargetCreateImportProduct(null)}
@@ -855,8 +827,6 @@ function AdminPageContent({
           <SettingsTab
             branchesList={branchesList}
             setBranchesList={setBranchesList}
-            uomsList={uomsList}
-            setUomsList={setUomsList}
             rolesList={rolesList}
             employeesList={employeesList}
             setEmployeesList={setEmployeesList}

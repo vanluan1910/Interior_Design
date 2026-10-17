@@ -178,7 +178,14 @@ export function PosEntryHeader({
                               <span>{product.categoryName || product.collection || 'Nội thất'}</span>
                               <span>•</span>
                               <span className="text-emerald-700 font-medium">
-                                Tồn: {product.stockNote || 'Có sẵn'}
+                                Tồn: {(() => {
+                                  if (product.inStock !== undefined && product.inStock !== null) return product.inStock;
+                                  if (product.stockNote) {
+                                    const digits = product.stockNote.replace(/[^\d-]/g, '');
+                                    return digits !== '' ? digits : product.stockNote;
+                                  }
+                                  return 'Có sẵn';
+                                })()}
                               </span>
                             </div>
                           </div>

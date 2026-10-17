@@ -34,6 +34,50 @@ export interface CreateOrderPayload extends Partial<OrderRow> {
   paymentStatus?: string;
 }
 
+export function normalizeOrderStatus(rawStatus?: string | null): 'pending' | 'processing' | 'delivering' | 'completed' | 'cancelled' | 'returned' | 'returned_success' {
+  if (!rawStatus) return 'pending';
+  const s = String(rawStatus).trim().toLowerCase();
+  if (s === 'processing' || s === 'inproduction' || s === 'in_production' || s === 'production') {
+    return 'processing';
+  }
+  if (s === 'delivering' || s === 'shipping') {
+    return 'delivering';
+  }
+  if (s === 'completed' || s === 'done' || s === 'finished') {
+    return 'completed';
+  }
+  if (s === 'cancelled' || s === 'canceled') {
+    return 'cancelled';
+  }
+  if (s === 'returned_success' || s === 'return_completed' || s === 'returncompleted' || s === 'returnedsuccess' || s === 'refunded') {
+    return 'returned_success';
+  }
+  if (s === 'returned' || s === 'return' || s === 'returning') {
+    return 'returned';
+  }
+  return 'pending';
+}
+
+const ORDER_STATUS_LABELS: Record<string, string> = {
+  pending: 'Chờ duyệt',
+  processing: 'Đang gia công',
+  delivering: 'Đang giao hàng',
+  completed: 'Hoàn tất bàn giao',
+  cancelled: 'Đã hủy',
+  returned: 'Khách trả hàng',
+  returned_success: 'Hoàn hàng thành công',
+};
+
+export function normalizeOrderRow(order: OrderRow): OrderRow {
+  if (!order) return order;
+  const status = normalizeOrderStatus(order.status);
+  return {
+    ...order,
+    status,
+    statusLabel: ORDER_STATUS_LABELS[status] || order.statusLabel || 'Chờ duyệt',
+  };
+}
+
 export const orderApi = {
   /**
    * Lấy danh sách đơn hàng từ Backend API (kèm bộ nhớ đệm chống trùng lặp request)
@@ -55,7 +99,9 @@ export const orderApi = {
     if (params?.page !== undefined) query.append('page', String(params.page));
     if (params?.pageSize !== undefined) query.append('pageSize', String(params.pageSize));
     if (params?.search) query.append('search', params.search);
-    if (params?.status && params.status !== 'all') query.append('status', params.status);
+    if (params?.status && params.status !== 'all') {
+      query.append('status', normalizeOrderStatus(params.status));
+    }
     if (params?.orderType && params.orderType !== 'all') query.append('orderType', params.orderType);
     if (params?.branch && params.branch !== 'all') query.append('branch', params.branch);
     if (params?.spaceType && params.spaceType !== 'all') query.append('spaceType', params.spaceType);
@@ -75,7 +121,7 @@ export const orderApi = {
       }
 
       const json: OrderApiResponse<OrderRow[]> = await res.json();
-      return json.data || [];
+      return (json.data || []).map(normalizeOrderRow);
     }, 15000);
   },
 
@@ -108,7 +154,7 @@ export const orderApi = {
     }
 
     const json: OrderApiResponse<OrderRow> = await res.json();
-    return json.data;
+    return normalizeOrderRow(json.data);
   },
 
   /**
@@ -124,7 +170,7 @@ export const orderApi = {
     }
 
     const json: OrderApiResponse<OrderRow> = await res.json();
-    return json.data;
+    return normalizeOrderRow(json.data);
   },
 
   /**
@@ -148,7 +194,7 @@ export const orderApi = {
     }
 
     invalidateApiCache('orders');
-    return json.data;
+    return normalizeOrderRow(json.data);
   },
 
   /**
@@ -172,7 +218,7 @@ export const orderApi = {
     }
 
     invalidateApiCache('orders');
-    return json.data;
+    return normalizeOrderRow(json.data);
   },
 
   /**
@@ -196,7 +242,7 @@ export const orderApi = {
     }
 
     invalidateApiCache('orders');
-    return json.data;
+    return normalizeOrderRow(json.data);
   },
 
   /**
@@ -260,5 +306,29 @@ export const orderApi = {
     const json: OrderApiResponse<boolean> = await res.json();
     invalidateApiCache('orders');
     return Boolean(json.success);
+  },
+
+  /**
+   * Khách hàng gửi yêu cầu đổi trả / hoàn hàng
+   */
+  async requestOrderReturn(id: string, payload: { reason: string; note?: string; desiredResolution?: string; images?: string[] }): Promise<OrderRow> {
+    const res = await fetch(`${API_BASE_URL}/api/orders/${id}/request-return`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      throw new Error(err?.message || `Gửi yêu cầu hoàn hàng thất bại (${res.status})`);
+    }
+
+    const json: OrderApiResponse<OrderRow> = await res.json();
+    if (!json.success || !json.data) {
+      throw new Error(json.message || 'Gửi yêu cầu hoàn hàng thất bại.');
+    }
+
+    invalidateApiCache('orders');
+    return normalizeOrderRow(json.data);
   },
 };

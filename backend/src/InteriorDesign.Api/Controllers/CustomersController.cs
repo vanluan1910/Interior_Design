@@ -92,26 +92,35 @@ public sealed class CustomersController : ApiControllerBase
 
             var entities = await query.ToListAsync(cancellationToken);
 
-            // Tự động đồng bộ số công nợ thực tế từ các đơn hàng chưa thanh toán đủ
+            // Tự động đồng bộ số công nợ và chi tiêu thực tế từ các đơn hàng hiệu lực (loại bỏ đơn hủy & hoàn hàng)
             var customerIds = entities.Select(x => x.Id).ToList();
             var customerPhones = entities.Where(x => !string.IsNullOrWhiteSpace(x.Phone)).Select(x => x.Phone.Trim()).ToList();
 
-            var unpaidOrders = await _context.Orders
-                .Where(o => o.Status != OrderStatus.Cancelled && o.PaymentStatus != PaymentStatus.Paid)
+            var customerOrders = await _context.Orders
                 .Where(o => (o.CustomerId != null && customerIds.Contains(o.CustomerId.Value)) || customerPhones.Contains(o.CustomerPhone))
-                .Select(o => new { o.CustomerId, CustomerPhone = o.CustomerPhone.Trim(), Debt = Math.Max(0, o.TotalAmount - o.DepositAmount) })
+                .Select(o => new
+                {
+                    o.CustomerId,
+                    CustomerPhone = o.CustomerPhone.Trim(),
+                    o.Status,
+                    o.PaymentStatus,
+                    Amount = o.TotalAmount > 0 ? o.TotalAmount : o.SubTotal,
+                    Debt = Math.Max(0, o.TotalAmount - o.DepositAmount)
+                })
                 .ToListAsync(cancellationToken);
 
             foreach (var c in entities)
             {
                 var cleanPhone = c.Phone?.Trim() ?? string.Empty;
-                var calculatedDebt = unpaidOrders
+                var matched = customerOrders
                     .Where(o => (o.CustomerId.HasValue && o.CustomerId.Value == c.Id) || (!string.IsNullOrEmpty(cleanPhone) && o.CustomerPhone == cleanPhone))
-                    .Sum(o => o.Debt);
+                    .ToList();
 
-                if (calculatedDebt > 0 && c.Debt == 0)
+                if (matched.Count > 0)
                 {
-                    c.Debt = calculatedDebt;
+                    var validOrders = matched.Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Returned && o.Status != OrderStatus.ReturnCompleted).ToList();
+                    c.Debt = validOrders.Where(o => o.PaymentStatus != PaymentStatus.Paid).Sum(o => o.Debt);
+                    c.TotalSpent = validOrders.Sum(o => o.Amount);
                 }
             }
 
@@ -135,8 +144,15 @@ public sealed class CustomersController : ApiControllerBase
         var active = await _context.Customers.CountAsync(x => x.Status == "active", cancellationToken);
         var individual = await _context.Customers.CountAsync(x => x.CustomerType == "individual" || string.IsNullOrWhiteSpace(x.CustomerType), cancellationToken);
         var organization = await _context.Customers.CountAsync(x => x.CustomerType == "organization", cancellationToken);
-        var totalDebt = await _context.Customers.SumAsync(x => (decimal?)x.Debt, cancellationToken) ?? 0;
-        var totalRevenue = await _context.Customers.SumAsync(x => (decimal?)x.TotalSpent, cancellationToken) ?? 0;
+
+        // Doanh thu và công nợ thực tế đồng bộ từ đơn hàng hiệu lực (đã loại bỏ đơn hủy & hoàn hàng)
+        var totalDebt = await _context.Orders
+            .Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Returned && o.Status != OrderStatus.ReturnCompleted && o.PaymentStatus != PaymentStatus.Paid)
+            .SumAsync(o => (decimal?)Math.Max(0, o.TotalAmount - o.DepositAmount), cancellationToken) ?? 0;
+
+        var totalRevenue = await _context.Orders
+            .Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Returned && o.Status != OrderStatus.ReturnCompleted)
+            .SumAsync(o => (decimal?)(o.TotalAmount > 0 ? o.TotalAmount : o.SubTotal), cancellationToken) ?? 0;
 
         var stats = new CustomerStatsDto(
             TotalCustomers: total,
@@ -160,17 +176,22 @@ public sealed class CustomersController : ApiControllerBase
         if (customer is null)
             return NotFound(ApiResponse<CustomerDto>.Fail("Không tìm thấy khách hàng."));
 
-        if (customer.Debt == 0)
-        {
-            var calculatedDebt = await _context.Orders
-                .Where(o => o.Status != OrderStatus.Cancelled && o.PaymentStatus != PaymentStatus.Paid)
-                .Where(o => o.CustomerId == id || (!string.IsNullOrEmpty(customer.Phone) && o.CustomerPhone == customer.Phone.Trim()))
-                .SumAsync(o => (decimal?)Math.Max(0, o.TotalAmount - o.DepositAmount), cancellationToken) ?? 0;
-
-            if (calculatedDebt > 0)
+        var customerOrders = await _context.Orders
+            .Where(o => o.CustomerId == id || (!string.IsNullOrEmpty(customer.Phone) && o.CustomerPhone == customer.Phone.Trim()))
+            .Select(o => new
             {
-                customer.Debt = calculatedDebt;
-            }
+                o.Status,
+                o.PaymentStatus,
+                Amount = o.TotalAmount > 0 ? o.TotalAmount : o.SubTotal,
+                Debt = Math.Max(0, o.TotalAmount - o.DepositAmount)
+            })
+            .ToListAsync(cancellationToken);
+
+        if (customerOrders.Count > 0)
+        {
+            var validOrders = customerOrders.Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Returned && o.Status != OrderStatus.ReturnCompleted).ToList();
+            customer.Debt = validOrders.Where(o => o.PaymentStatus != PaymentStatus.Paid).Sum(o => o.Debt);
+            customer.TotalSpent = validOrders.Sum(o => o.Amount);
         }
 
         return Ok(ApiResponse<CustomerDto>.Ok(MapToDto(customer)));

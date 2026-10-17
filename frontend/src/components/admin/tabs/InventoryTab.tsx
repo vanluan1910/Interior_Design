@@ -56,12 +56,11 @@ import {
   AdminFilterSidebar,
   AdminSidebarSummary,
 } from '@/components/admin';
-import type { FeaturedCatalogProduct, AdminCategory, AdminUom, AdminSpace } from '@/types/admin';
+import type { FeaturedCatalogProduct, AdminCategory, AdminSpace } from '@/types/admin';
 import { exportToExcel } from '@/utils/exportExcel';
 import { productApi } from '@/api/productApi';
 import { categoryApi } from '@/api/categoryApi';
 import { uploadApi } from '@/api/uploadApi';
-import { uomApi } from '@/api/uomApi';
 import { spaceApi } from '@/api/spaceApi';
 import { WOOD_MATERIAL_AUTOCOMPLETE_OPTIONS } from '@/data/woodMaterials';
 import { getProductStockForBranch, isMatchBranch } from '@/utils/branchHelper';
@@ -71,7 +70,6 @@ export interface InventoryTabProps {
   setCatalogList: React.Dispatch<React.SetStateAction<FeaturedCatalogProduct[]>>;
   categoriesList: AdminCategory[];
   spacesList?: AdminSpace[];
-  uomsList?: AdminUom[];
   branchesList?: import('@/types/admin').AdminBranch[];
   selectedGlobalBranch?: string;
   initialSearch?: string;
@@ -87,7 +85,6 @@ export function InventoryTab({
   setCatalogList,
   categoriesList,
   spacesList = [],
-  uomsList = [],
   branchesList = [],
   selectedGlobalBranch = 'all',
   initialSearch,
@@ -117,29 +114,6 @@ export function InventoryTab({
   const [totalProducts, setTotalProducts] = useState(catalogList?.length || 0);
   const [productsList, setProductsList] = useState<FeaturedCatalogProduct[]>(catalogList || []);
   const [loading, setLoading] = useState(false);
-
-  // UOM Data State
-  const [currentUoms, setCurrentUoms] = useState<AdminUom[]>(uomsList || []);
-  useEffect(() => {
-    if (uomsList && uomsList.length > 0) {
-      setCurrentUoms(uomsList);
-    } else {
-      uomApi.getUoms().then((uoms) => {
-        if (uoms && Array.isArray(uoms) && uoms.length > 0) {
-          setCurrentUoms(uoms);
-        }
-      }).catch(() => {});
-    }
-  }, [uomsList]);
-
-  const uomSelectOptions = useMemo(() => {
-    if (currentUoms && currentUoms.length > 0) {
-      return currentUoms
-        .filter((u) => u.status !== 'inactive')
-        .map((u) => ({ value: u.name, label: u.name }));
-    }
-    return [];
-  }, [currentUoms]);
 
   // Spaces Data State
   const [currentSpaces, setCurrentSpaces] = useState<AdminSpace[]>(spacesList || []);
@@ -720,7 +694,7 @@ export function InventoryTab({
         discountPercent: rawDiscount,
         price: rawPrice,
         stockType: values.stockType || 'in_stock',
-        stockNote: `${inputStockNum} chiếc`,
+        stockNote: `${inputStockNum}`,
         inStock: inputStockNum,
         branch: selectedGlobalBranch !== 'all' ? selectedGlobalBranch : undefined,
         branchStocksJson: updatedBranchStocksJson,
@@ -760,7 +734,7 @@ export function InventoryTab({
         discountPercent: rawDiscount,
         price: rawPrice,
         stockType: values.stockType || 'in_stock',
-        stockNote: `${inputStockNum} chiếc`,
+        stockNote: `${inputStockNum}`,
         inStock: inputStockNum,
         unit: values.unit || 'Bộ',
         image: values.image || '',
@@ -947,8 +921,8 @@ export function InventoryTab({
 
                 {/* Row 2 */}
                 <div>
-                  <div className="text-slate-500 mb-1">Số lượng tồn kho (ĐVT)</div>
-                  <div className="text-slate-900 text-sm font-semibold">{stockCount} <span className="text-[#784e34] font-medium font-mono">({prod.unit || 'Bộ'})</span></div>
+                  <div className="text-slate-500 mb-1">Số lượng tồn kho</div>
+                  <div className="text-slate-900 text-sm font-semibold">{stockCount}</div>
                 </div>
                 <div>
                   <div className="text-slate-500 mb-1">Giá gốc / Giá vốn</div>
@@ -1332,37 +1306,26 @@ export function InventoryTab({
                   );
                 },
               },
+
               {
-                title: 'ĐVT',
-                dataIndex: 'unit',
-                key: 'unit',
-                align: 'center',
-                width: 80,
-                render: (unit, prod) => (
-                  <Tag className="border-0 bg-amber-50 text-[#784e34] text-xs font-semibold font-mono m-0">
-                    {prod.unit || unit || 'Bộ'}
-                  </Tag>
-                ),
-              },
-              {
-                title: branchFilter !== 'all' ? `Tồn (${branchFilter.replace('Chi nhánh ', '').replace('Chi Nhánh ', '')})` : 'Tồn kho',
+                title: 'Tồn',
                 dataIndex: 'stockNote',
                 key: 'stockNote',
                 align: 'center',
-                width: 140,
+                width: 100,
                 render: (note, prod) => {
                   const count = getProductStockForBranch(prod, branchFilter);
                   if (count < 0) {
                     return (
                       <span className="font-mono font-bold text-xs text-red-600 bg-red-50 px-2 py-0.5 rounded border border-red-200 inline-block">
-                        {count} <span className="text-red-500 font-normal font-sans">{prod.unit || 'Bộ'}</span>
+                        {count}
                       </span>
                     );
                   }
                   const isOut = count === 0;
                   return (
                     <span className={`font-mono font-bold text-xs ${isOut ? 'text-red-600' : 'text-slate-800'}`}>
-                      {count} <span className="text-slate-400 font-normal font-sans">{prod.unit || 'Bộ'}</span>
+                      {count}
                     </span>
                   );
                 },
@@ -1643,7 +1606,7 @@ export function InventoryTab({
           </Row>
 
           <Row gutter={16}>
-            <Col span={8}>
+            <Col span={12}>
               <Form.Item
                 label={<span className="text-xs font-semibold text-slate-700">Tình trạng tồn kho</span>}
                 name="stockType"
@@ -1658,21 +1621,7 @@ export function InventoryTab({
                 />
               </Form.Item>
             </Col>
-            <Col span={8}>
-              <Form.Item
-                label={<span className="text-xs font-semibold text-slate-700">Đơn vị tính</span>}
-                name="unit"
-                initialValue="Bộ"
-              >
-                <Select
-                  className="h-10 text-sm"
-                  showSearch
-                  placeholder="Chọn ĐVT"
-                  options={uomSelectOptions}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
+            <Col span={12}>
               <Form.Item
                 label={<span className="text-xs font-semibold text-slate-700">Số lượng tồn kho</span>}
                 name="stockNote"

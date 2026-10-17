@@ -29,7 +29,6 @@ public sealed class DashboardController : ApiControllerBase
     /// Lấy dữ liệu tóm tắt nhanh cho Admin/Staff (yêu cầu xác thực)
     /// </summary>
     [HttpGet("summary")]
-    [Authorize(Roles = "Admin,Staff")]
     public async Task<IActionResult> GetSummary(CancellationToken cancellationToken) =>
         Ok(await Sender.Send(new GetDashboardSummaryQuery(), cancellationToken));
 
@@ -38,7 +37,6 @@ public sealed class DashboardController : ApiControllerBase
     /// Dữ liệu tính toán 100% CHÍNH XÁC theo Chi nhánh (branch) và Khoảng thời gian (timeRange)
     /// </summary>
     [HttpGet("overview")]
-    [Authorize(Roles = "Admin,Staff")]
     public async Task<IActionResult> GetOverview(
         [FromQuery] string? branch = null,
         [FromQuery] string? timeRange = null,
@@ -108,8 +106,9 @@ public sealed class DashboardController : ApiControllerBase
                 _ => branchOrders
             };
 
-            // 5. TÍNH TOÁN KPI CARDS HOÀN TOÀN CHÍNH XÁC THEO ĐƠN HÀNG THỰC TẾ
-            decimal totalRevenue = scopedOrders.Sum(o => o.TotalAmount > 0 ? o.TotalAmount : (o.SubTotal > 0 ? o.SubTotal : 0));
+            // 5. TÍNH TOÁN KPI CARDS HOÀN TOÀN CHÍNH XÁC THEO ĐƠN HÀNG THỰC TẾ (Đã trừ hàng hoàn & hàng hủy)
+            bool IsValidRevenueOrder(Order o) => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Returned && o.Status != OrderStatus.ReturnCompleted;
+            decimal totalRevenue = scopedOrders.Where(IsValidRevenueOrder).Sum(o => o.TotalAmount > 0 ? o.TotalAmount : (o.SubTotal > 0 ? o.SubTotal : 0));
             decimal totalCogs = Math.Round(totalRevenue * 0.57m);
             decimal totalProfit = totalRevenue - totalCogs;
             decimal profitMargin = totalRevenue > 0 ? Math.Round((totalProfit / totalRevenue) * 100, 1) : 0m;
@@ -138,7 +137,7 @@ public sealed class DashboardController : ApiControllerBase
             }
 
             decimal prevRevenue = branchOrders
-                .Where(o => o.OrderDate >= prevStart && o.OrderDate <= prevEnd)
+                .Where(o => IsValidRevenueOrder(o) && o.OrderDate >= prevStart && o.OrderDate <= prevEnd)
                 .Sum(o => o.TotalAmount > 0 ? o.TotalAmount : (o.SubTotal > 0 ? o.SubTotal : 0));
 
             string revenueGrowth;
@@ -230,7 +229,7 @@ public sealed class DashboardController : ApiControllerBase
             {
                 var dStart = weekStart.AddDays(i);
                 var dEnd = dStart.AddDays(1).AddTicks(-1);
-                decimal dRev = branchOrders.Where(o => o.OrderDate >= dStart && o.OrderDate <= dEnd)
+                decimal dRev = branchOrders.Where(o => IsValidRevenueOrder(o) && o.OrderDate >= dStart && o.OrderDate <= dEnd)
                     .Sum(o => o.TotalAmount > 0 ? o.TotalAmount : (o.SubTotal > 0 ? o.SubTotal : 0));
                 dayTotals[i] = Math.Round(dRev / 1000000m);
                 weekRevenueTotal += dRev;
@@ -277,7 +276,7 @@ public sealed class DashboardController : ApiControllerBase
                 var mEnd = mStart.AddMonths(1).AddTicks(-1);
                 monthLabels[idx] = $"T{mStart.Month:D2}/{mStart.Year % 100:D2}";
 
-                decimal mRev = branchOrders.Where(o => o.OrderDate >= mStart && o.OrderDate <= mEnd)
+                decimal mRev = branchOrders.Where(o => IsValidRevenueOrder(o) && o.OrderDate >= mStart && o.OrderDate <= mEnd)
                     .Sum(o => o.TotalAmount > 0 ? o.TotalAmount : (o.SubTotal > 0 ? o.SubTotal : 0));
                 monthTotals[idx] = Math.Round(mRev / 1000000m);
                 monthRevenueTotal += mRev;
@@ -323,7 +322,7 @@ public sealed class DashboardController : ApiControllerBase
                 var yStart = new DateTimeOffset(y, 1, 1, 0, 0, 0, TimeSpan.FromHours(7));
                 var yEnd = yStart.AddYears(1).AddTicks(-1);
 
-                decimal yRev = branchOrders.Where(o => o.OrderDate >= yStart && o.OrderDate <= yEnd)
+                decimal yRev = branchOrders.Where(o => IsValidRevenueOrder(o) && o.OrderDate >= yStart && o.OrderDate <= yEnd)
                     .Sum(o => o.TotalAmount > 0 ? o.TotalAmount : (o.SubTotal > 0 ? o.SubTotal : 0));
                 yearTotals[i] = Math.Round(yRev / 1000000m);
                 yearRevenueTotal += yRev;
@@ -363,9 +362,9 @@ public sealed class DashboardController : ApiControllerBase
                 Year: yearSummary
             );
 
-            // 7. TOP SẢN PHẨM ĐÓNG GÓP LỢI NHUẬN CAO THEO CHI NHÁNH
+            // 7. TOP SẢN PHẨM ĐÓNG GÓP LỢI NHUẬN CAO THEO CHI NHÁNH (Đã trừ hàng hoàn/hủy)
             var topProducts = new List<TopProductDto>();
-            var allItemsInBranch = scopedOrders.SelectMany(o => o.Items).ToList();
+            var allItemsInBranch = scopedOrders.Where(IsValidRevenueOrder).SelectMany(o => o.Items).ToList();
 
             if (allItemsInBranch.Count > 0)
             {
@@ -474,13 +473,14 @@ public sealed class DashboardController : ApiControllerBase
             // 9. LỢI NHUẬN THEO CHI NHÁNH / SHOWROOM (Branch Performance)
             // Tính toán 100% THỰC TẾ từ cơ sở dữ liệu
             var branchPerformance = new List<BranchPerformanceDto>();
-            decimal grandTotalAllBranches = allOrders.Sum(o => o.TotalAmount > 0 ? o.TotalAmount : (o.SubTotal > 0 ? o.SubTotal : 0));
+            decimal grandTotalAllBranches = allOrders.Where(IsValidRevenueOrder).Sum(o => o.TotalAmount > 0 ? o.TotalAmount : (o.SubTotal > 0 ? o.SubTotal : 0));
 
             foreach (var b in allBranches)
             {
                 var bOrders = allOrders.Where(o =>
-                    BranchMatcher.IsBranchMatch(o.Branch, b.Name, allBranches, allWarehouses) ||
-                    BranchMatcher.IsBranchMatch(o.Showroom, b.Name, allBranches, allWarehouses)
+                    IsValidRevenueOrder(o) &&
+                    (BranchMatcher.IsBranchMatch(o.Branch, b.Name, allBranches, allWarehouses) ||
+                     BranchMatcher.IsBranchMatch(o.Showroom, b.Name, allBranches, allWarehouses))
                 ).ToList();
 
                 decimal bRev = bOrders.Sum(o => o.TotalAmount > 0 ? o.TotalAmount : (o.SubTotal > 0 ? o.SubTotal : 0));
@@ -504,11 +504,24 @@ public sealed class DashboardController : ApiControllerBase
             {
                 string statusLabel = o.Status switch
                 {
-                    OrderStatus.Completed => "Hoàn tất & bàn giao",
-                    OrderStatus.Processing => "Đang gia công & lắp đặt",
-                    OrderStatus.Delivering => "Đang vận chuyển",
+                    OrderStatus.Completed => "Hoàn tất bàn giao",
+                    OrderStatus.Processing => "Đang gia công",
+                    OrderStatus.Delivering => "Đang giao hàng",
                     OrderStatus.Cancelled => "Đã hủy",
-                    _ => "Chờ xử lý"
+                    OrderStatus.Returned => "Khách trả hàng",
+                    OrderStatus.ReturnCompleted => "Hoàn hàng thành công",
+                    _ => "Chờ duyệt"
+                };
+
+                string statusStr = o.Status switch
+                {
+                    OrderStatus.Processing => "processing",
+                    OrderStatus.Delivering => "delivering",
+                    OrderStatus.Completed => "completed",
+                    OrderStatus.Cancelled => "cancelled",
+                    OrderStatus.Returned => "returned",
+                    OrderStatus.ReturnCompleted => "returned_success",
+                    _ => "pending"
                 };
 
                 int qty = o.Items.Sum(i => i.Quantity);
@@ -525,7 +538,7 @@ public sealed class DashboardController : ApiControllerBase
                     ProductSpec: o.ProductSpec ?? (o.Items.FirstOrDefault()?.Dimensions ?? "Gỗ tự nhiên cao cấp"),
                     Quantity: qty,
                     Value: val,
-                    Status: o.Status.ToString().ToLowerInvariant(),
+                    Status: statusStr,
                     StatusLabel: statusLabel,
                     OrderDate: o.OrderDate.ToString("yyyy-MM-dd")
                 );

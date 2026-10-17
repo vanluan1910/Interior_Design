@@ -8,4 +8,5 @@ export { SuppliersTab } from './SuppliersTab';
 export { EmployeesTab } from './EmployeesTab';
 export { SettingsTab } from './SettingsTab';
 export { PrintTemplatesSettings } from './PrintTemplatesSettings';
+export { WarehousesSettings } from './WarehousesSettings';
 

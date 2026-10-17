@@ -754,7 +754,6 @@ export function PrintTemplatesSettings() {
                   <tr className="border-b border-slate-300 font-bold text-slate-900">
                     <th className="py-1 text-center w-8">#</th>
                     <th className="py-1">Sản phẩm &amp; Quy cách</th>
-                    <th className="py-1 text-center w-12">ĐVT</th>
                     <th className="py-1 text-center w-10">SL</th>
                     <th className="py-1 text-right w-24">Đơn giá</th>
                     <th className="py-1 text-right w-24">Thành tiền</th>
@@ -767,7 +766,6 @@ export function PrintTemplatesSettings() {
                       <div className="font-semibold text-slate-900">Bàn Ăn Óc Chó Bắc Mỹ Tự Nhiên</div>
                       <div className="text-[9px] text-slate-500">Kích thước 2200 x 950 x 750mm, hoàn thiện sơn lau dầu Hesse Lignal Đức</div>
                     </td>
-                    <td className="py-1.5 text-center text-slate-600">Bộ</td>
                     <td className="py-1.5 text-center font-semibold">1</td>
                     <td className="py-1.5 text-right font-mono">38,500,000</td>
                     <td className="py-1.5 text-right font-mono font-bold text-slate-900">38,500,000</td>
@@ -778,7 +776,6 @@ export function PrintTemplatesSettings() {
                       <div className="font-semibold text-slate-900">Ghế Ăn Grace Da Bò Ý D2-M08</div>
                       <div className="text-[9px] text-slate-500">Khung gỗ Sồi Tần Bì, đệm mút cao cấp bọc da bò Mastrotto Ý màu Nâu Cà phê</div>
                     </td>
-                    <td className="py-1.5 text-center text-slate-600">Chiếc</td>
                     <td className="py-1.5 text-center font-semibold">6</td>
                     <td className="py-1.5 text-right font-mono">4,500,000</td>
                     <td className="py-1.5 text-right font-mono font-bold text-slate-900">27,000,000</td>
@@ -789,7 +786,6 @@ export function PrintTemplatesSettings() {
                       <div className="font-semibold text-slate-900">Tủ Trang Trí Gỗ Gõ Đỏ Pachyloba</div>
                       <div className="text-[9px] text-slate-500">Cánh kính khung nhôm Anode mạ PVD vàng đồng, ray trượt Blum giảm chấn</div>
                     </td>
-                    <td className="py-1.5 text-center text-slate-600">Chiếc</td>
                     <td className="py-1.5 text-center font-semibold">1</td>
                     <td className="py-1.5 text-right font-mono">22,000,000</td>
                     <td className="py-1.5 text-right font-mono font-bold text-slate-900">22,000,000</td>

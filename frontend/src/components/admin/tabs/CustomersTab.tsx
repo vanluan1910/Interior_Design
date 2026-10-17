@@ -41,7 +41,7 @@ import {
 } from '@/components/admin';
 import type { AdminCustomer, OrderRow, AdminBranch } from '@/types/admin';
 import { customerApi } from '@/api/customerApi';
-import { orderApi } from '@/api/orderApi';
+import { orderApi, normalizeOrderStatus } from '@/api/orderApi';
 import { branchApi } from '@/api/branchApi';
 import { isMatchBranch } from '@/utils/branchHelper';
 import { getCleanProductName, getOrderQuantity } from './OrdersTab';
@@ -187,22 +187,31 @@ export function CustomersTab({
         };
       }
 
-      // Debt is calculated from non-cancelled, non-fully-paid orders
+      // Debt is calculated from non-cancelled, non-returned, non-fully-paid orders
       const orderDebt = matchedOrders.reduce((sum, o) => {
-        if (o.status === 'cancelled' || o.paymentStatus?.toLowerCase() === 'paid') return sum;
+        const s = normalizeOrderStatus(o.status);
+        if (
+          s === 'cancelled' ||
+          s === 'returned' ||
+          s === 'returned_success' ||
+          o.paymentStatus?.toLowerCase() === 'paid' ||
+          o.paymentStatus?.toLowerCase() === 'refunded'
+        )
+          return sum;
         const val = Number(o.value) || 0;
         const dep = Number(o.depositAmount) || 0;
         return sum + Math.max(0, val - dep);
       }, 0);
 
       const orderSpent = matchedOrders.reduce((sum, o) => {
-        if (o.status === 'cancelled') return sum;
+        const s = normalizeOrderStatus(o.status);
+        if (s === 'cancelled' || s === 'returned' || s === 'returned_success') return sum;
         return sum + (Number(o.value) || 0);
       }, 0);
 
       return {
-        debt: orderDebt > 0 ? orderDebt : Number(c.debt || 0),
-        totalSpent: Math.max(Number(c.totalSpent || 0), orderSpent),
+        debt: matchedOrders.length > 0 ? orderDebt : Number(c.debt || 0),
+        totalSpent: matchedOrders.length > 0 ? orderSpent : Number(c.totalSpent || 0),
         ordersCount: matchedOrders.length,
       };
     };
@@ -516,7 +525,19 @@ export function CustomersTab({
       const matchId = (o as any).customerId && (o as any).customerId === collectDebtCustomer.id;
       return matchPhone || matchName || matchId;
     });
-    const orderDebt = custOrders.reduce((sum, o) => sum + Math.max(0, (Number(o.value) || 0) - (Number(o.depositAmount) || 0)), 0);
+    const orderDebt = custOrders.reduce((sum, o) => {
+      const s = normalizeOrderStatus(o.status);
+      if (
+        s === 'cancelled' ||
+        s === 'returned' ||
+        s === 'returned_success' ||
+        o.paymentStatus?.toLowerCase() === 'paid' ||
+        o.paymentStatus?.toLowerCase() === 'refunded'
+      ) {
+        return sum;
+      }
+      return sum + Math.max(0, (Number(o.value) || 0) - (Number(o.depositAmount) || 0));
+    }, 0);
     return orderDebt > 0 ? orderDebt : Number(collectDebtCustomer.debt || 0);
   }, [collectDebtCustomer, ordersList]);
 
@@ -1504,7 +1525,19 @@ function CustomerExpandedDetailRow({
 
   // Debt orders (orders where value > depositAmount)
   const debtOrders = useMemo(() => {
-    return relatedOrders.filter((o) => (Number(o.value) || 0) - (Number(o.depositAmount) || 0) > 0);
+    return relatedOrders.filter((o) => {
+      const s = normalizeOrderStatus(o.status);
+      if (
+        s === 'cancelled' ||
+        s === 'returned' ||
+        s === 'returned_success' ||
+        o.paymentStatus?.toLowerCase() === 'paid' ||
+        o.paymentStatus?.toLowerCase() === 'refunded'
+      ) {
+        return false;
+      }
+      return (Number(o.value) || 0) - (Number(o.depositAmount) || 0) > 0;
+    });
   }, [relatedOrders]);
 
   // Total debt calculated
@@ -1554,17 +1587,20 @@ function CustomerExpandedDetailRow({
 
       // If COD or unpaid balance
       if (deposit === 0) {
-        list.push({
-          id: `rcpt-cod-${ord.id || index}`,
-          receiptCode: `COD-${cleanCode}`,
-          orderCode: ord.orderCode,
-          date: ord.orderDate || dayjs().format('DD/MM/YYYY'),
-          method: 'Thanh toán khi nhận hàng (COD)',
-          amount: totalVal,
-          status: ord.status === 'completed' ? 'recorded' : 'pending',
-          statusLabel: ord.status === 'completed' ? 'Đã thu khi giao' : 'Chờ thu khi giao',
-          note: `Đơn ${ord.orderCode} (${getCleanProductName(ord.productName)}) - Thu tiền khi giao hàng`,
-        });
+        const s = normalizeOrderStatus(ord.status);
+        if (s !== 'cancelled' && s !== 'returned' && s !== 'returned_success') {
+          list.push({
+            id: `rcpt-cod-${ord.id || index}`,
+            receiptCode: `COD-${cleanCode}`,
+            orderCode: ord.orderCode,
+            date: ord.orderDate || dayjs().format('DD/MM/YYYY'),
+            method: 'Thanh toán khi nhận hàng (COD)',
+            amount: totalVal,
+            status: s === 'completed' ? 'recorded' : 'pending',
+            statusLabel: s === 'completed' ? 'Đã thu khi giao' : 'Chờ thu khi giao',
+            note: `Đơn ${ord.orderCode} (${getCleanProductName(ord.productName)}) - Thu tiền khi giao hàng`,
+          });
+        }
       }
     });
 

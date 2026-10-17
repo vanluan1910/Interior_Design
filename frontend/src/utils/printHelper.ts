@@ -588,7 +588,6 @@ export function printOrderInvoice(order: any, options?: { templateType?: 'invoic
           <tr class="border-b border-slate-300 font-bold text-slate-900">
             <th class="py-1 text-center w-8">#</th>
             <th class="py-1">Sản phẩm &amp; Quy cách</th>
-            <th class="py-1 text-center w-12">ĐVT</th>
             <th class="py-1 text-center w-10">SL</th>
             <th class="py-1 text-right w-24">Đơn giá</th>
             <th class="py-1 text-right w-24">Thành tiền</th>
@@ -603,7 +602,6 @@ export function printOrderInvoice(order: any, options?: { templateType?: 'invoic
                   <div class="font-semibold text-slate-900">${(it.productName || '').replace(/\s*\(x\d+\)/gi, '')}</div>
                   <div class="text-[9px] text-slate-500">${it.dimensions || it.material || order.productSpec || (order.woodType ? `Chất liệu gỗ ${order.woodType}` : 'Gia công may đo')}</div>
                 </td>
-                <td class="py-1.5 text-center text-slate-600">Bộ</td>
                 <td class="py-1.5 text-center font-semibold">${it.quantity || 1}</td>
                 <td class="py-1.5 text-right font-mono">${(it.unitPrice || 0).toLocaleString('vi-VN')}</td>
                 <td class="py-1.5 text-right font-mono font-bold text-slate-900">${(it.totalPrice || ((it.unitPrice || 0) * (it.quantity || 1))).toLocaleString('vi-VN')}</td>
@@ -625,7 +623,6 @@ export function printOrderInvoice(order: any, options?: { templateType?: 'invoic
                   <div class="font-semibold text-slate-900">${cleanName}</div>
                   <div class="text-[9px] text-slate-500">${order.productSpec || (order.woodType ? `Chất liệu gỗ ${order.woodType}, may đo hoàn thiện` : 'Gia công theo thiết kế 3D')}</div>
                 </td>
-                <td class="py-1.5 text-center text-slate-600">Bộ</td>
                 <td class="py-1.5 text-center font-semibold">${qty}</td>
                 <td class="py-1.5 text-right font-mono">${unitPrice.toLocaleString('vi-VN')}</td>
                 <td class="py-1.5 text-right font-mono font-bold text-slate-900">${(order.value || 0).toLocaleString('vi-VN')}</td>
@@ -757,7 +754,6 @@ export function printGoodsReceiptSlip(slip: any) {
           <th class="border border-slate-300 p-1.5 text-center w-10">STT</th>
           <th class="border border-slate-300 p-1.5 text-left">Tên hàng hóa / Vật tư</th>
           <th class="border border-slate-300 p-1.5 text-left">Quy cách kỹ thuật</th>
-          <th class="border border-slate-300 p-1.5 text-center w-16">ĐVT</th>
           <th class="border border-slate-300 p-1.5 text-center w-16">SL</th>
           <th class="border border-slate-300 p-1.5 text-right w-28">Tổng tiền</th>
         </tr>
@@ -767,7 +763,6 @@ export function printGoodsReceiptSlip(slip: any) {
           <td class="border border-slate-300 p-2 text-center font-mono font-semibold">01</td>
           <td class="border border-slate-300 p-2 font-bold text-slate-900">${slip.itemName || 'Vật tư gỗ'}</td>
           <td class="border border-slate-300 p-2 text-slate-600 font-mono text-[11px]">${slip.spec || 'Quy cách tiêu chuẩn'}</td>
-          <td class="border border-slate-300 p-2 text-center">${slip.unit || 'm3'}</td>
           <td class="border border-slate-300 p-2 text-center font-mono font-bold text-slate-900">${slip.quantity || 1}</td>
           <td class="border border-slate-300 p-2 text-right font-mono font-bold text-[#784e34]">
             ${(slip.totalValue || 0).toLocaleString('vi-VN')} đ
@@ -776,7 +771,7 @@ export function printGoodsReceiptSlip(slip: any) {
       </tbody>
       <tfoot>
         <tr class="bg-slate-50 font-bold">
-          <td colspan="5" class="border border-slate-300 p-2 text-right text-slate-800">Tổng giá trị nhập kho:</td>
+          <td colspan="4" class="border border-slate-300 p-2 text-right text-slate-800">Tổng giá trị nhập kho:</td>
           <td class="border border-slate-300 p-2 text-right font-mono text-sm text-[#784e34]">
             ${(slip.totalValue || 0).toLocaleString('vi-VN')} đ
           </td>
@@ -866,7 +861,6 @@ export function printGoodsReturnSlip(slip: any) {
         <tr class="bg-slate-100 text-slate-800 font-bold">
           <th class="border border-slate-300 p-1.5 text-center w-10">STT</th>
           <th class="border border-slate-300 p-1.5 text-left">Mặt hàng &amp; Quy cách</th>
-          <th class="border border-slate-300 p-1.5 text-center w-16">ĐVT</th>
           <th class="border border-slate-300 p-1.5 text-right w-16">Số lượng</th>
           <th class="border border-slate-300 p-1.5 text-right w-28">Tổng tiền</th>
         </tr>
@@ -875,7 +869,6 @@ export function printGoodsReturnSlip(slip: any) {
         <tr>
           <td class="border border-slate-300 p-2 text-center font-mono">01</td>
           <td class="border border-slate-300 p-2 font-semibold text-slate-900">${slip.itemName || 'Sản phẩm hoàn trả'}</td>
-          <td class="border border-slate-300 p-2 text-center">${slip.unit || 'm3'}</td>
           <td class="border border-slate-300 p-2 text-right font-mono font-bold">${slip.quantity || 1}</td>
           <td class="border border-slate-300 p-2 text-right font-mono font-bold text-rose-700">
             ${(slip.totalGoods || slip.supplierRefund || 0).toLocaleString('vi-VN')} đ
@@ -884,7 +877,7 @@ export function printGoodsReturnSlip(slip: any) {
       </tbody>
       <tfoot>
         <tr class="bg-rose-50/50 font-bold">
-          <td colspan="4" class="border border-slate-300 p-2 text-right text-rose-800">Giá trị cấn trừ / hoàn tiền:</td>
+          <td colspan="3" class="border border-slate-300 p-2 text-right text-rose-800">Giá trị cấn trừ / hoàn tiền:</td>
           <td class="border border-slate-300 p-2 text-right font-mono text-sm text-rose-700">
             ${(slip.supplierRefund || slip.totalGoods || 0).toLocaleString('vi-VN')} đ
           </td>
@@ -958,7 +951,6 @@ export function printStocktakeSlip(data: {
       <td class="border border-slate-300 p-1.5 text-center font-mono">${String(idx + 1).padStart(2, '0')}</td>
       <td class="border border-slate-300 p-1.5 font-mono text-[#784e34]">${line.itemCode}</td>
       <td class="border border-slate-300 p-1.5 font-semibold text-slate-900">${line.itemName}</td>
-      <td class="border border-slate-300 p-1.5 text-center">${line.unit}</td>
       <td class="border border-slate-300 p-1.5 text-right font-mono">${line.systemQty}</td>
       <td class="border border-slate-300 p-1.5 text-right font-mono font-bold text-slate-900">${line.actualQty}</td>
       <td class="border border-slate-300 p-1.5 text-right font-mono font-bold ${line.diffQty > 0 ? 'text-emerald-700' : line.diffQty < 0 ? 'text-rose-600' : 'text-slate-600'}">
@@ -1000,7 +992,6 @@ export function printStocktakeSlip(data: {
           <th class="border border-slate-300 p-1.5 text-center w-8">STT</th>
           <th class="border border-slate-300 p-1.5 text-left w-20">Mã</th>
           <th class="border border-slate-300 p-1.5 text-left">Tên hàng</th>
-          <th class="border border-slate-300 p-1.5 text-center w-12">ĐVT</th>
           <th class="border border-slate-300 p-1.5 text-right w-14">Tồn sổ</th>
           <th class="border border-slate-300 p-1.5 text-right w-14">Thực tế</th>
           <th class="border border-slate-300 p-1.5 text-right w-14">Chênh</th>
@@ -1014,7 +1005,7 @@ export function printStocktakeSlip(data: {
       </tbody>
       <tfoot>
         <tr class="bg-slate-100 font-bold">
-          <td colspan="8" class="border border-slate-300 p-1.5 text-right text-slate-900">
+          <td colspan="7" class="border border-slate-300 p-1.5 text-right text-slate-900">
             Tổng giá trị chênh lệch:
           </td>
           <td class="border border-slate-300 p-1.5 text-right font-mono ${totalDiffValue < 0 ? 'text-rose-600' : 'text-slate-900'}">

@@ -66,7 +66,7 @@ function mapDtoToCatalogProduct(dto: any, branchParam?: string): FeaturedCatalog
     originalPrice: originalPrice,
     costPrice: originalPrice,
     discountPercent: discountPercent,
-    stockNote: `${inStockQty} chiếc`,
+    stockNote: `${inStockQty}`,
     stockType: (dto.stockType as any) || stockType,
     image: dto.mainImageUrl || dto.image || '',
     images: imagesList,

@@ -219,27 +219,8 @@ export function EmployeesTab({
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'working' | 'resigned'>('all');
   const [departmentFilter, setDepartmentFilter] = useState<string>('all');
-  const [branchFilter, setBranchFilter] = useState<string>(selectedGlobalBranch || 'all');
-
-  React.useEffect(() => {
-    if (selectedGlobalBranch) {
-      setBranchFilter(selectedGlobalBranch);
-    }
-  }, [selectedGlobalBranch]);
-
-  // Listen to branch change event from AdminHeader
-  React.useEffect(() => {
-    const handleBranchChanged = (e: any) => {
-      const bName = e?.detail?.branchName;
-      if (bName) {
-        setBranchFilter(bName);
-      }
-    };
-    if (typeof window !== 'undefined') {
-      window.addEventListener('branch_changed', handleBranchChanged);
-      return () => window.removeEventListener('branch_changed', handleBranchChanged);
-    }
-  }, []);
+  // Always default to 'all' to show all employees across all branches
+  const [branchFilter, setBranchFilter] = useState<string>('all');
 
   // Compute active branch to auto-assign for created employees
   const activeBranch = useMemo(() => {
@@ -674,8 +655,8 @@ export function EmployeesTab({
               setSearchQuery('');
               setStatusFilter('all');
               setDepartmentFilter('all');
-              setBranchFilter(selectedGlobalBranch || '');
-              message.success('Đã làm mới danh sách nhân viên!');
+              setBranchFilter('all');
+              message.success('Đã làm mới danh sách nhân viên toàn hệ thống!');
             }}
             className="h-10 rounded-none text-sm font-normal text-slate-700 hover:text-[#784e34]"
           >
@@ -724,7 +705,7 @@ export function EmployeesTab({
             setSearchQuery('');
             setStatusFilter('all');
             setDepartmentFilter('all');
-            setBranchFilter(selectedGlobalBranch || '');
+            setBranchFilter('all');
           }}
         >
           {/* Lọc Trạng thái làm việc */}
@@ -784,6 +765,22 @@ export function EmployeesTab({
               options={[
                 { value: 'all', label: 'Tất cả phòng ban' },
                 ...DEPARTMENTS.map((d) => ({ value: d, label: d })),
+              ]}
+            />
+          </div>
+
+          {/* Lọc theo Chi nhánh cơ sở */}
+          <div className="pt-2 border-t border-slate-100">
+            <div className="mb-2 text-xs font-semibold text-slate-600 uppercase tracking-wider">
+              Chi nhánh cơ sở
+            </div>
+            <Select
+              value={branchFilter}
+              onChange={setBranchFilter}
+              className="w-full text-sm"
+              options={[
+                { value: 'all', label: 'Tất cả chi nhánh' },
+                ...branchesList.map((b) => ({ value: b.name, label: b.name })),
               ]}
             />
           </div>

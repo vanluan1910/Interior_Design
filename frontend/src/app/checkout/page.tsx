@@ -645,6 +645,7 @@ function CheckoutContent() {
         if (Array.isArray(currentAdminOrders)) {
           setStoredAdminData(ADMIN_STORAGE_KEYS.ORDERS, [created, ...currentAdminOrders.filter((o) => o.id !== created.id)]);
         }
+        window.dispatchEvent(new CustomEvent('d2_orders_updated', { detail: [created] }));
       } catch {}
 
       if (isDirectMode && typeof window !== 'undefined') {
