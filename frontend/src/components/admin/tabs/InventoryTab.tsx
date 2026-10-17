@@ -28,6 +28,7 @@ import {
   DownloadOutlined,
   ThunderboltOutlined,
   UploadOutlined,
+  InboxOutlined,
   CloseCircleFilled,
   FileExcelOutlined,
   UpOutlined,
@@ -55,12 +56,11 @@ import {
   AdminFilterSidebar,
   AdminSidebarSummary,
 } from '@/components/admin';
-import type { FeaturedCatalogProduct, AdminCategory, AdminUom, AdminSpace } from '@/types/admin';
+import type { FeaturedCatalogProduct, AdminCategory, AdminSpace } from '@/types/admin';
 import { exportToExcel } from '@/utils/exportExcel';
 import { productApi } from '@/api/productApi';
 import { categoryApi } from '@/api/categoryApi';
 import { uploadApi } from '@/api/uploadApi';
-import { uomApi } from '@/api/uomApi';
 import { spaceApi } from '@/api/spaceApi';
 import { WOOD_MATERIAL_AUTOCOMPLETE_OPTIONS } from '@/data/woodMaterials';
 import { getProductStockForBranch, isMatchBranch } from '@/utils/branchHelper';
@@ -70,7 +70,6 @@ export interface InventoryTabProps {
   setCatalogList: React.Dispatch<React.SetStateAction<FeaturedCatalogProduct[]>>;
   categoriesList: AdminCategory[];
   spacesList?: AdminSpace[];
-  uomsList?: AdminUom[];
   branchesList?: import('@/types/admin').AdminBranch[];
   selectedGlobalBranch?: string;
   initialSearch?: string;
@@ -86,7 +85,6 @@ export function InventoryTab({
   setCatalogList,
   categoriesList,
   spacesList = [],
-  uomsList = [],
   branchesList = [],
   selectedGlobalBranch = 'all',
   initialSearch,
@@ -116,29 +114,6 @@ export function InventoryTab({
   const [totalProducts, setTotalProducts] = useState(catalogList?.length || 0);
   const [productsList, setProductsList] = useState<FeaturedCatalogProduct[]>(catalogList || []);
   const [loading, setLoading] = useState(false);
-
-  // UOM Data State
-  const [currentUoms, setCurrentUoms] = useState<AdminUom[]>(uomsList || []);
-  useEffect(() => {
-    if (uomsList && uomsList.length > 0) {
-      setCurrentUoms(uomsList);
-    } else {
-      uomApi.getUoms().then((uoms) => {
-        if (uoms && Array.isArray(uoms) && uoms.length > 0) {
-          setCurrentUoms(uoms);
-        }
-      }).catch(() => {});
-    }
-  }, [uomsList]);
-
-  const uomSelectOptions = useMemo(() => {
-    if (currentUoms && currentUoms.length > 0) {
-      return currentUoms
-        .filter((u) => u.status !== 'inactive')
-        .map((u) => ({ value: u.name, label: u.name }));
-    }
-    return [];
-  }, [currentUoms]);
 
   // Spaces Data State
   const [currentSpaces, setCurrentSpaces] = useState<AdminSpace[]>(spacesList || []);
@@ -621,28 +596,46 @@ export function InventoryTab({
 
   const handlePriceOrDiscountChange = (changedValues: any, allValues: any) => {
     const orig = allValues.originalPrice;
+    const curPrice = allValues.price;
+
     if ('discountPercent' in changedValues) {
       const disc = changedValues.discountPercent;
-      if (typeof orig === 'number' && orig > 0 && typeof disc === 'number' && disc >= 0 && disc <= 100) {
-        const calculatedPrice = Math.round(orig * (1 - disc / 100));
-        form.setFieldsValue({ price: calculatedPrice });
+      if (typeof disc === 'number' && disc > 0 && disc < 100) {
+        if (typeof orig === 'number' && orig > 0) {
+          const calculatedPrice = Math.round(orig * (1 - disc / 100));
+          form.setFieldsValue({ price: calculatedPrice });
+        } else if (typeof curPrice === 'number' && curPrice > 0) {
+          const calculatedOrig = Math.round(curPrice / (1 - disc / 100));
+          form.setFieldsValue({ originalPrice: calculatedOrig });
+        }
+      } else if (disc === 0 || disc === undefined) {
+        if (typeof curPrice === 'number' && curPrice > 0 && (!orig || orig < curPrice)) {
+          form.setFieldsValue({ originalPrice: curPrice });
+        }
       }
     } else if ('originalPrice' in changedValues) {
       const origVal = changedValues.originalPrice;
       const disc = allValues.discountPercent;
-      if (typeof origVal === 'number' && origVal > 0 && typeof disc === 'number' && disc > 0 && disc <= 100) {
-        const calculatedPrice = Math.round(origVal * (1 - disc / 100));
-        form.setFieldsValue({ price: calculatedPrice });
-      } else if (typeof origVal === 'number' && origVal > 0 && (disc === undefined || disc === 0) && !allValues.price) {
-        form.setFieldsValue({ price: origVal });
+      if (typeof origVal === 'number' && origVal > 0) {
+        if (typeof disc === 'number' && disc > 0 && disc < 100) {
+          const calculatedPrice = Math.round(origVal * (1 - disc / 100));
+          form.setFieldsValue({ price: calculatedPrice });
+        } else if (typeof curPrice === 'number' && curPrice > 0 && origVal > curPrice) {
+          const calculatedDisc = Math.round(((origVal - curPrice) / origVal) * 100);
+          form.setFieldsValue({ discountPercent: calculatedDisc });
+        } else if (!curPrice) {
+          form.setFieldsValue({ price: origVal, discountPercent: 0 });
+        }
       }
     } else if ('price' in changedValues) {
-      const curPrice = changedValues.price;
-      if (typeof orig === 'number' && orig > 0 && typeof curPrice === 'number' && orig > curPrice) {
-        const calculatedDisc = Math.round(((orig - curPrice) / orig) * 100);
-        form.setFieldsValue({ discountPercent: calculatedDisc });
-      } else if (typeof orig === 'number' && typeof curPrice === 'number' && curPrice >= orig) {
-        form.setFieldsValue({ discountPercent: 0 });
+      const newPrice = changedValues.price;
+      if (typeof orig === 'number' && orig > 0 && typeof newPrice === 'number' && newPrice > 0) {
+        if (orig > newPrice) {
+          const calculatedDisc = Math.round(((orig - newPrice) / orig) * 100);
+          form.setFieldsValue({ discountPercent: calculatedDisc });
+        } else {
+          form.setFieldsValue({ discountPercent: 0, originalPrice: newPrice });
+        }
       }
     }
   };
@@ -653,9 +646,20 @@ export function InventoryTab({
       ? values.subImages.split(/[\n,]/).map((s: string) => s.trim()).filter(Boolean)
       : (Array.isArray(values.images) ? values.images : []);
 
-    const rawOriginalPrice = values.originalPrice !== undefined && values.originalPrice !== null
+    const rawPrice = Number(values.price) || 0;
+    let rawOriginalPrice = values.originalPrice !== undefined && values.originalPrice !== null
       ? Number(values.originalPrice)
-      : (values.price || 0);
+      : rawPrice;
+    let rawDiscount = values.discountPercent !== undefined && values.discountPercent !== null
+      ? Number(values.discountPercent)
+      : 0;
+
+    // Tự động chuẩn hóa để giảm giá luôn hiển thị chính xác trên toàn hệ thống
+    if (rawDiscount > 0 && (rawOriginalPrice <= rawPrice || isNaN(rawOriginalPrice))) {
+      rawOriginalPrice = Math.round(rawPrice / (1 - rawDiscount / 100));
+    } else if (rawOriginalPrice > rawPrice && rawDiscount <= 0) {
+      rawDiscount = Math.round(((rawOriginalPrice - rawPrice) / rawOriginalPrice) * 100);
+    }
 
     const inputStockNum = typeof values.stockNote === 'number'
       ? values.stockNote
@@ -687,10 +691,10 @@ export function InventoryTab({
         space: values.space || editingProduct.space || 'LivingRoom',
         collection: values.collection || '',
         originalPrice: rawOriginalPrice,
-        discountPercent: values.discountPercent !== undefined ? Number(values.discountPercent) : 0,
-        price: values.price || 0,
+        discountPercent: rawDiscount,
+        price: rawPrice,
         stockType: values.stockType || 'in_stock',
-        stockNote: `${inputStockNum} chiếc`,
+        stockNote: `${inputStockNum}`,
         inStock: inputStockNum,
         branch: selectedGlobalBranch !== 'all' ? selectedGlobalBranch : undefined,
         branchStocksJson: updatedBranchStocksJson,
@@ -727,10 +731,10 @@ export function InventoryTab({
         categoryName: selectedCategory?.name || 'Nội Thất Gỗ',
         categoryId: values.categoryId || categoriesList[0]?.id,
         originalPrice: rawOriginalPrice,
-        discountPercent: values.discountPercent !== undefined ? Number(values.discountPercent) : 0,
-        price: values.price || 0,
+        discountPercent: rawDiscount,
+        price: rawPrice,
         stockType: values.stockType || 'in_stock',
-        stockNote: `${inputStockNum} chiếc`,
+        stockNote: `${inputStockNum}`,
         inStock: inputStockNum,
         unit: values.unit || 'Bộ',
         image: values.image || '',
@@ -917,8 +921,8 @@ export function InventoryTab({
 
                 {/* Row 2 */}
                 <div>
-                  <div className="text-slate-500 mb-1">Số lượng tồn kho (ĐVT)</div>
-                  <div className="text-slate-900 text-sm font-semibold">{stockCount} <span className="text-[#784e34] font-medium font-mono">({prod.unit || 'Bộ'})</span></div>
+                  <div className="text-slate-500 mb-1">Số lượng tồn kho</div>
+                  <div className="text-slate-900 text-sm font-semibold">{stockCount}</div>
                 </div>
                 <div>
                   <div className="text-slate-500 mb-1">Giá gốc / Giá vốn</div>
@@ -1108,34 +1112,11 @@ export function InventoryTab({
             setSearchQuery('');
             setInventoryCategoryFilter('all');
             setInventoryStockTag('all');
-            setBranchFilter(selectedGlobalBranch || 'all');
+            setBranchFilter(selectedGlobalBranch || '');
             setSelectedProductKeys([]);
             setCurrentPage(1);
           }}
         >
-          {/* Filter 0: Chi nhánh */}
-          <div className="space-y-1.5">
-            <label className="font-semibold text-slate-800 text-xs block">Chi nhánh</label>
-            <Select
-              value={branchFilter}
-              onChange={(v) => {
-                setBranchFilter(v);
-                setCurrentPage(1);
-              }}
-              className="w-full text-xs"
-              size="small"
-              options={[
-                { value: 'all', label: 'Tất cả chi nhánh' },
-                ...(branchesList && branchesList.length > 0
-                  ? branchesList.map((b) => ({ value: b.name, label: b.name }))
-                  : [
-                      { value: 'Chi nhánh Hà Nội', label: 'Chi nhánh Hà Nội' },
-                      { value: 'Chi nhánh Nam Định', label: 'Chi nhánh Nam Định' },
-                      { value: 'Chi Nhánh Phú Quốc', label: 'Chi Nhánh Phú Quốc' },
-                    ]),
-              ]}
-            />
-          </div>
 
           {/* Filter 1: Danh mục thiết kế */}
           <div className="space-y-1.5 pt-2 border-t border-slate-100">
@@ -1325,37 +1306,26 @@ export function InventoryTab({
                   );
                 },
               },
+
               {
-                title: 'ĐVT',
-                dataIndex: 'unit',
-                key: 'unit',
-                align: 'center',
-                width: 80,
-                render: (unit, prod) => (
-                  <Tag className="border-0 bg-amber-50 text-[#784e34] text-xs font-semibold font-mono m-0">
-                    {prod.unit || unit || 'Bộ'}
-                  </Tag>
-                ),
-              },
-              {
-                title: branchFilter !== 'all' ? `Tồn (${branchFilter.replace('Chi nhánh ', '').replace('Chi Nhánh ', '')})` : 'Tồn kho',
+                title: 'Tồn',
                 dataIndex: 'stockNote',
                 key: 'stockNote',
                 align: 'center',
-                width: 140,
+                width: 100,
                 render: (note, prod) => {
                   const count = getProductStockForBranch(prod, branchFilter);
                   if (count < 0) {
                     return (
                       <span className="font-mono font-bold text-xs text-red-600 bg-red-50 px-2 py-0.5 rounded border border-red-200 inline-block">
-                        {count} <span className="text-red-500 font-normal font-sans">{prod.unit || 'Bộ'}</span>
+                        {count}
                       </span>
                     );
                   }
                   const isOut = count === 0;
                   return (
                     <span className={`font-mono font-bold text-xs ${isOut ? 'text-red-600' : 'text-slate-800'}`}>
-                      {count} <span className="text-slate-400 font-normal font-sans">{prod.unit || 'Bộ'}</span>
+                      {count}
                     </span>
                   );
                 },
@@ -1636,7 +1606,7 @@ export function InventoryTab({
           </Row>
 
           <Row gutter={16}>
-            <Col span={8}>
+            <Col span={12}>
               <Form.Item
                 label={<span className="text-xs font-semibold text-slate-700">Tình trạng tồn kho</span>}
                 name="stockType"
@@ -1651,21 +1621,7 @@ export function InventoryTab({
                 />
               </Form.Item>
             </Col>
-            <Col span={8}>
-              <Form.Item
-                label={<span className="text-xs font-semibold text-slate-700">Đơn vị tính</span>}
-                name="unit"
-                initialValue="Bộ"
-              >
-                <Select
-                  className="h-10 text-sm"
-                  showSearch
-                  placeholder="Chọn ĐVT"
-                  options={uomSelectOptions}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
+            <Col span={12}>
               <Form.Item
                 label={<span className="text-xs font-semibold text-slate-700">Số lượng tồn kho</span>}
                 name="stockNote"
@@ -1680,59 +1636,94 @@ export function InventoryTab({
             </Col>
           </Row>
 
-          {/* ẢNH ĐẠI DIỆN CHÍNH (URL + TẢI TỪ MÁY) */}
-          <div className="space-y-1.5 p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+          {/* ẢNH ĐẠI DIỆN CHÍNH (TẢI TỪ MÁY / KÉO THẢ / URL) */}
+          <div className="space-y-2 p-3.5 rounded-xl bg-slate-50 border border-slate-200/80">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-700">Ảnh đại diện chính</span>
-              <Upload
+              <div>
+                <span className="text-xs font-semibold text-slate-700 block">Ảnh đại diện chính sản phẩm</span>
+                <span className="text-[11px] text-slate-400">Ảnh chất lượng cao hiển thị ở trang chủ, danh mục và chi tiết</span>
+              </div>
+              {currentMainImage && (
+                <Upload
+                  showUploadList={false}
+                  beforeUpload={handleUploadMainFile}
+                  accept="image/*"
+                >
+                  <Button
+                    size="small"
+                    icon={<UploadOutlined />}
+                    loading={uploadingMain}
+                    className="text-xs rounded-lg border-slate-300 hover:text-[#784e34] hover:border-[#784e34]"
+                  >
+                    Thay ảnh khác
+                  </Button>
+                </Upload>
+              )}
+            </div>
+
+            {/* Dragger khi chưa có ảnh hoặc muốn kéo thả trực tiếp */}
+            {!currentMainImage ? (
+              <Upload.Dragger
                 showUploadList={false}
                 beforeUpload={handleUploadMainFile}
                 accept="image/*"
+                className="!bg-white hover:!border-[#784e34] !p-3 !border-dashed !border-slate-300 rounded-xl transition-all"
+                disabled={uploadingMain}
               >
-                <Button
-                  size="small"
-                  icon={<UploadOutlined />}
-                  loading={uploadingMain}
-                  className="text-xs rounded-lg border-slate-300 hover:text-[#784e34] hover:border-[#784e34]"
-                >
-                  Tải ảnh từ máy
-                </Button>
-              </Upload>
-            </div>
-            <Form.Item name="image" className="!mb-0">
-              <Input
-                placeholder="https://images.unsplash.com/... hoặc bấm nút tải từ máy"
-                className="h-10 text-sm rounded-lg bg-white"
-              />
-            </Form.Item>
-            {currentMainImage && (
-              <div className="relative inline-block mt-2">
-                <img
+                <div className="flex flex-col items-center justify-center py-2 text-center">
+                  <p className="ant-upload-drag-icon !mb-1">
+                    <InboxOutlined className="text-2xl text-[#784e34]" />
+                  </p>
+                  <p className="text-xs font-semibold text-slate-700 !mb-0.5">
+                    {uploadingMain ? 'Đang tải ảnh lên máy chủ...' : 'Kéo thả hoặc bấm để chọn ảnh từ máy'}
+                  </p>
+                  <p className="text-[11px] text-slate-400 !mb-0">
+                    Hỗ trợ định dạng JPG, PNG, WebP (Tối đa 20MB)
+                  </p>
+                </div>
+              </Upload.Dragger>
+            ) : (
+              <div className="relative flex items-center gap-3 p-2 bg-white rounded-lg border border-slate-200">
+                <Image
                   src={currentMainImage}
-                  alt="Ảnh xem trước"
-                  className="w-20 h-20 object-cover rounded-lg border border-slate-200 bg-white shadow-xs"
-                  onError={(e) => {
-                    (e.target as HTMLElement).style.display = 'none';
-                  }}
+                  alt="Ảnh đại diện"
+                  className="!w-20 !h-20 object-cover rounded-lg border border-slate-200 bg-slate-50"
+                  fallback="https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=200&auto=format&fit=crop&q=80"
                 />
+                <div className="flex-1 min-w-0 text-xs">
+                  <span className="font-medium text-slate-700 block truncate" title={currentMainImage}>
+                    {currentMainImage.split('/').pop() || 'Ảnh sản phẩm'}
+                  </span>
+                  <span className="text-[11px] text-emerald-600 block mt-0.5">✓ Đã sẵn sàng hiển thị</span>
+                </div>
                 <button
                   type="button"
                   onClick={() => form.setFieldsValue({ image: '' })}
-                  className="absolute -top-1.5 -right-1.5 bg-white rounded-full text-slate-400 hover:text-red-500 border-0 p-0 cursor-pointer shadow-xs"
-                  title="Gỡ ảnh"
+                  className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer border-0 bg-transparent"
+                  title="Gỡ ảnh này"
                 >
-                  <CloseCircleFilled className="text-base text-red-500 hover:text-red-600" />
+                  <DeleteOutlined className="text-base text-red-500" />
                 </button>
               </div>
             )}
+
+            {/* Input URL dự phòng */}
+            <div className="pt-1">
+              <Form.Item name="image" className="!mb-0">
+                <Input
+                  placeholder="Hoặc dán đường dẫn ảnh: https://images.unsplash.com/... hoặc /uploads/..."
+                  className="h-9 text-xs rounded-lg bg-white"
+                />
+              </Form.Item>
+            </div>
           </div>
 
-          {/* ẢNH PHỤ / BỘ SƯU TẬP ẢNH (URL + TẢI TỪ MÁY) */}
-          <div className="space-y-1.5 p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+          {/* ẢNH PHỤ / BỘ SƯU TẬP ẢNH (TẢI TỪ MÁY NHIỀU FILE / URL) */}
+          <div className="space-y-2 p-3.5 rounded-xl bg-slate-50 border border-slate-200/80">
             <div className="flex items-center justify-between">
               <div>
-                <span className="text-xs font-semibold text-slate-700 block">Ảnh phụ / Bộ sưu tập ảnh</span>
-                <span className="text-[11px] text-slate-400">Mỗi link một dòng hoặc tải nhiều file từ máy</span>
+                <span className="text-xs font-semibold text-slate-700 block">Ảnh phụ / Bộ sưu tập góc chụp</span>
+                <span className="text-[11px] text-slate-400">Tải nhiều góc cận cảnh, đường mộng, bề mặt gỗ (Mỗi link 1 dòng)</span>
               </div>
               <Upload
                 multiple
@@ -1746,52 +1737,64 @@ export function InventoryTab({
                   loading={uploadingSub}
                   className="text-xs rounded-lg border-slate-300 hover:text-[#784e34] hover:border-[#784e34]"
                 >
-                  Tải nhiều ảnh từ máy
+                  {uploadingSub ? 'Đang tải lên...' : 'Tải nhiều ảnh từ máy'}
                 </Button>
               </Upload>
             </div>
-            <Form.Item name="subImages" className="!mb-0">
-              <Input.TextArea
-                rows={3}
-                placeholder="https://images.unsplash.com/photo-detail-1...&#10;https://images.unsplash.com/photo-detail-2..."
-                className="text-sm rounded-lg bg-white"
-              />
-            </Form.Item>
+
+            {/* Thumbnail Gallery với Ant Design Image.PreviewGroup */}
             {currentSubImages && (
-              <div className="flex flex-wrap gap-2 mt-2">
-                {currentSubImages
-                  .split(/[\n,]/)
-                  .map((u: string) => u.trim())
-                  .filter(Boolean)
-                  .map((imgUrl: string, idx: number) => (
-                    <div key={idx} className="relative group">
-                      <img
-                        src={imgUrl}
-                        alt={`Ảnh phụ ${idx + 1}`}
-                        className="w-14 h-14 object-cover rounded-lg border border-slate-200 bg-white shadow-xs"
-                        onError={(e) => {
-                          (e.target as HTMLElement).style.display = 'none';
-                        }}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const urls = currentSubImages
-                            .split(/[\n,]/)
-                            .map((u: string) => u.trim())
-                            .filter(Boolean);
-                          const updated = urls.filter((_: string, i: number) => i !== idx).join('\n');
-                          form.setFieldsValue({ subImages: updated });
-                        }}
-                        className="absolute -top-1 -right-1 bg-white rounded-full text-slate-400 hover:text-red-500 border-0 p-0 cursor-pointer shadow-xs"
-                        title="Gỡ ảnh"
-                      >
-                        <CloseCircleFilled className="text-xs text-red-500 hover:text-red-600" />
-                      </button>
-                    </div>
-                  ))}
+              <div className="p-2 bg-white rounded-lg border border-slate-200">
+                <div className="text-[11px] text-slate-500 font-medium mb-1.5 flex items-center justify-between">
+                  <span>Ảnh chi tiết đã thêm ({currentSubImages.split(/[\n,]/).map((u: string) => u.trim()).filter(Boolean).length} ảnh):</span>
+                  <span className="text-[10px] text-slate-400">Bấm vào ảnh để phóng to</span>
+                </div>
+                <Image.PreviewGroup>
+                  <div className="flex flex-wrap gap-2">
+                    {currentSubImages
+                      .split(/[\n,]/)
+                      .map((u: string) => u.trim())
+                      .filter(Boolean)
+                      .map((imgUrl: string, idx: number) => (
+                        <div key={idx} className="relative group">
+                          <Image
+                            src={imgUrl}
+                            alt={`Ảnh phụ ${idx + 1}`}
+                            width={56}
+                            height={56}
+                            className="!w-14 !h-14 object-cover rounded-lg border border-slate-200 bg-slate-50 shadow-xs"
+                            fallback="https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=200&auto=format&fit=crop&q=80"
+                          />
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const urls = currentSubImages
+                                .split(/[\n,]/)
+                                .map((u: string) => u.trim())
+                                .filter(Boolean);
+                              const updated = urls.filter((_: string, i: number) => i !== idx).join('\n');
+                              form.setFieldsValue({ subImages: updated });
+                            }}
+                            className="absolute -top-1 -right-1 bg-white rounded-full text-slate-400 hover:text-red-500 border-0 p-0 cursor-pointer shadow-xs z-10"
+                            title="Xóa ảnh này"
+                          >
+                            <CloseCircleFilled className="text-sm text-red-500 hover:text-red-600" />
+                          </button>
+                        </div>
+                      ))}
+                  </div>
+                </Image.PreviewGroup>
               </div>
             )}
+
+            <Form.Item name="subImages" className="!mb-0">
+              <Input.TextArea
+                rows={2}
+                placeholder="https://images.unsplash.com/photo-detail-1...&#10;https://images.unsplash.com/photo-detail-2..."
+                className="text-xs rounded-lg bg-white font-mono"
+              />
+            </Form.Item>
           </div>
           {/* THÔNG SỐ KỸ THUẬT CHI TIẾT */}
           <Row gutter={16}>

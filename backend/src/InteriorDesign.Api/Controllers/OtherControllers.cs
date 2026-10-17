@@ -39,20 +39,17 @@ public sealed class ConsultationsController : ApiControllerBase
         ToActionResult(await Sender.Send(new UpdateConsultationStatusCommand(id, request), cancellationToken));
 }
 
-[Route("api/dashboard")]
-[Authorize(Roles = "Admin,Staff")]
-public sealed class DashboardController : ApiControllerBase
-{
-    [HttpGet("summary")]
-    public async Task<IActionResult> GetSummary(CancellationToken cancellationToken) =>
-        Ok(await Sender.Send(new GetDashboardSummaryQuery(), cancellationToken));
-}
-
 
 
 [Route("api/upload")]
 public sealed class UploadController : ApiControllerBase
 {
+    private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".jpg", ".jpeg", ".png", ".webp", ".svg", ".gif", ".avif"
+    };
+    private const long MaxFileSizeBytes = 20 * 1024 * 1024; // 20 MB
+
     private readonly IWebHostEnvironment _env;
 
     public UploadController(IWebHostEnvironment env) => _env = env;
@@ -63,11 +60,17 @@ public sealed class UploadController : ApiControllerBase
         if (file is null || file.Length == 0)
             return BadRequest(ApiResponse<string>.Fail("Vui lòng chọn một file hợp lệ."));
 
+        if (file.Length > MaxFileSizeBytes)
+            return BadRequest(ApiResponse<string>.Fail("Dung lượng file vượt quá giới hạn tối đa 20MB."));
+
+        var ext = Path.GetExtension(file.FileName);
+        if (string.IsNullOrWhiteSpace(ext) || !AllowedExtensions.Contains(ext))
+            return BadRequest(ApiResponse<string>.Fail($"Định dạng file '{ext}' không được hỗ trợ. Vui lòng chọn ảnh JPG, PNG, WEBP hoặc SVG."));
+
         var uploadsFolder = Path.Combine(_env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot"), "uploads");
         if (!Directory.Exists(uploadsFolder)) Directory.CreateDirectory(uploadsFolder);
 
-        var ext = Path.GetExtension(file.FileName);
-        var fileName = $"{Guid.NewGuid()}{ext}";
+        var fileName = $"{Guid.NewGuid()}{ext.ToLowerInvariant()}";
         var filePath = Path.Combine(uploadsFolder, fileName);
 
         using (var stream = new FileStream(filePath, FileMode.Create))
@@ -77,5 +80,40 @@ public sealed class UploadController : ApiControllerBase
 
         var url = $"/uploads/{fileName}";
         return Ok(ApiResponse<string>.Ok(url, "Tải ảnh lên thành công."));
+    }
+
+    [HttpPost("multiple")]
+    public async Task<IActionResult> UploadMultipleImages([FromForm] List<IFormFile>? files)
+    {
+        if (files is null || files.Count == 0)
+            return BadRequest(ApiResponse<List<string>>.Fail("Vui lòng chọn ít nhất một file ảnh."));
+
+        var uploadsFolder = Path.Combine(_env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot"), "uploads");
+        if (!Directory.Exists(uploadsFolder)) Directory.CreateDirectory(uploadsFolder);
+
+        var uploadedUrls = new List<string>();
+
+        foreach (var file in files)
+        {
+            if (file.Length == 0 || file.Length > MaxFileSizeBytes) continue;
+
+            var ext = Path.GetExtension(file.FileName);
+            if (string.IsNullOrWhiteSpace(ext) || !AllowedExtensions.Contains(ext)) continue;
+
+            var fileName = $"{Guid.NewGuid()}{ext.ToLowerInvariant()}";
+            var filePath = Path.Combine(uploadsFolder, fileName);
+
+            using (var stream = new FileStream(filePath, FileMode.Create))
+            {
+                await file.CopyToAsync(stream);
+            }
+
+            uploadedUrls.Add($"/uploads/{fileName}");
+        }
+
+        if (uploadedUrls.Count == 0)
+            return BadRequest(ApiResponse<List<string>>.Fail("Không có file ảnh hợp lệ nào được tải lên."));
+
+        return Ok(ApiResponse<List<string>>.Ok(uploadedUrls, $"Đã tải lên thành công {uploadedUrls.Count} ảnh."));
     }
 }

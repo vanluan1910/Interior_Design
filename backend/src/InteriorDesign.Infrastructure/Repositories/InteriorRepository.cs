@@ -407,7 +407,7 @@ public sealed class InteriorRepository(InteriorDbContext db) : IInteriorReposito
     // Dashboard
     public async Task<(decimal TotalRevenue, int TotalOrders, int PendingOrders, int TotalProducts, int TotalConsultations, int TotalCustomers)> GetDashboardStatsAsync(CancellationToken cancellationToken)
     {
-        var totalRevenue = await db.Orders.Where(o => o.Status != OrderStatus.Cancelled).SumAsync(o => (decimal?)o.TotalAmount, cancellationToken) ?? 0;
+        var totalRevenue = await db.Orders.Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Returned && o.Status != OrderStatus.ReturnCompleted).SumAsync(o => (decimal?)o.TotalAmount, cancellationToken) ?? 0;
         var totalOrders = await db.Orders.CountAsync(cancellationToken);
         var pendingOrders = await db.Orders.CountAsync(o => o.Status == OrderStatus.Pending, cancellationToken);
         var totalProducts = await db.Products.CountAsync(cancellationToken);

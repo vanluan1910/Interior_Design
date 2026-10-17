@@ -293,17 +293,6 @@ public static class PermissionCatalog
                         }
                     ),
                     new(
-                        SubKey: "uom_settings",
-                        SubName: "Quản lý Đơn vị tính (UOM)",
-                        Permissions: new List<PermissionDefinitionDto>
-                        {
-                            new("settings.uom.view", "Xem danh sách Đơn vị tính (UOM)", "Tra cứu danh mục đơn vị tính"),
-                            new("settings.uom.create", "Thêm mới Đơn vị tính (UOM)", "Tạo đơn vị tính m³, m², bộ, chiếc..."),
-                            new("settings.uom.update", "Chỉnh sửa Đơn vị tính (UOM)", "Cập nhật tên, mã, mô tả đơn vị tính"),
-                            new("settings.uom.delete", "Xóa Đơn vị tính (UOM)", "Xóa đơn vị tính không dùng")
-                        }
-                    ),
-                    new(
                         SubKey: "employees_settings",
                         SubName: "Quản lý Nhân sự & Tài khoản",
                         Permissions: new List<PermissionDefinitionDto>
@@ -342,10 +331,6 @@ public static class PermissionCatalog
                     new("settings.branches.create", "Thêm mới Chi nhánh / Showroom", "Tạo cơ sở chi nhánh mới"),
                     new("settings.branches.update", "Chỉnh sửa thông tin Chi nhánh / Showroom", "Cập nhật địa chỉ, quản lý, diện tích"),
                     new("settings.branches.delete", "Xóa Chi nhánh / Showroom", "Xóa cơ sở chi nhánh"),
-                    new("settings.uom.view", "Xem danh sách Đơn vị tính (UOM)", "Tra cứu danh mục đơn vị tính"),
-                    new("settings.uom.create", "Thêm mới Đơn vị tính (UOM)", "Tạo đơn vị tính m³, m², bộ, chiếc..."),
-                    new("settings.uom.update", "Chỉnh sửa Đơn vị tính (UOM)", "Cập nhật tên, mã, mô tả đơn vị tính"),
-                    new("settings.uom.delete", "Xóa Đơn vị tính (UOM)", "Xóa đơn vị tính không dùng"),
                     new("settings.employees.view", "Xem danh sách nhân sự & tài khoản", "Tra cứu danh sách hồ sơ nhân viên, phòng ban và chi nhánh"),
                     new("settings.employees.create", "Thêm mới hồ sơ nhân viên", "Tạo mới hồ sơ nhân sự và cấp tài khoản đăng nhập"),
                     new("settings.employees.update", "Chỉnh sửa thông tin nhân sự", "Cập nhật lý lịch, chức danh, phòng ban, đổi trạng thái làm việc"),

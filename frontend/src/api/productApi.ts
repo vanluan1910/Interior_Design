@@ -49,7 +49,13 @@ function mapDtoToCatalogProduct(dto: any, branchParam?: string): FeaturedCatalog
   const imagesList = Array.isArray(dto.images) ? dto.images : [];
   const price = typeof dto.price === 'number' ? dto.price : (Number(dto.price) || 0);
   const rawOriginal = dto.originalPrice !== undefined && dto.originalPrice !== null ? Number(dto.originalPrice) : (dto.costPrice !== undefined ? Number(dto.costPrice) : price);
-  const originalPrice = isNaN(rawOriginal) || rawOriginal <= 0 ? price : rawOriginal;
+  const discPercent = typeof dto.discountPercent === 'number' ? dto.discountPercent : 0;
+  let originalPrice = isNaN(rawOriginal) || rawOriginal <= 0 ? price : rawOriginal;
+
+  if (discPercent > 0 && originalPrice <= price && price > 0) {
+    originalPrice = Math.round(price / (1 - discPercent / 100));
+  }
+  const discountPercent = discPercent > 0 ? discPercent : (originalPrice > price ? Math.round(((originalPrice - price) / originalPrice) * 100) : 0);
 
   return {
     id: dto.id || `prod_${Date.now()}`,
@@ -59,10 +65,8 @@ function mapDtoToCatalogProduct(dto: any, branchParam?: string): FeaturedCatalog
     price: price,
     originalPrice: originalPrice,
     costPrice: originalPrice,
-    discountPercent: typeof dto.discountPercent === 'number'
-      ? dto.discountPercent
-      : (originalPrice > price ? Math.round(((originalPrice - price) / originalPrice) * 100) : 0),
-    stockNote: `${inStockQty} chiếc`,
+    discountPercent: discountPercent,
+    stockNote: `${inStockQty}`,
     stockType: (dto.stockType as any) || stockType,
     image: dto.mainImageUrl || dto.image || '',
     images: imagesList,
@@ -350,6 +354,13 @@ export const productApi = {
     }
 
     invalidateApiCache('products');
+    invalidateApiCache('home');
+    try {
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('d2_homedata_cache');
+        window.dispatchEvent(new CustomEvent('d2_product_updated'));
+      }
+    } catch {}
     return mapDtoToCatalogProduct(json.data);
   },
 
@@ -408,6 +419,13 @@ export const productApi = {
 
     const json = await res.json();
     invalidateApiCache('products');
+    invalidateApiCache('home');
+    try {
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('d2_homedata_cache');
+        window.dispatchEvent(new CustomEvent('d2_product_updated'));
+      }
+    } catch {}
     return mapDtoToCatalogProduct(json.data);
   },
 

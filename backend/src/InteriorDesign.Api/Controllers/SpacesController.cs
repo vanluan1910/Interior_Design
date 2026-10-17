@@ -267,23 +267,30 @@ public sealed class SpacesController : ApiControllerBase
             .Take(pageSize)
             .ToListAsync(cancellationToken);
 
-        var productsDto = pagedItems.Select(p => new HomeProductDto(
-            Id: p.Id,
-            Name: p.Name,
-            Slug: p.Slug,
-            Sku: p.Sku,
-            Category: spaceKey,
-            CategoryName: p.Category != null ? p.Category.Name : spaceName,
-            Price: p.Price,
-            OriginalPrice: null,
-            Image: !string.IsNullOrWhiteSpace(p.MainImageUrl) ? p.MainImageUrl : "/images/placeholder.jpg",
-            WoodType: !string.IsNullOrWhiteSpace(p.WoodType) ? p.WoodType : "Gỗ tự nhiên",
-            Dimensions: !string.IsNullOrWhiteSpace(p.Dimensions) ? p.Dimensions : "Theo thiết kế",
-            Tag: "",
-            Rating: p.Rating > 0 ? p.Rating : 5.0m,
-            ReviewCount: p.ReviewCount > 0 ? p.ReviewCount : 24,
-            InStock: p.InStock > 0
-        )).ToList();
+        var productsDto = pagedItems.Select(p => {
+            decimal pr = p.Price;
+            decimal orig = p.OriginalPrice > pr ? p.OriginalPrice : (p.DiscountPercent > 0 && pr > 0 ? Math.Round(pr / (1 - (decimal)p.DiscountPercent / 100m)) : pr);
+            int disc = p.DiscountPercent > 0 ? p.DiscountPercent : (orig > pr && orig > 0 ? (int)Math.Round(((orig - pr) / orig) * 100m) : 0);
+
+            return new HomeProductDto(
+                Id: p.Id,
+                Name: p.Name,
+                Slug: p.Slug,
+                Sku: p.Sku,
+                Category: spaceKey,
+                CategoryName: p.Category != null ? p.Category.Name : spaceName,
+                Price: pr,
+                OriginalPrice: orig > pr ? orig : null,
+                Image: !string.IsNullOrWhiteSpace(p.MainImageUrl) ? p.MainImageUrl : "/images/placeholder.jpg",
+                WoodType: !string.IsNullOrWhiteSpace(p.WoodType) ? p.WoodType : "Gỗ tự nhiên",
+                Dimensions: !string.IsNullOrWhiteSpace(p.Dimensions) ? p.Dimensions : "Theo thiết kế",
+                Tag: disc > 0 ? $"-{disc}%" : "",
+                Rating: p.Rating > 0 ? p.Rating : 5.0m,
+                ReviewCount: p.ReviewCount > 0 ? p.ReviewCount : 24,
+                InStock: p.InStock > 0,
+                DiscountPercent: disc
+            );
+        }).ToList();
 
         // 5. Featured products của không gian (top 8)
         var featuredItems = await baseQuery
@@ -292,23 +299,30 @@ public sealed class SpacesController : ApiControllerBase
             .Take(8)
             .ToListAsync(cancellationToken);
 
-        var featuredDto = featuredItems.Select(p => new HomeProductDto(
-            Id: p.Id,
-            Name: p.Name,
-            Slug: p.Slug,
-            Sku: p.Sku,
-            Category: spaceKey,
-            CategoryName: p.Category != null ? p.Category.Name : spaceName,
-            Price: p.Price,
-            OriginalPrice: null,
-            Image: !string.IsNullOrWhiteSpace(p.MainImageUrl) ? p.MainImageUrl : "/images/placeholder.jpg",
-            WoodType: !string.IsNullOrWhiteSpace(p.WoodType) ? p.WoodType : "Gỗ tự nhiên",
-            Dimensions: !string.IsNullOrWhiteSpace(p.Dimensions) ? p.Dimensions : "Theo thiết kế",
-            Tag: "",
-            Rating: p.Rating > 0 ? p.Rating : 5.0m,
-            ReviewCount: p.ReviewCount > 0 ? p.ReviewCount : 24,
-            InStock: p.InStock > 0
-        )).ToList();
+        var featuredDto = featuredItems.Select(p => {
+            decimal pr = p.Price;
+            decimal orig = p.OriginalPrice > pr ? p.OriginalPrice : (p.DiscountPercent > 0 && pr > 0 ? Math.Round(pr / (1 - (decimal)p.DiscountPercent / 100m)) : pr);
+            int disc = p.DiscountPercent > 0 ? p.DiscountPercent : (orig > pr && orig > 0 ? (int)Math.Round(((orig - pr) / orig) * 100m) : 0);
+
+            return new HomeProductDto(
+                Id: p.Id,
+                Name: p.Name,
+                Slug: p.Slug,
+                Sku: p.Sku,
+                Category: spaceKey,
+                CategoryName: p.Category != null ? p.Category.Name : spaceName,
+                Price: pr,
+                OriginalPrice: orig > pr ? orig : null,
+                Image: !string.IsNullOrWhiteSpace(p.MainImageUrl) ? p.MainImageUrl : "/images/placeholder.jpg",
+                WoodType: !string.IsNullOrWhiteSpace(p.WoodType) ? p.WoodType : "Gỗ tự nhiên",
+                Dimensions: !string.IsNullOrWhiteSpace(p.Dimensions) ? p.Dimensions : "Theo thiết kế",
+                Tag: disc > 0 ? $"-{disc}%" : "",
+                Rating: p.Rating > 0 ? p.Rating : 5.0m,
+                ReviewCount: p.ReviewCount > 0 ? p.ReviewCount : 24,
+                InStock: p.InStock > 0,
+                DiscountPercent: disc
+            );
+        }).ToList();
 
         var response = new SpaceDetailResponseDto(
             Space: spaceDto,

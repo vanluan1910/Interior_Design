@@ -3,6 +3,7 @@ using InteriorDesign.Domain.Entities;
 using InteriorDesign.Infrastructure.Data;
 using InteriorDesign.Integration.Common;
 using InteriorDesign.Integration.Requests;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -239,6 +240,7 @@ public sealed class EmployeesController : ApiControllerBase
     [HttpPost]
     public async Task<IActionResult> CreateEmployee([FromBody] CreateEmployeeRequest request, CancellationToken cancellationToken)
     {
+        await EnsureTableExistsAsync(cancellationToken);
         if (string.IsNullOrWhiteSpace(request.Name))
             return BadRequest(ApiResponse<string>.Fail("Tên nhân viên không được để trống."));
 
@@ -246,11 +248,6 @@ public sealed class EmployeesController : ApiControllerBase
             return BadRequest(ApiResponse<string>.Fail("Số điện thoại không được để trống."));
 
         var cleanName = request.Name.Trim();
-        var isDuplicateName = await _context.Employees.AnyAsync(
-            x => x.Name != null && x.Name.ToLower() == cleanName.ToLower(),
-            cancellationToken);
-        if (isDuplicateName)
-            return BadRequest(ApiResponse<string>.Fail($"Tên nhân viên '{cleanName}' đã tồn tại trên hệ thống. Vui lòng nhập tên khác hoặc thêm họ tên đệm để phân biệt."));
 
         // Auto-generate code if empty
         var code = request.Code?.Trim().ToUpper();
@@ -258,7 +255,7 @@ public sealed class EmployeesController : ApiControllerBase
         {
             var maxId = await _context.Employees.CountAsync(cancellationToken) + 1;
             code = $"NV{maxId:D2}";
-            while (await _context.Employees.AnyAsync(x => x.Code == code, cancellationToken))
+            while (await _context.Employees.AnyAsync(x => !x.IsDeleted && x.Code == code, cancellationToken))
             {
                 maxId++;
                 code = $"NV{maxId:D2}";
@@ -266,7 +263,7 @@ public sealed class EmployeesController : ApiControllerBase
         }
         else
         {
-            var isDuplicateCode = await _context.Employees.AnyAsync(x => x.Code == code, cancellationToken);
+            var isDuplicateCode = await _context.Employees.AnyAsync(x => !x.IsDeleted && x.Code == code, cancellationToken);
             if (isDuplicateCode)
                 return BadRequest(ApiResponse<string>.Fail($"Mã nhân viên '{code}' đã tồn tại trên hệ thống."));
         }
@@ -292,7 +289,7 @@ public sealed class EmployeesController : ApiControllerBase
         {
             var cleanEmail = request.Email.Trim().ToLower();
             var existingByEmail = await _context.Employees.FirstOrDefaultAsync(
-                x => x.Email != null && x.Email.ToLower() == cleanEmail,
+                x => !x.IsDeleted && x.Email != null && x.Email.ToLower() == cleanEmail,
                 cancellationToken);
             if (existingByEmail != null)
                 return BadRequest(ApiResponse<string>.Fail($"Email đăng nhập '{request.Email.Trim()}' đã được sử dụng bởi nhân viên '{existingByEmail.Name}' ({existingByEmail.Code}). Vui lòng nhập email khác."));
@@ -303,8 +300,8 @@ public sealed class EmployeesController : ApiControllerBase
         {
             var uLower = targetUsername.ToLower();
             var existingByUsername = await _context.Employees.FirstOrDefaultAsync(
-                x => (x.Username != null && x.Username.ToLower() == uLower) ||
-                     (x.Login != null && x.Login.ToLower() == uLower),
+                x => !x.IsDeleted && ((x.Username != null && x.Username.ToLower() == uLower) ||
+                     (x.Login != null && x.Login.ToLower() == uLower)),
                 cancellationToken);
             if (existingByUsername != null)
                 return BadRequest(ApiResponse<string>.Fail($"Tên đăng nhập '{targetUsername}' đã được sử dụng bởi nhân viên '{existingByUsername.Name}' ({existingByUsername.Code}). Vui lòng chọn tên đăng nhập khác."));
@@ -315,7 +312,7 @@ public sealed class EmployeesController : ApiControllerBase
         {
             var cleanPhone = request.Phone.Trim();
             var existingByPhone = await _context.Employees.FirstOrDefaultAsync(
-                x => x.Phone == cleanPhone,
+                x => !x.IsDeleted && x.Phone == cleanPhone,
                 cancellationToken);
             if (existingByPhone != null)
                 return BadRequest(ApiResponse<string>.Fail($"Số điện thoại '{cleanPhone}' đã được sử dụng bởi nhân viên '{existingByPhone.Name}' ({existingByPhone.Code}). Vui lòng nhập số khác."));
@@ -336,22 +333,25 @@ public sealed class EmployeesController : ApiControllerBase
             _ => "Staff"
         };
 
-        Guid assignedId;
+        Employee? employee = null;
 
         if (existingUser != null)
         {
-            // Check if this existing user is already attached to another employee
-            var otherEmployee = await _context.Employees.FirstOrDefaultAsync(
+            // Check if this existing user is already attached to an active employee
+            var otherEmployee = await _context.Employees.IgnoreQueryFilters().FirstOrDefaultAsync(
                 e => e.Id == existingUser.Id || (!string.IsNullOrWhiteSpace(e.Email) && e.Email.ToLower() == targetEmail),
                 cancellationToken);
 
-            if (otherEmployee != null)
+            if (otherEmployee != null && !otherEmployee.IsDeleted)
             {
                 return BadRequest(ApiResponse<string>.Fail($"Email hoặc Tên đăng nhập '{targetEmail}' đã được sử dụng bởi nhân viên '{otherEmployee.Name}' ({otherEmployee.Code}). Vui lòng chọn email hoặc tên đăng nhập khác."));
             }
 
-            // Sync employee ID with existing user so both entities share the same ID
-            assignedId = existingUser.Id;
+            if (otherEmployee != null && otherEmployee.IsDeleted)
+            {
+                employee = otherEmployee;
+                employee.IsDeleted = false;
+            }
 
             existingUser.FullName = request.Name.Trim();
             existingUser.Username = targetUsername;
@@ -368,11 +368,15 @@ public sealed class EmployeesController : ApiControllerBase
         }
         else
         {
-            assignedId = Guid.NewGuid();
+            var newUserId = Guid.NewGuid();
+            while (await _context.Users.AnyAsync(u => u.Id == newUserId, cancellationToken))
+            {
+                newUserId = Guid.NewGuid();
+            }
 
             var newUser = new User
             {
-                Id = assignedId,
+                Id = newUserId,
                 FullName = request.Name.Trim(),
                 Username = targetUsername,
                 Email = targetEmail,
@@ -386,47 +390,88 @@ public sealed class EmployeesController : ApiControllerBase
             _context.Users.Add(newUser);
         }
 
-        var employee = new Employee
+        if (employee == null)
         {
-            Id = assignedId,
-            Code = code,
-            Name = request.Name.Trim(),
-            Phone = request.Phone.Trim(),
-            IdNumber = request.IdNumber?.Trim() ?? string.Empty,
-            Gender = request.Gender?.Trim() ?? "Nam",
-            Birthday = request.Birthday?.Trim() ?? string.Empty,
-            Email = targetEmail,
-            Address = request.Address?.Trim() ?? string.Empty,
-            Department = request.Department?.Trim() ?? "Showroom Kinh Doanh",
-            Title = request.Title?.Trim() ?? "Chuyên viên Tư vấn",
-            Branch = request.Branch?.Trim() ?? "Showroom Quận 10 (HQ)",
-            BranchId = request.BranchId,
-            Login = targetUsername,
-            Username = targetUsername,
-            Role = request.Role?.Trim() ?? "Staff",
-            Status = request.Status?.Trim() ?? "working",
-            WorkingDate = request.WorkingDate?.Trim() ?? DateTime.Now.ToString("yyyy-MM-dd"),
-            Area = request.Area?.Trim() ?? string.Empty,
-            Ward = request.Ward?.Trim() ?? string.Empty,
-            AddressDetail = request.AddressDetail?.Trim() ?? string.Empty,
-            Debt = request.Debt ?? 0,
-            Note = request.Note?.Trim() ?? string.Empty,
-            Facebook = request.Facebook?.Trim() ?? string.Empty,
-            Zalo = request.Zalo?.Trim() ?? string.Empty,
-            SkillsJson = request.Skills != null ? JsonSerializer.Serialize(request.Skills) : "[]",
-            CreatedAt = DateTimeOffset.UtcNow,
-            UpdatedAt = DateTimeOffset.UtcNow
-        };
+            var newEmpId = Guid.NewGuid();
+            while (await _context.Employees.IgnoreQueryFilters().AnyAsync(e => e.Id == newEmpId, cancellationToken))
+            {
+                newEmpId = Guid.NewGuid();
+            }
 
-        _context.Employees.Add(employee);
+            employee = new Employee
+            {
+                Id = newEmpId,
+                Code = code,
+                Name = request.Name.Trim(),
+                Phone = request.Phone.Trim(),
+                IdNumber = request.IdNumber?.Trim() ?? string.Empty,
+                Gender = request.Gender?.Trim() ?? "Nam",
+                Birthday = request.Birthday?.Trim() ?? string.Empty,
+                Email = targetEmail,
+                Address = request.Address?.Trim() ?? string.Empty,
+                Department = request.Department?.Trim() ?? "Showroom Kinh Doanh",
+                Title = request.Title?.Trim() ?? "Chuyên viên Tư vấn",
+                Branch = request.Branch?.Trim() ?? "Showroom Quận 10 (HQ)",
+                BranchId = request.BranchId,
+                Login = targetUsername,
+                Username = targetUsername,
+                Role = request.Role?.Trim() ?? "Staff",
+                Status = request.Status?.Trim() ?? "working",
+                WorkingDate = request.WorkingDate?.Trim() ?? DateTime.Now.ToString("yyyy-MM-dd"),
+                Area = request.Area?.Trim() ?? string.Empty,
+                Ward = request.Ward?.Trim() ?? string.Empty,
+                AddressDetail = request.AddressDetail?.Trim() ?? string.Empty,
+                Debt = request.Debt ?? 0,
+                Note = request.Note?.Trim() ?? string.Empty,
+                Facebook = request.Facebook?.Trim() ?? string.Empty,
+                Zalo = request.Zalo?.Trim() ?? string.Empty,
+                SkillsJson = request.Skills != null ? JsonSerializer.Serialize(request.Skills) : "[]",
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow
+            };
+
+            _context.Employees.Add(employee);
+        }
+        else
+        {
+            employee.Code = code;
+            employee.Name = request.Name.Trim();
+            employee.Phone = request.Phone.Trim();
+            employee.IdNumber = request.IdNumber?.Trim() ?? string.Empty;
+            employee.Gender = request.Gender?.Trim() ?? "Nam";
+            employee.Birthday = request.Birthday?.Trim() ?? string.Empty;
+            employee.Email = targetEmail;
+            employee.Address = request.Address?.Trim() ?? string.Empty;
+            employee.Department = request.Department?.Trim() ?? "Showroom Kinh Doanh";
+            employee.Title = request.Title?.Trim() ?? "Chuyên viên Tư vấn";
+            employee.Branch = request.Branch?.Trim() ?? "Showroom Quận 10 (HQ)";
+            employee.BranchId = request.BranchId;
+            employee.Login = targetUsername;
+            employee.Username = targetUsername;
+            employee.Role = request.Role?.Trim() ?? "Staff";
+            employee.Status = request.Status?.Trim() ?? "working";
+            employee.WorkingDate = request.WorkingDate?.Trim() ?? DateTime.Now.ToString("yyyy-MM-dd");
+            employee.Area = request.Area?.Trim() ?? string.Empty;
+            employee.Ward = request.Ward?.Trim() ?? string.Empty;
+            employee.AddressDetail = request.AddressDetail?.Trim() ?? string.Empty;
+            employee.Debt = request.Debt ?? 0;
+            employee.Note = request.Note?.Trim() ?? string.Empty;
+            employee.Facebook = request.Facebook?.Trim() ?? string.Empty;
+            employee.Zalo = request.Zalo?.Trim() ?? string.Empty;
+            employee.SkillsJson = request.Skills != null ? JsonSerializer.Serialize(request.Skills) : "[]";
+            employee.UpdatedAt = DateTimeOffset.UtcNow;
+
+            _context.Employees.Update(employee);
+        }
 
         try
         {
             await _context.SaveChangesAsync(cancellationToken);
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException ex)
         {
-            return BadRequest(ApiResponse<string>.Fail($"Không thể tạo nhân viên do trùng lặp dữ liệu trong hệ thống (Email '{targetEmail}' hoặc Tên đăng nhập đã tồn tại). Vui lòng kiểm tra lại."));
+            var msg = ex.InnerException?.Message ?? ex.Message;
+            return BadRequest(ApiResponse<string>.Fail($"Không thể tạo nhân viên: {msg}"));
         }
 
         return Ok(ApiResponse<Employee>.Ok(employee, "Thêm nhân viên thành công."));
@@ -445,7 +490,7 @@ public sealed class EmployeesController : ApiControllerBase
         if (!string.IsNullOrWhiteSpace(request.Code))
         {
             var code = request.Code.Trim().ToUpper();
-            var duplicate = await _context.Employees.AnyAsync(x => x.Id != id && x.Code == code, cancellationToken);
+            var duplicate = await _context.Employees.AnyAsync(x => x.Id != id && !x.IsDeleted && x.Code == code, cancellationToken);
             if (duplicate)
                 return BadRequest(ApiResponse<string>.Fail($"Mã nhân viên '{code}' đã thuộc về nhân viên khác."));
             employee.Code = code;
@@ -453,17 +498,13 @@ public sealed class EmployeesController : ApiControllerBase
 
         if (!string.IsNullOrWhiteSpace(request.Name))
         {
-            var cleanName = request.Name.Trim();
-            var duplicateName = await _context.Employees.AnyAsync(x => x.Id != id && x.Name != null && x.Name.ToLower() == cleanName.ToLower(), cancellationToken);
-            if (duplicateName)
-                return BadRequest(ApiResponse<string>.Fail($"Tên nhân viên '{cleanName}' đã thuộc về nhân viên khác."));
-            employee.Name = cleanName;
+            employee.Name = request.Name.Trim();
         }
 
         if (!string.IsNullOrWhiteSpace(request.Phone))
         {
             var cleanPhone = request.Phone.Trim();
-            var duplicatePhone = await _context.Employees.AnyAsync(x => x.Id != id && x.Phone == cleanPhone, cancellationToken);
+            var duplicatePhone = await _context.Employees.AnyAsync(x => x.Id != id && !x.IsDeleted && x.Phone == cleanPhone, cancellationToken);
             if (duplicatePhone)
                 return BadRequest(ApiResponse<string>.Fail($"Số điện thoại '{cleanPhone}' đã thuộc về nhân viên khác."));
             employee.Phone = cleanPhone;
@@ -472,7 +513,7 @@ public sealed class EmployeesController : ApiControllerBase
         if (!string.IsNullOrWhiteSpace(request.Email))
         {
             var cleanEmail = request.Email.Trim().ToLower();
-            var duplicateEmail = await _context.Employees.AnyAsync(x => x.Id != id && x.Email != null && x.Email.ToLower() == cleanEmail, cancellationToken);
+            var duplicateEmail = await _context.Employees.AnyAsync(x => x.Id != id && !x.IsDeleted && x.Email != null && x.Email.ToLower() == cleanEmail, cancellationToken);
             if (duplicateEmail)
                 return BadRequest(ApiResponse<string>.Fail($"Email '{request.Email.Trim()}' đã thuộc về nhân viên khác."));
             employee.Email = request.Email.Trim();

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using InteriorDesign.Domain.Entities;
 
 namespace InteriorDesign.Infrastructure.Data;
 
@@ -383,6 +384,33 @@ public static class DatabaseInitializer
             {
                 Console.WriteLine($"[Seed Users Warning]: {ex.Message}");
             }
+        }
+
+        try
+        {
+            var adminEmail = "vanluan1910@d2luxury.vn";
+            var existingAdmin = await context.Users.FirstOrDefaultAsync(u => u.Email == adminEmail || u.PhoneNumber == "0918 345 678" || u.PhoneNumber == "0918345678");
+            if (existingAdmin == null)
+            {
+                await context.Users.AddAsync(new User
+                {
+                    Id = Guid.NewGuid(),
+                    FullName = "Văn Luận",
+                    Email = adminEmail,
+                    PhoneNumber = "0918 345 678",
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword("Admin@123456"),
+                    Role = "Admin",
+                    AvatarUrl = "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=800&auto=format&fit=crop&q=80",
+                    IsActive = true,
+                    CreatedAt = DateTimeOffset.UtcNow,
+                    UpdatedAt = DateTimeOffset.UtcNow
+                });
+                await context.SaveChangesAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Seed Master Admin Warning]: {ex.Message}");
         }
 
         if (!await context.StoreSettings.AnyAsync())

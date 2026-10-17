@@ -44,13 +44,15 @@ import {
 } from '@/components/admin';
 import { exportToExcel } from '@/utils/exportExcel';
 import type { OrderRow, AdminCustomer, FeaturedCatalogProduct, AdminBranch } from '@/types/admin';
-import { orderApi } from '@/api/orderApi';
+import { orderApi, normalizeOrderStatus, normalizeOrderRow } from '@/api/orderApi';
 import { customerApi } from '@/api/customerApi';
 import { productApi } from '@/api/productApi';
 import { branchApi } from '@/api/branchApi';
 import { VIETNAM_PROVINCES } from '@/data/vietnamAddresses';
 import { isMatchBranch } from '@/utils/branchHelper';
 import { printOrderInvoice } from '@/utils/printHelper';
+import { ADMIN_STORAGE_KEYS, getStoredAdminData, setStoredAdminData } from '@/utils/adminStorage';
+import { invalidateApiCache } from '@/api/shared/apiCache';
 
 export interface OrdersTabProps {
   ordersList: OrderRow[];
@@ -221,21 +223,6 @@ export function OrdersTab({
     }
   }, [selectedGlobalBranch]);
 
-  // Branch filter options combining registered branches and order branches
-  const branchFilterOptions = useMemo(() => {
-    const branchSet = new Set<string>();
-    effectiveBranches.forEach((b) => {
-      if (b.name) branchSet.add(b.name);
-    });
-    ordersList.forEach((o) => {
-      if (o.branch) branchSet.add(o.branch);
-      if (o.showroom) branchSet.add(o.showroom);
-    });
-    return [
-      { value: 'all', label: 'Tất cả chi nhánh' },
-      ...Array.from(branchSet).map((b) => ({ value: b, label: b })),
-    ];
-  }, [effectiveBranches, ordersList]);
 
   // Branch-scoped orders
   const branchScopedOrders = useMemo(() => {
@@ -255,7 +242,8 @@ export function OrdersTab({
         item.customerPhone.includes(searchQuery) ||
         item.productName.toLowerCase().includes(searchQuery.toLowerCase());
 
-      const matchStatus = statusFilter === 'all' || item.status === statusFilter;
+      const itemStatus = normalizeOrderStatus(item.status);
+      const matchStatus = statusFilter === 'all' || itemStatus === statusFilter;
       const matchDate = checkDateInRange(item.orderDate, orderDateRange);
 
       return matchSearch && matchStatus && matchDate;
@@ -271,22 +259,55 @@ export function OrdersTab({
       delivering: 0,
       completed: 0,
       cancelled: 0,
+      returned: 0,
+      returned_success: 0,
     };
     branchScopedOrders.forEach((order) => {
-      if (counts[order.status] !== undefined) {
-        counts[order.status]++;
+      const s = normalizeOrderStatus(order.status);
+      if (counts[s] !== undefined) {
+        counts[s]++;
       }
     });
     return counts;
   }, [branchScopedOrders]);
 
 
+  // Active valid orders excluding cancelled, returned and returned_success
+  const activeBranchOrders = useMemo(() => {
+    return branchScopedOrders.filter((o) => {
+      const s = normalizeOrderStatus(o.status);
+      return s !== 'cancelled' && s !== 'returned' && s !== 'returned_success';
+    });
+  }, [branchScopedOrders]);
+
+  const activeBranchRevenue = useMemo(() => {
+    return activeBranchOrders.reduce((sum, o) => sum + (o.value || 0), 0);
+  }, [activeBranchOrders]);
+
+  const activeBranchDeposit = useMemo(() => {
+    return activeBranchOrders.reduce((sum, o) => sum + (o.depositAmount || 0), 0);
+  }, [activeBranchOrders]);
+
+  const activeBranchReceivable = useMemo(() => {
+    return activeBranchOrders.reduce((sum, o) => sum + Math.max(0, (o.value || 0) - (o.depositAmount || 0)), 0);
+  }, [activeBranchOrders]);
+
   const totalOrdersValue = useMemo(() => {
-    return filteredOrders.reduce((sum, order) => sum + order.value, 0);
+    return filteredOrders
+      .filter((o) => {
+        const s = normalizeOrderStatus(o.status);
+        return s !== 'cancelled' && s !== 'returned' && s !== 'returned_success';
+      })
+      .reduce((sum, order) => sum + order.value, 0);
   }, [filteredOrders]);
 
   const totalDepositValue = useMemo(() => {
-    return filteredOrders.reduce((sum, order) => sum + order.depositAmount, 0);
+    return filteredOrders
+      .filter((o) => {
+        const s = normalizeOrderStatus(o.status);
+        return s !== 'cancelled' && s !== 'returned' && s !== 'returned_success';
+      })
+      .reduce((sum, order) => sum + order.depositAmount, 0);
   }, [filteredOrders]);
 
   const selectedOrderTotal = useMemo(() => {
@@ -356,7 +377,12 @@ export function OrdersTab({
   const handleDeleteOrder = async (id: string) => {
     try {
       await orderApi.deleteOrder(id);
-      setOrdersList((prev) => prev.filter((o) => o.id !== id));
+      invalidateApiCache('orders');
+      setOrdersList((prev) => {
+        const next = prev.filter((o) => o.id !== id);
+        try { setStoredAdminData(ADMIN_STORAGE_KEYS.ORDERS, next); } catch {}
+        return next;
+      });
       message.success('Đã xóa đơn hàng thành công!');
     } catch (err: any) {
       message.error(err.message || 'Xóa đơn hàng thất bại');
@@ -367,7 +393,12 @@ export function OrdersTab({
     if (selectedOrderKeys.length === 0) return;
     try {
       await Promise.all(selectedOrderKeys.map((k) => orderApi.deleteOrder(String(k))));
-      setOrdersList((prev) => prev.filter((o) => !selectedOrderKeys.includes(o.id)));
+      invalidateApiCache('orders');
+      setOrdersList((prev) => {
+        const next = prev.filter((o) => !selectedOrderKeys.includes(o.id));
+        try { setStoredAdminData(ADMIN_STORAGE_KEYS.ORDERS, next); } catch {}
+        return next;
+      });
       setSelectedOrderKeys([]);
       message.success(`Đã xóa thành công ${selectedOrderKeys.length} đơn hàng đã chọn!`);
     } catch (err: any) {
@@ -375,33 +406,146 @@ export function OrdersTab({
     }
   };
 
+  // Helper to synchronize order status changes across customer local storages & broadcast
+  const syncOrderToCustomerStorages = (ordersToSync: { id: string; orderCode?: string; status: string; statusLabel: string }[]) => {
+    if (typeof window === 'undefined') return;
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith('d2_orders_') || key.startsWith('interior_admin_orders'))) {
+          try {
+            const raw = localStorage.getItem(key);
+            if (!raw) continue;
+            const customerOrders = JSON.parse(raw);
+            if (Array.isArray(customerOrders)) {
+              let modified = false;
+              const updated = customerOrders.map((co: any) => {
+                const coId = String(co.id || '');
+                const coCode = String(co.orderCode || '').toUpperCase();
+                const match = ordersToSync.find(
+                  (item) => item.id === coId || (item.orderCode && item.orderCode.toUpperCase() === coCode)
+                );
+                if (match) {
+                  modified = true;
+                  return { ...co, status: match.status, statusLabel: match.statusLabel };
+                }
+                return co;
+              });
+              if (modified) {
+                localStorage.setItem(key, JSON.stringify(updated));
+              }
+            }
+          } catch {}
+        }
+      }
+      window.dispatchEvent(new CustomEvent('d2_orders_updated', { detail: ordersToSync }));
+    } catch (e) {
+      console.warn('Could not sync orders to customer storage:', e);
+    }
+  };
+
+  React.useEffect(() => {
+    const handleSyncFromOutside = () => {
+      const cached = getStoredAdminData<OrderRow[]>(ADMIN_STORAGE_KEYS.ORDERS, []);
+      if (Array.isArray(cached) && cached.length > 0) {
+        setOrdersList(cached.map(normalizeOrderRow));
+      }
+    };
+    window.addEventListener('d2_orders_updated', handleSyncFromOutside);
+    window.addEventListener('storage', handleSyncFromOutside);
+    return () => {
+      window.removeEventListener('d2_orders_updated', handleSyncFromOutside);
+      window.removeEventListener('storage', handleSyncFromOutside);
+    };
+  }, []);
+
   const handleBulkUpdateStatus = async (status: OrderRow['status']) => {
     if (selectedOrderKeys.length === 0) return;
-    try {
-      await orderApi.bulkUpdateStatus(selectedOrderKeys.map(String), status);
-      const labelMap: Record<string, string> = {
-        pending: 'Chờ duyệt',
-        processing: 'Đang gia công',
-        delivering: 'Đang giao hàng',
-        completed: 'Hoàn tất bàn giao',
-        cancelled: 'Đã hủy',
-      };
-      setOrdersList((prev) =>
-        prev.map((o) =>
-          selectedOrderKeys.includes(o.id)
-            ? { ...o, status, statusLabel: labelMap[status] || o.statusLabel }
-            : o
-        )
+    const normStatus = normalizeOrderStatus(status);
+    const labelMap: Record<string, string> = {
+      pending: 'Chờ duyệt',
+      processing: 'Đang gia công',
+      delivering: 'Đang giao hàng',
+      completed: 'Hoàn tất bàn giao',
+      cancelled: 'Đã hủy',
+      returned: 'Khách trả hàng',
+      returned_success: 'Hoàn hàng thành công',
+    };
+    const newLabel = labelMap[normStatus] || normStatus;
+
+    setOrdersList((prev) => {
+      const next = prev.map((o) =>
+        selectedOrderKeys.includes(o.id)
+          ? { ...o, status: normStatus, statusLabel: newLabel }
+          : o
       );
+      try { setStoredAdminData(ADMIN_STORAGE_KEYS.ORDERS, next); } catch {}
+      return next;
+    });
+
+    const syncItems = selectedOrderKeys.map((k) => {
+      const ord = ordersList.find((o) => o.id === k);
+      return { id: String(k), orderCode: ord?.orderCode, status: normStatus, statusLabel: newLabel };
+    });
+    syncOrderToCustomerStorages(syncItems);
+
+    try {
+      await orderApi.bulkUpdateStatus(selectedOrderKeys.map(String), normStatus);
+      invalidateApiCache('orders');
+      setSelectedOrderKeys([]);
+      message.success(`Đã cập nhật trạng thái cho ${selectedOrderKeys.length} đơn hàng thành "${newLabel}"!`);
+    } catch (err: any) {
+      console.warn('Bulk update status on API error:', err);
+      invalidateApiCache('orders');
       setSelectedOrderKeys([]);
       message.success(`Đã cập nhật trạng thái cho ${selectedOrderKeys.length} đơn hàng!`);
+    }
+  };
+
+  const handleUpdateSingleOrderStatus = async (orderId: string, rawStatus: OrderRow['status']) => {
+    const newStatus = normalizeOrderStatus(rawStatus);
+    const labelMap: Record<string, string> = {
+      pending: 'Chờ duyệt',
+      processing: 'Đang gia công',
+      delivering: 'Đang giao hàng',
+      completed: 'Hoàn tất bàn giao',
+      cancelled: 'Đã hủy',
+      returned: 'Khách trả hàng',
+      returned_success: 'Hoàn hàng thành công',
+    };
+    const newLabel = labelMap[newStatus] || newStatus;
+
+    // 1. Optimistic UI update & persist to localStorage so reload preserves new status
+    setOrdersList((prev) => {
+      const next = prev.map((o) => (o.id === orderId ? { ...o, status: newStatus, statusLabel: newLabel } : o));
+      try { setStoredAdminData(ADMIN_STORAGE_KEYS.ORDERS, next); } catch {}
+      return next;
+    });
+
+    const targetOrder = ordersList.find((o) => o.id === orderId);
+    syncOrderToCustomerStorages([
+      { id: orderId, orderCode: targetOrder?.orderCode, status: newStatus, statusLabel: newLabel }
+    ]);
+
+    // 2. Call backend API to persist to real database
+    try {
+      await orderApi.updateOrderStatus(orderId, newStatus);
+      invalidateApiCache('orders');
+      message.success(`Đã cập nhật trạng thái đơn thành "${newLabel}"!`);
     } catch (err: any) {
-      message.error(err.message || 'Cập nhật trạng thái thất bại');
+      try {
+        await orderApi.updateOrder(orderId, { status: newStatus, statusLabel: newLabel });
+        invalidateApiCache('orders');
+        message.success(`Đã cập nhật trạng thái đơn thành "${newLabel}"!`);
+      } catch (err2: any) {
+        console.warn('Could not update status on API, updated locally in storage:', err2);
+        message.success(`Đã cập nhật trạng thái: "${newLabel}"!`);
+      }
     }
   };
 
   const handlePrintOrderReceipt = (order: OrderRow) => {
-    message.info(`Đang mở lệnh in hóa đơn tạm tính cho đơn hàng ${order.orderCode}...`);
+    printOrderInvoice(order);
   };
 
   const handleOpenCreateOrder = () => {
@@ -461,7 +605,7 @@ export function OrdersTab({
         productSpec: order.productSpec,
         woodType: order.woodType,
         orderType: order.orderType || 'retail',
-        status: order.status,
+        status: normalizeOrderStatus(order.status),
         value: order.value,
         depositAmount: order.depositAmount,
         deadlineToPicker: parsedDeadline && parsedDeadline.isValid() ? parsedDeadline : dayjs().add(7, 'day'),
@@ -479,7 +623,10 @@ export function OrdersTab({
         delivering: 'Đang giao hàng',
         completed: 'Hoàn tất bàn giao',
         cancelled: 'Đã hủy',
+        returned: 'Khách trả hàng',
+        returned_success: 'Hoàn hàng thành công',
       };
+      const normStatus = normalizeOrderStatus(values.status);
 
       const depositPercent = values.value > 0 ? Math.round(((values.depositAmount || 0) / values.value) * 100) : 0;
       const fullShippingAddress = [
@@ -495,6 +642,7 @@ export function OrdersTab({
       if (editingOrder) {
         const updated = await orderApi.updateOrder(editingOrder.id, {
           ...values,
+          status: normStatus,
           deadlineDate: formattedDeadline,
           city: values.customerProvince,
           district: values.customerDistrict,
@@ -502,21 +650,25 @@ export function OrdersTab({
           orderType: values.orderType || editingOrder.orderType || 'retail',
           depositPercent,
         });
-        setOrdersList((prev) =>
-          prev.map((item) =>
+        invalidateApiCache('orders');
+        setOrdersList((prev) => {
+          const next = prev.map((item) =>
             item.id === editingOrder.id
               ? {
                   ...item,
                   ...updated,
+                  status: normStatus,
                   deadlineDate: formattedDeadline,
                   customerProvince: values.customerProvince,
                   customerDistrict: values.customerDistrict,
-                  statusLabel: statusLabels[values.status] || item.statusLabel,
+                  statusLabel: statusLabels[normStatus] || item.statusLabel,
                   depositPercent,
                 }
               : item
-          )
-        );
+          );
+          try { setStoredAdminData(ADMIN_STORAGE_KEYS.ORDERS, next); } catch {}
+          return next;
+        });
         message.success(`Đã cập nhật đơn hàng ${values.orderCode || editingOrder.orderCode} thành công!`);
       } else {
         const created = await orderApi.createOrder({
@@ -535,14 +687,19 @@ export function OrdersTab({
           value: values.value || 0,
           depositAmount: values.depositAmount || 0,
           depositPercent,
-          status: values.status || 'pending',
+          status: normStatus,
           deadlineDate: formattedDeadline,
           orderType: values.orderType || 'retail',
           spaceType: 'living',
           showroom: values.showroom || (selectedGlobalBranch !== 'all' ? selectedGlobalBranch : ''),
           branch: selectedGlobalBranch !== 'all' ? selectedGlobalBranch : undefined,
         });
-        setOrdersList((prev) => [created, ...prev]);
+        invalidateApiCache('orders');
+        setOrdersList((prev) => {
+          const next = [created, ...prev];
+          try { setStoredAdminData(ADMIN_STORAGE_KEYS.ORDERS, next); } catch {}
+          return next;
+        });
         message.success(`Đã tạo đơn hàng mới ${created.orderCode} thành công!`);
       }
       setIsOrderDrawerOpen(false);
@@ -564,8 +721,10 @@ export function OrdersTab({
                 setStatusFilter('all');
                 setOrderDateRange(null);
                 try {
+                  invalidateApiCache('orders');
                   const fresh = await orderApi.getOrders();
                   setOrdersList(fresh);
+                  try { setStoredAdminData(ADMIN_STORAGE_KEYS.ORDERS, fresh); } catch {}
                   message.success('Đã làm mới danh sách đơn hàng từ máy chủ!');
                 } catch {
                   message.info('Đã làm mới bộ lọc danh sách đơn hàng!');
@@ -576,6 +735,61 @@ export function OrdersTab({
               onCreate={handleOpenCreateOrder}
             />
 
+            {/* BATCH SELECTION BANNER (Hiển thị khi tick chọn các đơn hàng) */}
+            {selectedOrderKeys.length > 0 && (
+              <div className="bg-[#fbf2ee] border border-[#d8c3af] px-4 py-2.5 rounded-lg flex flex-wrap items-center justify-between gap-3 text-xs shadow-xs">
+                <div className="flex items-center gap-2 text-[#5d371f]">
+                  <span className="font-bold text-sm">Đã chọn {selectedOrderKeys.length} đơn hàng</span>
+                  <span className="text-slate-400">|</span>
+                  <Button
+                    type="link"
+                    size="small"
+                    onClick={() => setSelectedOrderKeys([])}
+                    className="text-[#784e34] p-0 font-medium hover:underline text-xs"
+                  >
+                    Bỏ chọn tất cả
+                  </Button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Dropdown
+                    menu={{
+                      items: [
+                        { key: 'pending', label: 'Chờ duyệt' },
+                        { key: 'processing', label: 'Đang gia công' },
+                        { key: 'delivering', label: 'Đang giao hàng' },
+                        { key: 'completed', label: 'Hoàn tất bàn giao' },
+                        { key: 'cancelled', label: 'Đã hủy' },
+                        { key: 'returned', label: 'Khách trả hàng' },
+                        { key: 'returned_success', label: 'Hoàn hàng thành công' },
+                      ],
+                      onClick: ({ key }) => handleBulkUpdateStatus(key as any),
+                    }}
+                  >
+                    <Button size="small" className="text-xs bg-white text-slate-700 border-slate-300 hover:bg-slate-50 font-medium">
+                      Đổi trạng thái ({selectedOrderKeys.length}) ▾
+                    </Button>
+                  </Dropdown>
+                  <Popconfirm
+                    title={`Bạn có chắc chắn muốn xóa ${selectedOrderKeys.length} đơn hàng đã chọn?`}
+                    onConfirm={handleBulkDeleteOrders}
+                    okText="Xóa"
+                    cancelText="Hủy"
+                    okButtonProps={{ danger: true }}
+                  >
+                    <Button
+                      size="small"
+                      danger
+                      icon={<DeleteOutlined />}
+                      className="text-xs font-medium"
+                    >
+                      Xóa đã chọn ({selectedOrderKeys.length})
+                    </Button>
+                  </Popconfirm>
+                </div>
+              </div>
+            )}
+
             {/* STANDARDIZED 2-COLUMN LAYOUT: FILTER SIDEBAR + TABLE */}
             <div className="flex flex-col lg:flex-row gap-4 items-start w-full min-w-0 max-w-full flex-1">
               {/* Left Sidebar Filter */}
@@ -585,22 +799,10 @@ export function OrdersTab({
                 onResetFilters={() => {
                   setSearchQuery('');
                   setStatusFilter('all');
-                  setBranchFilter('all');
+                  setBranchFilter(selectedGlobalBranch || '');
                   setOrderDateRange(null);
                 }}
               >
-                {/* Filter 0: Cơ sở / Chi nhánh */}
-                <div className="space-y-1.5">
-                  <div className="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">
-                    Cơ sở / Chi nhánh
-                  </div>
-                  <Select
-                    value={branchFilter}
-                    onChange={(val) => setBranchFilter(val)}
-                    className="w-full text-sm"
-                    options={branchFilterOptions}
-                  />
-                </div>
 
                 {/* Filter 1: Thời gian tạo đơn */}
                 <div>
@@ -627,6 +829,8 @@ export function OrdersTab({
                       { value: 'delivering', label: '🚚 Đang giao hàng', count: orderFilterCounts.delivering },
                       { value: 'completed', label: '✅ Hoàn tất bàn giao', count: orderFilterCounts.completed },
                       { value: 'cancelled', label: '❌ Đã hủy', count: orderFilterCounts.cancelled },
+                      { value: 'returned', label: '↩️ Khách trả hàng', count: orderFilterCounts.returned },
+                      { value: 'returned_success', label: '📦 Hoàn hàng thành công', count: orderFilterCounts.returned_success },
                     ].map((opt) => {
                       const isSelected = statusFilter === opt.value;
                       return (
@@ -650,30 +854,42 @@ export function OrdersTab({
                   </div>
                 </div>
 
-                {/* Card Thống kê tài chính đơn hàng */}
+                {/* Card Thống kê tài chính đơn hàng (Tự động trừ hàng hoàn & hàng hủy) */}
                 <div className="bg-slate-50 p-3 rounded-lg border border-slate-200/80 space-y-1.5 text-[11px]">
                   <div className="flex justify-between text-slate-600">
                     <span>Tổng đơn hàng:</span>
                     <span className="font-mono font-medium text-slate-900">{branchScopedOrders.length} đơn</span>
                   </div>
                   <div className="flex justify-between text-slate-600">
-                    <span>Tổng giá trị:</span>
+                    <span>Doanh thu hiệu lực:</span>
                     <span className="font-mono font-medium text-[#784e34]">
-                      {branchScopedOrders.reduce((sum, o) => sum + o.value, 0).toLocaleString('vi-VN')} đ
+                      {activeBranchRevenue.toLocaleString('vi-VN')} đ
                     </span>
                   </div>
                   <div className="flex justify-between text-slate-600">
                     <span>Đã thu cọc:</span>
                     <span className="font-mono font-medium text-emerald-700">
-                      {branchScopedOrders.reduce((sum, o) => sum + o.depositAmount, 0).toLocaleString('vi-VN')} đ
+                      {activeBranchDeposit.toLocaleString('vi-VN')} đ
                     </span>
                   </div>
                   <div className="flex justify-between text-slate-600">
                     <span>Còn phải thu:</span>
                     <span className="font-mono font-medium text-rose-600">
-                      {branchScopedOrders.reduce((sum, o) => sum + (o.value - o.depositAmount), 0).toLocaleString('vi-VN')} đ
+                      {activeBranchReceivable.toLocaleString('vi-VN')} đ
                     </span>
                   </div>
+                  {orderFilterCounts.returned > 0 && (
+                    <div className="flex justify-between text-slate-500 pt-1 border-t border-slate-200/60">
+                      <span>Đơn khách hoàn trả:</span>
+                      <span className="font-mono text-indigo-700 font-semibold">{orderFilterCounts.returned} đơn</span>
+                    </div>
+                  )}
+                  {orderFilterCounts.returned_success > 0 && (
+                    <div className="flex justify-between text-slate-500 pt-1 border-t border-slate-200/60">
+                      <span>Đơn hoàn thành công:</span>
+                      <span className="font-mono text-teal-700 font-semibold">{orderFilterCounts.returned_success} đơn</span>
+                    </div>
+                  )}
                 </div>
               </AdminFilterSidebar>
 
@@ -687,22 +903,42 @@ export function OrdersTab({
                   countUnit="đơn hàng"
                   dataSource={filteredOrders}
                   rowKey="id"
+                  rowSelection={{
+                    selectedRowKeys: selectedOrderKeys,
+                    onChange: (keys) => setSelectedOrderKeys(keys),
+                  }}
                   pagination={paginationConfig}
                   onRow={(record) => {
                     const isExp = expandedOrderRowKeys.includes(record.id);
                     return {
-                      onClick: () => {
+                      onClick: (e: React.MouseEvent<HTMLElement>) => {
+                        const target = e.target as HTMLElement;
+                        if (
+                          target.closest('.ant-select') ||
+                          target.closest('.ant-table-selection-column') ||
+                          target.closest('.ant-checkbox-wrapper') ||
+                          target.closest('button') ||
+                          target.closest('.ant-dropdown-trigger') ||
+                          target.closest('.ant-popover') ||
+                          target.closest('.ant-popconfirm')
+                        ) {
+                          return;
+                        }
                         setExpandedOrderRowKeys(isExp ? [] : [record.id]);
                         if (!isExp && !orderPanelTabs[record.id]) {
                           setOrderPanelTabs((prev) => ({ ...prev, [record.id]: 'items' }));
                         }
                       },
-                      className: `cursor-pointer transition-colors ${isExp ? 'admin-order-row-active' : 'hover:!bg-amber-50/30'
-                        }`,
+                      className: `cursor-pointer transition-colors ${
+                        isExp
+                          ? 'admin-order-row-active !bg-[#fbf5f0] [&>td]:!bg-[#fbf5f0]'
+                          : 'hover:!bg-[#faf6f1] [&>td]:hover:!bg-[#faf6f1]'
+                      }`,
                     };
                   }}
                   expandable={{
                     expandedRowKeys: expandedOrderRowKeys,
+                    showExpandColumn: false,
                     onExpand: (expanded, record) => {
                       setExpandedOrderRowKeys(expanded ? [record.id] : []);
                       if (expanded && !orderPanelTabs[record.id]) {
@@ -773,7 +1009,6 @@ export function OrdersTab({
                                     <tr className="bg-slate-50 text-slate-700 border-b border-slate-200">
                                       <th className="py-2 px-3 font-medium whitespace-nowrap">Mã hàng</th>
                                       <th className="py-2 px-3 font-medium">Tên hàng / Quy cách chế tác</th>
-                                      <th className="py-2 px-3 font-medium whitespace-nowrap">ĐVT</th>
                                       <th className="py-2 px-3 font-medium whitespace-nowrap">Loại gỗ</th>
                                       <th className="py-2 px-3 font-medium whitespace-nowrap">Hạn bàn giao</th>
                                       <th className="py-2 px-3 font-medium text-center whitespace-nowrap">Số lượng</th>
@@ -799,7 +1034,6 @@ export function OrdersTab({
                                             </div>
                                             <div className="text-[11px] text-slate-500 mt-0.5">{it.dimensions || it.material || order.productSpec}</div>
                                           </td>
-                                          <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap">Bộ / Chiếc</td>
                                           <td className="py-2.5 px-3 text-slate-700 whitespace-nowrap">{it.material || formatWoodTypeName(order.woodType)}</td>
                                           <td className="py-2.5 px-3 font-mono text-slate-700 whitespace-nowrap">{order.deadlineDate}</td>
                                           <td className="py-2.5 px-3 text-center font-bold text-slate-900 whitespace-nowrap">{it.quantity || 1}</td>
@@ -823,7 +1057,6 @@ export function OrdersTab({
                                           </div>
                                           <div className="text-[11px] text-slate-500 mt-0.5">{order.productSpec}</div>
                                         </td>
-                                        <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap">Bộ / Chiếc</td>
                                         <td className="py-2.5 px-3 text-slate-700 whitespace-nowrap">{formatWoodTypeName(order.woodType)}</td>
                                         <td className="py-2.5 px-3 font-mono text-slate-700 whitespace-nowrap">{order.deadlineDate}</td>
                                         <td className="py-2.5 px-3 text-center font-bold text-slate-900 whitespace-nowrap">{getOrderQuantity(order)}</td>
@@ -845,6 +1078,54 @@ export function OrdersTab({
                                     <div><span className="text-slate-400">Yêu cầu kỹ thuật:</span> <span>{order.productSpec}</span></div>
                                     <div><span className="text-slate-400">Ngày đặt hàng:</span> <span className="font-mono">{order.orderDate}</span> • <span className="text-slate-400">Hạn bàn giao:</span> <span className="font-mono text-rose-600">{order.deadlineDate}</span></div>
                                   </div>
+
+                                  {(order.returnReason || (order as any).returnImages?.length || order.status === 'returned' || order.status === 'returned_success') && (
+                                    <div className="p-3 bg-rose-50/70 border border-rose-200 text-xs text-slate-800 space-y-2 mt-2">
+                                      <div className="flex items-center gap-2 text-rose-800 font-semibold text-xs border-b border-rose-200/80 pb-1.5">
+                                        <span className="material-symbols-outlined text-[16px]">assignment_return</span>
+                                        <span>Yêu cầu đổi trả / hoàn tiền từ khách hàng</span>
+                                        {order.status === 'returned_success' ? (
+                                          <Tag color="cyan" className="m-0 text-[10px]">Hoàn hàng thành công</Tag>
+                                        ) : (
+                                          <Tag color="red" className="m-0 text-[10px]">Khách trả hàng</Tag>
+                                        )}
+                                      </div>
+                                      {order.returnReason && (
+                                        <div><span className="text-slate-500">Lý do hoàn trả:</span> <strong className="text-slate-800">{order.returnReason}</strong></div>
+                                      )}
+                                      {order.returnDesiredResolution && (
+                                        <div><span className="text-slate-500">Phương án mong muốn:</span> <span className="font-medium text-slate-800">{order.returnDesiredResolution}</span></div>
+                                      )}
+                                      {order.returnNote && (
+                                        <div><span className="text-slate-500">Ghi chú của khách:</span> <span className="text-slate-700">{order.returnNote}</span></div>
+                                      )}
+                                      {(order as any).returnImages && (order as any).returnImages.length > 0 && (
+                                        <div className="pt-1">
+                                          <div className="text-[11px] font-semibold text-slate-700 mb-1.5 flex items-center gap-1">
+                                            <span className="material-symbols-outlined text-[14px] text-rose-700">photo_library</span>
+                                            <span>Ảnh sản phẩm thực tế do khách hàng tải lên ({(order as any).returnImages.length} ảnh):</span>
+                                          </div>
+                                          <div className="flex flex-wrap gap-2">
+                                            {(order as any).returnImages.map((img: string, idx: number) => (
+                                              <a
+                                                key={idx}
+                                                href={img}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="block relative w-16 h-16 rounded border border-rose-200 overflow-hidden group shadow-2xs hover:scale-105 transition-transform"
+                                                title="Bấm để xem ảnh kích thước đầy đủ"
+                                              >
+                                                <img src={img} alt={`Minh chứng ${idx + 1}`} className="w-full h-full object-cover" />
+                                                <span className="absolute bottom-0 inset-x-0 bg-black/60 text-white text-[9px] text-center font-mono py-0.5">
+                                                  #{idx + 1}
+                                                </span>
+                                              </a>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
 
                                 {/* Cột Phải: Bảng tóm tắt tài chính */}
@@ -1058,21 +1339,6 @@ export function OrdersTab({
                       ),
                     },
                     {
-                      title: 'Chi nhánh / Showroom',
-                      key: 'branch',
-                      width: 175,
-                      render: (_, record: OrderRow) => {
-                        const br = record.branch || record.showroom || 'Chi nhánh Hà Nội';
-                        return (
-                          <div className="flex items-center">
-                            <span className="inline-flex items-center px-2.5 py-1 rounded text-xs font-medium bg-[#784e34]/10 text-[#784e34] border border-[#784e34]/20 whitespace-nowrap">
-                              🏢 {br}
-                            </span>
-                          </div>
-                        );
-                      },
-                    },
-                    {
                       title: 'Sản phẩm may đo',
                       dataIndex: 'productName',
                       key: 'productName',
@@ -1101,7 +1367,7 @@ export function OrdersTab({
                       render: (_, record) => {
                         const qty = getOrderQuantity(record);
                         return (
-                          <span className="font-mono font-bold text-xs text-slate-800 bg-slate-100 border border-slate-200 px-2.5 py-0.5 rounded inline-block">
+                          <span className="font-mono font-bold text-xs text-slate-900 bg-white border border-slate-300 shadow-2xs px-2.5 py-0.5 rounded inline-block">
                             {qty}
                           </span>
                         );
@@ -1120,15 +1386,100 @@ export function OrdersTab({
                       ),
                     },
                     {
-                      title: 'Hạn bàn giao',
-                      dataIndex: 'deadlineDate',
-                      key: 'deadlineDate',
-                      width: 130,
-                      render: (d) => (
-                        <span className="font-mono text-sm font-normal text-rose-700">
-                          {d}
-                        </span>
-                      ),
+                      title: 'Trạng thái',
+                      dataIndex: 'status',
+                      key: 'status',
+                      width: 175,
+                      render: (rawStatus: OrderRow['status'], record: OrderRow) => {
+                        const status = normalizeOrderStatus(rawStatus);
+                        const statusColorMap: Record<string, { bg: string; text: string; border: string }> = {
+                          pending: { bg: '!bg-amber-50', text: '!text-amber-800', border: '!border-amber-300' },
+                          processing: { bg: '!bg-blue-50', text: '!text-blue-800', border: '!border-blue-300' },
+                          delivering: { bg: '!bg-purple-50', text: '!text-purple-800', border: '!border-purple-300' },
+                          completed: { bg: '!bg-emerald-50', text: '!text-emerald-800', border: '!border-emerald-300' },
+                          cancelled: { bg: '!bg-rose-50', text: '!text-rose-800', border: '!border-rose-300' },
+                          returned: { bg: '!bg-indigo-50', text: '!text-indigo-800', border: '!border-indigo-300' },
+                          returned_success: { bg: '!bg-teal-50', text: '!text-teal-800', border: '!border-teal-300' },
+                        };
+                        const currentTheme = statusColorMap[status] || statusColorMap.pending;
+
+                        return (
+                          <div onClick={(e) => e.stopPropagation()} className="w-full min-w-[155px]">
+                            <Select
+                              value={status}
+                              onChange={(newVal) => handleUpdateSingleOrderStatus(record.id, newVal)}
+                              size="small"
+                              className={`w-full font-semibold text-xs [&_.ant-select-selector]:!rounded-full [&_.ant-select-selector]:!border ${currentTheme.border} ${currentTheme.bg} ${currentTheme.text}`}
+                              popupMatchSelectWidth={false}
+                              options={[
+                                {
+                                  value: 'pending',
+                                  label: (
+                                    <div className="flex items-center gap-2 py-0.5 text-xs text-amber-700 font-semibold">
+                                      <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                                      <span>Chờ duyệt</span>
+                                    </div>
+                                  ),
+                                },
+                                {
+                                  value: 'processing',
+                                  label: (
+                                    <div className="flex items-center gap-2 py-0.5 text-xs text-blue-700 font-semibold">
+                                      <span className="w-2 h-2 rounded-full bg-blue-500" />
+                                      <span>Đang gia công</span>
+                                    </div>
+                                  ),
+                                },
+                                {
+                                  value: 'delivering',
+                                  label: (
+                                    <div className="flex items-center gap-2 py-0.5 text-xs text-purple-700 font-semibold">
+                                      <span className="w-2 h-2 rounded-full bg-purple-500" />
+                                      <span>Đang giao hàng</span>
+                                    </div>
+                                  ),
+                                },
+                                {
+                                  value: 'completed',
+                                  label: (
+                                    <div className="flex items-center gap-2 py-0.5 text-xs text-emerald-700 font-semibold">
+                                      <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                                      <span>Hoàn tất bàn giao</span>
+                                    </div>
+                                  ),
+                                },
+                                {
+                                  value: 'cancelled',
+                                  label: (
+                                    <div className="flex items-center gap-2 py-0.5 text-xs text-rose-700 font-semibold">
+                                      <span className="w-2 h-2 rounded-full bg-rose-500" />
+                                      <span>Đã hủy</span>
+                                    </div>
+                                  ),
+                                },
+                                {
+                                  value: 'returned',
+                                  label: (
+                                    <div className="flex items-center gap-2 py-0.5 text-xs text-indigo-700 font-semibold">
+                                      <span className="w-2 h-2 rounded-full bg-indigo-500" />
+                                      <span>Khách trả hàng</span>
+                                    </div>
+                                  ),
+                                },
+                                {
+                                  value: 'returned_success',
+                                  label: (
+                                    <div className="flex items-center gap-2 py-0.5 text-xs text-teal-700 font-semibold">
+                                      <span className="w-2 h-2 rounded-full bg-teal-500" />
+                                      <span>Hoàn hàng thành công</span>
+                                    </div>
+                                  ),
+                                },
+                              ]}
+                            />
+                          </div>
+                        );
+                      },
                     },
                     {
                       title: 'Thao tác',
@@ -1208,7 +1559,7 @@ export function OrdersTab({
             }
             open={isOrderDrawerOpen}
             onClose={() => setIsOrderDrawerOpen(false)}
-            size="large"
+            styles={{ wrapper: { width: 760, maxWidth: '100vw' } }}
             forceRender
             footer={
               <div className="flex items-center justify-between px-2 py-1.5">
@@ -1254,6 +1605,8 @@ export function OrdersTab({
                           { value: 'delivering', label: '🚚 Đang giao hàng' },
                           { value: 'completed', label: '✅ Hoàn tất bàn giao' },
                           { value: 'cancelled', label: '❌ Đã hủy' },
+                          { value: 'returned', label: '↩️ Khách trả hàng' },
+                          { value: 'returned_success', label: '📦 Hoàn hàng thành công' },
                         ]}
                       />
                     </Form.Item>

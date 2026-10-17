@@ -49,7 +49,6 @@ import {
   TeamOutlined,
   KeyOutlined,
   EnvironmentOutlined,
-  ColumnWidthOutlined,
   BankOutlined,
   AppstoreOutlined,
   InfoCircleOutlined,
@@ -75,14 +74,13 @@ import { useAuth } from '@/context/AuthContext';
 import { AdminSearchInput, AdminFormDrawer } from '@/components/admin';
 import { branchApi } from '@/api/branchApi';
 import { roleApi } from '@/api/roleApi';
-import { uomApi } from '@/api/uomApi';
 import { employeeApi } from '@/api/employeeApi';
 import { settingsApi, type VietQrBank } from '@/api/settingsApi';
 import { EmployeesTab } from './EmployeesTab';
 import { PrintTemplatesSettings } from './PrintTemplatesSettings';
+import { WarehousesSettings } from './WarehousesSettings';
 import type {
   AdminBranch,
-  AdminUom,
   AdminRole,
   AdminEmployee,
   AdminCompanyInfo,
@@ -92,7 +90,6 @@ import type {
 } from '@/types/admin';
 import {
   INITIAL_BRANCHES,
-  INITIAL_UOMS,
   INITIAL_ROLES,
   INITIAL_EMPLOYEES,
   PERMISSION_GROUPS,
@@ -104,20 +101,18 @@ const { Option } = Select;
 export interface SettingsTabProps {
   branchesList?: AdminBranch[];
   setBranchesList?: React.Dispatch<React.SetStateAction<AdminBranch[]>>;
-  uomsList?: AdminUom[];
-  setUomsList?: React.Dispatch<React.SetStateAction<AdminUom[]>>;
   rolesList?: AdminRole[];
   setRolesList?: React.Dispatch<React.SetStateAction<AdminRole[]>>;
   onUpdateRoles?: (roles: AdminRole[] | ((prev: AdminRole[]) => AdminRole[])) => void;
   employeesList?: AdminEmployee[];
   setEmployeesList?: React.Dispatch<React.SetStateAction<AdminEmployee[]>>;
   selectedGlobalBranch?: string;
-  activeSettingsTab?: 'company' | 'payment' | 'print-templates' | 'branches' | 'uom' | 'employees' | 'permissions';
-  onSettingsTabChange?: (tab: 'company' | 'payment' | 'print-templates' | 'branches' | 'uom' | 'employees' | 'permissions') => void;
+  activeSettingsTab?: 'company' | 'payment' | 'print-templates' | 'branches' | 'warehouses' | 'employees' | 'permissions';
+  onSettingsTabChange?: (tab: 'company' | 'payment' | 'print-templates' | 'branches' | 'warehouses' | 'employees' | 'permissions') => void;
 }
 
 interface SettingsMenuItem {
-  key: 'company' | 'payment' | 'print-templates' | 'branches' | 'uom' | 'employees' | 'permissions';
+  key: 'company' | 'payment' | 'print-templates' | 'branches' | 'warehouses' | 'employees' | 'permissions';
   icon: React.ReactNode;
   label: string;
   badge?: React.ReactNode;
@@ -127,8 +122,6 @@ interface SettingsMenuItem {
 export function SettingsTab({
   branchesList = INITIAL_BRANCHES,
   setBranchesList,
-  uomsList = [],
-  setUomsList,
   rolesList = INITIAL_ROLES,
   setRolesList,
   onUpdateRoles,
@@ -143,11 +136,11 @@ export function SettingsTab({
   const searchParams = useSearchParams();
 
   const urlSettingsTab = searchParams.get('settingsTab');
-  const validSettingsTab = (urlSettingsTab && ['company', 'payment', 'print-templates', 'branches', 'uom', 'employees', 'permissions'].includes(urlSettingsTab))
-    ? (urlSettingsTab as 'company' | 'payment' | 'print-templates' | 'branches' | 'uom' | 'employees' | 'permissions')
+  const validSettingsTab = (urlSettingsTab && ['company', 'payment', 'print-templates', 'branches', 'warehouses', 'employees', 'permissions'].includes(urlSettingsTab))
+    ? (urlSettingsTab as 'company' | 'payment' | 'print-templates' | 'branches' | 'warehouses' | 'employees' | 'permissions')
     : null;
 
-  const [settingsActiveTab, setSettingsActiveTabState] = useState<'company' | 'payment' | 'print-templates' | 'branches' | 'uom' | 'employees' | 'permissions'>(
+  const [settingsActiveTab, setSettingsActiveTabState] = useState<'company' | 'payment' | 'print-templates' | 'branches' | 'warehouses' | 'employees' | 'permissions'>(
     activeSettingsTab || validSettingsTab || 'company'
   );
 
@@ -155,7 +148,7 @@ export function SettingsTab({
     if (typeof window !== 'undefined') {
       const sp = new URLSearchParams(window.location.search);
       const sTab = sp.get('settingsTab') || localStorage.getItem('admin_settings_tab');
-      if (sTab && ['company', 'payment', 'print-templates', 'branches', 'uom', 'employees', 'permissions'].includes(sTab)) {
+      if (sTab && ['company', 'payment', 'print-templates', 'branches', 'warehouses', 'employees', 'permissions'].includes(sTab)) {
         setSettingsActiveTabState(sTab as any);
       }
     }
@@ -167,7 +160,7 @@ export function SettingsTab({
     }
   }, [activeSettingsTab]);
 
-  const setSettingsActiveTab = (tab: 'company' | 'payment' | 'print-templates' | 'branches' | 'uom' | 'employees' | 'permissions') => {
+  const setSettingsActiveTab = (tab: 'company' | 'payment' | 'print-templates' | 'branches' | 'warehouses' | 'employees' | 'permissions') => {
     setSettingsActiveTabState(tab);
     if (onSettingsTabChange) {
       onSettingsTabChange(tab);
@@ -180,6 +173,7 @@ export function SettingsTab({
       window.history.replaceState({}, '', url.toString());
     }
   };
+
   const DEFAULT_PAYMENT_SETTINGS = {
     bankName: '',
     accountNumber: '',
@@ -196,33 +190,33 @@ export function SettingsTab({
 
   // ================= DOMACO POS COMPANY INFO STATE & FORM =================
   const EMPTY_COMPANY_INFO: AdminCompanyInfo = {
-    code: '',
-    companyName: '',
-    brandName: '',
-    taxId: '',
-    representative: '',
-    representativeRole: '',
+    code: 'D2L-001',
+    companyName: 'CÔNG TY CỔ PHẦN NỘI THẤT CAO CẤP D2 LUXURY',
+    brandName: 'D2 LUXURY DESIGN',
+    taxId: '0343136004',
+    representative: 'Nguyễn Văn Luận',
+    representativeRole: 'Tổng Giám Đốc',
     businessSector: '',
-    phone: '',
-    hotline: '',
-    email: '',
-    website: '',
-    zalo: '',
-    fanpage: '',
-    headquarters: '',
-    warehouseAddress: '',
+    phone: '0343 136 004',
+    hotline: '0967 323 335',
+    email: 'contact@d2luxury.vn',
+    website: 'https://d2luxury.vn',
+    zalo: 'https://zalo.me/0967323335',
+    fanpage: 'https://www.facebook.com/profile.php?id=61575009790250',
+    headquarters: 'Ngã 4 Cửa Cạn, Đặc khu Phú Quốc, tỉnh Kiên Giang',
+    warehouseAddress: 'Khu tiểu thủ công nghiệp Cửa Cạn, TP. Phú Quốc, tỉnh Kiên Giang',
     country: 'Việt Nam',
-    province: '',
-    district: '',
-    ward: '',
-    logoUrl: null,
-    faviconUrl: null,
+    province: 'Kiên Giang',
+    district: 'TP. Phú Quốc',
+    ward: 'Xã Cửa Cạn',
+    logoUrl: '/logo.png',
+    faviconUrl: '/favicon.ico',
     stampUrl: null,
     status: true,
-    accessUrl: '',
+    accessUrl: 'https://d2luxury.vn/admin',
     expiredAt: '',
-    receiptHeaderTitle: '',
-    receiptFooterNote: '',
+    receiptHeaderTitle: 'HỆ THỐNG NỘI THẤT CAO CẤP D2 LUXURY',
+    receiptFooterNote: 'Cảm ơn Quý khách! Sản phẩm gỗ tự nhiên được bảo hành chính hãng 05 năm.',
     showTaxOnReceipt: true,
     showHotlineOnReceipt: true,
     showQrOnReceipt: true,
@@ -235,33 +229,43 @@ export function SettingsTab({
   // ================= DOMACO POS BRANCHES STATE & HANDLERS =================
   const [currentBranches, setCurrentBranches] = useState<AdminBranch[]>(branchesList || []);
   const [currentEmployees, setCurrentEmployees] = useState<AdminEmployee[]>(employeesList || INITIAL_EMPLOYEES);
+  const [warehousesCount, setWarehousesCount] = useState<number>(() => {
+    const stored = getStoredAdminData<any[]>(ADMIN_STORAGE_KEYS.WAREHOUSES, []);
+    return stored.length;
+  });
 
   const loadCompanyInfoFromApi = async () => {
     try {
       const rawInfo: any = await settingsApi.getCompanyInfo();
       if (rawInfo) {
+        let cleanHq = rawInfo.headquarters || rawInfo.Headquarters || rawInfo.address || rawInfo.Address || EMPTY_COMPANY_INFO.headquarters;
+        if (cleanHq && (cleanHq.includes('NgÃ£') || cleanHq.includes('Cá»­a') || cleanHq.includes('Ä‘áº·c'))) {
+          cleanHq = 'Ngã 4 Cửa Cạn, Đặc khu Phú Quốc, tỉnh Kiên Giang';
+        }
+
         const merged: AdminCompanyInfo = {
           ...EMPTY_COMPANY_INFO,
-          code: rawInfo.code || rawInfo.Code || '',
-          companyName: rawInfo.companyName || rawInfo.CompanyName || '',
-          brandName: rawInfo.brandName || rawInfo.BrandName || '',
-          taxId: rawInfo.taxId || rawInfo.TaxId || '',
-          representative: rawInfo.representative || rawInfo.Representative || '',
-          representativeRole: rawInfo.representativeRole || rawInfo.RepresentativeRole || '',
-          businessSector: rawInfo.businessSector || rawInfo.BusinessSector || '',
-          phone: rawInfo.phone || rawInfo.Phone || '',
-          hotline: rawInfo.hotline || rawInfo.Hotline || '',
-          email: rawInfo.email || rawInfo.Email || '',
-          website: rawInfo.website || rawInfo.Website || '',
-          zalo: rawInfo.zalo || rawInfo.Zalo || '',
-          fanpage: rawInfo.fanpage || rawInfo.Fanpage || '',
-          headquarters: rawInfo.headquarters || rawInfo.Headquarters || rawInfo.address || rawInfo.Address || '',
-          warehouseAddress: rawInfo.warehouseAddress || rawInfo.WarehouseAddress || '',
+          code: rawInfo.code || rawInfo.Code || EMPTY_COMPANY_INFO.code,
+          companyName: rawInfo.companyName || rawInfo.CompanyName || EMPTY_COMPANY_INFO.companyName,
+          brandName: rawInfo.brandName || rawInfo.BrandName || EMPTY_COMPANY_INFO.brandName,
+          taxId: rawInfo.taxId || rawInfo.TaxId || EMPTY_COMPANY_INFO.taxId,
+          representative: rawInfo.representative || rawInfo.Representative || EMPTY_COMPANY_INFO.representative,
+          representativeRole: rawInfo.representativeRole || rawInfo.RepresentativeRole || EMPTY_COMPANY_INFO.representativeRole,
+          businessSector: rawInfo.businessSector || rawInfo.BusinessSector || EMPTY_COMPANY_INFO.businessSector,
+          phone: rawInfo.phone || rawInfo.Phone || EMPTY_COMPANY_INFO.phone,
+          hotline: rawInfo.hotline || rawInfo.Hotline || EMPTY_COMPANY_INFO.hotline,
+          email: rawInfo.email || rawInfo.Email || EMPTY_COMPANY_INFO.email,
+          website: rawInfo.website || rawInfo.Website || EMPTY_COMPANY_INFO.website,
+          zalo: rawInfo.zalo || rawInfo.Zalo || EMPTY_COMPANY_INFO.zalo,
+          fanpage: rawInfo.fanpage || rawInfo.Fanpage || EMPTY_COMPANY_INFO.fanpage,
+          headquarters: cleanHq,
+          warehouseAddress: rawInfo.warehouseAddress || rawInfo.WarehouseAddress || EMPTY_COMPANY_INFO.warehouseAddress,
           country: rawInfo.country || rawInfo.Country || 'Việt Nam',
-          logoUrl: rawInfo.logoUrl || rawInfo.LogoUrl || null,
+          logoUrl: rawInfo.logoUrl || rawInfo.LogoUrl || EMPTY_COMPANY_INFO.logoUrl,
           status: (rawInfo.status ?? rawInfo.Status) !== false,
         };
         setCompanyInfo(merged);
+        companyForm.setFieldsValue(merged);
         setStoredAdminData(ADMIN_STORAGE_KEYS.COMPANY_INFO, merged);
       }
     } catch (err) {
@@ -317,7 +321,10 @@ export function SettingsTab({
           companyName: companyInfo.companyName || (companyInfo as any).CompanyName || '',
           taxId: companyInfo.taxId || (companyInfo as any).TaxId || '',
           phone: companyInfo.phone || (companyInfo as any).Phone || '',
+          hotline: companyInfo.hotline || (companyInfo as any).Hotline || '',
           email: companyInfo.email || (companyInfo as any).Email || '',
+          website: companyInfo.website || (companyInfo as any).Website || '',
+          representative: companyInfo.representative || (companyInfo as any).Representative || '',
           headquarters: companyInfo.headquarters || (companyInfo as any).Headquarters || (companyInfo as any).address || '',
           logoUrl: companyInfo.logoUrl || (companyInfo as any).LogoUrl || null,
           status: (companyInfo.status ?? (companyInfo as any).Status) !== false,
@@ -349,32 +356,17 @@ export function SettingsTab({
     setStoredAdminData(ADMIN_STORAGE_KEYS.BRANCHES, cleaned);
   };
 
-  const [uomSyncing, setUomSyncing] = useState(false);
-  const loadUomsFromApi = async () => {
-    try {
-      setUomSyncing(true);
-      const uoms = await uomApi.getUoms();
-      if (uoms && Array.isArray(uoms)) {
-        setCurrentUoms(uoms);
-        setStoredAdminData(ADMIN_STORAGE_KEYS.UOMS, uoms);
-        return;
-      }
-    } catch (err) {
-      console.warn('Could not load UOMs from API:', err);
-    } finally {
-      setUomSyncing(false);
-    }
-    const stored = getStoredAdminData(ADMIN_STORAGE_KEYS.UOMS, []);
-    setCurrentUoms(stored || []);
-  };
-
   // Initial load from storage on mount
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem(ADMIN_STORAGE_KEYS.COMPANY_INFO);
-      localStorage.removeItem(ADMIN_STORAGE_KEYS.PAYMENT_SETTINGS);
-      localStorage.removeItem('domaco_pos_company_info');
-      localStorage.removeItem('domaco_pos_payment_settings');
+    const storedCompany = getStoredAdminData<AdminCompanyInfo | null>(ADMIN_STORAGE_KEYS.COMPANY_INFO, null);
+    if (storedCompany) {
+      setCompanyInfo(storedCompany);
+      companyForm.setFieldsValue(storedCompany);
+    }
+    const storedPayment = getStoredAdminData<any>(ADMIN_STORAGE_KEYS.PAYMENT_SETTINGS, null);
+    if (storedPayment) {
+      setPaymentSettings(storedPayment);
+      paymentForm.setFieldsValue(storedPayment);
     }
     setCurrentEmployees(getStoredAdminData(ADMIN_STORAGE_KEYS.EMPLOYEES, employeesList || INITIAL_EMPLOYEES));
   }, []);
@@ -401,8 +393,6 @@ export function SettingsTab({
       loadVietQrBanks();
     } else if (settingsActiveTab === 'branches') {
       loadBranchesFromApi();
-    } else if (settingsActiveTab === 'uom') {
-      loadUomsFromApi();
     } else if (settingsActiveTab === 'employees' || settingsActiveTab === 'permissions') {
       loadEmployeesFromApi();
     }
@@ -625,299 +615,7 @@ export function SettingsTab({
     }
   };
 
-  // ================= DOMACO POS UOM STATE & HANDLERS =================
-  const [currentUoms, setCurrentUoms] = useState<AdminUom[]>(uomsList || []);
 
-  useEffect(() => {
-    if (uomsList && uomsList.length > 0) setCurrentUoms(uomsList);
-  }, [uomsList]);
-
-  useEffect(() => {
-    if (setUomsList && currentUoms && currentUoms.length > 0) {
-      setUomsList(currentUoms);
-    }
-  }, [currentUoms, setUomsList]);
-  const [uomSearchQuery, setUomSearchQuery] = useState('');
-  const [selectedUomKeys, setSelectedUomKeys] = useState<React.Key[]>([]);
-  const [uomDrawerOpen, setUomDrawerOpen] = useState(false);
-  const [editingUom, setEditingUom] = useState<AdminUom | null>(null);
-  const [uomForm] = Form.useForm();
-
-  const filteredUoms = useMemo(() => {
-    const q = uomSearchQuery.trim().toLowerCase();
-    if (!q) return currentUoms;
-    return currentUoms.filter(
-      (u) =>
-        (u.code && u.code.toLowerCase().includes(q)) ||
-        (u.name && u.name.toLowerCase().includes(q)) ||
-        (u.description && u.description.toLowerCase().includes(q))
-    );
-  }, [currentUoms, uomSearchQuery]);
-
-  const selectedUomRecord = useMemo(() => {
-    if (selectedUomKeys.length !== 1) return null;
-    return currentUoms.find((u) => u.id === selectedUomKeys[0]) || null;
-  }, [currentUoms, selectedUomKeys]);
-
-  const handleOpenCreateUom = () => {
-    setEditingUom(null);
-    setUomDrawerOpen(true);
-
-    setTimeout(() => {
-      uomForm.resetFields();
-      uomForm.setFieldsValue({
-        code: '',
-        name: '',
-        description: '',
-        status: 'active',
-      });
-    }, 0);
-  };
-
-  const handleOpenEditUom = (item: AdminUom) => {
-    setEditingUom(item);
-    setUomDrawerOpen(true);
-
-    setTimeout(() => {
-      uomForm.resetFields();
-      uomForm.setFieldsValue({
-        code: item.code,
-        name: item.name,
-        description: item.description || '',
-        status: item.status || 'active',
-      });
-    }, 0);
-  };
-
-  const handleCloseUomDrawer = () => {
-    setUomDrawerOpen(false);
-    setEditingUom(null);
-    uomForm.resetFields();
-  };
-
-  const handleSaveUomSubmit = async () => {
-    try {
-      const values = await uomForm.validateFields();
-      if (editingUom) {
-        const payload: Partial<AdminUom> = {
-          code: values.code.trim().toUpperCase(),
-          name: values.name.trim(),
-          description: values.description?.trim() || '',
-          status: values.status,
-        };
-        try {
-          await uomApi.updateUom(editingUom.id, payload);
-        } catch (e) {
-          console.warn('Backend UOM update failed, saved locally:', e);
-        }
-        setCurrentUoms((prev) => {
-          const next = prev.map((u) =>
-            u.id === editingUom.id
-              ? {
-                  ...u,
-                  ...payload,
-                }
-              : u
-          );
-          setStoredAdminData(ADMIN_STORAGE_KEYS.UOMS, next);
-          return next;
-        });
-        message.success(`Đã cập nhật đơn vị tính "${values.name}" thành công!`);
-      } else {
-        const newUom: AdminUom = {
-          id: `uom_${Date.now()}`,
-          code: values.code.trim().toUpperCase(),
-          name: values.name.trim(),
-          description: values.description?.trim() || '',
-          status: values.status,
-          isDefault: false,
-          createdAt: new Date().toLocaleDateString('vi-VN'),
-        };
-        try {
-          await uomApi.createUom(newUom);
-        } catch (e) {
-          console.warn('Backend UOM create failed, saved locally:', e);
-        }
-        setCurrentUoms((prev) => {
-          const next = [...prev, newUom];
-          setStoredAdminData(ADMIN_STORAGE_KEYS.UOMS, next);
-          return next;
-        });
-        message.success(`Đã thêm mới đơn vị tính "${values.name}" thành công!`);
-      }
-      handleCloseUomDrawer();
-    } catch {
-      // form validate error
-    }
-  };
-
-  const handleDeleteSingleUom = async (item: AdminUom) => {
-    try {
-      await uomApi.deleteUom(item.id);
-    } catch (e) {
-      console.warn('Backend UOM delete failed, deleted locally:', e);
-    }
-    setCurrentUoms((prev) => {
-      const next = prev.filter((u) => u.id !== item.id);
-      setStoredAdminData(ADMIN_STORAGE_KEYS.UOMS, next);
-      return next;
-    });
-    setSelectedUomKeys((prev) => prev.filter((k) => k !== item.id));
-    message.success(`Đã xóa đơn vị tính "${item.name}"`);
-  };
-
-  const handleDeleteSelectedUoms = () => {
-    if (!selectedUomKeys.length) return;
-    const count = selectedUomKeys.length;
-    modal.confirm({
-      title: 'Xác nhận xóa đơn vị tính',
-      content:
-        count === 1 && selectedUomRecord
-          ? `Bạn có chắc chắn muốn xóa đơn vị tính "${selectedUomRecord.name}" (${selectedUomRecord.code})?`
-          : `Bạn có chắc chắn muốn xóa ${count} đơn vị tính đã chọn?`,
-      okText: 'Xóa',
-      okType: 'danger',
-      cancelText: 'Hủy bỏ',
-      onOk: async () => {
-        try {
-          await Promise.all(selectedUomKeys.map((k) => uomApi.deleteUom(String(k)).catch(() => {})));
-        } catch (e) {
-          console.warn('Backend batch UOM delete failed:', e);
-        }
-        setCurrentUoms((prev) => {
-          const next = prev.filter((u) => !selectedUomKeys.includes(u.id));
-          setStoredAdminData(ADMIN_STORAGE_KEYS.UOMS, next);
-          return next;
-        });
-        setSelectedUomKeys([]);
-        message.success(`Đã xóa ${count} đơn vị tính thành công!`);
-      },
-    });
-  };
-
-  const handleCloneUom = async (record: AdminUom) => {
-    const nextCode = `${record.code}_COPY`;
-    const cloned: AdminUom = {
-      ...record,
-      id: `uom_${Date.now()}`,
-      code: nextCode,
-      name: `${record.name} (Bản sao)`,
-      status: 'active',
-      createdAt: new Date().toLocaleDateString('vi-VN'),
-    };
-    try {
-      await uomApi.createUom(cloned);
-    } catch (e) {
-      console.warn('Backend UOM clone create failed, saved locally:', e);
-    }
-    setCurrentUoms((prev) => {
-      const next = [...prev, cloned];
-      setStoredAdminData(ADMIN_STORAGE_KEYS.UOMS, next);
-      return next;
-    });
-    message.success(`Đã nhân bản đơn vị tính "${record.name}"!`);
-  };
-
-  const uomColumns = [
-    {
-      title: (
-        <div className="flex items-center gap-1">
-          <span>Mã đơn vị</span>
-          <SearchOutlined className="text-slate-400 text-2xs" />
-        </div>
-      ),
-      dataIndex: 'code',
-      key: 'code',
-      width: 140,
-      render: (value: string, record: AdminUom) => (
-        <span
-          onClick={() => handleOpenEditUom(record)}
-          className="font-semibold text-[#784e34] hover:underline cursor-pointer"
-        >
-          {value || '—'}
-        </span>
-      ),
-    },
-    {
-      title: (
-        <div className="flex items-center gap-1">
-          <span>Tên đơn vị tính</span>
-          <SearchOutlined className="text-slate-400 text-2xs" />
-        </div>
-      ),
-      dataIndex: 'name',
-      key: 'name',
-      width: 220,
-      render: (value: string) => <span className="font-medium text-slate-800">{value || '—'}</span>,
-    },
-    {
-      title: (
-        <div className="flex items-center gap-1">
-          <span>Ghi chú</span>
-          <SearchOutlined className="text-slate-400 text-2xs" />
-        </div>
-      ),
-      dataIndex: 'description',
-      key: 'description',
-      render: (value: string) => <span className="text-slate-600">{value || '---'}</span>,
-    },
-    {
-      title: (
-        <div className="flex items-center justify-center gap-1">
-          <span>Trạng thái</span>
-          <SearchOutlined className="text-slate-400 text-2xs" />
-        </div>
-      ),
-      dataIndex: 'status',
-      key: 'status',
-      width: 130,
-      align: 'center' as const,
-      render: (value: string) =>
-        value !== 'inactive' ? (
-          <span className="inline-block rounded bg-emerald-50 text-emerald-700 border border-emerald-200/60 px-2.5 py-0.5 text-2xs font-bold uppercase">
-            MỞ
-          </span>
-        ) : (
-          <span className="inline-block rounded bg-slate-100 text-slate-500 border border-slate-200 px-2.5 py-0.5 text-2xs font-bold uppercase">
-            KHÓA
-          </span>
-        ),
-    },
-    {
-      title: 'Thao tác',
-      key: 'actions',
-      width: 140,
-      align: 'center' as const,
-      render: (_: any, item: AdminUom) => (
-        <Space size="small">
-          <Button
-            type="text"
-            icon={<EditOutlined />}
-            onClick={() => handleOpenEditUom(item)}
-            className="text-slate-600 hover:!text-[#784e34] !h-7 px-2 text-xs font-medium"
-          >
-            Sửa
-          </Button>
-          <Popconfirm
-            title="Xóa đơn vị tính"
-            description={`Bạn có chắc muốn xóa đơn vị tính "${item.name}"?`}
-            okText="Xóa"
-            cancelText="Hủy"
-            onConfirm={() => handleDeleteSingleUom(item)}
-          >
-            <Button
-              type="text"
-              danger
-              icon={<DeleteOutlined />}
-              className="!h-7 px-2 text-xs font-medium text-rose-600 hover:!text-rose-700"
-            >
-              Xóa
-            </Button>
-          </Popconfirm>
-        </Space>
-      ),
-    },
-  ];
 
   // ================= DOMACO POS RBAC ROLES & PERMISSIONS STATE =================
   const [currentRoles, setCurrentRoles] = useState<AdminRole[]>(rolesList || INITIAL_ROLES);
@@ -1284,11 +982,16 @@ export function SettingsTab({
   };
 
   const handleSaveCompanyInfo = async (values: any) => {
+    let cleanHeadquarters = values.headquarters || values.address || companyInfo.headquarters || '';
+    if (cleanHeadquarters.includes('NgÃ£') || cleanHeadquarters.includes('Cá»­a') || cleanHeadquarters.includes('Ä‘áº·c')) {
+      cleanHeadquarters = 'Ngã 4 Cửa Cạn, Đặc khu Phú Quốc, tỉnh Kiên Giang';
+    }
+
     const payload: AdminCompanyInfo = {
       ...EMPTY_COMPANY_INFO,
       ...companyInfo,
       ...values,
-      headquarters: values.headquarters || values.address || companyInfo.headquarters || '',
+      headquarters: cleanHeadquarters,
       brandName: values.companyName || companyInfo.brandName || '',
     };
     try {
@@ -1296,8 +999,11 @@ export function SettingsTab({
       const nextData: AdminCompanyInfo = {
         ...payload,
         ...(res || {}),
+        headquarters: cleanHeadquarters,
       };
       setCompanyInfo(nextData);
+      companyForm.setFieldsValue(nextData);
+      setStoredAdminData(ADMIN_STORAGE_KEYS.COMPANY_INFO, nextData);
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('store_settings_updated', { detail: nextData }));
       }
@@ -1305,6 +1011,8 @@ export function SettingsTab({
     } catch (err: any) {
       console.warn('API update company info failed:', err);
       setCompanyInfo(payload);
+      companyForm.setFieldsValue(payload);
+      setStoredAdminData(ADMIN_STORAGE_KEYS.COMPANY_INFO, payload);
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('store_settings_updated', { detail: payload }));
       }
@@ -1316,6 +1024,7 @@ export function SettingsTab({
     companyForm.resetFields();
     companyForm.setFieldsValue(EMPTY_COMPANY_INFO);
     setCompanyInfo(EMPTY_COMPANY_INFO);
+    setStoredAdminData(ADMIN_STORAGE_KEYS.COMPANY_INFO, EMPTY_COMPANY_INFO);
     message.info('Đã khôi phục thông tin doanh nghiệp về giá trị mặc định!');
   };
 
@@ -1373,16 +1082,6 @@ export function SettingsTab({
     }
   };
 
-  const handleTopToolbarSave = () => {
-    if (settingsActiveTab === 'company') {
-      companyForm.submit();
-    } else if (settingsActiveTab === 'payment') {
-      paymentForm.submit();
-    } else {
-      message.success('Cấu hình đã được đồng bộ!');
-    }
-  };
-
   // ================= SIDEBAR MENU DEFINITION =================
   // ================= SIDEBAR MENU DEFINITION =================
   const rawSettingsMenuItems: (SettingsMenuItem & { permission?: string })[] = [
@@ -1416,12 +1115,12 @@ export function SettingsTab({
       permission: 'settings.branches.view',
     },
     {
-      key: 'uom',
-      icon: <ColumnWidthOutlined />,
-      label: 'Đơn vị tính (UOM)',
-      badge: <Tag color="default" className="font-mono text-[10px] m-0 bg-slate-100 border-slate-200">{currentUoms.length}</Tag>,
+      key: 'warehouses',
+      icon: <ShopOutlined />,
+      label: 'Kho & Điểm lưu kho',
+      badge: <Tag color="default" className="font-mono text-[10px] m-0 bg-slate-100 border-slate-200">{warehousesCount}</Tag>,
       group: 'operations',
-      permission: 'settings.uom.view',
+      permission: 'inventory.warehouses.view',
     },
     {
       key: 'employees',
@@ -1467,17 +1166,6 @@ export function SettingsTab({
             <h2 className="font-bold text-sm sm:text-base text-slate-900 m-0">Thiết lập &amp; Cài đặt hệ thống</h2>
           </div>
         </div>
-
-        <div className="flex items-center gap-2.5">
-          <Button
-            type="primary"
-            icon={<SaveOutlined />}
-            onClick={handleTopToolbarSave}
-            className="h-10 rounded-none bg-[#784e34] hover:!bg-[#5d371f] px-5 text-sm font-medium text-white shadow-none border-none flex items-center"
-          >
-            Lưu cấu hình
-          </Button>
-        </div>
       </div>
 
       {/* Responsive Segmented Tabs for Mobile / Tablet (< lg) */}
@@ -1487,7 +1175,7 @@ export function SettingsTab({
           onChange={(val: any) => setSettingsActiveTab(val)}
           options={settingsMenuItems.map((item) => ({
             value: item.key,
-            label: `${item.label}${item.badge ? ` (${item.key === 'branches' ? currentBranches.length : item.key === 'uom' ? currentUoms.length : item.key === 'employees' ? currentEmployees.length : currentRoles.length})` : ''}`,
+            label: `${item.label}${item.badge ? ` (${item.key === 'branches' ? currentBranches.length : item.key === 'employees' ? currentEmployees.length : currentRoles.length})` : ''}`,
           }))}
           className="w-full bg-slate-100 p-1"
         />
@@ -1628,13 +1316,16 @@ export function SettingsTab({
                 form={companyForm}
                 layout="vertical"
                 initialValues={{
-                  code: companyInfo.code || '',
-                  companyName: companyInfo.companyName || '',
-                  taxId: companyInfo.taxId || '',
-                  phone: companyInfo.phone || '',
-                  email: companyInfo.email || '',
-                  headquarters: companyInfo.headquarters || '',
-                  logoUrl: companyInfo.logoUrl || null,
+                  code: companyInfo.code || EMPTY_COMPANY_INFO.code,
+                  companyName: companyInfo.companyName || EMPTY_COMPANY_INFO.companyName,
+                  taxId: companyInfo.taxId || EMPTY_COMPANY_INFO.taxId,
+                  phone: companyInfo.phone || EMPTY_COMPANY_INFO.phone,
+                  hotline: companyInfo.hotline || EMPTY_COMPANY_INFO.hotline,
+                  email: companyInfo.email || EMPTY_COMPANY_INFO.email,
+                  website: companyInfo.website || EMPTY_COMPANY_INFO.website,
+                  representative: companyInfo.representative || EMPTY_COMPANY_INFO.representative,
+                  headquarters: companyInfo.headquarters || EMPTY_COMPANY_INFO.headquarters,
+                  logoUrl: companyInfo.logoUrl || EMPTY_COMPANY_INFO.logoUrl,
                   status: companyInfo.status !== false,
                 }}
                 onFinish={handleSaveCompanyInfo}
@@ -1699,8 +1390,8 @@ export function SettingsTab({
                   </div>
                   <div className="px-4 py-4 sm:px-6 sm:py-5">
                     <div className="flex flex-col gap-3.5 rounded-xl border border-slate-200 p-3.5 sm:p-4 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="flex min-w-0 items-center gap-3.5">
-                        <div className="flex h-16 w-24 sm:h-20 sm:w-32 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white p-2">
+                      <div className="flex min-w-0 items-center gap-4">
+                        <div className="flex h-24 w-36 sm:h-28 sm:w-48 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white p-2.5 shadow-2xs">
                           {companyInfo.logoUrl ? (
                             <img
                               src={companyInfo.logoUrl}
@@ -1712,7 +1403,8 @@ export function SettingsTab({
                           )}
                         </div>
                         <div className="min-w-0">
-                          <div className="text-xs sm:text-sm font-semibold text-slate-900">Logo công ty</div>
+                          <div className="text-xs sm:text-sm font-semibold text-slate-900">Logo thương hiệu</div>
+                          <div className="text-[11px] text-slate-500 mt-0.5">Kích thước chuẩn, tự động tối ưu hiển thị trên thanh tiêu đề và hóa đơn POS</div>
                         </div>
                       </div>
 
@@ -1756,24 +1448,46 @@ export function SettingsTab({
                 {/* 3. THÔNG TIN LIÊN HỆ */}
                 <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs">
                   <div className="border-b border-slate-200 px-4 py-3.5 sm:px-6 sm:py-5">
-                    <h2 className="m-0 text-sm font-semibold text-slate-900">Thông tin liên hệ</h2>
+                    <h2 className="m-0 text-sm font-semibold text-slate-900">Thông tin liên hệ &amp; Pháp lý</h2>
                   </div>
                   <div className="px-4 py-4 sm:px-6 sm:py-5">
-                    <div className="grid grid-cols-1 gap-x-4 gap-y-1">
+                    <div className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
                       <Form.Item label="Email hỗ trợ" name="email">
                         <Input
+                          prefix={<MailOutlined className="text-slate-400 mr-1" />}
                           placeholder="Nhập email hỗ trợ"
                           className="h-9 sm:h-10 rounded-lg text-xs sm:text-sm"
                         />
                       </Form.Item>
-                      <Form.Item label="Địa chỉ trụ sở chính" name="headquarters">
-                        <Input.TextArea
-                          rows={3}
-                          placeholder="Nhập địa chỉ trụ sở chính"
-                          className="rounded-lg text-xs sm:text-sm"
+                      <Form.Item label="Hotline CSKH / Bán hàng" name="hotline">
+                        <Input
+                          prefix={<PhoneOutlined className="text-slate-400 mr-1" />}
+                          placeholder="VD: 0986.739.587"
+                          className="h-9 sm:h-10 rounded-lg text-xs sm:text-sm"
+                        />
+                      </Form.Item>
+                      <Form.Item label="Website thương hiệu" name="website">
+                        <Input
+                          prefix={<GlobalOutlined className="text-slate-400 mr-1" />}
+                          placeholder="VD: https://d2luxury.vn"
+                          className="h-9 sm:h-10 rounded-lg text-xs sm:text-sm"
+                        />
+                      </Form.Item>
+                      <Form.Item label="Người đại diện pháp luật" name="representative">
+                        <Input
+                          prefix={<UserOutlined className="text-slate-400 mr-1" />}
+                          placeholder="Nhập tên người đại diện"
+                          className="h-9 sm:h-10 rounded-lg text-xs sm:text-sm"
                         />
                       </Form.Item>
                     </div>
+                    <Form.Item label="Địa chỉ trụ sở chính" name="headquarters">
+                      <Input.TextArea
+                        rows={2}
+                        placeholder="Nhập địa chỉ trụ sở chính"
+                        className="rounded-lg text-xs sm:text-sm"
+                      />
+                    </Form.Item>
                   </div>
 
                   <div className="border-t border-slate-200">
@@ -2247,183 +1961,16 @@ export function SettingsTab({
               </AdminFormDrawer>
             </div>
 
-          {/* ================= TAB 4: ĐƠN VỊ TÍNH (DOMACO POS SPEC) ================= */}
-          <div className={settingsActiveTab === 'uom' ? 'space-y-4' : 'hidden'}>
-              <section className="flex flex-col bg-white rounded-none border border-slate-200/80 shadow-xs overflow-hidden">
-                {/* ── TOOLBAR (DOMACO POS SPEC) ── */}
-                <div className="shrink-0 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-200 bg-white p-3 sm:p-4">
-                  <div className="flex items-center gap-3 w-full sm:w-auto">
-                    <h3 className="text-sm font-semibold text-slate-900 m-0">Đơn vị tính</h3>
-                    <div className="w-full sm:w-64">
-                      <AdminSearchInput
-                        placeholder="Tìm kiếm đơn vị tính..."
-                        value={uomSearchQuery}
-                        onChange={(val) => setUomSearchQuery(val)}
-                        sizeVariant="sm"
-                      />
-                    </div>
-                  </div>
+          {/* ================= TAB 3.5: KHO HÀNG & ĐIỂM LƯU KHO TOÀN HỆ THỐNG ================= */}
+          <div className={settingsActiveTab === 'warehouses' ? 'space-y-4' : 'hidden'}>
+            <WarehousesSettings
+              branchesList={currentBranches}
+              selectedGlobalBranch={selectedGlobalBranch}
+              onWarehousesUpdated={(whs) => setWarehousesCount(whs.length)}
+            />
+          </div>
 
-                  <div className="flex flex-wrap items-center justify-start sm:justify-end gap-2 w-full sm:w-auto">
-                    <Button
-                      icon={<CopyOutlined />}
-                      disabled={selectedUomKeys.length !== 1 || !selectedUomRecord}
-                      onClick={() => selectedUomRecord && handleCloneUom(selectedUomRecord)}
-                      className="h-8 w-8 p-0 rounded-lg border-slate-300 bg-white text-slate-700 text-xs shadow-none inline-flex items-center justify-center disabled:opacity-50"
-                      title="Sao chép"
-                    />
-                    <Button
-                      icon={<EditOutlined />}
-                      disabled={selectedUomKeys.length !== 1 || !selectedUomRecord}
-                      onClick={() => selectedUomRecord && handleOpenEditUom(selectedUomRecord)}
-                      className="h-8 w-8 p-0 rounded-lg border-slate-300 bg-white text-slate-700 text-xs shadow-none inline-flex items-center justify-center disabled:opacity-50"
-                      title="Chỉnh sửa"
-                    />
-                    <Button
-                      icon={<DeleteOutlined />}
-                      disabled={!selectedUomKeys.length}
-                      onClick={handleDeleteSelectedUoms}
-                      className="h-8 w-8 p-0 rounded-lg border-slate-300 bg-white text-rose-600 text-xs shadow-none inline-flex items-center justify-center hover:!border-rose-300 hover:!bg-rose-50 disabled:opacity-50"
-                      title="Xóa"
-                    />
-                    <Button
-                      type="primary"
-                      icon={<PlusOutlined />}
-                      onClick={handleOpenCreateUom}
-                      className="h-8 px-3 sm:px-4 bg-[#784e34] hover:!bg-[#5d371f] text-white border-none font-bold text-xs rounded-lg shadow-none inline-flex items-center justify-center gap-1.5"
-                    >
-                      Thêm đơn vị
-                    </Button>
-                  </div>
-                </div>
 
-                {/* ── DATA TABLE ── */}
-                <div className="overflow-x-auto">
-                  <Table
-                    rowKey="id"
-                    loading={uomSyncing}
-                    dataSource={filteredUoms}
-                    columns={uomColumns}
-                    size="middle"
-                    pagination={{
-                      pageSize: 10,
-                      showSizeChanger: true,
-                      pageSizeOptions: ['10', '20', '50'],
-                      showTotal: (total, range) => (
-                        <span className="text-xs text-slate-500 font-medium">
-                          Hiển thị {range[0]} – {range[1]} trong tổng số {total} bản ghi
-                        </span>
-                      ),
-                    }}
-                    rowSelection={{
-                      columnWidth: 42,
-                      selectedRowKeys: selectedUomKeys,
-                      onChange: (keys) => setSelectedUomKeys(keys),
-                    }}
-                    onRow={(record) => ({
-                      onClick: () => {
-                        setSelectedUomKeys((prev) =>
-                          prev.includes(record.id) ? prev.filter((id) => id !== record.id) : [...prev, record.id]
-                        );
-                      },
-                    })}
-                    className="[&_.ant-table-thead>tr>th]:!bg-white [&_.ant-table-thead>tr>th]:!font-semibold [&_.ant-table-tbody>tr>td]:!py-2.5 [&_.ant-pagination]:!m-0 [&_.ant-pagination]:!py-2.5 [&_.ant-pagination]:!px-4 [&_.ant-pagination]:border-t [&_.ant-pagination]:border-slate-200"
-                  />
-                </div>
-              </section>
-
-              {/* ── DRAWER: THÊM MỚI / CHỈNH SỬA ĐƠN VỊ TÍNH (DOMACO POS SPEC) ── */}
-              <AdminFormDrawer
-                open={uomDrawerOpen}
-                onClose={handleCloseUomDrawer}
-                isEditing={!!editingUom}
-                createTitle="Thêm mới đơn vị tính"
-                editTitle="Cập nhật đơn vị tính"
-                recordId={editingUom?.code}
-                width={520}
-                onSubmit={handleSaveUomSubmit}
-                submitText={editingUom ? 'Lưu thay đổi' : 'Thêm đơn vị'}
-              >
-                <Form form={uomForm} layout="vertical" className="space-y-4">
-                  <div className="bg-white p-5 rounded-xl border border-slate-200/80 shadow-xs space-y-4">
-                    <div className="text-xs font-bold text-slate-500 tracking-wider uppercase border-b border-slate-100 pb-2 flex items-center gap-1.5">
-                      <ColumnWidthOutlined className="text-[#784e34]" /> THÔNG TIN ĐƠN VỊ TÍNH
-                    </div>
-
-                    <Form.Item
-                      name="code"
-                      label={<span className="text-xs font-semibold text-slate-700">Mã đơn vị tính</span>}
-                      rules={[
-                        { required: true, message: 'Vui lòng nhập mã đơn vị tính' },
-                        { pattern: /^[a-zA-Z0-9_\-\.\/]+$/, message: 'Mã chỉ gồm chữ cái, số, ký tự gạch hoặc xẹt' },
-                      ]}
-                      extra={<span className="text-[11px] text-slate-400">Ví dụ: HOP, CHIEC, BO, M3, M2...</span>}
-                      className="mb-0"
-                    >
-                      <Input
-                        placeholder="VD: HOP, CAI, BO..."
-                        className="h-10 rounded-lg text-sm font-mono font-semibold uppercase border !border-slate-300 bg-white hover:!border-[#784e34] focus:!border-[#784e34]"
-                      />
-                    </Form.Item>
-
-                    <Form.Item
-                      name="name"
-                      label={<span className="text-xs font-semibold text-slate-700">Tên đơn vị tính</span>}
-                      rules={[{ required: true, message: 'Vui lòng nhập tên đơn vị tính' }]}
-                      className="mb-0"
-                    >
-                      <Input
-                        placeholder="VD: Hộp, Cái, Bộ, Mét vuông..."
-                        className="h-10 rounded-lg text-sm font-medium border !border-slate-300 bg-white hover:!border-[#784e34] focus:!border-[#784e34]"
-                      />
-                    </Form.Item>
-
-                    <Form.Item
-                      name="description"
-                      label={<span className="text-xs font-semibold text-slate-700">Ghi chú / Quy cách sử dụng</span>}
-                      className="mb-0"
-                    >
-                      <Input.TextArea
-                        rows={3}
-                        placeholder="Ví dụ: Đơn vị tính dùng cho phụ kiện, gỗ xẻ sấy, da bò..."
-                        className="rounded-lg text-sm border !border-slate-300 bg-white hover:!border-[#784e34] focus:!border-[#784e34] p-2.5"
-                      />
-                    </Form.Item>
-
-                    <Form.Item
-                      name="status"
-                      label={<span className="text-xs font-semibold text-slate-700">Trạng thái hoạt động</span>}
-                      initialValue="active"
-                      className="mb-0"
-                    >
-                      <Select
-                        className="w-full h-10 text-sm"
-                        options={[
-                          {
-                            value: 'active',
-                            label: (
-                              <div className="flex items-center gap-2">
-                                <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
-                                <span className="text-slate-800 font-medium">Đang sử dụng (Mở)</span>
-                              </div>
-                            ),
-                          },
-                          {
-                            value: 'inactive',
-                            label: (
-                              <div className="flex items-center gap-2">
-                                <span className="w-2 h-2 rounded-full bg-slate-400 inline-block" />
-                                <span className="text-slate-500 font-medium">Ngừng sử dụng (Khóa)</span>
-                              </div>
-                            ),
-                          },
-                        ]}
-                      />
-                    </Form.Item>
-                  </div>
-                </Form>
-              </AdminFormDrawer>
-            </div>
 
           {/* ================= TAB 5: QUẢN LÝ NHÂN SỰ & VAI TRÒ ================= */}
           <div className={settingsActiveTab === 'employees' ? 'space-y-4' : 'hidden'}>
@@ -2432,7 +1979,7 @@ export function SettingsTab({
               setEmployeesList={setCurrentEmployees}
               branchesList={currentBranches}
               rolesList={currentRoles}
-              selectedGlobalBranch={selectedGlobalBranch}
+              selectedGlobalBranch="all"
             />
           </div>
 

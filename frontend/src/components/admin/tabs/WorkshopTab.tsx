@@ -108,6 +108,7 @@ import {
   FolderOpenOutlined,
   UpOutlined,
   ThunderboltOutlined,
+  CrownOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useAuth } from '@/context/AuthContext';
@@ -137,7 +138,6 @@ import {
   FeaturedCatalogProduct,
   AdminSupplier,
   AdminBranch,
-  AdminUom,
   StockTransferSlip,
 } from '@/types/admin';
 import {
@@ -171,7 +171,6 @@ import { stockImportApi } from '@/api/stockImportApi';
 import { supplierReturnApi } from '@/api/supplierReturnApi';
 import { stockAuditApi } from '@/api/stockAuditApi';
 import { productApi } from '@/api/productApi';
-import { uomApi } from '@/api/uomApi';
 import { invalidateApiCache } from '@/api/shared/apiCache';
 import {
   ADMIN_STORAGE_KEYS,
@@ -199,10 +198,9 @@ export interface WorkshopTabProps {
   setCatalogList?: React.Dispatch<React.SetStateAction<FeaturedCatalogProduct[]>>;
   suppliersList?: AdminSupplier[];
   setSuppliersList?: React.Dispatch<React.SetStateAction<AdminSupplier[]>>;
-  uomsList?: AdminUom[];
   branchesList?: AdminBranch[];
   selectedGlobalBranch?: string;
-  initialSubTab?: 'warehouses' | 'imports' | 'returns' | 'stocktake' | 'suppliers';
+  initialSubTab?: 'imports' | 'returns' | 'stocktake' | 'suppliers' | 'warehouses';
   initialImportMode?: 'list' | 'create';
   initialImportProduct?: FeaturedCatalogProduct | null;
   onClearInitialImportProduct?: () => void;
@@ -214,10 +212,9 @@ export function WorkshopTab({
   setCatalogList,
   suppliersList = INITIAL_SUPPLIERS,
   setSuppliersList,
-  uomsList = [],
   branchesList = INITIAL_BRANCHES,
   selectedGlobalBranch = 'all',
-  initialSubTab = 'warehouses',
+  initialSubTab = 'imports',
   initialImportMode = 'list',
   initialImportProduct = null,
   onClearInitialImportProduct,
@@ -226,44 +223,14 @@ export function WorkshopTab({
   const { message } = App.useApp();
   const { user } = useAuth();
 
-  // UOM Data State & Options
-  const [currentUoms, setCurrentUoms] = useState<AdminUom[]>(uomsList || []);
-
-  useEffect(() => {
-    if (uomsList && uomsList.length > 0) {
-      setCurrentUoms(uomsList);
-    } else {
-      const stored = getStoredAdminData<AdminUom[]>(ADMIN_STORAGE_KEYS.UOMS, []);
-      if (stored && stored.length > 0) {
-        setCurrentUoms(stored);
-      }
-      uomApi.getUoms().then((uoms) => {
-        if (uoms && Array.isArray(uoms) && uoms.length > 0) {
-          setCurrentUoms(uoms);
-          setStoredAdminData(ADMIN_STORAGE_KEYS.UOMS, uoms);
-        }
-      }).catch(() => {});
-    }
-  }, [uomsList]);
-
-  const uomSelectOptions = useMemo(() => {
-    if (currentUoms && currentUoms.length > 0) {
-      return currentUoms
-        .filter((u) => u.status !== 'inactive')
-        .map((u) => ({
-          value: u.name,
-          label: u.name,
-        }));
-    }
-    return [];
-  }, [currentUoms]);
-
   // Sub-Tab Switcher State
-  const [warehouseSubTab, setWarehouseSubTab] = useState<'warehouses' | 'imports' | 'returns' | 'stocktake' | 'suppliers'>(initialSubTab);
+  const [warehouseSubTab, setWarehouseSubTab] = useState<'warehouses' | 'imports' | 'returns' | 'stocktake' | 'suppliers'>(
+    initialSubTab === 'warehouses' ? 'imports' : (initialSubTab || 'imports')
+  );
 
   useEffect(() => {
     if (initialSubTab) {
-      setWarehouseSubTab(initialSubTab);
+      setWarehouseSubTab(initialSubTab === 'warehouses' ? 'imports' : initialSubTab);
     }
   }, [initialSubTab]);
 
@@ -290,6 +257,7 @@ export function WorkshopTab({
   const [warehouseForm] = Form.useForm();
   const selectedWarehouseProvince = Form.useWatch('province', warehouseForm);
   const selectedWarehouseDistrict = Form.useWatch('district', warehouseForm);
+  const selectedWarehouseIsDefault = Form.useWatch('isDefault', warehouseForm);
 
   const [provincesList, setProvincesList] = useState<ProvinceItem[]>([]);
   const [districtOptions, setDistrictOptions] = useState<LocationItem[]>([]);
@@ -1971,7 +1939,6 @@ export function WorkshopTab({
       'Tên hàng hóa': i.itemName,
       'Quy cách': i.spec || '',
       'Số lượng': i.quantity,
-      'ĐVT': i.unit,
       'Đơn giá nhập (VNĐ)': i.unitPrice || 0,
       'Tổng tiền hàng (VNĐ)': i.totalValue,
       'Đã thanh toán (VNĐ)': i.paidAmount !== undefined ? i.paidAmount : i.totalValue,
@@ -2016,7 +1983,6 @@ export function WorkshopTab({
       'Nhà cung cấp': imp.supplier,
       'Mã hàng': item.code || '---',
       'Tên hàng hóa': item.name || imp.itemName,
-      'Đơn vị tính': item.unit || 'bộ',
       'Số lượng': item.quantity,
       'Đơn giá nhập (VNĐ)': item.unitPrice || 0,
       'Giảm giá (VNĐ)': item.discount || 0,
@@ -2048,7 +2014,6 @@ export function WorkshopTab({
       'Mã phiếu nhập': importCode || '#PN-2026-NEW',
       'Mã hàng': line.code,
       'Tên sản phẩm': line.name,
-      'Đơn vị tính': line.unit,
       'Số lượng': line.quantity,
       'Đơn giá nhập (VNĐ)': line.unitPrice,
       'Thành tiền (VNĐ)': line.total || line.quantity * line.unitPrice,
@@ -2077,7 +2042,6 @@ export function WorkshopTab({
       'Kho xuất trả': r.warehouseName || '',
       'Tên mặt hàng hoàn trả': r.itemName,
       'Quy cách': r.spec || '',
-      'ĐVT': r.unit || 'bộ',
       'Số lượng trả': r.quantity,
       'Đơn giá trả (VNĐ)': r.returnPrice || r.purchasePrice || 0,
       'Tổng tiền hàng trả (VNĐ)': r.totalGoods || r.supplierRefund || 0,
@@ -2102,7 +2066,6 @@ export function WorkshopTab({
         'Mã hàng': r.code,
         'Tên mặt hàng hoàn trả': r.itemName,
         'Quy cách': r.spec || '',
-        'Đơn vị tính': r.unit || 'bộ',
         'Số lượng trả': r.quantity,
         'Giá nhập ban đầu (VNĐ)': r.purchasePrice || 0,
         'Giá xuất trả (VNĐ)': r.returnPrice || r.purchasePrice || 0,
@@ -2141,7 +2104,6 @@ export function WorkshopTab({
       'Phiếu nhập gốc': returnSourceCode || 'Không liên kết',
       'Mã hàng': line.code,
       'Tên sản phẩm': line.name,
-      'Đơn vị tính': line.unit,
       'Số lượng xuất trả': line.quantity,
       'Đơn giá trả (VNĐ)': line.returnPrice,
       'Thành tiền (VNĐ)': line.total || line.quantity * line.returnPrice,
@@ -2173,7 +2135,6 @@ export function WorkshopTab({
       'Mã phiếu kiểm': stocktakeSlipCode || 'KK-2026-08',
       'Mã hàng': line.code,
       'Tên sản phẩm': line.name,
-      'Đơn vị tính': line.unit,
       'Độ ẩm MC': line.actualMc || line.systemMc || '---',
       'Tồn sổ sách': line.systemQty,
       'Tồn thực tế': line.actualQty,
@@ -2293,10 +2254,9 @@ export function WorkshopTab({
             {/* Sub-Tabs Switcher (Domaco Kho Header: 5 Tabs Architecture - Flush with Main Header) */}
             <div className="-mx-4 sm:-mx-5 lg:-mx-6 -mt-4 sm:-mt-5 lg:-mt-6 px-4 sm:px-6 lg:px-8 py-2.5 bg-white border-b border-[#eae1dd] flex flex-wrap items-center justify-between gap-3 shadow-2xs mb-4">
               <Segmented
-                value={warehouseSubTab}
+                value={warehouseSubTab === 'warehouses' ? 'imports' : warehouseSubTab}
                 onChange={(val: any) => handleSubTabChange(val)}
                 options={[
-                  { value: 'warehouses', label: <span className="px-2 py-1 font-medium text-xs sm:text-sm">🏢 Danh sách kho</span> },
                   { value: 'imports', label: <span className="px-2 py-1 font-medium text-xs sm:text-sm">📥 Nhập hàng</span> },
                   { value: 'returns', label: <span className="px-2 py-1 font-medium text-xs sm:text-sm">🔄 Trả hàng</span> },
                   { value: 'stocktake', label: <span className="px-2 py-1 font-medium text-xs sm:text-sm">📋 Kiểm kho</span> },
@@ -2810,7 +2770,6 @@ export function WorkshopTab({
                                       <tr>
                                         <th className="px-3 py-2 text-left w-28">Mã hàng</th>
                                         <th className="px-3 py-2 text-left">Tên hàng</th>
-                                        <th className="px-3 py-2 text-left w-20">ĐVT</th>
                                         <th className="px-3 py-2 text-left w-28">Hạn sử dụng</th>
                                         <th className="px-3 py-2 text-right w-24">Số lượng</th>
                                         <th className="px-3 py-2 text-right w-28">Đơn giá</th>
@@ -2847,7 +2806,6 @@ export function WorkshopTab({
                                               {item.name}
                                             </span>
                                           </td>
-                                          <td className="px-3 py-2.5 text-slate-600">{item.unit}</td>
                                           <td className="px-3 py-2.5 text-slate-400">{item.expiryDate || '---'}</td>
                                           <td className="px-3 py-2.5 text-right font-mono font-medium text-slate-900">
                                             {item.quantity}
@@ -3355,7 +3313,6 @@ export function WorkshopTab({
                 filteredImportProducts={filteredImportProducts}
                 availableBranchSuppliers={availableBranchSuppliers}
                 availableBranchWarehouses={availableBranchWarehouses}
-                uomSelectOptions={uomSelectOptions}
                 onNavigateToProduct={onNavigateToProduct}
                 onBack={() => {
                   setEditingImportSlipId(null);
@@ -3563,7 +3520,6 @@ export function WorkshopTab({
                                               <th className="px-3 py-2 text-center w-10">STT</th>
                                               <th className="px-3 py-2 text-left w-36">Mã trả hàng</th>
                                               <th className="px-3 py-2 text-left">Tên sản phẩm</th>
-                                              <th className="px-3 py-2 text-center w-20">ĐVT</th>
                                               <th className="px-3 py-2 text-right w-24">Số lượng</th>
                                               <th className="px-3 py-2 text-right w-32">Giá nhập</th>
                                               <th className="px-3 py-2 text-right w-32">Giá trả lại</th>
@@ -3598,7 +3554,6 @@ export function WorkshopTab({
                                                   <span className="text-[10px] text-slate-400 group-hover:text-rose-700">↗</span>
                                                 </div>
                                               </td>
-                                              <td className="px-3 py-2.5 text-center text-slate-600">{ret.unit}</td>
                                               <td className="px-3 py-2.5 text-right font-mono font-bold text-slate-900">{ret.quantity}</td>
                                               <td className="px-3 py-2.5 text-right font-mono text-slate-700">{(ret.purchasePrice || ret.returnPrice || 0).toLocaleString('vi-VN')} đ</td>
                                               <td className="px-3 py-2.5 text-right font-mono text-slate-700">{(ret.returnPrice || ret.purchasePrice || 0).toLocaleString('vi-VN')} đ</td>
@@ -3830,7 +3785,7 @@ export function WorkshopTab({
                             align: 'right',
                             render: (_, r) => (
                               <span className="font-mono font-normal text-sm text-slate-800 whitespace-nowrap">
-                                {r.quantity} {r.unit}
+                                {r.quantity}
                               </span>
                             ),
                           },
@@ -3969,7 +3924,6 @@ export function WorkshopTab({
                 importsList={importsList}
                 availableBranchSuppliers={availableBranchSuppliers}
                 availableBranchWarehouses={availableBranchWarehouses}
-                uomSelectOptions={uomSelectOptions}
                 isMatchGlobalBranch={isMatchGlobalBranch}
                 onNavigateToProduct={onNavigateToProduct}
                 onBack={() => setReturnViewMode('list')}
@@ -4213,7 +4167,6 @@ export function WorkshopTab({
                                                 <th className="px-3 py-2 text-center w-12">STT</th>
                                                 <th className="px-3 py-2 text-left w-32">Mã hàng</th>
                                                 <th className="px-3 py-2 text-left">Tên sản phẩm</th>
-                                                <th className="px-3 py-2 text-center w-20">ĐVT</th>
                                                 <th className="px-3 py-2 text-right w-28">Tồn sổ sách</th>
                                                 <th className="px-3 py-2 text-right w-28">Thực tế</th>
                                                 <th className="px-3 py-2 text-right w-28">Chênh lệch</th>
@@ -4253,9 +4206,6 @@ export function WorkshopTab({
                                                       >
                                                         {item.name}
                                                       </span>
-                                                    </td>
-                                                    <td className="px-3 py-2.5 text-center text-slate-600">
-                                                      {item.unit || 'Cái'}
                                                     </td>
                                                     <td className="px-3 py-2.5 text-right font-mono text-slate-700">
                                                       {item.systemQty ?? 0}
@@ -4558,7 +4508,6 @@ export function WorkshopTab({
                                             'STT': idx + 1,
                                             'Mã hàng': it.code,
                                             'Tên sản phẩm': it.name,
-                                            'ĐVT': it.unit || 'Cái',
                                             'Tồn sổ sách': it.systemQty ?? 0,
                                             'Tồn thực tế': it.actualQty ?? 0,
                                             'Chênh lệch': (it.actualQty ?? 0) - (it.systemQty ?? 0),
@@ -4724,7 +4673,6 @@ export function WorkshopTab({
                 allAuditableStock={allAuditableStock}
                 allProducts={allAvailableProducts}
                 availableBranchWarehouses={availableBranchWarehouses}
-                uomSelectOptions={uomSelectOptions}
                 onNavigateToProduct={onNavigateToProduct}
                 onBack={() => setStocktakeViewMode('list')}
                 onSaveDraft={handleSaveDraftStocktake}
@@ -4909,29 +4857,69 @@ export function WorkshopTab({
             </Col>
           </Row>
 
-          <Row gutter={16} className="pt-2">
-            <Col span={12}>
+          {/* Card: Kho mặc định trừ tồn khi khách mua hàng */}
+          <div className="rounded-xl border border-amber-300 bg-gradient-to-br from-amber-50/90 via-orange-50/50 to-amber-50/30 p-3.5 space-y-2.5 transition-all">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-amber-500/15 text-amber-700 flex items-center justify-center shrink-0 mt-0.5">
+                  <CrownOutlined className="text-base" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-semibold text-xs sm:text-sm text-slate-800">
+                      Kho mặc định xuất hàng
+                    </span>
+                    <Tag color="gold" className="text-[10px] m-0 font-medium border-amber-300 bg-amber-100 text-amber-800">
+                      Ưu tiên trừ tồn kho #1
+                    </Tag>
+                  </div>
+                  <p className="text-[11px] text-slate-600 m-0 mt-1 leading-relaxed">
+                    Khi có khách hàng mua hàng (đặt online hoặc tạo đơn), hệ thống sẽ <strong>tự động ưu tiên trừ số lượng tồn kho</strong> tại kho này trước tiên.
+                  </p>
+                </div>
+              </div>
               <Form.Item
-                label={<span className="text-xs font-semibold text-slate-700">Kho mặc định</span>}
                 name="isDefault"
                 valuePropName="checked"
-              >
-                <Switch checkedChildren="BẬT" unCheckedChildren="TẮT" />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                label={<span className="text-xs font-semibold text-slate-700">Trạng thái hoạt động</span>}
-                name="status"
-                valuePropName="checked"
+                className="mb-0 shrink-0"
               >
                 <Switch
-                  checkedChildren="MỞ"
-                  unCheckedChildren="KHÓA"
+                  checkedChildren="BẬT"
+                  unCheckedChildren="TẮT"
+                  className="bg-slate-300 [&.ant-switch-checked]:bg-amber-600"
                 />
               </Form.Item>
-            </Col>
-          </Row>
+            </div>
+            {selectedWarehouseIsDefault ? (
+              <div className="flex items-center gap-1.5 text-xs text-amber-800 bg-white/90 px-3 py-1.5 rounded-lg border border-amber-200 shadow-2xs">
+                <CheckCircleOutlined className="text-emerald-600 text-xs shrink-0" />
+                <span>Kho này được đặt làm <strong>Kho mặc định trừ tồn</strong> cho toàn hệ thống khi có đơn hàng mới.</span>
+              </div>
+            ) : (
+              <div className="text-[11px] text-slate-400 pl-10">
+                Gạt BẬT nếu bạn muốn kho này là kho ưu tiên trừ tồn khi khách hàng mua hàng.
+              </div>
+            )}
+          </div>
+
+          {/* Trạng thái hoạt động */}
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 flex items-center justify-between">
+            <div>
+              <span className="text-xs font-semibold text-slate-800 block">Trạng thái hoạt động</span>
+              <span className="text-[11px] text-slate-500">Cho phép giao dịch và sử dụng kho này trong hệ thống</span>
+            </div>
+            <Form.Item
+              name="status"
+              valuePropName="checked"
+              className="mb-0"
+            >
+              <Switch
+                checkedChildren="MỞ"
+                unCheckedChildren="KHÓA"
+                className="bg-slate-300 [&.ant-switch-checked]:bg-emerald-600"
+              />
+            </Form.Item>
+          </div>
         </Form>
       </AdminFormDrawer>
 
@@ -4940,7 +4928,7 @@ export function WorkshopTab({
         title={<span className="font-bold text-base text-[#1f1b19]">📋 Tạo phiếu kiểm kê kho mới</span>}
         open={showCreateSlipModal}
         onClose={() => setShowCreateSlipModal(false)}
-        styles={{ wrapper: { width: 620, maxWidth: '100vw' } }}
+        styles={{ wrapper: { width: 640, maxWidth: '100vw' } }}
         forceRender
         className="[&_.ant-drawer-header]:px-5 [&_.ant-drawer-header]:py-3.5 [&_.ant-drawer-header]:border-b [&_.ant-drawer-header]:border-slate-200 [&_.ant-drawer-body]:px-5 [&_.ant-drawer-body]:py-5 [&_.ant-drawer-footer]:px-5 [&_.ant-drawer-footer]:py-3 [&_.ant-drawer-footer]:border-t [&_.ant-drawer-footer]:border-slate-200"
         footer={
@@ -5098,7 +5086,7 @@ export function WorkshopTab({
                         <span className="text-xs text-[#443831] truncate max-w-[280px]">{item.name}</span>
                       </div>
                       <div className="text-[11px] text-[#83746c] ml-2 shrink-0 font-medium">
-                        Sổ sách: <span className="font-bold text-[#1f1b19]">{item.systemQty} {item.unit}</span>
+                        Sổ sách: <span className="font-bold text-[#1f1b19]">{item.systemQty}</span>
                       </div>
                     </div>
                   </Option>
@@ -5121,7 +5109,7 @@ export function WorkshopTab({
         title={<span className="font-bold text-base text-[#1f1b19]">📝 Thêm Dòng Vào Phiếu Kiểm</span>}
         open={showAddItemModal}
         onClose={() => setShowAddItemModal(false)}
-        styles={{ wrapper: { width: 560, maxWidth: '100vw' } }}
+        styles={{ wrapper: { width: 520, maxWidth: '100vw' } }}
         forceRender
         className="[&_.ant-drawer-header]:px-5 [&_.ant-drawer-header]:py-3.5 [&_.ant-drawer-header]:border-b [&_.ant-drawer-header]:border-slate-200 [&_.ant-drawer-body]:px-5 [&_.ant-drawer-body]:py-5 [&_.ant-drawer-footer]:px-5 [&_.ant-drawer-footer]:py-3 [&_.ant-drawer-footer]:border-t [&_.ant-drawer-footer]:border-slate-200"
         footer={
@@ -5173,7 +5161,7 @@ export function WorkshopTab({
                     <span className="text-xs font-mono font-bold text-[#784e34]">[{item.code}]</span>
                     <span className="text-xs text-[#1f1b19] truncate ml-2 flex-1">{item.name}</span>
                     <Tag color="blue" className="!mr-0 text-[10px] ml-2">
-                      SP ({item.systemQty} {item.unit})
+                      SP ({item.systemQty})
                     </Tag>
                   </div>
                 </Option>
@@ -5230,7 +5218,7 @@ export function WorkshopTab({
         title={<span className="font-bold text-base text-[#1f1b19]">🔄 Tạo Phiếu Điều Chuyển Kho Nội Bộ</span>}
         open={showTransferModal}
         onClose={() => setShowTransferModal(false)}
-        styles={{ wrapper: { width: 560, maxWidth: '100vw' } }}
+        styles={{ wrapper: { width: 520, maxWidth: '100vw' } }}
         forceRender
         className="[&_.ant-drawer-header]:px-5 [&_.ant-drawer-header]:py-3.5 [&_.ant-drawer-header]:border-b [&_.ant-drawer-header]:border-slate-200 [&_.ant-drawer-body]:px-5 [&_.ant-drawer-body]:py-5 [&_.ant-drawer-footer]:px-5 [&_.ant-drawer-footer]:py-3 [&_.ant-drawer-footer]:border-t [&_.ant-drawer-footer]:border-slate-200"
         footer={
@@ -5323,7 +5311,7 @@ export function WorkshopTab({
       <Drawer
         open={!!selectedReturnSlipForPrint}
         onClose={() => setSelectedReturnSlipForPrint(null)}
-        styles={{ wrapper: { width: 820, maxWidth: '100vw' } }}
+        styles={{ wrapper: { width: 840, maxWidth: '100vw' } }}
         destroyOnHidden
         title={
           <div className="flex items-center gap-2">
@@ -5436,7 +5424,6 @@ export function WorkshopTab({
                 <tr className="bg-slate-100 text-slate-800 font-bold">
                   <th className="border border-slate-300 p-2 text-center w-12">STT</th>
                   <th className="border border-slate-300 p-2 text-left">Tên mặt hàng &amp; Quy cách hoàn trả</th>
-                  <th className="border border-slate-300 p-2 text-center w-20">ĐVT</th>
                   <th className="border border-slate-300 p-2 text-right w-24">Số lượng</th>
                   <th className="border border-slate-300 p-2 text-right w-32">Giá trả lại</th>
                   <th className="border border-slate-300 p-2 text-right w-36">Tổng thành tiền</th>
@@ -5451,7 +5438,6 @@ export function WorkshopTab({
                       <div className="text-[11px] text-slate-500 font-mono mt-0.5">{selectedReturnSlipForPrint.spec}</div>
                     )}
                   </td>
-                  <td className="border border-slate-300 p-2.5 text-center">{selectedReturnSlipForPrint.unit}</td>
                   <td className="border border-slate-300 p-2.5 text-right font-mono font-bold text-slate-900">
                     {selectedReturnSlipForPrint.quantity}
                   </td>
@@ -5465,7 +5451,7 @@ export function WorkshopTab({
               </tbody>
               <tfoot>
                 <tr className="bg-slate-50 font-bold">
-                  <td colSpan={5} className="border border-slate-300 p-2.5 text-right text-slate-800">
+                  <td colSpan={4} className="border border-slate-300 p-2.5 text-right text-slate-800">
                     Tổng tiền hàng xuất trả:
                   </td>
                   <td className="border border-slate-300 p-2.5 text-right font-mono text-xs text-slate-900">
@@ -5533,7 +5519,7 @@ export function WorkshopTab({
       <Drawer
         open={!!selectedImportSlipForPrint}
         onClose={() => setSelectedImportSlipForPrint(null)}
-        styles={{ wrapper: { width: 820, maxWidth: '100vw' } }}
+        styles={{ wrapper: { width: 840, maxWidth: '100vw' } }}
         destroyOnHidden
         title={
           <div className="flex items-center gap-2">
@@ -5628,8 +5614,7 @@ export function WorkshopTab({
                   <th className="border border-slate-300 p-2 text-left">Tên hàng hóa / Sản phẩm</th>
                   <th className="border border-slate-300 p-2 text-left">Quy cách / Phân loại</th>
                   <th className="border border-slate-300 p-2 text-center w-24">Số lượng</th>
-                  <th className="border border-slate-300 p-2 text-center w-20">Đơn vị</th>
-                  <th className="border border-slate-300 p-2 text-right w-36">Tổng thành tiền</th>
+                                    <th className="border border-slate-300 p-2 text-right w-36">Tổng thành tiền</th>
                 </tr>
               </thead>
               <tbody>
@@ -5671,8 +5656,7 @@ export function WorkshopTab({
                       <td className="border border-slate-300 p-2.5 text-center font-mono font-bold text-slate-900">
                         {it.quantity}
                       </td>
-                      <td className="border border-slate-300 p-2.5 text-center">{it.unit}</td>
-                      <td className="border border-slate-300 p-2.5 text-right font-mono font-bold text-[#784e34]">
+                                            <td className="border border-slate-300 p-2.5 text-right font-mono font-bold text-[#784e34]">
                         {(it.total || (it.quantity * (it.unitPrice || 0))).toLocaleString('vi-VN')} đ
                       </td>
                     </tr>
@@ -5681,7 +5665,7 @@ export function WorkshopTab({
               </tbody>
               <tfoot>
                 <tr className="bg-slate-50 font-bold">
-                  <td colSpan={5} className="border border-slate-300 p-2.5 text-right text-slate-800">
+                  <td colSpan={4} className="border border-slate-300 p-2.5 text-right text-slate-800">
                     Tổng giá trị nhập kho (đã nghiệm thu):
                   </td>
                   <td className="border border-slate-300 p-2.5 text-right font-mono text-sm text-[#784e34]">

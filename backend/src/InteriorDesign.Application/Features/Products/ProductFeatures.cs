@@ -36,38 +36,51 @@ public sealed record DeleteProductCommand(Guid Id) : IRequest<ApiResponse<bool>>
 // Helpers
 public static class ProductMapper
 {
-    public static ProductDto ToDto(Product p) => new(
-        p.Id,
-        p.Name,
-        p.Slug,
-        p.Sku,
-        p.CategoryId,
-        p.Category?.Name,
-        p.Space,
-        p.Price,
-        p.OriginalPrice > 0 ? p.OriginalPrice : p.Price,
-        p.DiscountPercent,
-        p.Status.ToString(),
-        p.MainImageUrl,
-        p.Images ?? [],
-        p.Dimensions,
-        p.Material,
-        p.WoodType,
-        p.Color,
-        p.Warranty,
-        p.ShippingNote,
-        p.Rating,
-        p.ReviewCount,
-        p.IsFeatured,
-        p.IsNew,
-        p.InStock,
-        !string.IsNullOrWhiteSpace(p.Unit) ? p.Unit : "Bộ",
-        p.BranchStocksJson,
-        p.ShortDescription,
-        p.Description,
-        p.CreatedAt,
-        p.UpdatedAt
-    );
+    public static ProductDto ToDto(Product p)
+    {
+        var orig = p.OriginalPrice > p.Price
+            ? p.OriginalPrice
+            : (p.DiscountPercent > 0 && p.Price > 0
+                ? Math.Round(p.Price / (1 - (decimal)p.DiscountPercent / 100m))
+                : (p.OriginalPrice > 0 ? p.OriginalPrice : p.Price));
+
+        var disc = p.DiscountPercent > 0
+            ? p.DiscountPercent
+            : (orig > p.Price && orig > 0 ? (int)Math.Round(((orig - p.Price) / orig) * 100m) : 0);
+
+        return new(
+            p.Id,
+            p.Name,
+            p.Slug,
+            p.Sku,
+            p.CategoryId,
+            p.Category?.Name,
+            p.Space,
+            p.Price,
+            orig,
+            disc,
+            p.Status.ToString(),
+            p.MainImageUrl,
+            p.Images ?? [],
+            p.Dimensions,
+            p.Material,
+            p.WoodType,
+            p.Color,
+            p.Warranty,
+            p.ShippingNote,
+            p.Rating,
+            p.ReviewCount,
+            p.IsFeatured,
+            p.IsNew,
+            p.InStock,
+            !string.IsNullOrWhiteSpace(p.Unit) ? p.Unit : "Bộ",
+            p.BranchStocksJson,
+            p.ShortDescription,
+            p.Description,
+            p.CreatedAt,
+            p.UpdatedAt
+        );
+    }
 }
 
 // Handlers
@@ -148,6 +161,19 @@ public sealed class CreateProductCommandHandler(IInteriorRepository repo)
         var slug = !string.IsNullOrWhiteSpace(req.Slug) ? req.Slug : req.Name.ToLowerInvariant().Trim().Replace(" ", "-");
         var sku = !string.IsNullOrWhiteSpace(req.Sku) ? req.Sku.Trim() : (!string.IsNullOrWhiteSpace(req.Code) ? req.Code.Trim() : $"SP-{DateTime.UtcNow.Ticks % 10000:D4}");
         
+        decimal price = req.Price;
+        decimal orig = req.OriginalPrice ?? price;
+        int disc = req.DiscountPercent;
+
+        if (disc > 0 && orig <= price && price > 0)
+        {
+            orig = Math.Round(price / (1 - (decimal)disc / 100m));
+        }
+        else if (orig > price && disc <= 0)
+        {
+            disc = (int)Math.Round(((orig - price) / orig) * 100m);
+        }
+
         var product = new Product
         {
             Name = req.Name.Trim(),
@@ -155,9 +181,9 @@ public sealed class CreateProductCommandHandler(IInteriorRepository repo)
             Sku = sku,
             CategoryId = req.CategoryId,
             Space = req.Space ?? "LivingRoom",
-            Price = req.Price,
-            OriginalPrice = req.OriginalPrice ?? req.Price,
-            DiscountPercent = req.DiscountPercent,
+            Price = price,
+            OriginalPrice = orig,
+            DiscountPercent = disc,
             MainImageUrl = req.MainImageUrl ?? "",
             Images = req.Images ?? [],
             Dimensions = req.Dimensions ?? "",
@@ -208,14 +234,27 @@ public sealed class UpdateProductCommandHandler(IInteriorRepository repo)
 
         var sku = !string.IsNullOrWhiteSpace(req.Sku) ? req.Sku.Trim() : (!string.IsNullOrWhiteSpace(req.Code) ? req.Code.Trim() : existing.Sku);
 
+        decimal newPrice = req.Price;
+        decimal newOrig = req.OriginalPrice ?? newPrice;
+        int newDisc = req.DiscountPercent;
+
+        if (newDisc > 0 && newOrig <= newPrice && newPrice > 0)
+        {
+            newOrig = Math.Round(newPrice / (1 - (decimal)newDisc / 100m));
+        }
+        else if (newOrig > newPrice && newDisc <= 0)
+        {
+            newDisc = (int)Math.Round(((newOrig - newPrice) / newOrig) * 100m);
+        }
+
         existing.Name = req.Name.Trim();
         existing.Slug = !string.IsNullOrWhiteSpace(req.Slug) ? req.Slug : existing.Slug;
         existing.Sku = sku;
         if (req.CategoryId != Guid.Empty) existing.CategoryId = req.CategoryId;
         if (!string.IsNullOrWhiteSpace(req.Space)) existing.Space = req.Space;
-        existing.Price = req.Price;
-        existing.OriginalPrice = req.OriginalPrice ?? req.Price;
-        existing.DiscountPercent = req.DiscountPercent;
+        existing.Price = newPrice;
+        existing.OriginalPrice = newOrig;
+        existing.DiscountPercent = newDisc;
         if (Enum.TryParse<ProductStatus>(req.Status, true, out var parsedStatus))
         {
             existing.Status = parsedStatus;

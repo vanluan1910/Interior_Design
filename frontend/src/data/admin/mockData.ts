@@ -300,16 +300,6 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
         ],
       },
       {
-        subKey: 'uom_settings',
-        subName: 'Quản lý Đơn vị tính (UOM)',
-        permissions: [
-          { key: 'settings.uom.view', name: 'Xem danh sách Đơn vị tính (UOM)', description: 'Tra cứu danh mục đơn vị tính' },
-          { key: 'settings.uom.create', name: 'Thêm mới Đơn vị tính (UOM)', description: 'Tạo đơn vị tính m³, m², bộ, chiếc...' },
-          { key: 'settings.uom.update', name: 'Chỉnh sửa Đơn vị tính (UOM)', description: 'Cập nhật tên, mã, mô tả đơn vị tính' },
-          { key: 'settings.uom.delete', name: 'Xóa Đơn vị tính (UOM)', description: 'Xóa đơn vị tính không dùng' },
-        ],
-      },
-      {
         subKey: 'employees_settings',
         subName: 'Quản lý Nhân sự & Tài khoản',
         permissions: [
@@ -345,10 +335,6 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: 'settings.branches.create', name: 'Thêm mới Chi nhánh / Showroom', description: 'Tạo cơ sở chi nhánh mới' },
       { key: 'settings.branches.update', name: 'Chỉnh sửa thông tin Chi nhánh / Showroom', description: 'Cập nhật địa chỉ, quản lý, diện tích' },
       { key: 'settings.branches.delete', name: 'Xóa Chi nhánh / Showroom', description: 'Xóa cơ sở chi nhánh' },
-      { key: 'settings.uom.view', name: 'Xem danh sách Đơn vị tính (UOM)', description: 'Tra cứu danh mục đơn vị tính' },
-      { key: 'settings.uom.create', name: 'Thêm mới Đơn vị tính (UOM)', description: 'Tạo đơn vị tính m³, m², bộ, chiếc...' },
-      { key: 'settings.uom.update', name: 'Chỉnh sửa Đơn vị tính (UOM)', description: 'Cập nhật tên, mã, mô tả đơn vị tính' },
-      { key: 'settings.uom.delete', name: 'Xóa Đơn vị tính (UOM)', description: 'Xóa đơn vị tính không dùng' },
       { key: 'settings.employees.view', name: 'Xem danh sách nhân sự & tài khoản', description: 'Tra cứu danh sách hồ sơ nhân viên, phòng ban và chi nhánh' },
       { key: 'settings.employees.create', name: 'Thêm mới hồ sơ nhân viên', description: 'Tạo mới hồ sơ nhân sự và cấp tài khoản đăng nhập' },
       { key: 'settings.employees.update', name: 'Chỉnh sửa thông tin nhân sự', description: 'Cập nhật lý lịch, chức danh, phòng ban, đổi trạng thái làm việc' },

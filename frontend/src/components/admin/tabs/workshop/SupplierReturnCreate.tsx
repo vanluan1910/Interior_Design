@@ -18,7 +18,6 @@ import { isMatchBranch, isProductInBranch, getProductStockForBranch } from '@/ut
 
 const { Option } = Select;
 
-const COMMON_UOM_OPTIONS: Array<{ value: string; label: string }> = [];
 
 const formatInputMoney = (value: number | string | undefined): string => {
   if (value === undefined || value === null || value === '') return '';
@@ -88,7 +87,6 @@ export interface SupplierReturnCreateProps {
   importsList: StockImportSlip[];
   availableBranchSuppliers: AdminSupplier[];
   availableBranchWarehouses: AdminWarehouse[];
-  uomSelectOptions?: Array<{ value: string; label: string }>;
   isMatchGlobalBranch?: (name?: string) => boolean;
   onNavigateToProduct?: (query: string) => void;
   onBack: () => void;
@@ -130,7 +128,6 @@ export function SupplierReturnCreate({
   importsList,
   availableBranchSuppliers,
   availableBranchWarehouses,
-  uomSelectOptions,
   isMatchGlobalBranch = () => true,
   onNavigateToProduct,
   onBack,
@@ -142,12 +139,6 @@ export function SupplierReturnCreate({
 }: SupplierReturnCreateProps) {
   const { message } = App.useApp();
 
-  const activeUomOptions = React.useMemo(() => {
-    if (uomSelectOptions && uomSelectOptions.length > 0) {
-      return uomSelectOptions;
-    }
-    return COMMON_UOM_OPTIONS;
-  }, [uomSelectOptions]);
 
   // Auto-sync return warehouse to currently available branch warehouses
   useEffect(() => {
@@ -181,7 +172,7 @@ export function SupplierReturnCreate({
         map.set(key, {
           ...p,
           inStock: stock,
-          stockNote: `${stock} sản phẩm (tồn kho)`,
+          stockNote: `${stock}`,
         });
       }
     });
@@ -204,7 +195,7 @@ export function SupplierReturnCreate({
           costPrice: imp.unitPrice || imp.totalValue || 0,
           collection: imp.warehouseName || returnWarehouse || 'Kho chính',
           categoryName: `NCC: ${imp.supplier}`,
-          stockNote: `${imp.quantity || 1} ${imp.unit || 'bộ'}`,
+          stockNote: `${imp.quantity || 1}`,
           inStock: imp.quantity || 1,
           stockType: 'in_stock',
           image: 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=120&q=80',
@@ -280,8 +271,7 @@ export function SupplierReturnCreate({
     if (!alreadyLine) {
       const defaultUnit =
         (product as any).unit ||
-        (product as any).uom ||
-        (activeUomOptions && activeUomOptions.length > 0 ? activeUomOptions[0].value : 'Bộ');
+        'Bộ';
       const newLine: SupplierReturnLine = {
         id: `line_ret_${Date.now()}_${product.id || pCode}`,
         code: pCode,
@@ -639,10 +629,9 @@ export function SupplierReturnCreate({
           <table className="min-w-[860px] w-full text-xs">
             <colgroup>
               <col style={{ width: 44 }} />
-              <col style={{ width: 110 }} />
-              <col style={{ minWidth: 160 }} />
-              <col style={{ width: 100 }} />
-              <col style={{ width: 110 }} />
+              <col style={{ width: 120 }} />
+              <col style={{ minWidth: 180 }} />
+              <col style={{ width: 120 }} />
               <col style={{ width: 220 }} />
               <col style={{ width: 160 }} />
               <col style={{ width: 48 }} />
@@ -652,7 +641,6 @@ export function SupplierReturnCreate({
                 <th className="px-3 py-2.5 text-center w-10">STT</th>
                 <th className="px-3 py-2.5 text-left w-28">Mã hàng</th>
                 <th className="px-3 py-2.5 text-left min-w-[140px]">Tên sản phẩm</th>
-                <th className="px-3 py-2.5 text-center w-28">ĐVT</th>
                 <th className="px-3 py-2.5 text-right w-28 min-w-[90px]">Số lượng</th>
                 <th className="px-3 py-2.5 text-right w-56 min-w-[200px]">Giá trả lại</th>
                 <th className="px-3 py-2.5 text-right w-44 min-w-[160px]">Thành tiền</th>
@@ -680,25 +668,6 @@ export function SupplierReturnCreate({
                     >
                       {line.name}
                     </span>
-                  </td>
-                  <td className="px-3 py-2 text-center">
-                    <Select
-                      size="small"
-                      value={line.unit || (activeUomOptions[0]?.value ?? 'Bộ')}
-                      onChange={(u) => {
-                        setReturnEntryLines((prev) =>
-                          prev.map((l) => (l.id === line.id ? { ...l, unit: u } : l))
-                        );
-                      }}
-                      popupMatchSelectWidth={false}
-                      classNames={{ popup: { root: 'min-w-[120px]' } }}
-                      className="w-full min-w-[85px] text-xs [&_.ant-select-selector]:!h-8 [&_.ant-select-selector]:!px-2 [&_.ant-select-selection-item]:!text-xs [&_.ant-select-selection-item]:!leading-[30px] [&_.ant-select-selector]:!border-0 [&_.ant-select-selector]:!border-b [&_.ant-select-selector]:!border-slate-300 [&_.ant-select-selector]:!rounded-none [&_.ant-select-selector]:!shadow-none [&_.ant-select-selector]:!bg-transparent hover:[&_.ant-select-selector]:!border-slate-500"
-                      options={
-                        line.unit && !activeUomOptions.some((o) => o.value === line.unit)
-                          ? [{ value: line.unit, label: line.unit }, ...activeUomOptions]
-                          : activeUomOptions
-                      }
-                    />
                   </td>
                   <td className="px-3 py-2 text-right w-28 min-w-[90px]">
                     <Input

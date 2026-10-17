@@ -89,3 +89,5 @@ public sealed record UpdateOrderStatusRequest(string Status, string? Note = null
 public sealed record UpdatePaymentStatusRequest(string PaymentStatus, decimal? PaidAmount = null, string? PaymentMethod = null);
 
 public sealed record BulkUpdateOrderStatusRequest(List<Guid> OrderIds, string Status, string? Note = null);
+
+public sealed record RequestOrderReturnRequest(string Reason, string? Note = null, string? DesiredResolution = null, List<string>? Images = null);

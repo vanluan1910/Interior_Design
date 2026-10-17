@@ -62,6 +62,8 @@ public sealed class HomeController : ApiControllerBase
                     p.Space,
                     CategoryName = p.Category != null ? p.Category.Name : "Tuyệt tác gỗ tự nhiên",
                     p.Price,
+                    p.OriginalPrice,
+                    p.DiscountPercent,
                     p.MainImageUrl,
                     p.WoodType,
                     p.Dimensions,
@@ -102,23 +104,32 @@ public sealed class HomeController : ApiControllerBase
             combinedFeatured.AddRange(diningProducts);
             combinedFeatured.AddRange(officeProducts);
 
-            var featuredProducts = combinedFeatured.Select(p => new HomeProductDto(
-                Id: p.Id,
-                Name: p.Name,
-                Slug: p.Slug,
-                Sku: p.Sku,
-                Category: MapSpaceToCategoryKey(p.Space, p.Name, p.Sku),
-                CategoryName: p.CategoryName,
-                Price: p.Price,
-                OriginalPrice: null,
-                Image: !string.IsNullOrWhiteSpace(p.MainImageUrl) ? (string)p.MainImageUrl : "/images/placeholder.jpg",
-                WoodType: !string.IsNullOrWhiteSpace(p.WoodType) ? (string)p.WoodType : "Gỗ tự nhiên",
-                Dimensions: !string.IsNullOrWhiteSpace(p.Dimensions) ? (string)p.Dimensions : "Theo thiết kế",
-                Tag: "",
-                Rating: p.Rating > 0 ? (decimal)p.Rating : 5.0m,
-                ReviewCount: p.ReviewCount > 0 ? (int)p.ReviewCount : 24,
-                InStock: (bool)(p.InStock > 0)
-            )).ToList();
+            var featuredProducts = combinedFeatured.Select(p => {
+                decimal pr = (decimal)p.Price;
+                decimal origRaw = (decimal)p.OriginalPrice;
+                int discRaw = (int)p.DiscountPercent;
+                decimal orig = origRaw > pr ? origRaw : (discRaw > 0 && pr > 0 ? Math.Round(pr / (1 - (decimal)discRaw / 100m)) : pr);
+                int disc = discRaw > 0 ? discRaw : (orig > pr && orig > 0 ? (int)Math.Round(((orig - pr) / orig) * 100m) : 0);
+
+                return new HomeProductDto(
+                    Id: (Guid)p.Id,
+                    Name: (string)p.Name,
+                    Slug: (string)p.Slug,
+                    Sku: (string)p.Sku,
+                    Category: MapSpaceToCategoryKey((string)p.Space, (string)p.Name, (string)p.Sku),
+                    CategoryName: (string)p.CategoryName,
+                    Price: pr,
+                    OriginalPrice: orig > pr ? orig : null,
+                    Image: !string.IsNullOrWhiteSpace((string?)p.MainImageUrl) ? (string)p.MainImageUrl : "/images/placeholder.jpg",
+                    WoodType: !string.IsNullOrWhiteSpace((string?)p.WoodType) ? (string)p.WoodType : "Gỗ tự nhiên",
+                    Dimensions: !string.IsNullOrWhiteSpace((string?)p.Dimensions) ? (string)p.Dimensions : "Theo thiết kế",
+                    Tag: disc > 0 ? $"-{disc}%" : "",
+                    Rating: (decimal)p.Rating > 0 ? (decimal)p.Rating : 5.0m,
+                    ReviewCount: (int)p.ReviewCount > 0 ? (int)p.ReviewCount : 24,
+                    InStock: (bool)((int)p.InStock > 0),
+                    DiscountPercent: disc
+                );
+            }).ToList();
 
 
             // 3. Lấy danh sách Không gian sống từ DB (Spaces Table) - Đảm bảo đúng 4 không gian chính
@@ -342,7 +353,7 @@ public sealed class HomeController : ApiControllerBase
                 Testimonials: testimonials
             );
 
-            _cache.Set("home_data", homeData, TimeSpan.FromMinutes(5));
+            _cache.Set("home_data", homeData, TimeSpan.FromSeconds(30));
             return Ok(ApiResponse<HomeResponseDto>.Ok(homeData, "Lấy dữ liệu trang chủ thành công."));
         }
         catch (OperationCanceledException)
@@ -389,28 +400,54 @@ public sealed class HomeController : ApiControllerBase
                 }
             }
 
-            var products = await query
+            var rawProducts = await query
                 .OrderByDescending(p => p.IsFeatured)
                 .ThenByDescending(p => p.CreatedAt)
                 .Take(limit)
-                .Select(p => new HomeProductDto(
+                .Select(p => new
+                {
+                    p.Id,
+                    p.Name,
+                    p.Slug,
+                    p.Sku,
+                    p.Space,
+                    CategoryName = p.Category != null ? p.Category.Name : "Tuyệt tác gỗ tự nhiên",
+                    p.Price,
+                    p.OriginalPrice,
+                    p.DiscountPercent,
+                    p.MainImageUrl,
+                    p.WoodType,
+                    p.Dimensions,
+                    p.Rating,
+                    p.ReviewCount,
+                    p.InStock
+                })
+                .ToListAsync(cancellationToken);
+
+            var products = rawProducts.Select(p => {
+                decimal pr = p.Price;
+                decimal orig = p.OriginalPrice > pr ? p.OriginalPrice : (p.DiscountPercent > 0 && pr > 0 ? Math.Round(pr / (1 - (decimal)p.DiscountPercent / 100m)) : pr);
+                int disc = p.DiscountPercent > 0 ? p.DiscountPercent : (orig > pr && orig > 0 ? (int)Math.Round(((orig - pr) / orig) * 100m) : 0);
+
+                return new HomeProductDto(
                     p.Id,
                     p.Name,
                     p.Slug,
                     p.Sku,
                     MapSpaceToCategoryKey(p.Space, p.Name, p.Sku),
-                    p.Category != null ? p.Category.Name : "Tuyệt tác gỗ tự nhiên",
-                    p.Price,
-                    null,
+                    p.CategoryName,
+                    pr,
+                    orig > pr ? orig : null,
                     !string.IsNullOrWhiteSpace(p.MainImageUrl) ? p.MainImageUrl : "/images/placeholder.jpg",
                     !string.IsNullOrWhiteSpace(p.WoodType) ? p.WoodType : "Gỗ tự nhiên",
                     !string.IsNullOrWhiteSpace(p.Dimensions) ? p.Dimensions : "Theo thiết kế",
-                    "",
+                    disc > 0 ? $"-{disc}%" : "",
                     p.Rating > 0 ? p.Rating : 5.0m,
                     p.ReviewCount > 0 ? p.ReviewCount : 24,
-                    p.InStock > 0
-                ))
-                .ToListAsync(cancellationToken);
+                    p.InStock > 0,
+                    disc
+                );
+            }).ToList();
 
             return Ok(ApiResponse<List<HomeProductDto>>.Ok(products, "Lấy danh sách sản phẩm nổi bật thành công."));
         }

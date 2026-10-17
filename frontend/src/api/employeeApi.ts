@@ -1,5 +1,6 @@
 import type { AdminEmployee } from '@/types/admin';
 import { cachedFetch, invalidateApiCache } from './shared/apiCache';
+import { getAuthHeaders } from './shared/authHeaders';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
@@ -41,7 +42,7 @@ export const employeeApi = {
       try {
         const url = `${API_BASE_URL}/api/employees${queryString ? `?${queryString}` : ''}`;
         const res = await fetch(url, {
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAuthHeaders(),
         });
 
         if (!res.ok) return [];
@@ -59,7 +60,7 @@ export const employeeApi = {
   getEmployeeById: async (id: string): Promise<AdminEmployee | null> => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/employees/${id}`, {
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
       });
       if (!res.ok) return null;
       const json = await res.json();
@@ -73,7 +74,7 @@ export const employeeApi = {
     try {
       const res = await fetch(`${API_BASE_URL}/api/employees`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify(data),
       });
       if (!res.ok) {
@@ -93,7 +94,7 @@ export const employeeApi = {
     try {
       const res = await fetch(`${API_BASE_URL}/api/employees/${id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify(data),
       });
       if (!res.ok) {
@@ -113,7 +114,7 @@ export const employeeApi = {
     try {
       const res = await fetch(`${API_BASE_URL}/api/employees/${id}`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
       });
       if (!res.ok) return false;
       invalidateApiCache('employees');
@@ -127,7 +128,7 @@ export const employeeApi = {
     try {
       const res = await fetch(`${API_BASE_URL}/api/employees/${id}/status`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ status }),
       });
       if (!res.ok) return false;
@@ -142,7 +143,7 @@ export const employeeApi = {
     try {
       const res = await fetch(`${API_BASE_URL}/api/employees/${id}/reset-password`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ newPassword }),
       });
       if (!res.ok) {

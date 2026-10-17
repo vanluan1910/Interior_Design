@@ -32,16 +32,24 @@ export default function FeaturedProducts({
   const [shuffledProducts, setShuffledProducts] = useState<Product[]>([]);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // Randomize / shuffle products on initial load
+  // Randomize / shuffle products on initial load, prioritizing items on sale / discount
   useEffect(() => {
     if (products && products.length > 0) {
       const copy = [...products];
-      // Fisher-Yates shuffle
-      for (let i = copy.length - 1; i > 0; i--) {
+      const promoItems = copy.filter(
+        (p) => (p.discountPercent && p.discountPercent > 0) || (p.originalPrice && p.originalPrice > p.price)
+      );
+      const regularItems = copy.filter(
+        (p) => !((p.discountPercent && p.discountPercent > 0) || (p.originalPrice && p.originalPrice > p.price))
+      );
+
+      // Shuffle regular items
+      for (let i = regularItems.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
-        [copy[i], copy[j]] = [copy[j], copy[i]];
+        [regularItems[i], regularItems[j]] = [regularItems[j], regularItems[i]];
       }
-      setShuffledProducts(copy);
+
+      setShuffledProducts([...promoItems, ...regularItems]);
     }
   }, [products]);
 
@@ -312,16 +320,25 @@ export default function FeaturedProducts({
                         />
 
                         {/* Badges: Wood Type & Out of Stock */}
-                        <div className="absolute top-3 left-3 flex flex-col gap-1 items-start z-10">
+                        <div className="absolute top-3 left-3 flex flex-col gap-1 items-start z-10 pointer-events-none">
                           {isOutOfStock ? (
                             <span className="px-2.5 py-0.5 rounded-none bg-[#ba1a1a] text-white text-[10px] font-bold shadow-xs">
                               Hết hàng
                             </span>
-                          ) : p.woodType ? (
-                            <span className="px-2.5 py-0.5 rounded-none bg-white/95 text-[#1f1b19] text-[10px] backdrop-blur-md border border-white/60 font-medium shadow-xs">
-                              {p.woodType}
-                            </span>
-                          ) : null}
+                          ) : (
+                            <>
+                              {p.originalPrice && p.originalPrice > p.price && (
+                                <span className="px-2.5 py-0.5 rounded-none bg-[#ba1a1a] text-white text-[10px] font-bold shadow-xs">
+                                  -{p.discountPercent && p.discountPercent > 0 ? p.discountPercent : Math.round(((p.originalPrice - p.price) / p.originalPrice) * 100)}%
+                                </span>
+                              )}
+                              {p.woodType ? (
+                                <span className="px-2.5 py-0.5 rounded-none bg-white/95 text-[#1f1b19] text-[10px] backdrop-blur-md border border-white/60 font-medium shadow-xs">
+                                  {p.woodType}
+                                </span>
+                              ) : null}
+                            </>
+                          )}
                         </div>
 
                         {/* Out of Stock Overlay */}
@@ -362,18 +379,32 @@ export default function FeaturedProducts({
                         {/* Price, Stock & Add to Cart Action */}
                         <div className="flex items-center justify-between pt-3 border-t border-[#f0e3db]">
                           <div className="flex flex-col">
-                            <span className="font-serif text-[17px] sm:text-lg text-[#5d371f] font-bold tracking-tight leading-tight">
-                              {formatPrice(p.price)}
-                            </span>
-                            <span
-                              className={`text-[10px] font-medium mt-0.5 ${
-                                isOutOfStock
-                                  ? 'text-[#ba1a1a] font-bold'
-                                  : 'text-[#3f4332]'
-                              }`}
-                            >
-                              {isOutOfStock ? 'Hết hàng' : p.stockStatus || 'Còn hàng'}
-                            </span>
+                            <div className="flex items-baseline gap-2">
+                              <span className="font-serif text-[17px] sm:text-lg text-[#5d371f] font-bold tracking-tight leading-tight">
+                                {formatPrice(p.price)}
+                              </span>
+                              {p.originalPrice && p.originalPrice > p.price && (
+                                <span className="text-xs text-[#a89b93] line-through font-mono">
+                                  {formatPrice(p.originalPrice)}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <span
+                                className={`text-[10px] font-medium ${
+                                  isOutOfStock
+                                    ? 'text-[#ba1a1a] font-bold'
+                                    : 'text-[#3f4332]'
+                                }`}
+                              >
+                                {isOutOfStock ? 'Hết hàng' : p.stockStatus || 'Còn hàng'}
+                              </span>
+                              {p.originalPrice && p.originalPrice > p.price && (
+                                <span className="text-[10px] font-bold text-red-600 bg-red-100/80 px-1 py-0.2 rounded-none">
+                                  -{p.discountPercent && p.discountPercent > 0 ? p.discountPercent : Math.round(((p.originalPrice - p.price) / p.originalPrice) * 100)}%
+                                </span>
+                              )}
+                            </div>
                           </div>
 
                           {/* Clean Quick Add Button (Không che khuất hình ảnh) */}

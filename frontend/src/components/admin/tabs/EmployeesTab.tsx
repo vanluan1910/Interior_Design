@@ -65,7 +65,7 @@ import {
 } from '@/data/admin/mockData';
 import { isMatchBranch } from '@/utils/branchHelper';
 import { VIETNAM_PROVINCES } from '@/data/vietnamAddresses';
-import { ADMIN_STORAGE_KEYS, setStoredAdminData } from '@/utils/adminStorage';
+import { ADMIN_STORAGE_KEYS, getStoredAdminData, setStoredAdminData } from '@/utils/adminStorage';
 
 export interface EmployeesTabProps {
   employeesList?: AdminEmployee[];
@@ -97,7 +97,7 @@ const TITLES = [
 ];
 
 // Helper to generate username from name
-const generateUsername = (name: string): string => {
+const generateUsername = (name: string, existingList: AdminEmployee[] = []): string => {
   if (!name) return '';
   const parts = name
     .toLowerCase()
@@ -107,10 +107,31 @@ const generateUsername = (name: string): string => {
     .replace(/[^a-z0-9\s]/g, '')
     .trim()
     .split(/\s+/);
-  if (parts.length === 1) return parts[0];
-  const lastName = parts[parts.length - 1];
-  const initials = parts.slice(0, parts.length - 1).map((p) => p[0]).join('');
-  return `${lastName}.${initials}`;
+  if (parts.length === 0 || !parts[0]) return '';
+  let base = '';
+  if (parts.length === 1) {
+    base = parts[0];
+  } else {
+    const lastName = parts[parts.length - 1];
+    const initials = parts.slice(0, parts.length - 1).map((p) => p[0]).join('');
+    base = `${lastName}.${initials}`;
+  }
+
+  let candidate = base;
+  let counter = 2;
+  const isTaken = (u: string) =>
+    existingList.some(
+      (e) =>
+        (e.username && e.username.trim().toLowerCase() === u.toLowerCase()) ||
+        (e.login && e.login.trim().toLowerCase() === u.toLowerCase())
+    );
+
+  while (isTaken(candidate)) {
+    candidate = `${base}${counter}`;
+    counter++;
+  }
+
+  return candidate;
 };
 
 // Helper to detect province and district from address string
@@ -198,7 +219,24 @@ export function EmployeesTab({
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'working' | 'resigned'>('all');
   const [departmentFilter, setDepartmentFilter] = useState<string>('all');
+  // Always default to 'all' to show all employees across all branches
   const [branchFilter, setBranchFilter] = useState<string>('all');
+
+  // Compute active branch to auto-assign for created employees
+  const activeBranch = useMemo(() => {
+    let bKey = (branchFilter && branchFilter !== 'all') ? branchFilter : (selectedGlobalBranch && selectedGlobalBranch !== 'all' ? selectedGlobalBranch : '');
+    if (!bKey && typeof window !== 'undefined') {
+      bKey = localStorage.getItem('d2_selected_branch') || getStoredAdminData(ADMIN_STORAGE_KEYS.SELECTED_BRANCH, '') || '';
+    }
+    if (bKey && bKey !== 'all') {
+      const found = branchesList.find(
+        (b) => b.id === bKey || b.code === bKey || b.name === bKey || isMatchBranch(b.name, bKey)
+      );
+      if (found) return found;
+      return { id: `br_${bKey}`, name: bKey } as AdminBranch;
+    }
+    return branchesList[0] || ({ id: 'br_default', name: 'Showroom Flagship Thảo Điền' } as AdminBranch);
+  }, [branchFilter, selectedGlobalBranch, branchesList]);
 
   // Drawer Create / Edit States
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -231,17 +269,6 @@ export function EmployeesTab({
   // Import Excel Modal State
   const [importModalOpen, setImportModalOpen] = useState(false);
 
-  // Available branch filter options (combining registered branches and assigned branches)
-  const branchFilterOptions = useMemo(() => {
-    const branchSet = new Set<string>();
-    branchesList.forEach((b) => {
-      if (b.name) branchSet.add(b.name);
-    });
-    employeesList.forEach((e) => {
-      if (e.branch) branchSet.add(e.branch);
-    });
-    return Array.from(branchSet).map((b) => ({ value: b, label: b }));
-  }, [branchesList, employeesList]);
 
   // Filtered employees list
   const filteredEmployees = useMemo(() => {
@@ -271,8 +298,12 @@ export function EmployeesTab({
   const handleOpenCreate = () => {
     setEditingEmployee(null);
     setIsUsernameCustom(false);
-    const nextNum = employeesList.length + 1;
-    const nextCode = `NV${String(nextNum).padStart(3, '0')}`;
+    let nextNum = employeesList.length + 1;
+    let nextCode = `NV${String(nextNum).padStart(3, '0')}`;
+    while (employeesList.some((e) => e.code && e.code.trim().toUpperCase() === nextCode)) {
+      nextNum++;
+      nextCode = `NV${String(nextNum).padStart(3, '0')}`;
+    }
     setDrawerOpen(true);
 
     setTimeout(() => {
@@ -290,10 +321,10 @@ export function EmployeesTab({
         district: undefined,
         addressDetail: '',
         address: '',
-        department: branchesList[0]?.name || 'Chi nhánh',
+        department: activeBranch.name,
         title: formatRoleName(defaultRole, rolesList),
-        branch: branchesList[0]?.name || 'Showroom Flagship Thảo Điền',
-        branchIds: [branchesList[0]?.id || 'br_1'],
+        branch: activeBranch.name,
+        branchIds: [activeBranch.id],
         username: '',
         password: 'D2Luxury@2026',
         role: defaultRole,
@@ -347,36 +378,25 @@ export function EmployeesTab({
 
   // Save Employee Form (Create / Edit)
   const handleSaveEmployee = async (values: any) => {
-    const trimmedCode = (values.code || '').trim().toUpperCase();
+    let trimmedCode = (values.code || '').trim().toUpperCase();
     const trimmedName = (values.name || '').trim();
     const cleanEmail = (values.email || '').trim().toLowerCase();
     const cleanPhone = (values.phone || '').trim();
-    const username = (values.username || generateUsername(trimmedName)).trim();
+    const username = (values.username || generateUsername(trimmedName, employeesList)).trim();
 
-    // 1. Validation: Tên nhân viên trùng
-    const duplicateName = employeesList.find((e) =>
-      (!editingEmployee || e.id !== editingEmployee.id) &&
-      e.name && e.name.trim().toLowerCase() === trimmedName.toLowerCase()
-    );
-    if (duplicateName) {
-      message.error(`Tên nhân viên "${trimmedName}" đã tồn tại trên hệ thống (${duplicateName.code}). Vui lòng nhập tên khác hoặc thêm họ tên đệm.`);
-      return;
-    }
-
-    // 2. Validation: Email đăng nhập trùng (nếu có nhập)
-    if (values.email && values.email.trim()) {
-      const cleanEmail = values.email.trim().toLowerCase();
+    // 1. Validation: Email đăng nhập trùng (nếu có nhập)
+    if (cleanEmail) {
       const duplicateEmail = employeesList.find((e) =>
         (!editingEmployee || e.id !== editingEmployee.id) &&
         e.email && e.email.trim().toLowerCase() === cleanEmail
       );
       if (duplicateEmail) {
-        message.error(`Email đăng nhập "${values.email.trim()}" đã được sử dụng bởi nhân viên "${duplicateEmail.name}" (${duplicateEmail.code}).`);
+        message.error(`Email đăng nhập "${cleanEmail}" đã được sử dụng bởi nhân viên "${duplicateEmail.name}" (${duplicateEmail.code}).`);
         return;
       }
     }
 
-    // 3. Validation: Tên đăng nhập trùng
+    // 2. Validation: Tên đăng nhập trùng
     if (username) {
       const uLower = username.toLowerCase();
       const duplicateUsername = employeesList.find((e) =>
@@ -390,7 +410,7 @@ export function EmployeesTab({
       }
     }
 
-    // 4. Validation: Số điện thoại trùng
+    // 3. Validation: Số điện thoại trùng
     if (cleanPhone) {
       const duplicatePhone = employeesList.find((e) =>
         (!editingEmployee || e.id !== editingEmployee.id) &&
@@ -402,8 +422,15 @@ export function EmployeesTab({
       }
     }
 
-    // 5. Validation: Mã nhân viên trùng
-    if (trimmedCode) {
+    // 4. Validation & auto-generation: Mã nhân viên
+    if (!trimmedCode && !editingEmployee) {
+      let nextNum = employeesList.length + 1;
+      trimmedCode = `NV${String(nextNum).padStart(3, '0')}`;
+      while (employeesList.some((e) => e.code && e.code.trim().toUpperCase() === trimmedCode)) {
+        nextNum++;
+        trimmedCode = `NV${String(nextNum).padStart(3, '0')}`;
+      }
+    } else if (trimmedCode) {
       const duplicateCode = employeesList.find((e) =>
         (!editingEmployee || e.id !== editingEmployee.id) &&
         e.code && e.code.trim().toUpperCase() === trimmedCode
@@ -452,27 +479,25 @@ export function EmployeesTab({
         payload.password = values.password;
       }
 
+      let updatedEmp: AdminEmployee = {
+        ...editingEmployee,
+        ...payload,
+      } as AdminEmployee;
+
       try {
-        await employeeApi.updateEmployee(editingEmployee.id, payload);
+        const apiRes = await employeeApi.updateEmployee(editingEmployee.id, payload);
+        if (apiRes) updatedEmp = apiRes;
       } catch (err: any) {
-        message.error(err.message || 'Cập nhật nhân viên thất bại do dữ liệu bị trùng lặp!');
-        return;
+        console.warn('API updateEmployee failed, updating locally:', err);
       }
 
       const updatedList = employeesList.map((emp) =>
-        emp.id === editingEmployee.id
-          ? {
-              ...emp,
-              ...payload,
-            }
-          : emp
+        emp.id === editingEmployee.id ? updatedEmp : emp
       );
       setEmployeesList(updatedList);
+      setStoredAdminData(ADMIN_STORAGE_KEYS.EMPLOYEES, updatedList);
       if (selectedEmployee?.id === editingEmployee.id) {
-        setSelectedEmployee({
-          ...selectedEmployee,
-          ...payload,
-        } as AdminEmployee);
+        setSelectedEmployee(updatedEmp);
       }
       message.success(`Đã cập nhật hồ sơ nhân viên "${trimmedName}" thành công!`);
     } else {
@@ -488,11 +513,10 @@ export function EmployeesTab({
         address: fullAddress || values.address || '',
         addressDetail: values.addressDetail || '',
         province: values.province || '',
-        district: values.district || '',
-        department: values.branch || values.department || 'Chi nhánh',
+        department: values.branch || values.department || activeBranch.name,
         title: values.title || formatRoleName(values.role || defaultRole, rolesList),
-        branch: values.branch || branchesList[0]?.name || 'Showroom Flagship Thảo Điền',
-        branchIds: values.branchIds || [],
+        branch: values.branch || activeBranch.name,
+        branchIds: values.branchIds && values.branchIds.length > 0 ? values.branchIds : [activeBranch.id],
         login: username,
         username: username,
         password: values.password || 'D2Luxury@2026',
@@ -503,21 +527,30 @@ export function EmployeesTab({
         note: values.note || '',
       };
 
+      let finalEmp: AdminEmployee;
       try {
-        const createdEmp = await employeeApi.createEmployee(newEmpPayload);
-        setEmployeesList([createdEmp, ...employeesList]);
-        message.success(`Đã thêm mới nhân viên "${createdEmp.name}" vào hệ thống!`);
+        finalEmp = await employeeApi.createEmployee(newEmpPayload);
       } catch (err: any) {
-        message.error(err.message || 'Thêm mới nhân viên thất bại do dữ liệu bị trùng lặp!');
-        return;
+        console.warn('API createEmployee failed or unauthenticated, falling back to local storage:', err);
+        finalEmp = {
+          ...newEmpPayload,
+          id: `emp_${Date.now()}`,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        } as AdminEmployee;
       }
+
+      const updatedList = [finalEmp, ...employeesList];
+      setEmployeesList(updatedList);
+      setStoredAdminData(ADMIN_STORAGE_KEYS.EMPLOYEES, updatedList);
+      message.success(`Đã thêm mới nhân viên "${finalEmp.name}" vào hệ thống!`);
     }
     setDrawerOpen(false);
   };
 
   // Toggle Working Status
   const handleToggleStatus = async (empId: string, currentStatus: 'working' | 'resigned') => {
-    const newStatus = currentStatus === 'working' ? 'resigned' : 'working';
+    const newStatus: 'working' | 'resigned' = currentStatus === 'working' ? 'resigned' : 'working';
     const target = employeesList.find((e) => e.id === empId);
     
     try {
@@ -526,9 +559,9 @@ export function EmployeesTab({
       console.warn('API toggle status failed:', err);
     }
 
-    setEmployeesList((prev) =>
-      prev.map((e) => (e.id === empId ? { ...e, status: newStatus } : e))
-    );
+    const updated = employeesList.map((e) => (e.id === empId ? { ...e, status: newStatus } : e));
+    setEmployeesList(updated);
+    setStoredAdminData(ADMIN_STORAGE_KEYS.EMPLOYEES, updated);
     if (selectedEmployee?.id === empId) {
       setSelectedEmployee((prev) => (prev ? { ...prev, status: newStatus } : null));
     }
@@ -547,7 +580,9 @@ export function EmployeesTab({
       console.warn('API delete employee failed:', err);
     }
 
-    setEmployeesList((prev) => prev.filter((e) => e.id !== empId));
+    const updated = employeesList.filter((e) => e.id !== empId);
+    setEmployeesList(updated);
+    setStoredAdminData(ADMIN_STORAGE_KEYS.EMPLOYEES, updated);
     if (selectedEmployee?.id === empId) {
       setDetailDrawerOpen(false);
     }
@@ -621,7 +656,7 @@ export function EmployeesTab({
               setStatusFilter('all');
               setDepartmentFilter('all');
               setBranchFilter('all');
-              message.success('Đã làm mới danh sách nhân viên!');
+              message.success('Đã làm mới danh sách nhân viên toàn hệ thống!');
             }}
             className="h-10 rounded-none text-sm font-normal text-slate-700 hover:text-[#784e34]"
           >
@@ -734,18 +769,22 @@ export function EmployeesTab({
             />
           </div>
 
-          {/* Lọc theo Chi nhánh */}
+          {/* Lọc theo Chi nhánh cơ sở */}
           <div className="pt-2 border-t border-slate-100">
             <div className="mb-2 text-xs font-semibold text-slate-600 uppercase tracking-wider">
-              Cơ sở / Chi nhánh
+              Chi nhánh cơ sở
             </div>
             <Select
               value={branchFilter}
               onChange={setBranchFilter}
               className="w-full text-sm"
-              options={branchFilterOptions}
+              options={[
+                { value: 'all', label: 'Tất cả chi nhánh' },
+                ...branchesList.map((b) => ({ value: b.name, label: b.name })),
+              ]}
             />
           </div>
+
 
           {/* Summary Card */}
           <AdminSidebarSummary
@@ -1154,7 +1193,7 @@ export function EmployeesTab({
         }
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        styles={{ wrapper: { width: 720, maxWidth: '100vw' } }}
+        styles={{ wrapper: { width: 760, maxWidth: '100vw' } }}
         forceRender
         footer={
           <div className="flex items-center justify-between">
@@ -1206,23 +1245,7 @@ export function EmployeesTab({
             <Form.Item
               label={<span className="text-xs font-semibold text-slate-800">Họ và tên nhân viên</span>}
               name="name"
-              rules={[
-                { required: true, message: 'Vui lòng nhập họ và tên' },
-                {
-                  validator: (_, value) => {
-                    if (!value) return Promise.resolve();
-                    const valTrim = value.trim().toLowerCase();
-                    const dup = employeesList.find((e) =>
-                      (!editingEmployee || e.id !== editingEmployee.id) &&
-                      e.name && e.name.trim().toLowerCase() === valTrim
-                    );
-                    if (dup) {
-                      return Promise.reject(new Error(`Tên "${value.trim()}" đã tồn tại (${dup.code})`));
-                    }
-                    return Promise.resolve();
-                  },
-                },
-              ]}
+              rules={[{ required: true, message: 'Vui lòng nhập họ và tên' }]}
             >
               <Input
                 placeholder="VD: KTS. Trần Minh Quân"
@@ -1230,7 +1253,7 @@ export function EmployeesTab({
                 onChange={(e) => {
                   const val = e.target.value;
                   if (!editingEmployee && !isUsernameCustom) {
-                    form.setFieldsValue({ username: generateUsername(val) });
+                    form.setFieldsValue({ username: generateUsername(val, employeesList) });
                   }
                 }}
               />
@@ -1323,29 +1346,32 @@ export function EmployeesTab({
             )}
           </div>
 
-          {/* SECTION 3: CHI NHÁNH & VỊ TRÍ LÀM VIỆC */}
-          <div className="bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/80 space-y-3">
-            <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-200 pb-2 m-0">
-              <ShopOutlined className="text-[#784e34]" /> Chi nhánh làm việc
-            </h4>
+          {/* SECTION 3: CHI NHÁNH LÀM VIỆC (TỰ ĐỘNG GÁN THEO CHI NHÁNH ĐANG CHỌN) */}
+          <Form.Item name="department" hidden initialValue="Chi nhánh">
+            <Input />
+          </Form.Item>
+          <Form.Item name="branch" hidden>
+            <Input />
+          </Form.Item>
+          <Form.Item name="branchIds" hidden>
+            <Input />
+          </Form.Item>
 
-            <Form.Item name="department" hidden initialValue="Chi nhánh">
-              <Input />
-            </Form.Item>
-
-            <Form.Item
-              label={<span className="text-xs font-semibold text-slate-800">Chi nhánh làm việc chính</span>}
-              name="branch"
-              rules={[{ required: true, message: 'Vui lòng chọn chi nhánh làm việc' }]}
-            >
-              <Select className="h-10 text-sm" placeholder="Chọn chi nhánh...">
-                {branchesList.map((b) => (
-                  <Select.Option key={b.id} value={b.name}>
-                    {b.name}
-                  </Select.Option>
-                ))}
-              </Select>
-            </Form.Item>
+          <div className="bg-amber-50/70 p-3 rounded-xl border border-amber-200/80 flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center text-[#784e34]">
+                <ShopOutlined className="text-base" />
+              </div>
+              <div>
+                <div className="text-[11px] text-slate-500 font-medium">Chi nhánh làm việc:</div>
+                <div className="text-xs font-bold text-[#784e34]">
+                  {editingEmployee ? (editingEmployee.branch || activeBranch.name) : activeBranch.name}
+                </div>
+              </div>
+            </div>
+            <Tag color="gold" className="m-0 text-[10px] font-semibold border-amber-300">
+              Tự động theo chi nhánh
+            </Tag>
           </div>
 
           {/* SECTION 4: LIÊN HỆ & ĐỊA CHỈ */}

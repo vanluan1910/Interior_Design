@@ -8,6 +8,7 @@ export interface Product {
   spaceName?: string;
   price: number;
   originalPrice?: number;
+  discountPercent?: number;
   image: string;
   tag?: string;
   tagColor?: string;

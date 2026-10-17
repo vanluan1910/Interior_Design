@@ -31,13 +31,21 @@ export interface OrderRow {
   depositPercent: number;
   depositAmount: number;
   depositNote?: string;
-  status: 'pending' | 'processing' | 'delivering' | 'completed' | 'cancelled';
+  status: 'pending' | 'processing' | 'delivering' | 'completed' | 'cancelled' | 'returned' | 'returned_success';
   statusLabel: string;
+  paymentStatus?: string;
+  paymentMethod?: string;
   spaceType?: 'living' | 'dining' | 'bedroom' | 'office' | 'full';
   spaceLabel?: string;
   branch?: string;
   showroom?: string;
   items?: OrderItem[];
+  shippingAddress?: string;
+  note?: string;
+  returnReason?: string;
+  returnDesiredResolution?: string;
+  returnImages?: string[];
+  returnNote?: string;
 }
 
 export interface AdminCustomer {

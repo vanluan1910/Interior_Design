@@ -751,22 +751,21 @@ body .admin-underline-mode .ant-select input {
   box-shadow: none !important;
 }
 
-/* Active Expanded Row in Admin Orders Table */
-.admin-order-row-active {
-  background-color: #784e34 !important;
+/* Active Expanded & Hovered Row in Admin Orders Table */
+.admin-order-row-active,
+.admin-order-row-active > td,
+.admin-order-row-active.ant-table-row > td {
+  background-color: #fbf5f0 !important;
 }
-.admin-order-row-active td {
-  background-color: #784e34 !important;
-  color: #ffffff !important;
+
+.admin-order-row-active:hover > td,
+.admin-order-row-active.ant-table-row:hover > td {
+  background-color: #f5ebe1 !important;
 }
-.admin-order-row-active td span,
-.admin-order-row-active td div {
-  color: #ffffff !important;
-}
-.admin-order-row-active .ant-tag {
-  background-color: rgba(255, 255, 255, 0.2) !important;
-  color: #ffffff !important;
-  border-color: rgba(255, 255, 255, 0.35) !important;
+
+/* Subtle, clear hover for table rows ensuring text and badges remain crystal clear */
+.ant-table-wrapper .ant-table-tbody > tr.ant-table-row:hover > td {
+  background-color: #faf6f1 !important;
 }
 
 /* ================= ADMIN INTERFACE CLEAN LIGHT TYPOGRAPHY ================= */

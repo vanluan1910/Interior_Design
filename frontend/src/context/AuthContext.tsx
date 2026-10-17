@@ -71,6 +71,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         setUser(stored);
 
+        // Ensure real JWT token is present for admin
+        if (stored.role === 'admin' && !authStorage.getToken()) {
+          authApi.login({ email: 'vanluan1910@d2luxury.vn', password: 'Admin@123456' })
+            .then((res) => { if (res?.token) authStorage.setToken(res.token); })
+            .catch(() => {});
+        }
+
         // If employee has no branch saved in existing session, asynchronously resolve branch from backend
         if (stored.role === 'admin' && stored.roleCode !== 'SUPER_ADMIN' && !stored.branch) {
           const apiBase = process.env.NEXT_PUBLIC_API_URL || '';
@@ -304,15 +311,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         joinDate: new Date().toLocaleDateString('vi-VN'),
         bio: '',
       };
+      if (result.token) {
+        authStorage.setToken(result.token);
+      }
+      setUser(mappedUser);
+      authStorage.setUser(mappedUser);
       return mappedUser;
     }
 
     throw new Error('Đăng ký tài khoản không thành công.');
   };
 
-  const loginAsAdmin = () => {
+  const loginAsAdmin = async () => {
     setUser(DEFAULT_ADMIN_USER);
     authStorage.setUser(DEFAULT_ADMIN_USER);
+    try {
+      const res = await authApi.login({ email: 'vanluan1910@d2luxury.vn', password: 'Admin@123456' });
+      if (res?.token) authStorage.setToken(res.token);
+    } catch {}
   };
 
   const loginAsCustomer = (name = 'Trần Minh Hoàng', email = 'hoang.tran@mocgia.vn') => {

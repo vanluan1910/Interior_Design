@@ -54,7 +54,7 @@ export default function CartDrawer({
       }
       styles={{
         wrapper: {
-          width: 460,
+          width: 480,
           maxWidth: '100vw',
         },
         header: {

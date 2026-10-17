@@ -362,10 +362,22 @@ function CartContent() {
 
                           {/* Price & Quantity Controls */}
                           <div className="mt-5 flex items-center justify-between pt-3 border-t border-[#eae1dd] bg-[#fbf2ee] px-4 py-2.5">
-                            <div className="flex items-baseline gap-2">
-                              <span className="text-base sm:text-lg font-bold text-[#5d371f] font-data-mono">
-                                {item.price.toLocaleString('vi-VN')}đ
-                              </span>
+                            <div className="flex flex-col">
+                              <div className="flex items-baseline gap-2">
+                                <span className="text-base sm:text-lg font-bold text-[#5d371f] font-data-mono">
+                                  {item.price.toLocaleString('vi-VN')}đ
+                                </span>
+                                {item.originalPrice && item.originalPrice > item.price && (
+                                  <span className="text-xs text-[#a89b93] line-through font-data-mono">
+                                    {item.originalPrice.toLocaleString('vi-VN')}đ
+                                  </span>
+                                )}
+                              </div>
+                              {item.originalPrice && item.originalPrice > item.price && (
+                                <span className="text-[10px] font-bold text-red-600 mt-0.5">
+                                  -{Math.round(((item.originalPrice - item.price) / item.originalPrice) * 100)}%
+                                </span>
+                              )}
                             </div>
 
                             {/* Quantity Counter */}

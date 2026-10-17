@@ -1,5 +1,6 @@
 import type { AdminRole, PermissionGroup } from '@/types/admin';
 import { cachedFetch, invalidateApiCache } from './shared/apiCache';
+import { getAuthHeaders } from './shared/authHeaders';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
@@ -23,7 +24,7 @@ export const roleApi = {
       try {
         const url = `${API_BASE_URL}/api/roles${queryString ? `?${queryString}` : ''}`;
         const res = await fetch(url, {
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAuthHeaders(),
         });
 
         if (!res.ok) return [];
@@ -38,7 +39,7 @@ export const roleApi = {
   getRoleById: async (id: string): Promise<AdminRole | null> => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/roles/${id}`, {
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
       });
       if (!res.ok) return null;
       const json = await res.json();
@@ -52,7 +53,7 @@ export const roleApi = {
     return cachedFetch('permissions_catalog', async () => {
       try {
         const res = await fetch(`${API_BASE_URL}/api/roles/permissions`, {
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAuthHeaders(),
         });
         if (!res.ok) return [];
         const json = await res.json();
@@ -66,7 +67,7 @@ export const roleApi = {
   createRole: async (data: Partial<AdminRole> & { templateRoleId?: string }): Promise<AdminRole | null> => {
     const res = await fetch(`${API_BASE_URL}/api/roles`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(data),
     });
     const json = await res.json();
@@ -80,7 +81,7 @@ export const roleApi = {
   updateRole: async (id: string, data: Partial<AdminRole>): Promise<AdminRole | null> => {
     const res = await fetch(`${API_BASE_URL}/api/roles/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(data),
     });
     const json = await res.json();
@@ -94,7 +95,7 @@ export const roleApi = {
   updateRolePermissions: async (id: string, permissions: string[]): Promise<AdminRole | null> => {
     const res = await fetch(`${API_BASE_URL}/api/roles/${id}/permissions`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify({ permissions }),
     });
     const json = await res.json();
@@ -109,7 +110,7 @@ export const roleApi = {
   cloneRole: async (id: string, data?: { newCode?: string; newName?: string; description?: string }): Promise<AdminRole | null> => {
     const res = await fetch(`${API_BASE_URL}/api/roles/${id}/clone`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(data || {}),
     });
     const json = await res.json();
@@ -123,6 +124,7 @@ export const roleApi = {
   deleteRole: async (id: string): Promise<boolean> => {
     const res = await fetch(`${API_BASE_URL}/api/roles/${id}`, {
       method: 'DELETE',
+      headers: getAuthHeaders(),
     });
     const json = await res.json();
     if (!res.ok) {

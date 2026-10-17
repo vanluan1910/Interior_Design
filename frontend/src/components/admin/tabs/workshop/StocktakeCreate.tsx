@@ -26,7 +26,6 @@ const normalizeSearchText = (str?: string) => {
     .trim();
 };
 
-const COMMON_UOM_OPTIONS: Array<{ value: string; label: string }> = [];
 
 export interface StocktakeCreateProps {
   stocktakeViewMode: 'create' | 'edit';
@@ -47,7 +46,6 @@ export interface StocktakeCreateProps {
   allAuditableStock: StockAuditItem[];
   allProducts?: import('@/types/admin').FeaturedCatalogProduct[];
   availableBranchWarehouses: AdminWarehouse[];
-  uomSelectOptions?: Array<{ value: string; label: string }>;
   onNavigateToProduct?: (query: string) => void;
   onBack: () => void;
   onSaveDraft: () => void;
@@ -76,7 +74,6 @@ export function StocktakeCreate({
   allAuditableStock,
   allProducts = [],
   availableBranchWarehouses,
-  uomSelectOptions,
   onNavigateToProduct,
   onBack,
   onSaveDraft,
@@ -87,12 +84,6 @@ export function StocktakeCreate({
 }: StocktakeCreateProps) {
   const { message } = App.useApp();
 
-  const activeUomOptions = React.useMemo(() => {
-    if (uomSelectOptions && uomSelectOptions.length > 0) {
-      return uomSelectOptions;
-    }
-    return COMMON_UOM_OPTIONS;
-  }, [uomSelectOptions]);
 
   // Auto-sync stocktake warehouse to currently available branch warehouses
   useEffect(() => {
@@ -131,8 +122,8 @@ export function StocktakeCreate({
           originalPrice: 0,
           costPrice: 0,
           collection: item.location || 'Kho xưởng',
-          categoryName: `ĐVT: ${item.unit || 'Bộ'}`,
-          stockNote: `${item.systemQty} ${item.unit || 'bộ'}`,
+          categoryName: item.location || 'Sản phẩm nội thất',
+          stockNote: `${item.systemQty}`,
           stockType: 'in_stock',
           image: 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=120&q=80',
           location: item.location,
@@ -196,8 +187,7 @@ export function StocktakeCreate({
       const initialQty = (product as any).systemQty ?? (matchedAudit ? matchedAudit.systemQty : branchStock);
       const defaultUnit =
         product.unit ||
-        (product as any).uom ||
-        (activeUomOptions && activeUomOptions.length > 0 ? activeUomOptions[0].value : 'Bộ');
+        'Bộ';
       const newItem: StockAuditItem = matchedAudit
         ? { ...matchedAudit, productId: product.id, actualQty: matchedAudit.systemQty, status: 'matched', unit: matchedAudit.unit || defaultUnit }
         : {
@@ -488,7 +478,6 @@ export function StocktakeCreate({
                 <th className="py-2.5 px-3 w-10 text-center">#</th>
                 <th className="py-2.5 px-3">Mã hàng</th>
                 <th className="py-2.5 px-3">Tên hàng hóa</th>
-                <th className="py-2.5 px-3 text-center">ĐVT</th>
                 <th className="py-2.5 px-3 text-center">Độ ẩm MC</th>
                 <th className="py-2.5 px-3 text-right">Tồn kho</th>
                 <th className="py-2.5 px-3 text-center w-28">Thực tế</th>
@@ -535,29 +524,6 @@ export function StocktakeCreate({
                           {line.name}
                         </div>
                         <div className="text-[11px] text-slate-500">{line.qualityNote || line.location}</div>
-                      </td>
-                      <td className="py-2 px-3 text-center">
-                        <Select
-                          size="small"
-                          value={line.unit || (activeUomOptions[0]?.value ?? 'Bộ')}
-                          onChange={(u) => {
-                            setStocktakeEntryLines((prev) =>
-                              prev.map((l) =>
-                                l.id === line.id || (l.code && l.code === line.code)
-                                  ? { ...l, unit: u }
-                                  : l
-                              )
-                            );
-                          }}
-                          popupMatchSelectWidth={false}
-                          classNames={{ popup: { root: 'min-w-[120px]' } }}
-                          className="w-full min-w-[85px] text-xs [&_.ant-select-selector]:!h-8 [&_.ant-select-selector]:!px-2 [&_.ant-select-selection-item]:!text-xs [&_.ant-select-selection-item]:!leading-[30px] [&_.ant-select-selector]:!border-0 [&_.ant-select-selector]:!border-b [&_.ant-select-selector]:!border-slate-300 [&_.ant-select-selector]:!rounded-none [&_.ant-select-selector]:!shadow-none [&_.ant-select-selector]:!bg-transparent hover:[&_.ant-select-selector]:!border-slate-500"
-                          options={
-                            line.unit && !activeUomOptions.some((o) => o.value === line.unit)
-                              ? [{ value: line.unit, label: line.unit }, ...activeUomOptions]
-                              : activeUomOptions
-                          }
-                        />
                       </td>
                       <td className="py-2 px-3 text-center font-mono text-slate-600">{line.actualMc || line.systemMc}</td>
                       <td className="py-2 px-3 text-right font-mono font-medium text-slate-900">{line.systemQty}</td>

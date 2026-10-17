@@ -18,7 +18,6 @@ import type {
 
 const { Option } = Select;
 
-const COMMON_UOM_OPTIONS: Array<{ value: string; label: string }> = [];
 
 const formatInputMoney = (value: number | string | undefined): string => {
   if (value === undefined || value === null || value === '') return '';
@@ -79,7 +78,6 @@ export interface StockImportCreateProps {
   filteredImportProducts: FeaturedCatalogProduct[];
   availableBranchSuppliers: AdminSupplier[];
   availableBranchWarehouses: AdminWarehouse[];
-  uomSelectOptions?: Array<{ value: string; label: string }>;
   onNavigateToProduct?: (query: string) => void;
   onBack: () => void;
   onSaveDraft: () => void;
@@ -116,7 +114,6 @@ export function StockImportCreate({
   filteredImportProducts,
   availableBranchSuppliers,
   availableBranchWarehouses,
-  uomSelectOptions,
   onNavigateToProduct,
   onBack,
   onSaveDraft,
@@ -128,12 +125,6 @@ export function StockImportCreate({
 }: StockImportCreateProps) {
   const { message } = App.useApp();
 
-  const activeUomOptions = React.useMemo(() => {
-    if (uomSelectOptions && uomSelectOptions.length > 0) {
-      return uomSelectOptions;
-    }
-    return COMMON_UOM_OPTIONS;
-  }, [uomSelectOptions]);
 
   // Auto-sync import warehouse to currently available branch warehouses
   useEffect(() => {
@@ -168,15 +159,8 @@ export function StockImportCreate({
                 ? product.costPrice
                 : product.price || 0;
             if (!alreadyLine) {
-              const defaultUnit =
-                (product as any).unit ||
-                (product as any).uom ||
-                (activeUomOptions && activeUomOptions.length > 0
-                  ? activeUomOptions[0].value
-                  : (product.name.toLowerCase().includes('sofa') || product.name.toLowerCase().includes('bàn')
-                      ? 'Bộ'
-                      : 'Chiếc'));
-              setImportEntryLines((prev) => [
+              const defaultUnit = (product as any).unit || 'Bộ';
+            setImportEntryLines((prev) => [
                 ...prev,
                 {
                   id: `line_${Date.now()}_${product.id}`,
@@ -447,10 +431,9 @@ export function StockImportCreate({
           <table className="min-w-[860px] w-full text-xs">
             <colgroup>
               <col style={{ width: 44 }} />
-              <col style={{ width: 110 }} />
-              <col style={{ minWidth: 160 }} />
-              <col style={{ width: 100 }} />
-              <col style={{ width: 110 }} />
+              <col style={{ width: 120 }} />
+              <col style={{ minWidth: 180 }} />
+              <col style={{ width: 120 }} />
               <col style={{ width: 220 }} />
               <col style={{ width: 160 }} />
               <col style={{ width: 48 }} />
@@ -460,7 +443,6 @@ export function StockImportCreate({
                 <th className="px-3 py-2.5 text-center w-10">STT</th>
                 <th className="px-3 py-2.5 text-left w-28">Mã hàng</th>
                 <th className="px-3 py-2.5 text-left min-w-[140px]">Tên sản phẩm</th>
-                <th className="px-3 py-2.5 text-center w-28">ĐVT</th>
                 <th className="px-3 py-2.5 text-right w-28 min-w-[90px]">Số lượng</th>
                 <th className="px-3 py-2.5 text-right w-56 min-w-[200px]">Đơn giá nhập</th>
                 <th className="px-3 py-2.5 text-right w-44 min-w-[160px]">Thành tiền</th>
@@ -488,25 +470,6 @@ export function StockImportCreate({
                     >
                       {line.name}
                     </span>
-                  </td>
-                  <td className="px-3 py-2 text-center">
-                    <Select
-                      size="small"
-                      value={line.unit || (activeUomOptions[0]?.value ?? 'Bộ')}
-                      onChange={(u) => {
-                        setImportEntryLines((prev) =>
-                          prev.map((l) => (l.id === line.id ? { ...l, unit: u } : l))
-                        );
-                      }}
-                      popupMatchSelectWidth={false}
-                      classNames={{ popup: { root: 'min-w-[120px]' } }}
-                      className="w-full min-w-[85px] text-xs [&_.ant-select-selector]:!h-8 [&_.ant-select-selector]:!px-2 [&_.ant-select-selection-item]:!text-xs [&_.ant-select-selection-item]:!leading-[30px] [&_.ant-select-selector]:!border-0 [&_.ant-select-selector]:!border-b [&_.ant-select-selector]:!border-slate-300 [&_.ant-select-selector]:!rounded-none [&_.ant-select-selector]:!shadow-none [&_.ant-select-selector]:!bg-transparent hover:[&_.ant-select-selector]:!border-slate-500"
-                      options={
-                        line.unit && !activeUomOptions.some((o) => o.value === line.unit)
-                          ? [{ value: line.unit, label: line.unit }, ...activeUomOptions]
-                          : activeUomOptions
-                      }
-                    />
                   </td>
                   <td className="px-3 py-2 text-right w-28 min-w-[90px]">
                     <Input
