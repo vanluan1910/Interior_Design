@@ -47,6 +47,35 @@ export const INITIAL_UOMS: AdminUom[] = [];
 // System Permission Matrix
 export const PERMISSION_GROUPS: PermissionGroup[] = [
   {
+    groupKey: 'dashboard_reports',
+    groupName: 'Tổng quan & Báo cáo kinh doanh',
+    groupIcon: '📊',
+    subGroups: [
+      {
+        subKey: 'dashboard_overview',
+        subName: 'Bảng điều khiển & Chỉ số điều hành',
+        permissions: [
+          { key: 'dashboard.view', name: 'Xem trang Tổng quan hệ thống', description: 'Xem dashboard, số liệu hoạt động và biểu đồ kinh doanh' },
+          { key: 'dashboard.financial.view', name: 'Xem doanh thu & Lợi nhuận', description: 'Xem tổng doanh thu, doanh số đơn hàng và chỉ số tài chính' },
+        ],
+      },
+      {
+        subKey: 'reports_analytics',
+        subName: 'Báo cáo thống kê & Xuất file',
+        permissions: [
+          { key: 'reports.revenue.view', name: 'Xem báo cáo doanh thu theo chi nhánh', description: 'Đối soát và theo dõi doanh thu từng cơ sở showroom' },
+          { key: 'reports.export', name: 'Xuất báo cáo tổng quan (Excel)', description: 'Tải báo cáo số liệu kinh doanh định dạng Excel' },
+        ],
+      },
+    ],
+    permissions: [
+      { key: 'dashboard.view', name: 'Xem trang Tổng quan hệ thống', description: 'Xem dashboard, số liệu hoạt động và biểu đồ kinh doanh' },
+      { key: 'dashboard.financial.view', name: 'Xem doanh thu & Lợi nhuận', description: 'Xem tổng doanh thu, doanh số đơn hàng và chỉ số tài chính' },
+      { key: 'reports.revenue.view', name: 'Xem báo cáo doanh thu theo chi nhánh', description: 'Đối soát và theo dõi doanh thu từng cơ sở showroom' },
+      { key: 'reports.export', name: 'Xuất báo cáo tổng quan (Excel)', description: 'Tải báo cáo số liệu kinh doanh định dạng Excel' },
+    ],
+  },
+  {
     groupKey: 'pos_orders',
     groupName: 'Đơn hàng & Bán hàng POS',
     groupIcon: '🛒',
@@ -88,12 +117,12 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
     ],
   },
   {
-    groupKey: 'inventory_warehouse',
-    groupName: 'Kho hàng, Sản phẩm & Xuất nhập tồn',
-    groupIcon: '🏢',
+    groupKey: 'catalog_products',
+    groupName: 'Sản phẩm & Báo giá',
+    groupIcon: '🛋️',
     subGroups: [
       {
-        subKey: 'catalog_products',
+        subKey: 'catalog_products_mgmt',
         subName: 'Danh mục Sản phẩm & Báo giá',
         permissions: [
           { key: 'catalog.products.view', name: 'Xem danh mục sản phẩm & Báo giá', description: 'Xem bảng giá, tồn kho tức thời và thông số kỹ thuật' },
@@ -103,6 +132,20 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
           { key: 'catalog.products.export', name: 'Xuất danh mục sản phẩm (Excel)', description: 'Tải file Excel danh sách sản phẩm và giá niêm yết' },
         ],
       },
+    ],
+    permissions: [
+      { key: 'catalog.products.view', name: 'Xem danh mục sản phẩm & Báo giá', description: 'Xem bảng giá, tồn kho tức thời và thông số kỹ thuật' },
+      { key: 'catalog.products.create', name: 'Thêm mới sản phẩm vào danh mục', description: 'Thêm mẫu thiết kế mới vào catalog' },
+      { key: 'catalog.products.update', name: 'Chỉnh sửa giá bán & Ảnh render 3D', description: 'Cập nhật hình ảnh render chi tiết, kích thước và chất liệu' },
+      { key: 'catalog.products.delete', name: 'Ẩn / Xóa sản phẩm khỏi danh mục', description: 'Tạm ẩn hoặc xóa mẫu sản phẩm' },
+      { key: 'catalog.products.export', name: 'Xuất danh mục sản phẩm (Excel)', description: 'Tải file Excel danh sách sản phẩm và giá niêm yết' },
+    ],
+  },
+  {
+    groupKey: 'inventory_procurement',
+    groupName: 'Mua hàng, Kho & Xuất nhập tồn',
+    groupIcon: '🏢',
+    subGroups: [
       {
         subKey: 'warehouses_list',
         subName: 'Danh sách Kho hàng & Showroom',
@@ -137,11 +180,6 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       },
     ],
     permissions: [
-      { key: 'catalog.products.view', name: 'Xem danh mục sản phẩm & Báo giá', description: 'Xem bảng giá, tồn kho tức thời và thông số kỹ thuật' },
-      { key: 'catalog.products.create', name: 'Thêm mới sản phẩm vào danh mục', description: 'Thêm mẫu thiết kế mới vào catalog' },
-      { key: 'catalog.products.update', name: 'Chỉnh sửa giá bán & Ảnh render 3D', description: 'Cập nhật hình ảnh render chi tiết, kích thước và chất liệu' },
-      { key: 'catalog.products.delete', name: 'Ẩn / Xóa sản phẩm khỏi danh mục', description: 'Tạm ẩn hoặc xóa mẫu sản phẩm' },
-      { key: 'catalog.products.export', name: 'Xuất danh mục sản phẩm (Excel)', description: 'Tải file Excel danh sách sản phẩm và giá niêm yết' },
       { key: 'inventory.warehouses.view', name: 'Xem danh sách kho hàng & Showroom', description: 'Tra cứu danh sách kho và cơ sở' },
       { key: 'inventory.warehouses.create', name: 'Thêm mới kho hàng & Showroom', description: 'Tạo mới cơ sở kho hoặc showroom' },
       { key: 'inventory.warehouses.update', name: 'Chỉnh sửa thông tin kho & Showroom', description: 'Cập nhật sức chứa, địa chỉ, người quản lý kho' },
@@ -357,11 +395,94 @@ export const INITIAL_ROLES: AdminRole[] = [
     id: 'role_admin',
     code: 'SUPER_ADMIN',
     name: 'Quản trị viên tối cao',
-    description: '',
+    description: 'Toàn quyền quản trị hệ thống, cấu hình RBAC và quản lý dữ liệu toàn diện.',
     userCount: 2,
     isSystem: true,
     status: 'active',
     permissions: ALL_SYSTEM_PERMISSION_KEYS,
+  },
+  {
+    id: 'role_manager',
+    code: 'STORE_MANAGER',
+    name: 'Quản lý chi nhánh / Showroom',
+    description: 'Quản lý vận hành toàn diện tại cơ sở: đơn hàng, bán hàng, xuất nhập kho, khách hàng và nhân sự chi nhánh.',
+    userCount: 1,
+    isSystem: false,
+    status: 'active',
+    permissions: [
+      'dashboard.view', 'dashboard.financial.view', 'reports.revenue.view', 'reports.export',
+      'orders.view', 'orders.create', 'orders.update', 'orders.print', 'orders.export',
+      'pos.checkout.cash', 'pos.checkout.bank', 'pos.checkout.deposit', 'pos.refund',
+      'catalog.products.view', 'catalog.products.export',
+      'catalog.categories.view', 'catalog.spaces.view',
+      'inventory.warehouses.view', 'inventory.imports.view', 'inventory.imports.create',
+      'inventory.returns.view', 'inventory.returns.create', 'inventory.stocktake.view',
+      'inventory.history.view', 'suppliers.vendors.view', 'suppliers.debt.view',
+      'customers.profile.view', 'customers.profile.create', 'customers.profile.update',
+      'customers.debt.view', 'customers.consult.view', 'customers.consult.update',
+      'settings.branches.view', 'settings.employees.view',
+    ],
+  },
+  {
+    id: 'role_cashier',
+    code: 'CASHIER_SALES',
+    name: 'Nhân viên Bán hàng & Thu ngân POS',
+    description: 'Tạo và xử lý đơn hàng POS, thu ngân tiền mặt/VietQR, in hóa đơn, tra cứu sản phẩm và tồn kho.',
+    userCount: 1,
+    isSystem: false,
+    status: 'active',
+    permissions: [
+      'orders.view', 'orders.create', 'orders.update', 'orders.print',
+      'pos.checkout.cash', 'pos.checkout.bank', 'pos.checkout.deposit',
+      'catalog.products.view', 'catalog.categories.view', 'catalog.spaces.view',
+      'customers.profile.view', 'customers.profile.create',
+    ],
+  },
+  {
+    id: 'role_warehouse',
+    code: 'WAREHOUSE_KEEPER',
+    name: 'Thủ kho & Quản lý Kho vận',
+    description: 'Lập và duyệt phiếu nhập kho, phiếu xuất trả NCC, kiểm kê điều chỉnh tồn kho, theo dõi nhà cung cấp.',
+    userCount: 1,
+    isSystem: false,
+    status: 'active',
+    permissions: [
+      'catalog.products.view',
+      'inventory.warehouses.view',
+      'inventory.imports.view', 'inventory.imports.create', 'inventory.imports.update',
+      'inventory.returns.view', 'inventory.returns.create', 'inventory.returns.update',
+      'inventory.stocktake.view', 'inventory.stocktake.create', 'inventory.stocktake.update',
+      'inventory.history.view',
+      'suppliers.vendors.view', 'suppliers.debt.view',
+    ],
+  },
+  {
+    id: 'role_product',
+    code: 'PRODUCT_SPECIALIST',
+    name: 'Chuyên viên Sản phẩm & Danh mục',
+    description: 'Quản lý danh mục nội thất, tải ảnh render 3D, cập nhật thông số và bảng giá niêm yết.',
+    userCount: 0,
+    isSystem: false,
+    status: 'active',
+    permissions: [
+      'catalog.products.view', 'catalog.products.create', 'catalog.products.update', 'catalog.products.delete', 'catalog.products.export',
+      'catalog.categories.view', 'catalog.categories.create', 'catalog.categories.update', 'catalog.categories.delete',
+      'catalog.spaces.view', 'catalog.spaces.create', 'catalog.spaces.update', 'catalog.spaces.delete',
+    ],
+  },
+  {
+    id: 'role_consultant',
+    code: 'DESIGN_CONSULTANT',
+    name: 'Chuyên viên Tư vấn thiết kế & CSKH',
+    description: 'Tiếp nhận và xử lý yêu cầu tư vấn 3D từ khách hàng, quản lý hồ sơ gia chủ và kiến trúc sư.',
+    userCount: 0,
+    isSystem: false,
+    status: 'active',
+    permissions: [
+      'customers.profile.view', 'customers.profile.create', 'customers.profile.update',
+      'customers.debt.view', 'customers.consult.view', 'customers.consult.update',
+      'catalog.products.view', 'catalog.spaces.view',
+    ],
   },
 ];
 

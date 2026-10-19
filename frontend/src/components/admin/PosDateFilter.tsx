@@ -84,6 +84,8 @@ interface PosDateFilterProps {
   onChange?: (range: DateRangeValue) => void;
   className?: string;
   showPresets?: boolean;
+  size?: 'small' | 'middle' | 'large';
+  fullWidth?: boolean;
 }
 
 export const PosDateFilter: React.FC<PosDateFilterProps> = ({
@@ -91,6 +93,8 @@ export const PosDateFilter: React.FC<PosDateFilterProps> = ({
   onChange,
   className = '',
   showPresets = true,
+  size = 'small',
+  fullWidth = true,
 }) => {
   const [activePreset, setActivePreset] = useState<string>('all');
 
@@ -113,15 +117,41 @@ export const PosDateFilter: React.FC<PosDateFilterProps> = ({
     }
   };
 
+  if (!fullWidth) {
+    return (
+      <div className={`flex items-center gap-2 flex-wrap ${className}`}>
+        {showPresets && (
+          <Select
+            value={activePreset}
+            onChange={handlePresetChange}
+            options={QUICK_DATE_PRESETS}
+            size={size}
+            className="w-44 text-xs font-normal"
+          />
+        )}
+        <RangePicker
+          value={value}
+          onChange={handleRangeChange}
+          format="DD/MM/YYYY"
+          placeholder={['Từ ngày', 'Đến ngày']}
+          suffixIcon={<CalendarOutlined className="text-slate-400 text-xs" />}
+          size={size}
+          className="w-64 text-xs rounded-lg border-slate-200 hover:border-slate-300 font-normal [&_.ant-picker-input>input]:text-xs"
+          allowClear
+        />
+      </div>
+    );
+  }
+
   return (
-    <div className={`flex items-center gap-2 flex-wrap ${className}`}>
+    <div className={`flex flex-col gap-1.5 w-full ${className}`}>
       {showPresets && (
         <Select
           value={activePreset}
           onChange={handlePresetChange}
           options={QUICK_DATE_PRESETS}
-          className="w-36 sm:w-40 h-10 text-xs font-medium [&_.ant-select-selector]:!border-0 [&_.ant-select-selector]:!bg-slate-100 hover:[&_.ant-select-selector]:!bg-slate-200/80 [&_.ant-select-selector]:!rounded-lg"
-          popupMatchSelectWidth={false}
+          size={size}
+          className="w-full text-xs font-normal [&_.ant-select-selector]:!rounded-lg"
         />
       )}
       <RangePicker
@@ -130,7 +160,8 @@ export const PosDateFilter: React.FC<PosDateFilterProps> = ({
         format="DD/MM/YYYY"
         placeholder={['Từ ngày', 'Đến ngày']}
         suffixIcon={<CalendarOutlined className="text-slate-400 text-xs" />}
-        className="h-10 text-xs rounded-lg border-slate-200 hover:border-slate-300 w-56 sm:w-64 font-medium [&_.ant-picker-input>input]:text-xs [&_.ant-picker-input>input]:font-medium"
+        size={size}
+        className="w-full text-xs rounded-lg border-slate-200 hover:border-slate-300 font-normal [&_.ant-picker-input>input]:text-xs"
         allowClear
       />
     </div>

@@ -311,6 +311,8 @@ export interface SupplierReturnSlip {
   status: 'completed' | 'draft' | 'cancelled';
   statusLabel: string;
   note?: string;
+  itemsJson?: string;
+  items?: any[];
 }
 
 export interface SupplierPaymentSlip {

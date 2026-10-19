@@ -106,11 +106,11 @@ function AdminPageContent({
   }
 
   const ALL_ADMIN_TABS: AdminNavTab[] = useMemo(() => [
-    { key: 'overview', label: 'Tổng quan' },
+    { key: 'overview', label: 'Tổng quan', permission: 'dashboard.view' },
     { key: 'orders', label: 'Đơn hàng', permission: 'orders.view' },
     { key: 'inventory', label: 'Sản phẩm', permission: 'catalog.products.view' },
     { key: 'categories', label: 'Danh mục', permissions: ['catalog.categories.view', 'catalog.spaces.view'] },
-    { key: 'workshop', label: 'Mua hàng', permissions: ['inventory.imports.view', 'inventory.returns.view', 'inventory.stocktake.view', 'inventory.warehouses.view'] },
+    { key: 'workshop', label: 'Mua hàng', permissions: ['inventory.imports.view', 'inventory.returns.view', 'inventory.stocktake.view', 'inventory.warehouses.view', 'suppliers.vendors.view'] },
     { key: 'customers', label: 'Khách hàng', permissions: ['customers.profile.view', 'customers.consult.view'] },
     { key: 'settings', label: 'Cài đặt', permissions: ['settings.brand.view', 'settings.payment.view', 'settings.print.view', 'settings.branches.view', 'inventory.warehouses.view', 'settings.employees.view', 'settings.rbac.view'] },
   ], []);
@@ -123,6 +123,10 @@ function AdminPageContent({
       return true;
     });
   }, [ALL_ADMIN_TABS, hasPermission, hasAnyPermission]);
+
+  const canAccessPOS = useMemo(() => {
+    return hasAnyPermission(['pos.checkout.cash', 'pos.checkout.bank', 'orders.create', 'orders.view']);
+  }, [hasAnyPermission]);
 
   const urlTab = searchParams.get('tab');
   const validUrlTab = (urlTab && ['overview', 'orders', 'inventory', 'categories', 'workshop', 'customers', 'suppliers', 'branches', 'settings'].includes(urlTab))
@@ -619,15 +623,17 @@ function AdminPageContent({
                 </button>
               ))}
 
-              {/* Bán hàng (Quay lại trang bán hàng) */}
-              <Link
-                href="/"
-                className="relative flex items-center gap-1.5 h-20 text-[13px] 2xl:text-[13.5px] text-[#51443d] hover:text-[#5d371f] font-normal px-1.5 2xl:px-2 transition-all whitespace-nowrap cursor-pointer select-none no-underline after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2.5px] after:bg-transparent hover:after:bg-[#5d371f]/30"
-                title="Chuyển sang trang bán hàng"
-              >
-                <ShopOutlined className="text-sm" />
-                <span>Bán hàng</span>
-              </Link>
+              {/* Bán hàng (Quay lại trang bán hàng POS) */}
+              {canAccessPOS && (
+                <Link
+                  href="/"
+                  className="relative flex items-center gap-1.5 h-20 text-[13px] 2xl:text-[13.5px] text-[#51443d] hover:text-[#5d371f] font-normal px-1.5 2xl:px-2 transition-all whitespace-nowrap cursor-pointer select-none no-underline after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2.5px] after:bg-transparent hover:after:bg-[#5d371f]/30"
+                  title="Chuyển sang trang bán hàng"
+                >
+                  <ShopOutlined className="text-sm" />
+                  <span>Bán hàng</span>
+                </Link>
+              )}
             </nav>
 
             {/* Tablet / Compact Desktop Navigation (LG screens) */}
@@ -658,7 +664,7 @@ function AdminPageContent({
                         label: `${t.key === 'settings' ? '⚙️ ' : ''}${t.label}`,
                         onClick: () => handleNavChange(t.key as any),
                       })),
-                      { key: 'storefront', label: '🛍️ Bán hàng', onClick: () => router.push('/') },
+                      ...(canAccessPOS ? [{ key: 'storefront', label: '🛍️ Bán hàng', onClick: () => router.push('/') }] : []),
                     ],
                     selectedKeys: [activeNav],
                   }}
@@ -677,7 +683,7 @@ function AdminPageContent({
                     <EllipsisOutlined className="text-base" />
                   </button>
                 </Dropdown>
-              ) : (
+              ) : canAccessPOS ? (
                 <Link
                   href="/"
                   className="relative flex items-center gap-1.5 h-20 text-[12.5px] text-[#51443d] hover:text-[#5d371f] font-normal px-1.5 transition-all whitespace-nowrap cursor-pointer select-none no-underline"
@@ -686,7 +692,7 @@ function AdminPageContent({
                   <ShopOutlined className="text-sm" />
                   <span>Bán hàng</span>
                 </Link>
-              )}
+              ) : null}
             </nav>
           </div>
 
