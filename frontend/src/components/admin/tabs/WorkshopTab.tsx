@@ -1910,6 +1910,7 @@ export function WorkshopTab({
       await supplierReturnApi.createSupplierReturn(payload);
       await loadReturnsFromApi();
       await refreshCatalogProducts();
+      await loadImportsFromApi();
 
       if (targetStatus === 'draft') {
         message.success(`Đã lưu tạm phiếu trả hàng "${payload.code}" vào Database thành công!`);
@@ -1953,6 +1954,7 @@ export function WorkshopTab({
       setSelectedReturnKeys((prev) => prev.filter((k) => k !== id));
       setExpandedReturnRowKeys((prev) => prev.filter((k) => k !== id));
       await loadReturnsFromApi();
+      await loadImportsFromApi();
       message.success(`Đã xóa phiếu trả hàng ${code}!`);
     } catch (err: any) {
       console.error('Error deleting supplier return:', err);
@@ -2815,7 +2817,7 @@ export function WorkshopTab({
                       const totalGoods = imp.totalValue || activeItemsList.reduce((acc, item) => acc + (item.total || 0), 0);
                       const discountAmount = imp.discount || 0;
                       const paidAmount = imp.paidAmount !== undefined ? imp.paidAmount : totalGoods;
-                      const returnDeduction = getImportReturnDeduction(imp.code);
+                      const returnDeduction = getImportReturnDeduction(imp);
                       const netDebt = Math.max(0, (totalGoods - paidAmount) - returnDeduction);
 
                       return (

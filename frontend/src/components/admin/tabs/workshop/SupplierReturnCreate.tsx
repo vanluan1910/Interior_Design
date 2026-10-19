@@ -382,20 +382,46 @@ export function SupplierReturnCreate({
                 if (matched) {
                   setReturnSupplier(matched.supplier);
                   setReturnWarehouse(matched.warehouseName);
-                  setReturnEntryLines([
-                    {
-                      id: `line_ret_${Date.now()}_${matched.id}`,
-                      code: matched.code,
-                      name: matched.itemName,
-                      spec: matched.spec || '',
-                      unit: matched.unit || 'bộ',
-                      quantity: matched.quantity || 1,
-                      purchasePrice: matched.unitPrice || matched.totalValue || 0,
-                      returnPrice: matched.unitPrice || matched.totalValue || 0,
-                      total: matched.totalValue || (matched.unitPrice ? matched.unitPrice * matched.quantity : 0),
-                      reason: 'Lỗi quy cách / Kiểm định không đạt tiêu chuẩn',
-                    },
-                  ]);
+                  let linesSource = (matched.items && matched.items.length > 0) ? matched.items : [];
+                  if (linesSource.length === 0 && (matched as any).itemsJson) {
+                    try {
+                      linesSource = JSON.parse((matched as any).itemsJson);
+                    } catch {
+                      linesSource = [];
+                    }
+                  }
+
+                  if (linesSource.length > 0) {
+                    setReturnEntryLines(
+                      linesSource.map((it: any, i: number) => ({
+                        id: `line_ret_${Date.now()}_${i}_${it.id || it.code || i}`,
+                        code: it.code || matched.code,
+                        name: it.name || matched.itemName,
+                        spec: it.spec || matched.spec || '',
+                        unit: it.unit || matched.unit || 'bộ',
+                        quantity: it.quantity || 1,
+                        purchasePrice: it.unitPrice || it.importPrice || matched.unitPrice || 0,
+                        returnPrice: it.unitPrice || it.importPrice || matched.unitPrice || 0,
+                        total: it.total || ((it.quantity || 1) * (it.unitPrice || matched.unitPrice || 0)),
+                        reason: 'Lỗi quy cách / Kiểm định không đạt tiêu chuẩn',
+                      }))
+                    );
+                  } else {
+                    setReturnEntryLines([
+                      {
+                        id: `line_ret_${Date.now()}_${matched.id}`,
+                        code: matched.code,
+                        name: matched.itemName,
+                        spec: matched.spec || '',
+                        unit: matched.unit || 'bộ',
+                        quantity: matched.quantity || 1,
+                        purchasePrice: matched.unitPrice || matched.totalValue || 0,
+                        returnPrice: matched.unitPrice || matched.totalValue || 0,
+                        total: matched.totalValue || (matched.unitPrice ? matched.unitPrice * matched.quantity : 0),
+                        reason: 'Lỗi quy cách / Kiểm định không đạt tiêu chuẩn',
+                      },
+                    ]);
+                  }
 
                   const isUnpaid = (matched.paidAmount || 0) === 0 || (matched.debtAmount || 0) > 0 || ((matched.paidAmount || 0) < (matched.totalValue || 0));
                   if (isUnpaid) {
