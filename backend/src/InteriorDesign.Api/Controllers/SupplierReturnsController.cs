@@ -193,6 +193,21 @@ public sealed class SupplierReturnsController : ApiControllerBase
             supplier.CurrentDebt = Math.Max(0, supplier.CurrentDebt - refund);
         }
 
+        // Cấn trừ nợ phiếu nhập hàng gốc nếu có
+        if (!string.IsNullOrWhiteSpace(slip.SourceImportCode) && string.Equals(slip.Status, "completed", StringComparison.OrdinalIgnoreCase))
+        {
+            var cleanSource = slip.SourceImportCode.Trim();
+            var importSlip = await _context.StockImportSlips.FirstOrDefaultAsync(
+                x => x.Code == cleanSource || x.Code == "#" + cleanSource || cleanSource == "#" + x.Code,
+                cancellationToken);
+            if (importSlip != null)
+            {
+                var grossDebt = Math.Max(0, importSlip.TotalValue - importSlip.PaidAmount);
+                importSlip.RemainingDebt = Math.Max(0, grossDebt - refund);
+                importSlip.UpdatedAt = DateTimeOffset.UtcNow;
+            }
+        }
+
         // Tự động giảm tồn kho (InStock) của các sản phẩm trả lại NCC theo từng Chi nhánh / Kho cụ thể
         if (string.Equals(slip.Status, "completed", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(slip.ItemsJson) && slip.ItemsJson != "[]")
         {
@@ -389,6 +404,22 @@ public sealed class SupplierReturnsController : ApiControllerBase
             {
                 var refund = slip.SupplierRefund > 0 ? slip.SupplierRefund : slip.TotalValue;
                 targetSupplier.CurrentDebt = Math.Max(0, targetSupplier.CurrentDebt - refund);
+            }
+
+            // Cấn trừ nợ phiếu nhập hàng gốc nếu có
+            if (!string.IsNullOrWhiteSpace(slip.SourceImportCode))
+            {
+                var cleanSource = slip.SourceImportCode.Trim();
+                var importSlip = await _context.StockImportSlips.FirstOrDefaultAsync(
+                    x => x.Code == cleanSource || x.Code == "#" + cleanSource || cleanSource == "#" + x.Code,
+                    cancellationToken);
+                if (importSlip != null)
+                {
+                    var refund = slip.SupplierRefund > 0 ? slip.SupplierRefund : slip.TotalValue;
+                    var grossDebt = Math.Max(0, importSlip.TotalValue - importSlip.PaidAmount);
+                    importSlip.RemainingDebt = Math.Max(0, grossDebt - refund);
+                    importSlip.UpdatedAt = DateTimeOffset.UtcNow;
+                }
             }
 
             if (!string.IsNullOrWhiteSpace(slip.ItemsJson) && slip.ItemsJson != "[]")

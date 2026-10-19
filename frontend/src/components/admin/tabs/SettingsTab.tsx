@@ -755,10 +755,18 @@ export function SettingsTab({
     return effectiveEmployees.filter((emp) => isEmployeeInRole(emp, currentRole));
   }, [effectiveEmployees, currentRole]);
 
-  // Total permissions across all groups
+  // Total unique permissions across all groups
   const allPermissionKeys = useMemo(() => {
-    return permissionCatalogGroups.flatMap((g: PermissionGroup) => g.permissions.map((p: PermissionDefinition) => p.key));
+    const keys = permissionCatalogGroups.flatMap((g: PermissionGroup) => g.permissions.map((p: PermissionDefinition) => p.key));
+    return Array.from(new Set(keys));
   }, [permissionCatalogGroups]);
+
+  // Valid granted permissions for current role (normalized against catalog)
+  const currentRoleValidGrantedCount = useMemo(() => {
+    if (!currentRole?.permissions) return 0;
+    const validKeySet = new Set(allPermissionKeys);
+    return currentRole.permissions.filter((k: string) => validKeySet.has(k)).length;
+  }, [currentRole?.permissions, allPermissionKeys]);
 
   const [permissionFilterSection, setPermissionFilterSection] = useState<string>('all');
   const [permissionKeywordSearch, setPermissionKeywordSearch] = useState<string>('');
@@ -2043,7 +2051,9 @@ export function SettingsTab({
                         </div>
                         <div className="flex items-center justify-between text-[11px] text-slate-500">
                           <span>{getRoleUserCount(role)} nhân sự</span>
-                          <span className="font-bold text-[#784e34]">{role.permissions.length} quyền</span>
+                          <span className="font-bold text-[#784e34]">
+                            {role.permissions.filter((k: string) => allPermissionKeys.includes(k)).length} quyền
+                          </span>
                         </div>
                       </button>
                     );
@@ -2125,7 +2135,7 @@ export function SettingsTab({
                           value: 'matrix',
                           label: (
                             <span className="flex items-center gap-1.5 px-3 py-0.5 text-xs font-semibold">
-                              <KeyOutlined /> Ma trận phân quyền ({currentRole.permissions.length}/{allPermissionKeys.length})
+                              <KeyOutlined /> Ma trận phân quyền ({currentRoleValidGrantedCount}/{allPermissionKeys.length})
                             </span>
                           ),
                         },
@@ -2196,9 +2206,9 @@ export function SettingsTab({
                                 <span className="flex items-center gap-1.5">
                                   <span>Tất cả chức năng</span>
                                   <span className={`rounded-full px-2 py-0.2 text-[10px] font-bold ${
-                                    currentRole.permissions.length > 0 ? 'bg-[#784e34]/10 text-[#784e34]' : 'bg-slate-200 text-slate-500'
+                                    currentRoleValidGrantedCount > 0 ? 'bg-[#784e34]/10 text-[#784e34]' : 'bg-slate-200 text-slate-500'
                                   }`}>
-                                    {currentRole.permissions.length}/{allPermissionKeys.length}
+                                    {currentRoleValidGrantedCount}/{allPermissionKeys.length}
                                   </span>
                                 </span>
                               ),
@@ -2448,7 +2458,7 @@ export function SettingsTab({
               <Select className="h-10 text-sm">
                 {currentRoles.map((r) => (
                   <Option key={r.id} value={r.id}>
-                    {r.name} ({r.permissions.length} quyền)
+                    {r.name} ({r.permissions.filter((k: string) => allPermissionKeys.includes(k)).length} quyền)
                   </Option>
                 ))}
               </Select>

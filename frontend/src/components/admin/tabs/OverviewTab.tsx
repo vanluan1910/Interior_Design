@@ -26,6 +26,7 @@ import { isMatchBranch } from '@/utils/branchHelper';
 import { getCleanProductName, getOrderQuantity } from './OrdersTab';
 import { dashboardApi, type OverviewDataResponse } from '@/api/dashboardApi';
 import { normalizeOrderStatus } from '@/api/orderApi';
+import { useAuth } from '@/context/AuthContext';
 
 const { Title } = Typography;
 const { Option } = Select;
@@ -38,6 +39,10 @@ export interface OverviewTabProps {
 
 export function OverviewTab({ ordersList, selectedGlobalBranch = 'all', onNavigateTab }: OverviewTabProps) {
   const { message } = App.useApp();
+  const { hasPermission } = useAuth();
+  const canViewFinancials = hasPermission('dashboard.financial.view');
+  const canExportReports = hasPermission('reports.export');
+
   const [revenueFilter, setRevenueFilter] = React.useState<'week' | 'month' | 'year'>('month');
   const [timeFilter, setTimeFilter] = React.useState<string>('this_month');
   const [hoveredBar, setHoveredBar] = React.useState<number | null>(null);
@@ -191,12 +196,14 @@ export function OverviewTab({ ordersList, selectedGlobalBranch = 'all', onNaviga
           >
             Làm mới
           </Button>
-          <Button
-            icon={<DownloadOutlined />}
-            onClick={() => message.success('Đã xuất báo cáo tổng quan hoạt động thành công!')}
-          >
-            Xuất file
-          </Button>
+          {canExportReports && (
+            <Button
+              icon={<DownloadOutlined />}
+              onClick={() => message.success('Đã xuất báo cáo tổng quan hoạt động thành công!')}
+            >
+              Xuất file
+            </Button>
+          )}
         </Space>
       </div>
 
@@ -207,13 +214,13 @@ export function OverviewTab({ ordersList, selectedGlobalBranch = 'all', onNaviga
           <Card className="border border-slate-200/80 shadow-xs bg-white rounded-xl p-1 h-full">
             <Statistic
               title={<span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Doanh thu thuần</span>}
-              value={kpiRevenue}
-              precision={0}
-              suffix="đ"
+              value={canViewFinancials ? kpiRevenue : '••••••••'}
+              precision={canViewFinancials ? 0 : undefined}
+              suffix={canViewFinancials ? 'đ' : ''}
               styles={{ content: { color: '#5d371f', fontWeight: 700, fontSize: '1.25rem' } }}
             />
             <div className="mt-2 text-[11px] text-emerald-700 font-semibold flex items-center gap-1">
-              <span>{kpiRevenueGrowth}</span>{' '}
+              <span>{canViewFinancials ? kpiRevenueGrowth : '•••'}</span>{' '}
               <span className="text-slate-500 font-normal">
                 {selectedGlobalBranch === 'all' ? 'toàn hệ thống' : 'tại cơ sở'}
               </span>
@@ -226,13 +233,13 @@ export function OverviewTab({ ordersList, selectedGlobalBranch = 'all', onNaviga
           <Card className="border border-slate-200/80 shadow-xs bg-white rounded-xl p-1 h-full">
             <Statistic
               title={<span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Giá vốn hàng bán (COGS)</span>}
-              value={kpiCogs}
-              precision={0}
-              suffix="đ"
+              value={canViewFinancials ? kpiCogs : '••••••••'}
+              precision={canViewFinancials ? 0 : undefined}
+              suffix={canViewFinancials ? 'đ' : ''}
               styles={{ content: { color: '#854d0e', fontWeight: 700, fontSize: '1.25rem' } }}
             />
             <div className="mt-2 text-[11px] text-amber-800 font-semibold flex items-center gap-1">
-              <span>{kpiRevenue > 0 ? '57.0%' : '0%'}</span> <span className="text-slate-500 font-normal">tiền vốn nhập hàng</span>
+              <span>{canViewFinancials ? (kpiRevenue > 0 ? '57.0%' : '0%') : '•••'}</span> <span className="text-slate-500 font-normal">tiền vốn nhập hàng</span>
             </div>
           </Card>
         </div>
@@ -242,13 +249,13 @@ export function OverviewTab({ ordersList, selectedGlobalBranch = 'all', onNaviga
           <Card className="border border-emerald-200 shadow-xs bg-emerald-50/40 rounded-xl p-1 h-full">
             <Statistic
               title={<span className="text-xs font-bold text-emerald-800 uppercase tracking-wider">Lợi nhuận gộp (Lãi gộp)</span>}
-              value={kpiProfit}
-              precision={0}
-              suffix="đ"
+              value={canViewFinancials ? kpiProfit : '••••••••'}
+              precision={canViewFinancials ? 0 : undefined}
+              suffix={canViewFinancials ? 'đ' : ''}
               styles={{ content: { color: '#047857', fontWeight: 800, fontSize: '1.25rem' } }}
             />
             <div className="mt-2 text-[11px] text-emerald-700 font-semibold flex items-center gap-1">
-              <span className="font-bold">{kpiProfitGrowth}</span>{' '}
+              <span className="font-bold">{canViewFinancials ? kpiProfitGrowth : '•••'}</span>{' '}
               <span className="text-slate-500 font-normal">
                 {selectedGlobalBranch === 'all' ? 'toàn hệ thống' : 'tại cơ sở'}
               </span>

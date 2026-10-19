@@ -996,9 +996,24 @@ export function CustomersTab({
                 title: 'Thao tác',
                 key: 'actions',
                 align: 'right',
-                width: 90,
+                width: 120,
                 render: (_, r: AdminCustomer) => (
                   <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                    {Number(r.debt || 0) > 0 && (
+                      <Tooltip title={`Thu nợ (${Number(r.debt || 0).toLocaleString('vi-VN')} đ)`}>
+                        <Button
+                          type="text"
+                          size="small"
+                          icon={<DollarOutlined className="text-rose-600 hover:text-rose-700 text-sm font-bold" />}
+                          onClick={() => {
+                            setCollectDebtCustomer(r);
+                            setCollectAmount(Number(r.debt || 0));
+                            setCollectNote(`Thu nợ khách hàng ${r.code} - ${r.name}`);
+                          }}
+                          className="w-7 h-7 flex items-center justify-center rounded hover:bg-rose-50"
+                        />
+                      </Tooltip>
+                    )}
                     <Tooltip title="Chỉnh sửa">
                       <Button
                         type="text"
@@ -1850,7 +1865,39 @@ function CustomerExpandedDetailRow({
 
       {/* Tab 3: Lịch sử thanh toán */}
       {activeTab === 'payments' && (
-        <div className="space-y-4">
+        <div className="space-y-3">
+          {/* Debt Summary Banner & Collect Debt CTA */}
+          <div className="flex items-center justify-between p-3.5 bg-[#fbf8f5] border border-[#e8ded6] rounded-lg flex-wrap gap-3">
+            <div className="flex items-center gap-3">
+              <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${totalCalculatedDebt > 0 ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                <DollarOutlined className="text-lg" />
+              </div>
+              <div>
+                <div className="text-xs text-slate-700">
+                  Tổng công nợ hiện tại: <strong className={`font-mono text-sm ${totalCalculatedDebt > 0 ? 'text-rose-600 font-bold' : 'text-emerald-700 font-bold'}`}>{totalCalculatedDebt > 0 ? `${totalCalculatedDebt.toLocaleString('vi-VN')} đ` : '0 đ (Đã thanh toán đủ)'}</strong>
+                </div>
+                <div className="text-[11px] text-slate-500">
+                  {totalCalculatedDebt > 0
+                    ? 'Khách hàng có khoản công nợ cần thu, bấm nút "Thu tiền nợ ngay" để ghi nhận thanh toán.'
+                    : 'Khách hàng không còn công nợ cần thu.'}
+                </div>
+              </div>
+            </div>
+
+            <Button
+              type="primary"
+              icon={<DollarOutlined />}
+              onClick={() => onCollectDebt(totalCalculatedDebt, `Thu nợ công nợ khách hàng ${customer.code} - ${customer.name}`)}
+              className={`h-8 px-4 text-xs font-semibold rounded-lg shadow-xs flex items-center gap-1.5 border-none ${
+                totalCalculatedDebt > 0
+                  ? 'bg-rose-600 hover:!bg-rose-700 text-white'
+                  : 'bg-[#784e34] hover:!bg-[#5d371f] text-white'
+              }`}
+            >
+              {totalCalculatedDebt > 0 ? `Thu tiền nợ ngay (${totalCalculatedDebt.toLocaleString('vi-VN')} đ)` : '+ Lập phiếu thu tiền'}
+            </Button>
+          </div>
+
           {/* Sub-table Lịch sử thanh toán */}
           <div className="overflow-x-auto border border-slate-200">
             <table className="w-full text-left border-collapse text-xs">
@@ -1861,12 +1908,13 @@ function CustomerExpandedDetailRow({
                   <th className="py-2 px-3 font-medium">Nội dung đợt thu</th>
                   <th className="py-2 px-3 font-medium text-center whitespace-nowrap">Trạng thái</th>
                   <th className="py-2 px-3 font-medium text-right whitespace-nowrap">Số tiền</th>
+                  <th className="py-2 px-3 font-medium text-center whitespace-nowrap">Thao tác</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {paymentReceipts.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="py-6 text-center text-slate-400">
+                    <td colSpan={6} className="py-6 text-center text-slate-400">
                       Chưa có lịch sử giao dịch thanh toán nào cho khách hàng này.
                     </td>
                   </tr>
@@ -1894,6 +1942,21 @@ function CustomerExpandedDetailRow({
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono font-medium text-emerald-700 whitespace-nowrap">
                         {rcpt.amount.toLocaleString('vi-VN')} đ
+                      </td>
+                      <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                        {rcpt.status === 'pending' || rcpt.statusLabel?.includes('Chờ thu') ? (
+                          <Button
+                            size="small"
+                            type="primary"
+                            icon={<DollarOutlined />}
+                            onClick={() => onCollectDebt(rcpt.amount, `Thu tiền phiếu ${rcpt.receiptCode} - Đơn ${rcpt.orderCode}`)}
+                            className="bg-rose-600 hover:!bg-rose-700 text-white text-[11px] h-6 px-2.5 rounded border-none shadow-none flex items-center gap-1 mx-auto"
+                          >
+                            Thu tiền ngay
+                          </Button>
+                        ) : (
+                          <span className="text-slate-400 text-[11px] italic">Đã thu đủ</span>
+                        )}
                       </td>
                     </tr>
                   ))

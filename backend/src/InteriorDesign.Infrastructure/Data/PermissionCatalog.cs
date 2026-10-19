@@ -9,6 +9,40 @@ public static class PermissionCatalog
         return new List<PermissionGroupDto>
         {
             new(
+                GroupKey: "dashboard_reports",
+                GroupName: "Tổng quan & Báo cáo kinh doanh",
+                GroupIcon: "📊",
+                SubGroups: new List<PermissionSubGroupDto>
+                {
+                    new(
+                        SubKey: "dashboard_overview",
+                        SubName: "Bảng điều khiển & Chỉ số điều hành",
+                        Permissions: new List<PermissionDefinitionDto>
+                        {
+                            new("dashboard.view", "Xem trang Tổng quan hệ thống", "Xem dashboard, số liệu hoạt động và biểu đồ kinh doanh"),
+                            new("dashboard.financial.view", "Xem doanh thu & Lợi nhuận", "Xem tổng doanh thu, doanh số đơn hàng và chỉ số tài chính")
+                        }
+                    ),
+                    new(
+                        SubKey: "reports_analytics",
+                        SubName: "Báo cáo thống kê & Xuất file",
+                        Permissions: new List<PermissionDefinitionDto>
+                        {
+                            new("reports.revenue.view", "Xem báo cáo doanh thu theo chi nhánh", "Đối soát và theo dõi doanh thu từng cơ sở showroom"),
+                            new("reports.export", "Xuất báo cáo tổng quan (Excel)", "Tải báo cáo số liệu kinh doanh định dạng Excel")
+                        }
+                    )
+                },
+                Permissions: new List<PermissionDefinitionDto>
+                {
+                    new("dashboard.view", "Xem trang Tổng quan hệ thống", "Xem dashboard, số liệu hoạt động và biểu đồ kinh doanh"),
+                    new("dashboard.financial.view", "Xem doanh thu & Lợi nhuận", "Xem tổng doanh thu, doanh số đơn hàng và chỉ số tài chính"),
+                    new("reports.revenue.view", "Xem báo cáo doanh thu theo chi nhánh", "Đối soát và theo dõi doanh thu từng cơ sở showroom"),
+                    new("reports.export", "Xuất báo cáo tổng quan (Excel)", "Tải báo cáo số liệu kinh doanh định dạng Excel")
+                }
+            ),
+
+            new(
                 GroupKey: "pos_orders",
                 GroupName: "Đơn hàng & Bán hàng POS",
                 GroupIcon: "🛒",
@@ -55,13 +89,13 @@ public static class PermissionCatalog
             ),
 
             new(
-                GroupKey: "inventory_warehouse",
-                GroupName: "Kho hàng, Sản phẩm & Xuất nhập tồn",
-                GroupIcon: "🏢",
+                GroupKey: "catalog_products",
+                GroupName: "Sản phẩm & Báo giá",
+                GroupIcon: "🛋️",
                 SubGroups: new List<PermissionSubGroupDto>
                 {
                     new(
-                        SubKey: "catalog_products",
+                        SubKey: "catalog_products_mgmt",
                         SubName: "Danh mục Sản phẩm & Báo giá",
                         Permissions: new List<PermissionDefinitionDto>
                         {
@@ -71,7 +105,24 @@ public static class PermissionCatalog
                             new("catalog.products.delete", "Ẩn / Xóa sản phẩm khỏi danh mục", "Tạm ẩn hoặc xóa mẫu sản phẩm"),
                             new("catalog.products.export", "Xuất danh mục sản phẩm (Excel)", "Tải file Excel danh sách sản phẩm và giá niêm yết")
                         }
-                    ),
+                    )
+                },
+                Permissions: new List<PermissionDefinitionDto>
+                {
+                    new("catalog.products.view", "Xem danh mục sản phẩm & Báo giá", "Xem bảng giá, tồn kho tức thời và thông số kỹ thuật"),
+                    new("catalog.products.create", "Thêm mới sản phẩm vào danh mục", "Thêm mẫu thiết kế mới vào catalog"),
+                    new("catalog.products.update", "Chỉnh sửa giá bán & Ảnh render 3D", "Cập nhật hình ảnh render chi tiết, kích thước và chất liệu"),
+                    new("catalog.products.delete", "Ẩn / Xóa sản phẩm khỏi danh mục", "Tạm ẩn hoặc xóa mẫu sản phẩm"),
+                    new("catalog.products.export", "Xuất danh mục sản phẩm (Excel)", "Tải file Excel danh sách sản phẩm và giá niêm yết")
+                }
+            ),
+
+            new(
+                GroupKey: "inventory_procurement",
+                GroupName: "Mua hàng, Kho & Xuất nhập tồn",
+                GroupIcon: "🏢",
+                SubGroups: new List<PermissionSubGroupDto>
+                {
                     new(
                         SubKey: "warehouses_list",
                         SubName: "Danh sách Kho hàng & Showroom",
@@ -110,11 +161,6 @@ public static class PermissionCatalog
                 },
                 Permissions: new List<PermissionDefinitionDto>
                 {
-                    new("catalog.products.view", "Xem danh mục sản phẩm & Báo giá", "Xem bảng giá, tồn kho tức thời và thông số kỹ thuật"),
-                    new("catalog.products.create", "Thêm mới sản phẩm vào danh mục", "Thêm mẫu thiết kế mới vào catalog"),
-                    new("catalog.products.update", "Chỉnh sửa giá bán & Ảnh render 3D", "Cập nhật hình ảnh render chi tiết, kích thước và chất liệu"),
-                    new("catalog.products.delete", "Ẩn / Xóa sản phẩm khỏi danh mục", "Tạm ẩn hoặc xóa mẫu sản phẩm"),
-                    new("catalog.products.export", "Xuất danh mục sản phẩm (Excel)", "Tải file Excel danh sách sản phẩm và giá niêm yết"),
                     new("inventory.warehouses.view", "Xem danh sách kho hàng & Showroom", "Tra cứu danh sách kho và cơ sở"),
                     new("inventory.warehouses.create", "Thêm mới kho hàng & Showroom", "Tạo mới cơ sở kho hoặc showroom"),
                     new("inventory.warehouses.update", "Chỉnh sửa thông tin kho & Showroom", "Cập nhật sức chứa, địa chỉ, người quản lý kho"),

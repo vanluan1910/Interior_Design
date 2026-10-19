@@ -396,7 +396,18 @@ export function SupplierReturnCreate({
                       reason: 'Lỗi quy cách / Kiểm định không đạt tiêu chuẩn',
                     },
                   ]);
-                  message.success(`Đã tự động điền thông tin từ phiếu nhập ${matched.code}`);
+
+                  const isUnpaid = (matched.paidAmount || 0) === 0 || (matched.debtAmount || 0) > 0 || ((matched.paidAmount || 0) < (matched.totalValue || 0));
+                  if (isUnpaid) {
+                    setReturnPaymentMethod('Cấn trừ công nợ');
+                    setReturnSolution('Cấn trừ vào công nợ');
+                    setReturnPaidAmount(0);
+                    message.info(`Phiếu nhập ${matched.code} chưa thanh toán đủ -> Tự động chọn hình thức "Cấn trừ vào công nợ NCC".`);
+                  } else {
+                    setReturnPaymentMethod('Chuyển khoản');
+                    setReturnSolution('NCC đã hoàn lại tiền');
+                    message.success(`Đã tự động điền thông tin từ phiếu nhập ${matched.code}`);
+                  }
                 }
               }}
               placeholder="Chọn phiếu nhập gốc để trả hàng..."
@@ -526,73 +537,95 @@ export function SupplierReturnCreate({
                   </div>
 
                   <div className="flex items-center justify-between pt-2 border-t border-slate-200">
-                    <span className="font-bold text-slate-900 text-xs">NCC cần hoàn lại</span>
-                    <span className="font-mono font-bold text-rose-700 text-sm">{refund.toLocaleString('vi-VN')} đ</span>
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <span className="text-slate-700 font-semibold">Tiền NCC đã trả</span>
-                        {!isOffset && (
-                          <div className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => setReturnPaidAmount(refund)}
-                              className="text-[10px] px-1.5 py-0.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded border border-emerald-200 cursor-pointer font-medium"
-                              title="Điền đủ số tiền NCC đã hoàn lại"
-                            >
-                              Đã thu đủ
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setReturnPaidAmount(0)}
-                              className="text-[10px] px-1.5 py-0.5 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded border border-rose-200 cursor-pointer font-medium"
-                              title="Chưa nhận lại tiền (0 đ)"
-                            >
-                              Chưa nhận
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                      <Input
-                        disabled={isOffset}
-                        placeholder={isOffset ? '0 đ (Cấn trừ nợ)' : 'Nhập tiền NCC đã trả...'}
-                        value={isOffset ? '0' : (returnPaidAmount !== undefined ? formatInputMoney(returnPaidAmount) : '')}
-                        onChange={(e) => {
-                          const raw = e.target.value.trim();
-                          setReturnPaidAmount(raw ? parseInputMoney(raw) : 0);
-                        }}
-                        style={{ width: 190, minWidth: 180 }}
-                        className={`w-48 sm:w-52 min-w-[180px] h-8 text-xs font-mono font-bold text-right px-2.5 !border-0 !border-b !border-slate-300 hover:!border-slate-500 focus-within:!border-emerald-700 !rounded-none !shadow-none !bg-transparent ${isOffset ? 'text-slate-400 italic' : 'text-emerald-700'}`}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-600 font-medium">{isOffset ? 'Cấn trừ giảm nợ NCC' : 'Còn nợ hoàn tiền'}</span>
-                    <span className={`font-mono font-bold ${isOffset ? 'text-emerald-700' : (remaining > 0 ? 'text-rose-600' : 'text-slate-500')}`}>
-                      {isOffset ? `-${refund.toLocaleString('vi-VN')} đ` : (remaining > 0 ? `${remaining.toLocaleString('vi-VN')} đ` : '0 đ')}
+                    <span className="font-bold text-slate-900 text-xs">
+                      {isOffset ? 'Cấn trừ giảm nợ NCC' : 'NCC cần hoàn lại'}
+                    </span>
+                    <span className={`font-mono font-bold text-sm ${isOffset ? 'text-emerald-700' : 'text-rose-700'}`}>
+                      {refund.toLocaleString('vi-VN')} đ
                     </span>
                   </div>
 
+                  {isOffset ? (
+                    <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] leading-relaxed space-y-1">
+                      <div className="font-semibold flex items-center gap-1 text-emerald-900">
+                        <span>✓</span> Cấn trừ công nợ mua hàng
+                      </div>
+                      <p className="m-0 text-slate-600">
+                        Giá trị hoàn trả <strong>{refund.toLocaleString('vi-VN')} đ</strong> được cấn trừ trực tiếp vào công nợ phải trả NCC. Nhà cung cấp <strong>không cần hoàn tiền mặt/chuyển khoản</strong>.
+                      </p>
+                      <div className="flex items-center justify-between pt-1 border-t border-emerald-200/60 font-medium">
+                        <span className="text-slate-600">Tiền mặt/CK NCC cần hoàn:</span>
+                        <span className="font-mono font-bold text-slate-700">0 đ</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className="text-slate-700 font-semibold">Tiền NCC đã trả</span>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => setReturnPaidAmount(refund)}
+                                className="text-[10px] px-1.5 py-0.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded border border-emerald-200 cursor-pointer font-medium"
+                                title="Điền đủ số tiền NCC đã hoàn lại"
+                              >
+                                Đã thu đủ
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setReturnPaidAmount(0)}
+                                className="text-[10px] px-1.5 py-0.5 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded border border-rose-200 cursor-pointer font-medium"
+                                title="Chưa nhận lại tiền (0 đ)"
+                              >
+                                Chưa nhận
+                              </button>
+                            </div>
+                          </div>
+                          <Input
+                            placeholder="Nhập tiền NCC đã trả..."
+                            value={returnPaidAmount !== undefined ? formatInputMoney(returnPaidAmount) : ''}
+                            onChange={(e) => {
+                              const raw = e.target.value.trim();
+                              setReturnPaidAmount(raw ? parseInputMoney(raw) : 0);
+                            }}
+                            style={{ width: 190, minWidth: 180 }}
+                            className="w-48 sm:w-52 min-w-[180px] h-8 text-xs font-mono font-bold text-right px-2.5 !border-0 !border-b !border-slate-300 hover:!border-slate-500 focus-within:!border-emerald-700 !rounded-none !shadow-none !bg-transparent text-emerald-700"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-600 font-medium">Còn nợ hoàn tiền</span>
+                        <span className={`font-mono font-bold ${remaining > 0 ? 'text-rose-600' : 'text-slate-500'}`}>
+                          {remaining > 0 ? `${remaining.toLocaleString('vi-VN')} đ` : '0 đ'}
+                        </span>
+                      </div>
+                    </>
+                  )}
+
                   <div className="pt-2 border-t border-slate-200">
-                    <label className="text-[11px] font-semibold text-slate-600 block mb-1">Hình thức hoàn tiền</label>
+                    <label className="text-[11px] font-semibold text-slate-600 block mb-1">Hình thức hoàn trả / cấn trừ</label>
                     <Select
                       value={returnPaymentMethod}
                       onChange={(m) => {
                         setReturnPaymentMethod(m);
                         if (m === 'Cấn trừ công nợ') {
                           setReturnPaidAmount(0);
-                        } else if (returnPaidAmount === 0 || returnPaidAmount === undefined) {
-                          setReturnPaidAmount(refund);
+                          setReturnSolution('Cấn trừ vào công nợ');
+                        } else {
+                          setReturnSolution('NCC đã hoàn lại tiền');
+                          if (returnPaidAmount === 0 || returnPaidAmount === undefined) {
+                            setReturnPaidAmount(refund);
+                          }
                         }
                       }}
                       className="w-full h-8 text-xs"
                       options={[
-                        { value: 'Chuyển khoản', label: 'Chuyển khoản ngân hàng' },
-                        { value: 'Tiền mặt', label: 'Tiền mặt' },
-                        { value: 'Cấn trừ công nợ', label: 'Cấn trừ vào công nợ NCC' },
+                        { value: 'Chuyển khoản', label: 'Chuyển khoản ngân hàng (NCC hoàn tiền)' },
+                        { value: 'Tiền mặt', label: 'Tiền mặt (NCC hoàn tiền)' },
+                        { value: 'Cấn trừ công nợ', label: 'Cấn trừ vào công nợ NCC (Giảm nợ mua hàng)' },
                       ]}
                     />
                   </div>

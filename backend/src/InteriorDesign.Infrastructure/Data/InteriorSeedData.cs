@@ -786,6 +786,104 @@ public static class InteriorSeedData
                 Permissions = allPerms,
                 CreatedAt = DateTimeOffset.UtcNow,
                 UpdatedAt = DateTimeOffset.UtcNow
+            },
+            new Role
+            {
+                Id = Guid.Parse("a2222222-2222-2222-2222-222222222222"),
+                Code = "STORE_MANAGER",
+                Name = "Quản lý chi nhánh / Showroom",
+                Description = "Quản lý vận hành toàn diện tại cơ sở: đơn hàng, bán hàng, xuất nhập kho, khách hàng và nhân sự chi nhánh.",
+                IsSystem = false,
+                Status = "active",
+                Permissions = new List<string>
+                {
+                    "dashboard.view", "dashboard.financial.view", "reports.revenue.view", "reports.export",
+                    "orders.view", "orders.create", "orders.update", "orders.print", "orders.export",
+                    "pos.checkout.cash", "pos.checkout.bank", "pos.checkout.deposit", "pos.refund",
+                    "catalog.products.view", "catalog.products.export",
+                    "catalog.categories.view", "catalog.spaces.view",
+                    "inventory.warehouses.view", "inventory.imports.view", "inventory.imports.create",
+                    "inventory.returns.view", "inventory.returns.create", "inventory.stocktake.view",
+                    "inventory.history.view", "suppliers.vendors.view", "suppliers.debt.view",
+                    "customers.profile.view", "customers.profile.create", "customers.profile.update",
+                    "customers.debt.view", "customers.consult.view", "customers.consult.update",
+                    "settings.branches.view", "settings.employees.view"
+                },
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow
+            },
+            new Role
+            {
+                Id = Guid.Parse("a3333333-3333-3333-3333-333333333333"),
+                Code = "CASHIER_SALES",
+                Name = "Nhân viên Bán hàng & Thu ngân POS",
+                Description = "Tạo và xử lý đơn hàng POS, thu ngân tiền mặt/VietQR, in hóa đơn, tra cứu sản phẩm và tồn kho.",
+                IsSystem = false,
+                Status = "active",
+                Permissions = new List<string>
+                {
+                    "orders.view", "orders.create", "orders.update", "orders.print",
+                    "pos.checkout.cash", "pos.checkout.bank", "pos.checkout.deposit",
+                    "catalog.products.view", "catalog.categories.view", "catalog.spaces.view",
+                    "customers.profile.view", "customers.profile.create"
+                },
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow
+            },
+            new Role
+            {
+                Id = Guid.Parse("a4444444-4444-4444-4444-444444444444"),
+                Code = "WAREHOUSE_KEEPER",
+                Name = "Thủ kho & Quản lý Kho vận",
+                Description = "Lập và duyệt phiếu nhập kho, phiếu xuất trả NCC, kiểm kê điều chỉnh tồn kho, theo dõi nhà cung cấp.",
+                IsSystem = false,
+                Status = "active",
+                Permissions = new List<string>
+                {
+                    "catalog.products.view",
+                    "inventory.warehouses.view",
+                    "inventory.imports.view", "inventory.imports.create", "inventory.imports.update",
+                    "inventory.returns.view", "inventory.returns.create", "inventory.returns.update",
+                    "inventory.stocktake.view", "inventory.stocktake.create", "inventory.stocktake.update",
+                    "inventory.history.view",
+                    "suppliers.vendors.view", "suppliers.debt.view"
+                },
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow
+            },
+            new Role
+            {
+                Id = Guid.Parse("a5555555-5555-5555-5555-555555555555"),
+                Code = "PRODUCT_SPECIALIST",
+                Name = "Chuyên viên Sản phẩm & Danh mục",
+                Description = "Quản lý danh mục nội thất, tải ảnh render 3D, cập nhật thông số và bảng giá niêm yết.",
+                IsSystem = false,
+                Status = "active",
+                Permissions = new List<string>
+                {
+                    "catalog.products.view", "catalog.products.create", "catalog.products.update", "catalog.products.delete", "catalog.products.export",
+                    "catalog.categories.view", "catalog.categories.create", "catalog.categories.update", "catalog.categories.delete",
+                    "catalog.spaces.view", "catalog.spaces.create", "catalog.spaces.update", "catalog.spaces.delete"
+                },
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow
+            },
+            new Role
+            {
+                Id = Guid.Parse("a6666666-6666-6666-6666-666666666666"),
+                Code = "DESIGN_CONSULTANT",
+                Name = "Chuyên viên Tư vấn thiết kế & CSKH",
+                Description = "Tiếp nhận và xử lý yêu cầu tư vấn 3D từ khách hàng, quản lý hồ sơ gia chủ và kiến trúc sư.",
+                IsSystem = false,
+                Status = "active",
+                Permissions = new List<string>
+                {
+                    "customers.profile.view", "customers.profile.create", "customers.profile.update",
+                    "customers.debt.view", "customers.consult.view", "customers.consult.update",
+                    "catalog.products.view", "catalog.spaces.view"
+                },
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow
             }
         ];
     }

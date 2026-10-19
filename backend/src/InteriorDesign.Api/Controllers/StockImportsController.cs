@@ -82,6 +82,30 @@ public sealed class StockImportsController : ApiControllerBase
 
             var list = await query.ToListAsync(cancellationToken);
 
+            var importCodes = list.Select(x => x.Code).Where(c => !string.IsNullOrEmpty(c)).ToList();
+            if (importCodes.Count > 0)
+            {
+                var returnDeductions = await _context.SupplierReturnSlips
+                    .Where(r => !r.IsDeleted && r.Status != "draft" && importCodes.Contains(r.SourceImportCode))
+                    .GroupBy(r => r.SourceImportCode)
+                    .Select(g => new
+                    {
+                        Code = g.Key,
+                        TotalDeduction = g.Sum(r => r.SupplierRefund > 0 ? r.SupplierRefund : r.TotalValue)
+                    })
+                    .ToDictionaryAsync(x => x.Code, x => x.TotalDeduction, cancellationToken);
+
+                foreach (var item in list)
+                {
+                    if (returnDeductions.TryGetValue(item.Code, out var deduction))
+                    {
+                        var grossDebt = Math.Max(0, item.TotalValue - item.PaidAmount);
+                        var validDeduction = Math.Min(item.TotalValue, deduction);
+                        item.RemainingDebt = Math.Max(0, grossDebt - validDeduction);
+                    }
+                }
+            }
+
             return Ok(ApiResponse<List<StockImportSlip>>.Ok(list, "Lấy danh sách phiếu nhập hàng thành công."));
         }
         catch (OperationCanceledException)
@@ -109,6 +133,17 @@ public sealed class StockImportsController : ApiControllerBase
             if (item == null)
             {
                 return NotFound(ApiResponse<StockImportSlip>.Fail("Không tìm thấy phiếu nhập hàng."));
+            }
+
+            var returnDeduction = await _context.SupplierReturnSlips
+                .Where(r => !r.IsDeleted && r.Status != "draft" && r.SourceImportCode == item.Code)
+                .SumAsync(r => (decimal?)(r.SupplierRefund > 0 ? r.SupplierRefund : r.TotalValue), cancellationToken) ?? 0;
+
+            if (returnDeduction > 0)
+            {
+                var grossDebt = Math.Max(0, item.TotalValue - item.PaidAmount);
+                var validDeduction = Math.Min(item.TotalValue, returnDeduction);
+                item.RemainingDebt = Math.Max(0, grossDebt - validDeduction);
             }
 
             return Ok(ApiResponse<StockImportSlip>.Ok(item, "Lấy chi tiết phiếu nhập hàng thành công."));
