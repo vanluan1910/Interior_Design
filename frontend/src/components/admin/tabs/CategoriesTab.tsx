@@ -25,6 +25,7 @@ import {
   CopyOutlined,
   FilterOutlined,
   AppstoreOutlined,
+  HomeOutlined,
   ThunderboltOutlined,
   FileExcelOutlined,
   ReloadOutlined,
@@ -937,7 +938,7 @@ export function CategoriesTab({
                 value: 'spaces',
                 label: (
                   <div className="flex items-center gap-2 py-1 px-1.5 font-bold text-xs sm:text-sm">
-                    <span className="material-symbols-outlined text-[16px] leading-none">living</span>
+                    <HomeOutlined className={activeSubTab === 'spaces' ? 'text-[#784e34]' : 'text-slate-400'} />
                     <span>Không gian nội thất</span>
                     <span
                       className={`px-2 py-0.5 rounded-full text-[11px] font-mono ${

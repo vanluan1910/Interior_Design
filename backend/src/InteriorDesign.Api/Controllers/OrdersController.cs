@@ -236,9 +236,16 @@ public sealed class OrdersController : ApiControllerBase
         }
 
         DateTimeOffset? deadlineDate = null;
-        if (!string.IsNullOrWhiteSpace(request.DeadlineDate) && DateTimeOffset.TryParse(request.DeadlineDate, out var parsedDeadline))
+        if (!string.IsNullOrWhiteSpace(request.DeadlineDate))
         {
-            deadlineDate = parsedDeadline;
+            if (DateTimeOffset.TryParse(request.DeadlineDate, out var parsedDeadline))
+            {
+                deadlineDate = parsedDeadline;
+            }
+            else if (DateTime.TryParseExact(request.DeadlineDate, new[] { "dd/MM/yyyy", "d/M/yyyy", "yyyy-MM-dd" }, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var dt))
+            {
+                deadlineDate = new DateTimeOffset(dt, TimeSpan.Zero);
+            }
         }
 
         // Xác định chi nhánh đặt hàng & kho mặc định chuẩn xác
@@ -376,7 +383,7 @@ public sealed class OrdersController : ApiControllerBase
             depositAmount = Math.Round(totalAmount * (depositPercent / 100m));
         }
 
-        // Tự động liên kết / ghi nhận Khách Hàng vào bảng Customers trong DB thật
+        // Tự động liên kết / ghi nhận Khách Hàng vào bảng Customers trong DB thật (Ghi nhận công nợ cho Người Mua / Chủ tài khoản)
         Customer? customer = null;
         if (request.CustomerId.HasValue && request.CustomerId.Value != Guid.Empty)
         {
@@ -386,6 +393,11 @@ public sealed class OrdersController : ApiControllerBase
         if (customer == null && !string.IsNullOrWhiteSpace(cleanPhone))
         {
             customer = await _context.Customers.FirstOrDefaultAsync(c => c.Phone == cleanPhone, cancellationToken);
+        }
+
+        if (customer == null && !string.IsNullOrWhiteSpace(cleanEmail))
+        {
+            customer = await _context.Customers.FirstOrDefaultAsync(c => c.Email == cleanEmail, cancellationToken);
         }
 
         var orderDebt = paymentStatus == PaymentStatus.Paid ? 0 : Math.Max(0, totalAmount - depositAmount);
@@ -426,6 +438,7 @@ public sealed class OrdersController : ApiControllerBase
 
             customer = new Customer
             {
+                Id = request.CustomerId.HasValue && request.CustomerId.Value != Guid.Empty ? request.CustomerId.Value : Guid.NewGuid(),
                 Code = custCode,
                 FullName = cleanName,
                 Phone = cleanPhone,
@@ -447,6 +460,21 @@ public sealed class OrdersController : ApiControllerBase
             _context.Customers.Add(customer);
         }
 
+        // Tách bạch rõ Người Đặt Hàng (Chủ tài khoản / Công nợ) và Người Nhận Hàng tại công trình
+        var recipientName = !string.IsNullOrWhiteSpace(request.RecipientName) ? request.RecipientName.Trim() : cleanName;
+        var recipientPhone = !string.IsNullOrWhiteSpace(request.RecipientPhone) ? request.RecipientPhone.Trim() : cleanPhone;
+
+        var finalOrderNote = request.Note?.Trim() ?? string.Empty;
+        if (!string.Equals(recipientName, cleanName, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(recipientPhone.Replace(" ", ""), cleanPhone.Replace(" ", ""), StringComparison.OrdinalIgnoreCase))
+        {
+            var handoverTag = $"[Người nhận hàng: {recipientName} - SĐT: {recipientPhone}]";
+            if (!finalOrderNote.Contains(handoverTag, StringComparison.OrdinalIgnoreCase))
+            {
+                finalOrderNote = string.IsNullOrWhiteSpace(finalOrderNote) ? handoverTag : $"{handoverTag} {finalOrderNote}";
+            }
+        }
+
         var order = new Order
         {
             Id = orderId,
@@ -456,6 +484,8 @@ public sealed class OrdersController : ApiControllerBase
             CustomerName = cleanName,
             CustomerPhone = cleanPhone,
             CustomerEmail = cleanEmail,
+            RecipientName = recipientName,
+            RecipientPhone = recipientPhone,
             ShippingAddress = request.ShippingAddress?.Trim() ?? request.CustomerAddress?.Trim() ?? string.Empty,
             City = request.City?.Trim() ?? string.Empty,
             District = request.District?.Trim() ?? string.Empty,
@@ -467,7 +497,7 @@ public sealed class OrdersController : ApiControllerBase
             Showroom = targetBranch,
             OrderDate = orderDate,
             DeadlineDate = deadlineDate,
-            Note = request.Note?.Trim() ?? string.Empty,
+            Note = finalOrderNote,
             PaymentMethod = request.PaymentMethod ?? "VietQR",
             PaymentStatus = paymentStatus,
             Status = orderStatus,
@@ -505,6 +535,12 @@ public sealed class OrdersController : ApiControllerBase
         if (!string.IsNullOrWhiteSpace(request.CustomerPhone))
             order.CustomerPhone = request.CustomerPhone.Trim();
 
+        if (!string.IsNullOrWhiteSpace(request.RecipientName))
+            order.RecipientName = request.RecipientName.Trim();
+
+        if (!string.IsNullOrWhiteSpace(request.RecipientPhone))
+            order.RecipientPhone = request.RecipientPhone.Trim();
+
         if (!string.IsNullOrWhiteSpace(request.OrderCode))
         {
             var code = request.OrderCode.Trim().ToUpper();
@@ -534,8 +570,17 @@ public sealed class OrdersController : ApiControllerBase
         if (!string.IsNullOrWhiteSpace(request.OrderDate) && DateTimeOffset.TryParse(request.OrderDate, out var od))
             order.OrderDate = od;
 
-        if (!string.IsNullOrWhiteSpace(request.DeadlineDate) && DateTimeOffset.TryParse(request.DeadlineDate, out var dl))
-            order.DeadlineDate = dl;
+        if (!string.IsNullOrWhiteSpace(request.DeadlineDate))
+        {
+            if (DateTimeOffset.TryParse(request.DeadlineDate, out var dl))
+            {
+                order.DeadlineDate = dl;
+            }
+            else if (DateTime.TryParseExact(request.DeadlineDate, new[] { "dd/MM/yyyy", "d/M/yyyy", "yyyy-MM-dd" }, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var dt))
+            {
+                order.DeadlineDate = new DateTimeOffset(dt, TimeSpan.Zero);
+            }
+        }
 
         var oldStatus = order.Status;
         if (!string.IsNullOrWhiteSpace(request.Status) && TryParseOrderStatus(request.Status, out var parsedStatus))

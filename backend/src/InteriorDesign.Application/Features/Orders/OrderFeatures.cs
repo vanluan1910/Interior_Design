@@ -88,6 +88,8 @@ public static class OrderMapper
             CustomerName: o.CustomerName,
             CustomerPhone: o.CustomerPhone,
             CustomerEmail: o.CustomerEmail,
+            RecipientName: o.RecipientName,
+            RecipientPhone: o.RecipientPhone,
             ShippingAddress: o.ShippingAddress,
             CustomerProvince: o.City,
             CustomerDistrict: o.District,

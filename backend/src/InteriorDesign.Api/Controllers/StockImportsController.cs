@@ -85,19 +85,26 @@ public sealed class StockImportsController : ApiControllerBase
             var importCodes = list.Select(x => x.Code).Where(c => !string.IsNullOrEmpty(c)).ToList();
             if (importCodes.Count > 0)
             {
-                var returnDeductions = await _context.SupplierReturnSlips
-                    .Where(r => !r.IsDeleted && r.Status != "draft" && importCodes.Contains(r.SourceImportCode))
-                    .GroupBy(r => r.SourceImportCode)
-                    .Select(g => new
+                var cleanImportCodes = importCodes.Select(c => c.Trim().TrimStart('#')).Where(c => !string.IsNullOrEmpty(c)).Distinct().ToList();
+                var allLookupCodes = importCodes.Concat(cleanImportCodes).Concat(cleanImportCodes.Select(c => "#" + c)).Distinct().ToList();
+
+                var returns = await _context.SupplierReturnSlips
+                    .Where(r => !r.IsDeleted && r.Status != "draft" && allLookupCodes.Contains(r.SourceImportCode))
+                    .Select(r => new
                     {
-                        Code = g.Key,
-                        TotalDeduction = g.Sum(r => r.SupplierRefund > 0 ? r.SupplierRefund : r.TotalValue)
+                        r.SourceImportCode,
+                        Deduction = r.SupplierRefund > 0 ? r.SupplierRefund : r.TotalValue
                     })
-                    .ToDictionaryAsync(x => x.Code, x => x.TotalDeduction, cancellationToken);
+                    .ToListAsync(cancellationToken);
+
+                var returnDeductions = returns
+                    .GroupBy(r => r.SourceImportCode.Trim().TrimStart('#'), StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(g => g.Key, g => g.Sum(x => x.Deduction), StringComparer.OrdinalIgnoreCase);
 
                 foreach (var item in list)
                 {
-                    if (returnDeductions.TryGetValue(item.Code, out var deduction))
+                    var cleanItemKey = (item.Code ?? string.Empty).Trim().TrimStart('#');
+                    if (returnDeductions.TryGetValue(cleanItemKey, out var deduction))
                     {
                         var grossDebt = Math.Max(0, item.TotalValue - item.PaidAmount);
                         var validDeduction = Math.Min(item.TotalValue, deduction);
@@ -135,8 +142,10 @@ public sealed class StockImportsController : ApiControllerBase
                 return NotFound(ApiResponse<StockImportSlip>.Fail("Không tìm thấy phiếu nhập hàng."));
             }
 
+            var cleanItemCode = (item.Code ?? string.Empty).Trim().TrimStart('#');
             var returnDeduction = await _context.SupplierReturnSlips
-                .Where(r => !r.IsDeleted && r.Status != "draft" && r.SourceImportCode == item.Code)
+                .Where(r => !r.IsDeleted && r.Status != "draft" &&
+                    (r.SourceImportCode == item.Code || r.SourceImportCode == cleanItemCode || r.SourceImportCode == "#" + cleanItemCode))
                 .SumAsync(r => (decimal?)(r.SupplierRefund > 0 ? r.SupplierRefund : r.TotalValue), cancellationToken) ?? 0;
 
             if (returnDeduction > 0)

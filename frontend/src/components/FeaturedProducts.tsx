@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import Link from 'next/link';
+import { motion, useScroll, useTransform, useSpring } from 'framer-motion';
 import {
   ShoppingCartOutlined,
   CheckOutlined,
@@ -30,7 +31,11 @@ export default function FeaturedProducts({
   const [scrollProgress, setScrollProgress] = useState<number>(0);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [shuffledProducts, setShuffledProducts] = useState<Product[]>([]);
+  const [isPaused, setIsPaused] = useState<boolean>(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const progressBarRef = useRef<HTMLDivElement>(null);
+  const scrollPosRef = useRef<number>(0);
+  const isInteractingRef = useRef<boolean>(false);
 
   // Randomize / shuffle products on initial load, prioritizing items on sale / discount
   useEffect(() => {
@@ -53,15 +58,7 @@ export default function FeaturedProducts({
     }
   }, [products]);
 
-  const categoryCounts = {
-    all: products.length,
-    living: products.filter((p) => p.category === 'living').length,
-    bedroom: products.filter((p) => p.category === 'bedroom').length,
-    dining: products.filter((p) => p.category === 'dining').length,
-    office: products.filter((p) => p.category === 'office').length,
-  };
-
-  // Filter products by category, search query, and provide cyclical continuous list
+  // Filter products by category, search query
   const filteredProducts = useMemo(() => {
     const source = shuffledProducts.length > 0 ? shuffledProducts : products;
     let list =
@@ -82,13 +79,21 @@ export default function FeaturedProducts({
       );
     }
 
-    // If no search filter active, repeat to ensure endless cyclical scrolling experience
-    if (!searchQuery.trim() && list.length > 0 && list.length < 16) {
-      return [...list, ...list, ...list].slice(0, 24);
-    }
-
     return list;
   }, [shuffledProducts, products, activeCategory, searchQuery]);
+
+  // Danh sách sản phẩm lặp vô tận liền mạch (seamless infinite loop)
+  const displayList = useMemo(() => {
+    if (filteredProducts.length === 0) return { items: [] as Product[], baseLength: 0 };
+    let base = [...filteredProducts];
+    while (base.length < 8) {
+      base = [...base, ...filteredProducts];
+    }
+    return {
+      items: [...base, ...base],
+      baseLength: base.length,
+    };
+  }, [filteredProducts]);
 
   const handleAdd = (p: Product) => {
     if (!p.inStock || p.stockStatus === 'Hết hàng') {
@@ -103,72 +108,114 @@ export default function FeaturedProducts({
     return new Intl.NumberFormat('vi-VN').format(val) + ' ₫';
   };
 
-  // Track horizontal scroll progress
-  const handleScrollUpdate = () => {
-    if (scrollContainerRef.current) {
-      const { scrollLeft, scrollWidth, clientWidth } = scrollContainerRef.current;
-      const maxScroll = scrollWidth - clientWidth;
-      if (maxScroll > 0) {
-        setScrollProgress((scrollLeft / maxScroll) * 100);
-      } else {
-        setScrollProgress(0);
-      }
-    }
-  };
-
+  // Hiệu ứng tự động lướt liên tục từ phải qua trái (smooth infinite continuous glide - không giật, đi từ từ qua)
   useEffect(() => {
-    handleScrollUpdate();
-  }, [filteredProducts]);
+    const container = scrollContainerRef.current;
+    if (!container || displayList.items.length === 0) return;
 
-  // Scroll 4 products at a time with infinite loop (quay lại đầu khi chạm đáy)
+    let animId: number;
+    // Tốc độ: ~0.75 pixel mỗi frame (~45px/giây tại 60fps) - nhẹ nhàng, từ tốn
+    const speed = 0.75;
+
+    const tick = () => {
+      if (!isPaused && !isInteractingRef.current && container) {
+        const firstCard = container.querySelector('[data-product-card]') as HTMLElement;
+        const cardWidthWithGap = firstCard ? firstCard.offsetWidth + 24 : 340;
+        const halfScrollWidth = displayList.baseLength * cardWidthWithGap;
+
+        scrollPosRef.current += speed;
+
+        // Khi trượt hết 1 vòng cơ bản, trừ đúng độ rộng đó để lặp lại vô tận liền mạch 100%
+        if (halfScrollWidth > 0 && scrollPosRef.current >= halfScrollWidth) {
+          scrollPosRef.current -= halfScrollWidth;
+        }
+
+        container.scrollLeft = scrollPosRef.current;
+
+        // Cập nhật thanh tiến trình trực tiếp qua ref
+        if (progressBarRef.current && halfScrollWidth > 0) {
+          const progress = (scrollPosRef.current % halfScrollWidth) / halfScrollWidth;
+          progressBarRef.current.style.transform = `translateX(${progress * 150}%)`;
+        }
+      } else if (container && !isInteractingRef.current) {
+        scrollPosRef.current = container.scrollLeft;
+      }
+      animId = requestAnimationFrame(tick);
+    };
+
+    animId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(animId);
+  }, [isPaused, displayList]);
+
+  // Hỗ trợ nút mũi tên trượt sang trái / phải 1 sản phẩm mượt mà
   const handleScroll = (direction: 'left' | 'right') => {
     const container = scrollContainerRef.current;
     if (!container) return;
 
-    const clientWidth = container.clientWidth;
-    const scrollLeft = container.scrollLeft;
-    const scrollWidth = container.scrollWidth;
-    const maxScroll = scrollWidth - clientWidth;
-    
-    // Width of 4 product cards (exact clientWidth)
-    const scrollStep = clientWidth;
+    const firstCard = container.querySelector('[data-product-card]') as HTMLElement;
+    const step = firstCard ? firstCard.offsetWidth + 24 : 340;
+    const halfScrollWidth = displayList.baseLength * step;
+
+    isInteractingRef.current = true;
 
     if (direction === 'right') {
-      // Khi lướt đến cuối: Tự động quay lại các sản phẩm ở đầu mượt mà
-      if (scrollLeft >= maxScroll - 35) {
-        container.scrollTo({ left: 0, behavior: 'smooth' });
-      } else {
-        // Trượt sang 4 sản phẩm tiếp theo
-        const target = Math.min(scrollLeft + scrollStep, maxScroll);
-        container.scrollTo({ left: target, behavior: 'smooth' });
+      scrollPosRef.current += step;
+      if (halfScrollWidth > 0 && scrollPosRef.current >= halfScrollWidth) {
+        scrollPosRef.current -= halfScrollWidth;
       }
     } else {
-      // Khi đang ở đầu và bấm sang trái: Quay về các sản phẩm cuối
-      if (scrollLeft <= 35) {
-        container.scrollTo({ left: maxScroll, behavior: 'smooth' });
-      } else {
-        // Trượt lùi 4 sản phẩm
-        const target = Math.max(scrollLeft - scrollStep, 0);
-        container.scrollTo({ left: target, behavior: 'smooth' });
+      scrollPosRef.current -= step;
+      if (scrollPosRef.current < 0) {
+        scrollPosRef.current += halfScrollWidth;
       }
     }
+
+    container.scrollTo({ left: scrollPosRef.current, behavior: 'smooth' });
+
+    setTimeout(() => {
+      isInteractingRef.current = false;
+    }, 600);
   };
 
+  const sectionRef = useRef<HTMLElement>(null);
+  const { scrollYProgress } = useScroll({
+    target: sectionRef,
+    offset: ['start end', 'start 55%'],
+  });
+
+  const smoothProgress = useSpring(scrollYProgress, {
+    stiffness: 85,
+    damping: 26,
+    restDelta: 0.001,
+  });
+
+  const headerY = useTransform(smoothProgress, [0, 0.8], [35, 0]);
+  const pillsX = useTransform(smoothProgress, [0, 1], [-50, 0]);
+  const searchX = useTransform(smoothProgress, [0, 1], [50, 0]);
+  const carouselY = useTransform(smoothProgress, [0, 1], [50, 0]);
+  const opacity = useTransform(smoothProgress, [0, 0.8], [0, 1]);
+
   return (
-    <section id="featured-products" className="w-full py-7 md:py-9 bg-gradient-to-b from-[#f3e9e1] via-[#ece0d6] to-[#f2e7df] overflow-hidden border-b border-[#dfcfc2]">
+    <section ref={sectionRef} id="featured-products" className="w-full py-7 md:py-9 bg-gradient-to-b from-[#f3e9e1] via-[#ece0d6] to-[#f2e7df] overflow-hidden border-b border-[#dfcfc2]">
       <div className="w-full max-w-[1720px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-16">
         
-        {/* SECTION HEADER: TITLE CĂN CHÍNH GIỮA DÒNG */}
-        <div className="text-center mb-5 md:mb-6">
-          <h2 className="font-serif text-3xl sm:text-4xl lg:text-[42px] text-[#201a17] font-normal tracking-tight">
+        {/* SECTION HEADER: TITLE CĂN CHÍNH GIỮA DÒNG (NỔI LÊN THEO ĐỘ LĂN CHUỘT) */}
+        <motion.div
+          style={{ y: headerY, opacity }}
+          className="text-center mb-5 md:mb-6"
+        >
+          <h2 className="font-sans text-3xl sm:text-4xl lg:text-[42px] text-[#201a17] font-bold tracking-tight">
             Sản Phẩm Thủ Công Nổi Bật
           </h2>
-        </div>
+        </motion.div>
 
-        {/* SECTION CONTROLS: BỘ LỌC BÊN TRÁI & TÌM KIẾM BÊN PHẢI DƯỚI TÊN SECTION */}
+        {/* SECTION CONTROLS: BỘ LỌC BÊN TRÁI & TÌM KIẾM BÊN PHẢI (TRƯỢT TỪ 2 BÊN VÀO THEO ĐỘ LĂN CHUỘT) */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4 mb-5 md:mb-6">
-          {/* BỘ LỌC CATEGORY PILLS (BÊN TRÁI) */}
-          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 bg-white/90 p-1.5 rounded-none shadow-xs border border-[#d5c3ba] backdrop-blur-md">
+          {/* BỘ LỌC CATEGORY PILLS (TRƯỢT TỪ TRÁI VÀO) */}
+          <motion.div
+            style={{ x: pillsX, opacity }}
+            className="flex flex-wrap items-center gap-1.5 sm:gap-2 bg-white/90 p-1.5 rounded-none shadow-xs border border-[#d5c3ba] backdrop-blur-md"
+          >
             {[
               { id: 'all', label: 'Tất cả' },
               { id: 'living', label: 'Phòng Khách' },
@@ -176,7 +223,6 @@ export default function FeaturedProducts({
               { id: 'dining', label: 'Phòng Ăn' },
               { id: 'office', label: 'Làm Việc' },
             ].map((cat) => {
-              const count = categoryCounts[cat.id as keyof typeof categoryCounts] || 0;
               const isActive = activeCategory === cat.id;
 
               return (
@@ -184,35 +230,28 @@ export default function FeaturedProducts({
                   key={cat.id}
                   onClick={() => {
                     onCategoryChange(cat.id);
+                    scrollPosRef.current = 0;
                     if (scrollContainerRef.current) {
-                      scrollContainerRef.current.scrollTo({ left: 0, behavior: 'smooth' });
+                      scrollContainerRef.current.scrollLeft = 0;
                     }
                   }}
-                  className={`px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-none text-xs font-semibold transition-all duration-200 cursor-pointer flex items-center gap-1.5 ${
+                  className={`px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-none text-xs font-semibold transition-all duration-200 cursor-pointer flex items-center justify-center ${
                     isActive
                       ? 'bg-[#5d371f] text-white shadow-xs'
                       : 'text-[#51443d] hover:text-[#5d371f] hover:bg-[#f7f0ea]'
                   }`}
                 >
                   <span>{cat.label}</span>
-                  {count > 0 && (
-                    <span
-                      className={`text-[10px] px-1.5 py-0.2 rounded-none font-mono ${
-                        isActive
-                          ? 'bg-white/20 text-white'
-                          : 'bg-[#f0e8e4] text-[#83746c]'
-                      }`}
-                    >
-                      {count}
-                    </span>
-                  )}
                 </button>
               );
             })}
-          </div>
+          </motion.div>
 
-          {/* FIELD TÌM KIẾM THEO TÊN / CHẤT LIỆU (BÊN PHẢI) */}
-          <div className="relative flex items-center w-full sm:w-auto">
+          {/* FIELD TÌM KIẾM THEO TÊN / CHẤT LIỆU (TRƯỢT TỪ PHẢI VÀO) */}
+          <motion.div
+            style={{ x: searchX, opacity }}
+            className="relative flex items-center w-full sm:w-auto"
+          >
             <span className="material-symbols-outlined text-[18px] text-[#83746c] absolute left-3 pointer-events-none">
               search
             </span>
@@ -233,7 +272,7 @@ export default function FeaturedProducts({
                 <span className="material-symbols-outlined text-[15px]">close</span>
               </button>
             )}
-          </div>
+          </motion.div>
         </div>
 
         {/* 1 SINGLE HORIZONTAL SCROLLING ROW (TRƯỢT 4 SẢN PHẨM / LẦN & VÒNG LẶP VÔ TẬN) */}
@@ -265,14 +304,21 @@ export default function FeaturedProducts({
             )}
           </div>
         ) : (
-          <div className="relative group/carousel">
+          <motion.div
+            style={{ y: carouselY, opacity }}
+            className="relative group/carousel"
+            onMouseEnter={() => setIsPaused(true)}
+            onMouseLeave={() => setIsPaused(false)}
+            onTouchStart={() => setIsPaused(true)}
+            onTouchEnd={() => setIsPaused(false)}
+          >
             
             {/* FLOATING LEFT ARROW BUTTON (<) */}
             <button
               type="button"
               onClick={() => handleScroll('left')}
               className="absolute -left-2 sm:-left-4 lg:-left-6 top-1/2 -translate-y-1/2 z-30 w-11 h-11 sm:w-12 sm:h-12 rounded-none bg-white/95 backdrop-blur-md text-[#5d371f] hover:bg-[#5d371f] hover:text-white border border-[#d5c3ba] shadow-md hover:shadow-xl flex items-center justify-center transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer"
-              title="Lướt sang trái (4 sản phẩm)"
+              title="Lướt sang trái"
               aria-label="Lướt sang trái"
             >
               <span className="material-symbols-outlined text-[24px]">chevron_left</span>
@@ -283,7 +329,7 @@ export default function FeaturedProducts({
               type="button"
               onClick={() => handleScroll('right')}
               className="absolute -right-2 sm:-right-4 lg:-right-6 top-1/2 -translate-y-1/2 z-30 w-11 h-11 sm:w-12 sm:h-12 rounded-none bg-white/95 backdrop-blur-md text-[#5d371f] hover:bg-[#5d371f] hover:text-white border border-[#d5c3ba] shadow-md hover:shadow-xl flex items-center justify-center transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer"
-              title="Lướt sang phải (4 sản phẩm)"
+              title="Lướt sang phải"
               aria-label="Lướt sang phải"
             >
               <span className="material-symbols-outlined text-[24px]">chevron_right</span>
@@ -292,18 +338,18 @@ export default function FeaturedProducts({
             {/* HORIZONTAL PRODUCT TRACK */}
             <div
               ref={scrollContainerRef}
-              onScroll={handleScrollUpdate}
-              className="flex flex-row overflow-x-auto snap-x snap-mandatory gap-6 pb-6 pt-2 px-1 sm:px-2 no-scrollbar scroll-smooth"
+              className="flex flex-row overflow-x-auto gap-6 pb-6 pt-2 px-1 sm:px-2 no-scrollbar"
               style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
             >
-              {filteredProducts.map((p, idx) => {
+              {displayList.items.map((p, idx) => {
                 const isJustAdded = addedId === p.id;
                 const isOutOfStock = !p.inStock || p.stockStatus === 'Hết hàng';
 
                 return (
                   <div
                     key={`${p.id}-${idx}`}
-                    className="w-[85%] sm:w-[48%] md:w-[32%] lg:w-[calc((100%-72px)/4)] shrink-0 snap-start"
+                    data-product-card="true"
+                    className="w-[85%] sm:w-[48%] md:w-[32%] lg:w-[calc((100%-72px)/4)] shrink-0 select-none"
                   >
                     <Link
                       href={`/products/${p.id}`}
@@ -366,7 +412,7 @@ export default function FeaturedProducts({
                           </div>
 
                           {/* Product Title */}
-                          <h3 className="font-serif text-[16px] sm:text-[17px] text-[#1f1b19] font-medium mt-1 group-hover/card:text-[#5d371f] transition-colors line-clamp-1 leading-snug">
+                          <h3 className="font-sans text-[16px] sm:text-[17px] text-[#1f1b19] font-semibold mt-1 group-hover/card:text-[#5d371f] transition-colors line-clamp-1 leading-snug">
                             {p.name}
                           </h3>
 
@@ -380,7 +426,7 @@ export default function FeaturedProducts({
                         <div className="flex items-center justify-between pt-3 border-t border-[#f0e3db]">
                           <div className="flex flex-col">
                             <div className="flex items-baseline gap-2">
-                              <span className="font-serif text-[17px] sm:text-lg text-[#5d371f] font-bold tracking-tight leading-tight">
+                              <span className="font-sans text-[17px] sm:text-lg text-[#5d371f] font-bold tracking-tight leading-tight">
                                 {formatPrice(p.price)}
                               </span>
                               {p.originalPrice && p.originalPrice > p.price && (
@@ -446,19 +492,25 @@ export default function FeaturedProducts({
             {/* MINIMALIST SCROLL PROGRESS INDICATOR */}
             <div className="w-48 h-1 bg-[#dfcfc2] rounded-none mx-auto overflow-hidden mt-4">
               <div
-                className="h-full bg-[#5d371f] rounded-none transition-all duration-200"
+                ref={progressBarRef}
+                className="h-full w-20 bg-[#5d371f] rounded-none will-change-transform"
                 style={{
-                  width: `${Math.max(20, scrollProgress)}%`,
-                  transform: `translateX(${scrollProgress * 0.8}%)`,
+                  transform: 'translateX(0%)',
                 }}
               />
             </div>
 
-          </div>
+          </motion.div>
         )}
 
-        {/* BOTTOM CTA: VIEW ALL CATALOG */}
-        <div className="mt-10 text-center flex items-center justify-center gap-3">
+        {/* BOTTOM CTA: VIEW ALL CATALOG (NỔI LÊN) */}
+        <motion.div
+          initial={{ opacity: 0, y: 25 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.3 }}
+          transition={{ duration: 0.6, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
+          className="mt-10 text-center flex items-center justify-center gap-3"
+        >
           <Link
             href={activeCategory === 'all' ? '/products' : `/products?space=${activeCategory}`}
             className="inline-flex items-center gap-2 px-8 py-3.5 rounded-none bg-[#5d371f] text-white hover:bg-[#784e34] font-semibold text-xs sm:text-sm shadow-md hover:shadow-xl transition-all cursor-pointer no-underline group border border-[#784e34]"
@@ -466,7 +518,7 @@ export default function FeaturedProducts({
             <span>Xem toàn bộ {products.length}+ mẫu thiết kế</span>
             <ArrowRightOutlined className="text-[13px] transition-transform group-hover:translate-x-1" />
           </Link>
-        </div>
+        </motion.div>
 
       </div>
     </section>

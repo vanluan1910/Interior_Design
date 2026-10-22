@@ -393,6 +393,7 @@ function ProfilePageContent() {
         const isUserOrder =
           (userEmail && ordEmail === userEmail.toLowerCase()) ||
           (cleanUserPhone && ordPhone && (ordPhone === cleanUserPhone || ordPhone.endsWith(cleanUserPhone) || cleanUserPhone.endsWith(ordPhone))) ||
+          Boolean((ord as any).customerId && user?.id && String((ord as any).customerId).toLowerCase() === String(user.id).toLowerCase()) ||
           localOrders.some((lo) => (lo.orderCode && lo.orderCode.toUpperCase() === ord.orderCode?.toUpperCase()) || lo.id === ord.id);
 
         if (!isUserOrder) continue;
@@ -416,6 +417,8 @@ function ProfilePageContent() {
             branch: ord.branch || ord.showroom || 'Showroom Trung tâm',
             items: ord.items || [],
             shippingAddress: ord.shippingAddress || ord.customerAddress || '',
+            recipientName: ord.recipientName,
+            recipientPhone: ord.recipientPhone,
           });
         }
       }
@@ -1051,6 +1054,12 @@ function ProfilePageContent() {
                                   {ord.branch && (
                                     <span className="text-[11px] text-[#83746c] font-medium hidden sm:inline">
                                       • Cơ sở: {ord.branch}
+                                    </span>
+                                  )}
+                                  {ord.recipientName && ord.recipientName.trim().toLowerCase() !== (user?.name || '').trim().toLowerCase() && (
+                                    <span className="text-[11px] text-[#784e34] bg-[#fbf2ee] px-2 py-0.5 border border-[#eae1dd] font-medium inline-flex items-center gap-1">
+                                      <span className="material-symbols-outlined text-[13px]">local_shipping</span>
+                                      Giao cho: {ord.recipientName} {ord.recipientPhone ? `(${ord.recipientPhone})` : ''}
                                     </span>
                                   )}
                                 </div>

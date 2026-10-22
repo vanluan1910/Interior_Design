@@ -329,7 +329,7 @@ export default function ProductDetailPage({
         />
         <main className="w-full pt-32 pb-24 flex items-center justify-center flex-1">
           <div className="max-w-md text-center flex flex-col items-center gap-4 p-8 bg-white border border-[#eae1dd]">
-            <h2 className="font-serif text-2xl font-bold text-[#1f1b19]">Sản Phẩm Không Tồn Tại</h2>
+            <h2 className="font-sans text-2xl font-bold text-[#1f1b19]">Sản Phẩm Không Tồn Tại</h2>
             <p className="text-sm text-[#83746c]">Tác phẩm này hiện không có trong hệ thống hoặc đã được cập nhật sang bộ sưu tập mới.</p>
             <Link
               href="/products"

@@ -65,7 +65,7 @@ export default function Hero3DSection() {
             </div>
 
             {/* Main Headline */}
-            <h1 className="font-serif text-3xl sm:text-4xl md:text-5xl lg:text-[46px] xl:text-[52px] text-[#1f1b19] leading-[1.18] font-normal tracking-tight">
+            <h1 className="font-sans text-3xl sm:text-4xl md:text-5xl lg:text-[46px] xl:text-[52px] text-[#1f1b19] leading-[1.18] font-bold tracking-tight">
               Tuyệt tác mộc thủ công trong không gian sống hiện đại.
             </h1>
 

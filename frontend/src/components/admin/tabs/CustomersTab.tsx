@@ -1053,7 +1053,7 @@ export function CustomersTab({
       <Drawer
         title={
           <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-xl text-[#784e34]">person</span>
+            <UserOutlined className="text-xl text-[#784e34]" />
             <span className="font-bold text-base text-slate-900">
               {editingCustomer ? `Chỉnh sửa khách hàng ${editingCustomer.code}` : 'Thêm mới khách hàng & đối tác'}
             </span>
@@ -1311,7 +1311,7 @@ export function CustomersTab({
       <Drawer
         title={
           <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-xl text-rose-600">account_balance_wallet</span>
+            <WalletOutlined className="text-xl text-rose-600" />
             <span className="font-bold text-base text-slate-900">
               Phiếu thu tiền &amp; Thanh toán công nợ
             </span>
@@ -1450,7 +1450,7 @@ export function CustomersTab({
       <Modal
         title={
           <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-xl text-[#784e34]">upload_file</span>
+            <UploadOutlined className="text-xl text-[#784e34]" />
             <span className="font-bold text-base text-slate-900">Nhập danh sách khách hàng từ Excel</span>
           </div>
         }
@@ -1832,6 +1832,11 @@ function CustomerExpandedDetailRow({
                         <td className="py-2.5 px-3">
                           <div className="font-medium text-slate-900">{getCleanProductName(ord.productName)}</div>
                           <div className="text-[11px] text-slate-500 mt-0.5">{ord.productSpec}</div>
+                          {ord.recipientName && (ord.recipientName.trim().toLowerCase() !== (customer.name || '').trim().toLowerCase() || (ord.recipientPhone && ord.recipientPhone.replace(/\s+/g, '') !== (customer.phone || '').replace(/\s+/g, ''))) ? (
+                            <div className="text-[10px] text-[#784e34] bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200/80 inline-block mt-1 font-medium">
+                              📦 Nhận hàng: {ord.recipientName} {ord.recipientPhone ? `(${ord.recipientPhone})` : ''}
+                            </div>
+                          ) : null}
                         </td>
                         <td className="py-2.5 px-3 text-center font-bold text-slate-900 whitespace-nowrap">
                           {getOrderQuantity(ord)}

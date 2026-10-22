@@ -833,8 +833,6 @@ export function WarehousesSettings({
               >
                 <AutoComplete
                   className="w-full text-xs sm:text-sm"
-                  placeholder="Chọn/nhập tỉnh..."
-                  allowClear
                   options={provincesList.map((p) => ({ value: p.name, label: p.name }))}
                   onChange={() => {
                     warehouseForm.setFieldsValue({
@@ -846,7 +844,11 @@ export function WarehousesSettings({
                     (option?.value ?? '').toLowerCase().includes(inputValue.toLowerCase())
                   }
                 >
-                  <Input className="h-9 rounded-lg text-xs sm:text-sm" />
+                  <Input
+                    placeholder="Chọn/nhập tỉnh..."
+                    allowClear
+                    className="h-9 rounded-lg text-xs sm:text-sm"
+                  />
                 </AutoComplete>
               </Form.Item>
             </Col>
@@ -857,8 +859,6 @@ export function WarehousesSettings({
               >
                 <AutoComplete
                   className="w-full text-xs sm:text-sm"
-                  placeholder={selectedWarehouseProvince ? 'Chọn/nhập quận/huyện...' : 'Chọn tỉnh trước'}
-                  allowClear
                   disabled={!selectedWarehouseProvince}
                   options={districtOptions.map((d) => ({ value: d.name, label: d.name }))}
                   onChange={() => {
@@ -868,7 +868,12 @@ export function WarehousesSettings({
                     (option?.value ?? '').toLowerCase().includes(inputValue.toLowerCase())
                   }
                 >
-                  <Input className="h-9 rounded-lg text-xs sm:text-sm" />
+                  <Input
+                    placeholder={selectedWarehouseProvince ? 'Chọn/nhập quận/huyện...' : 'Chọn tỉnh trước'}
+                    allowClear
+                    disabled={!selectedWarehouseProvince}
+                    className="h-9 rounded-lg text-xs sm:text-sm"
+                  />
                 </AutoComplete>
               </Form.Item>
             </Col>
@@ -879,15 +884,18 @@ export function WarehousesSettings({
               >
                 <AutoComplete
                   className="w-full text-xs sm:text-sm"
-                  placeholder={selectedWarehouseDistrict ? 'Chọn/nhập phường/xã...' : 'Chọn quận trước'}
-                  allowClear
                   disabled={!selectedWarehouseDistrict}
                   options={wardOptions.map((w) => ({ value: w.name, label: w.name }))}
                   filterOption={(inputValue, option) =>
                     (option?.value ?? '').toLowerCase().includes(inputValue.toLowerCase())
                   }
                 >
-                  <Input className="h-9 rounded-lg text-xs sm:text-sm" />
+                  <Input
+                    placeholder={selectedWarehouseDistrict ? 'Chọn/nhập phường/xã...' : 'Chọn quận trước'}
+                    allowClear
+                    disabled={!selectedWarehouseDistrict}
+                    className="h-9 rounded-lg text-xs sm:text-sm"
+                  />
                 </AutoComplete>
               </Form.Item>
             </Col>

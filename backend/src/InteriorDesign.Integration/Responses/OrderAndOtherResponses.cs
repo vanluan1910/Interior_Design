@@ -22,6 +22,8 @@ public sealed record OrderDto(
     string CustomerName,
     string CustomerPhone,
     string CustomerEmail,
+    string? RecipientName,
+    string? RecipientPhone,
     string ShippingAddress,
     string CustomerProvince,
     string CustomerDistrict,

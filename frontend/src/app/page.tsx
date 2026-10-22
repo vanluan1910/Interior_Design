@@ -11,6 +11,7 @@ import ShowroomSection from '@/components/ShowroomSection';
 import Footer from '@/components/Footer';
 import QuickViewModal from '@/components/QuickViewModal';
 import SampleBoxModal from '@/components/SampleBoxModal';
+import ScrollReveal from '@/components/ScrollReveal';
 import { Product } from '@/types';
 import { App } from 'antd';
 import { useCart } from '@/context/CartContext';
@@ -251,7 +252,7 @@ export default function HomePage() {
       />
 
       {/* Main Content Sections */}
-      <main className="w-full animate-slide-in-bottom">
+      <main className="w-full">
         {/* Hero Banner with Integrated Service Guarantees */}
         <Hero onOpenBooking={() => {}} hero={homeData?.hero} />
 

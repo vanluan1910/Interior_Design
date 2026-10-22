@@ -1,25 +1,25 @@
 'use client';
 
 import React from 'react';
-
-const PHONE_NUMBER = '0967323335';
-const PHONE_DISPLAY = '0967.323.335';
+import { useCompanyInfo } from '@/hooks/useCompanyInfo';
 
 export default function FloatingContactButtons() {
+  const { rawPhone, displayPhone, zaloUrl } = useCompanyInfo();
+
   return (
     <div className="fixed bottom-6 right-5 sm:right-7 z-50 flex flex-col items-end gap-3.5 select-none pointer-events-auto">
       
       {/* 1. BUTTON ZALO CHAT */}
       <a
-        href={`https://zalo.me/${PHONE_NUMBER}`}
+        href={zaloUrl}
         target="_blank"
         rel="noopener noreferrer"
         aria-label="Chat qua Zalo"
         className="group relative flex items-center justify-end cursor-pointer no-underline"
       >
         {/* Tooltip Label (Expands on hover) */}
-        <span className="hidden sm:inline-block absolute right-14 mr-2 px-3 py-1.5 rounded-none bg-white/95 backdrop-blur-md text-[#0068ff] font-semibold text-xs shadow-lg border border-[#0068ff]/20 opacity-0 group-hover:opacity-100 -translate-x-2 group-hover:translate-x-0 transition-all duration-300 pointer-events-none whitespace-nowrap">
-          Chat Zalo: {PHONE_DISPLAY}
+        <span suppressHydrationWarning className="hidden sm:inline-block absolute right-14 mr-2 px-3 py-1.5 rounded-none bg-white/95 backdrop-blur-md text-[#0068ff] font-semibold text-xs shadow-lg border border-[#0068ff]/20 opacity-0 group-hover:opacity-100 -translate-x-2 group-hover:translate-x-0 transition-all duration-300 pointer-events-none whitespace-nowrap">
+          Chat Zalo: {displayPhone}
         </span>
 
         {/* Pulse Waves */}
@@ -53,13 +53,13 @@ export default function FloatingContactButtons() {
 
       {/* 2. BUTTON GỌI HOTLINE */}
       <a
-        href={`tel:${PHONE_NUMBER}`}
+        href={`tel:${rawPhone}`}
         aria-label="Gọi hotline trực tiếp"
         className="group relative flex items-center justify-end cursor-pointer no-underline"
       >
         {/* Tooltip Label (Expands on hover) */}
-        <span className="hidden sm:inline-block absolute right-14 mr-2 px-3 py-1.5 rounded-none bg-white/95 backdrop-blur-md text-[#5d371f] font-semibold text-xs shadow-lg border border-[#d5c3ba] opacity-0 group-hover:opacity-100 -translate-x-2 group-hover:translate-x-0 transition-all duration-300 pointer-events-none whitespace-nowrap">
-          Hotline: {PHONE_DISPLAY}
+        <span suppressHydrationWarning className="hidden sm:inline-block absolute right-14 mr-2 px-3 py-1.5 rounded-none bg-white/95 backdrop-blur-md text-[#5d371f] font-semibold text-xs shadow-lg border border-[#d5c3ba] opacity-0 group-hover:opacity-100 -translate-x-2 group-hover:translate-x-0 transition-all duration-300 pointer-events-none whitespace-nowrap">
+          Hotline: {displayPhone}
         </span>
 
         {/* Pulse Waves */}

@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import { motion, useScroll, useTransform, useSpring } from 'framer-motion';
 import { Modal } from 'antd';
 import {
   ArrowRightOutlined,
@@ -12,6 +13,7 @@ import {
   CheckCircleOutlined,
   PhoneOutlined,
 } from '@ant-design/icons';
+import { useCompanyInfo } from '@/hooks/useCompanyInfo';
 
 interface ProjectItem {
   id: string;
@@ -142,7 +144,7 @@ interface ProjectLookbookProps {
 }
 
 export default function ProjectLookbook({ onOpenBooking }: ProjectLookbookProps = {}) {
-  const [activeFilter, setActiveFilter] = useState<string>('all');
+  const { rawPhone, displayPhone, zaloUrl } = useCompanyInfo();
   const [selectedProject, setSelectedProject] = useState<ProjectItem | null>(null);
   const [activeModalImg, setActiveModalImg] = useState<number>(0);
 
@@ -170,37 +172,41 @@ export default function ProjectLookbook({ onOpenBooking }: ProjectLookbookProps 
     };
   }, [selectedProject]);
 
-  const filters = [
-    { id: 'all', label: 'Tất cả công trình' },
-    { id: 'villa', label: 'Biệt thự & Dinh thự' },
-    { id: 'penthouse', label: 'Penthouse & Duplex' },
-  ];
+  const featuredHero = REAL_PROJECTS[0];
+  const secondaryProjects = REAL_PROJECTS.slice(1);
 
-  const filteredProjects = REAL_PROJECTS.filter((p) => {
-    if (activeFilter === 'villa') {
-      return p.id.includes('villa') || p.id.includes('harmony') || p.id.includes('riverside');
-    }
-    if (activeFilter === 'penthouse') {
-      return p.id.includes('penthouse') || p.id.includes('duplex');
-    }
-    return true;
+  const sectionRef = useRef<HTMLElement>(null);
+  const { scrollYProgress } = useScroll({
+    target: sectionRef,
+    offset: ['start end', 'start 55%'],
   });
 
-  const featuredHero = filteredProjects[0];
-  const secondaryProjects = filteredProjects.slice(1);
+  const smoothProgress = useSpring(scrollYProgress, {
+    stiffness: 85,
+    damping: 26,
+    restDelta: 0.001,
+  });
+
+  const headerY = useTransform(smoothProgress, [0, 0.8], [35, 0]);
+  const heroX = useTransform(smoothProgress, [0, 1], [-80, 0]);
+  const sideX = useTransform(smoothProgress, [0, 1], [80, 0]);
+  const opacity = useTransform(smoothProgress, [0, 0.8], [0, 1]);
 
   return (
-    <section id="real-projects" className="w-full py-7 md:py-9 bg-[#fff8f5] overflow-hidden border-b border-[#ebdcd2]">
+    <section ref={sectionRef} id="real-projects" className="w-full py-7 md:py-9 bg-[#fff8f5] overflow-hidden border-b border-[#ebdcd2]">
       <div className="w-full max-w-[1720px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-16">
-        
-        {/* SECTION HEADER */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-6 md:mb-7">
+
+        {/* SECTION HEADER (NỔI LÊN THEO ĐỘ LĂN CHUỘT) */}
+        <motion.div
+          style={{ y: headerY, opacity }}
+          className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-6 md:mb-7"
+        >
           <div>
             <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-none bg-[#5d371f] text-[#ffdbc8] text-[11px] uppercase tracking-widest font-semibold mb-2.5 border border-[#784e34] shadow-xs">
               <span className="w-1.5 h-1.5 rounded-none bg-[#c5a880]" />
               <span>Thực Tế Công Trình • 2,500+ Gia Chủ Tin Chọn</span>
             </div>
-            <h2 className="font-serif text-3xl sm:text-4xl lg:text-[42px] text-[#1f1b19] font-normal tracking-tight">
+            <h2 className="font-sans text-3xl sm:text-4xl lg:text-[42px] text-[#1f1b19] font-bold tracking-tight">
               Dự Án Biệt Thự &amp; Penthouse Thực Tế
             </h2>
             <p className="text-sm sm:text-base text-[#51443d] max-w-2xl mt-2 leading-relaxed">
@@ -208,31 +214,25 @@ export default function ProjectLookbook({ onOpenBooking }: ProjectLookbookProps 
             </p>
           </div>
 
-          {/* FILTER BUTTONS */}
-          <div className="flex items-center gap-2 bg-[#f5ece8] p-1.5 rounded-none border border-[#d5c3ba]/60 self-start md:self-end">
-            {filters.map((f) => (
-              <button
-                key={f.id}
-                type="button"
-                onClick={() => setActiveFilter(f.id)}
-                className={`px-4 py-2 text-xs font-semibold rounded-none transition-all cursor-pointer ${
-                  activeFilter === f.id
-                    ? 'bg-[#5d371f] text-white shadow-xs'
-                    : 'text-[#51443d] hover:text-[#5d371f] hover:bg-white/60'
-                }`}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
-        </div>
+          {onOpenBooking && (
+            <button
+              type="button"
+              onClick={onOpenBooking}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-none bg-[#5d371f] hover:bg-[#724528] text-white text-xs font-semibold shadow-sm hover:shadow-md transition-all cursor-pointer self-start md:self-end"
+            >
+              <span>Tư vấn thiết kế dự án</span>
+              <ArrowRightOutlined className="text-[12px]" />
+            </button>
+          )}
+        </motion.div>
 
         {/* BENTO LOOKBOOK LAYOUT */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-stretch">
-          
-          {/* 1. HERO FEATURED PROJECT (Chiếm 7 cột bên trái) */}
+
+          {/* 1. HERO FEATURED PROJECT (Trượt từ bên trái vào theo độ lăn chuột) */}
           {featuredHero && (
-            <div
+            <motion.div
+              style={{ x: heroX, opacity }}
               onClick={() => {
                 setSelectedProject(featuredHero);
                 setActiveModalImg(0);
@@ -277,7 +277,7 @@ export default function ProjectLookbook({ onOpenBooking }: ProjectLookbookProps 
                     <span className="font-semibold text-[#5d371f]">{featuredHero.style}</span>
                   </div>
 
-                  <h3 className="font-serif text-2xl sm:text-3xl text-[#1f1b19] font-normal group-hover/card:text-[#5d371f] transition-colors">
+                  <h3 className="font-sans text-2xl sm:text-3xl text-[#1f1b19] font-bold group-hover/card:text-[#5d371f] transition-colors">
                     {featuredHero.title}
                   </h3>
 
@@ -303,11 +303,14 @@ export default function ProjectLookbook({ onOpenBooking }: ProjectLookbookProps 
                   </span>
                 </div>
               </div>
-            </div>
+            </motion.div>
           )}
 
-          {/* 2. SIDE PROJECTS LIST (Chiếm 5 cột bên phải, 3 thẻ gọn gàng) */}
-          <div className="lg:col-span-5 flex flex-col gap-5">
+          {/* 2. SIDE PROJECTS LIST (Chiếm 5 cột bên phải, trượt từ bên phải vào theo độ lăn chuột) */}
+          <motion.div
+            style={{ x: sideX, opacity }}
+            className="lg:col-span-5 flex flex-col gap-5"
+          >
             {secondaryProjects.map((item) => (
               <div
                 key={item.id}
@@ -340,7 +343,7 @@ export default function ProjectLookbook({ onOpenBooking }: ProjectLookbookProps 
                       </span>
                     </div>
 
-                    <h4 className="font-serif text-base sm:text-lg text-[#1f1b19] font-medium group-hover/side:text-[#5d371f] transition-colors line-clamp-1">
+                    <h4 className="font-sans text-base sm:text-lg text-[#1f1b19] font-semibold group-hover/side:text-[#5d371f] transition-colors line-clamp-1">
                       {item.title}
                     </h4>
 
@@ -361,7 +364,7 @@ export default function ProjectLookbook({ onOpenBooking }: ProjectLookbookProps 
                 </div>
               </div>
             ))}
-          </div>
+          </motion.div>
 
         </div>
 
@@ -460,11 +463,10 @@ export default function ProjectLookbook({ onOpenBooking }: ProjectLookbookProps 
                       key={i}
                       type="button"
                       onClick={() => setActiveModalImg(i)}
-                      className={`h-full aspect-[16/10] overflow-hidden rounded-none border transition-all cursor-pointer relative shrink-0 ${
-                        activeModalImg === i
+                      className={`h-full aspect-[16/10] overflow-hidden rounded-none border transition-all cursor-pointer relative shrink-0 ${activeModalImg === i
                           ? 'border-[#c5a880] ring-2 ring-[#c5a880]/80 opacity-100 scale-105'
                           : 'border-white/20 opacity-55 hover:opacity-90 hover:border-white/50'
-                      }`}
+                        }`}
                     >
                       <img alt={`Góc chụp ${i + 1}`} className="w-full h-full object-cover" src={imgUrl} />
                     </button>
@@ -485,7 +487,7 @@ export default function ProjectLookbook({ onOpenBooking }: ProjectLookbookProps 
                     {selectedProject.style}
                   </span>
                 </div>
-                <h3 className="font-serif text-lg sm:text-xl text-[#1f1b19] font-medium leading-snug line-clamp-1">
+                <h3 className="font-sans text-lg sm:text-xl text-[#1f1b19] font-semibold leading-snug line-clamp-1">
                   {selectedProject.title}
                 </h3>
                 <div className="flex items-center gap-1.5 text-xs text-[#83746c] mt-0.5">
@@ -547,14 +549,14 @@ export default function ProjectLookbook({ onOpenBooking }: ProjectLookbookProps 
               {/* Footer Cột Phải - Các nút liên hệ & tư vấn */}
               <div className="p-3.5 sm:p-4 bg-white border-t border-[#ebdcd2] flex flex-col gap-2 shrink-0">
                 <a
-                  href="tel:0967323335"
+                  href={`tel:${rawPhone}`}
                   className="w-full py-2.5 bg-[#5d371f] hover:bg-[#784e34] text-white text-xs font-semibold text-center rounded-none shadow-sm transition-colors flex items-center justify-center gap-2 no-underline"
                 >
                   <PhoneOutlined />
-                  <span>Tư vấn thi công: 0967.323.335</span>
+                  <span suppressHydrationWarning>Tư vấn thi công: {displayPhone}</span>
                 </a>
                 <a
-                  href="https://zalo.me/0967323335"
+                  href={zaloUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="w-full py-2 bg-[#f5ece8] hover:bg-[#ede0d8] text-[#5d371f] text-xs font-semibold text-center rounded-none border border-[#d5c3ba] transition-colors flex items-center justify-center gap-2 no-underline"

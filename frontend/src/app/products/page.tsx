@@ -764,10 +764,7 @@ function ProductsContent() {
       />
 
       <main className="w-full pt-20 overflow-hidden">
-        <div
-          key={`screen-${pathname}-${spaceParam || 'all'}-${categoryParam || ''}-${materialParam || ''}`}
-          className="animate-page-slide-in w-full"
-        >
+        <div className="w-full">
           {/* Breadcrumb Bar */}
           <section className="w-full bg-[#fbf2ee] py-3 sm:py-4 border-b border-[#eae1dd]">
           <div className="w-full max-w-[1720px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-16">

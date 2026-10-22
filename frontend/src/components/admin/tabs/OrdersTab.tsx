@@ -20,6 +20,7 @@ import {
   Divider,
   AutoComplete,
   Dropdown,
+  Tooltip,
 } from 'antd';
 import {
   EditOutlined,
@@ -33,6 +34,13 @@ import {
   UserOutlined,
   DollarOutlined,
   AppstoreOutlined,
+  RollbackOutlined,
+  PictureOutlined,
+  CheckCircleOutlined,
+  ShopOutlined,
+  InfoCircleOutlined,
+  QrcodeOutlined,
+  ExclamationCircleOutlined,
 } from '@ant-design/icons';
 import {
   AdminDataTable,
@@ -48,8 +56,10 @@ import { orderApi, normalizeOrderStatus, normalizeOrderRow } from '@/api/orderAp
 import { customerApi } from '@/api/customerApi';
 import { productApi } from '@/api/productApi';
 import { branchApi } from '@/api/branchApi';
+import { settingsApi, type PaymentConfigData } from '@/api/settingsApi';
+import { VietQrCard } from '@/components/common/VietQrCard';
 import { VIETNAM_PROVINCES } from '@/data/vietnamAddresses';
-import { isMatchBranch } from '@/utils/branchHelper';
+import { isMatchBranch, getProductStockForBranch } from '@/utils/branchHelper';
 import { printOrderInvoice } from '@/utils/printHelper';
 import { ADMIN_STORAGE_KEYS, getStoredAdminData, setStoredAdminData } from '@/utils/adminStorage';
 import { invalidateApiCache } from '@/api/shared/apiCache';
@@ -65,6 +75,8 @@ export interface OrdersTabProps {
   onOpenCreateOrder?: () => void;
   onOpenEditOrder?: (order: OrderRow) => void;
   onSelectOrderDetail?: (order: OrderRow) => void;
+  initialSearch?: string;
+  onClearInitialSearch?: () => void;
 }
 
 export const formatWoodTypeName = (wood?: string): string => {
@@ -135,12 +147,20 @@ export function OrdersTab({
   onOpenCreateOrder,
   onOpenEditOrder,
   onSelectOrderDetail,
+  initialSearch,
+  onClearInitialSearch,
 }: OrdersTabProps) {
   const { message } = App.useApp();
   const [form] = Form.useForm();
 
   // Local filter states
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(initialSearch || '');
+
+  React.useEffect(() => {
+    if (initialSearch !== undefined && initialSearch !== null) {
+      setSearchQuery(initialSearch);
+    }
+  }, [initialSearch]);
   const [statusFilter, setStatusFilter] = useState('all');
   const [orderDateRange, setOrderDateRange] = useState<DateRangeValue>(null);
   const [selectedOrderKeys, setSelectedOrderKeys] = useState<React.Key[]>([]);
@@ -154,9 +174,60 @@ export function OrdersTab({
   // Real Database Data for Auto-complete (from props or fallback fetch)
   const [dbCustomers, setDbCustomers] = useState<AdminCustomer[]>([]);
   const [dbProducts, setDbProducts] = useState<FeaturedCatalogProduct[]>([]);
+  const [dbMaterials, setDbMaterials] = useState<string[]>([]);
+  const [selectedProductData, setSelectedProductData] = useState<FeaturedCatalogProduct | null>(null);
+
+  // Real Payment Config from Settings Screen (VietQR & Default Deposit %)
+  const [paymentConfig, setPaymentConfig] = useState<PaymentConfigData | null>(() => {
+    return getStoredAdminData<PaymentConfigData | null>(ADMIN_STORAGE_KEYS.PAYMENT_SETTINGS, null);
+  });
+
+  const settingDepositPercent = useMemo(() => {
+    if (paymentConfig?.defaultDeposit !== undefined && paymentConfig.defaultDeposit !== null) {
+      const parsed = Number(paymentConfig.defaultDeposit);
+      if (!isNaN(parsed) && parsed >= 0) return parsed;
+    }
+    return 20;
+  }, [paymentConfig]);
+
+  // Form watches for live VietQR and financial calculation
+  const currentOrderCode = Form.useWatch('orderCode', form) || 'DH-001';
+  const currentPaymentMethod = Form.useWatch('paymentMethod', form) || 'VietQR';
+  const currentTotalValue = Form.useWatch('value', form) || 0;
+  const currentDepositAmount = Form.useWatch('depositAmount', form) || 0;
+  const currentDepositPercentForm = Form.useWatch('depositPercent', form);
+  const currentDepositPercent = useMemo(() => {
+    if (currentDepositPercentForm !== undefined && currentDepositPercentForm !== null && currentDepositPercentForm !== '') {
+      return Number(currentDepositPercentForm);
+    }
+    if (!currentTotalValue || currentTotalValue <= 0) return 0;
+    return Math.round((currentDepositAmount / currentTotalValue) * 100);
+  }, [currentDepositPercentForm, currentTotalValue, currentDepositAmount]);
+
+  // All available deposit preset options dynamically matching settings and standard business tiers
+  const depositPresets = useMemo(() => {
+    const defaultPcts = [0, 10, 20, 30, 50, 70, 100];
+    const all = Array.from(new Set([settingDepositPercent, ...defaultPcts])).sort((a, b) => a - b);
+    return all.map((pct) => {
+      if (pct === 0) return { percent: 0, label: '0% (Chưa cọc)' };
+      if (pct === 100) return { percent: 100, label: '100% (Đủ)' };
+      if (pct === settingDepositPercent) return { percent: pct, label: `${pct}% (Cài đặt)` };
+      return { percent: pct, label: `${pct}%` };
+    });
+  }, [settingDepositPercent]);
+
+  const qrTransferAmount = currentDepositAmount > 0 ? currentDepositAmount : currentTotalValue;
 
   const effectiveCustomers = customersList.length > 0 ? customersList : dbCustomers;
   const effectiveProducts = catalogList.length > 0 ? catalogList : dbProducts;
+
+  // Selected Showroom from form watch to show real-time branch stock
+  const selectedShowroom = Form.useWatch('showroom', form);
+  const selectedCustomerId = Form.useWatch('customerId', form);
+  const selectedCustomer = useMemo(() => {
+    if (!selectedCustomerId) return null;
+    return effectiveCustomers.find((c) => c.id === selectedCustomerId) || null;
+  }, [selectedCustomerId, effectiveCustomers]);
 
   // Province and District linkage
   const selectedProvince = Form.useWatch('customerProvince', form);
@@ -166,29 +237,56 @@ export function OrdersTab({
     return found ? found.districts : [];
   }, [selectedProvince]);
 
-  // Distinct real materials extracted directly from the database products
+  // Distinct real materials extracted directly from the database API & catalog products
   const availableWoodTypes = useMemo(() => {
-    const materials = effectiveProducts
+    const fromProducts = effectiveProducts
       .map((p) => p.material?.trim())
       .filter((m): m is string => Boolean(m));
-    const unique = Array.from(new Set(materials));
-    return unique.length > 0 ? unique : ['Gỗ Hương Đá', 'Gỗ Gõ Đỏ', 'Gỗ Mun Hoa', 'Gỗ Cẩm Lai', 'Gỗ Sồi Mỹ'];
-  }, [effectiveProducts]);
+    const combined = Array.from(new Set([...dbMaterials, ...fromProducts]));
+    return combined.length > 0
+      ? combined
+      : ['Gỗ Sồi tự nhiên ( Ash / Oak)', 'Gỗ Tần Bì + Veneer Sồi', 'Gỗ Me Tây', 'Gỗ Óc Chó Bắc Mỹ FAS', 'Gỗ Gõ Đỏ Pachyloba', 'Gỗ Hương Đá Nam Phi'];
+  }, [dbMaterials, effectiveProducts]);
 
-  // Lazy load customer and product options ONLY when the create/edit order drawer is opened
+  // Load payment config on mount
+  React.useEffect(() => {
+    settingsApi.getPaymentConfig().then((cfg) => {
+      if (cfg) {
+        setPaymentConfig(cfg);
+        try { setStoredAdminData(ADMIN_STORAGE_KEYS.PAYMENT_SETTINGS, cfg); } catch {}
+      }
+    }).catch(() => {});
+  }, []);
+
+  // Lazy load customer, product and real materials ONLY when the create/edit order drawer is opened
   const hasFetchedDrawerDataRef = React.useRef(false);
   React.useEffect(() => {
-    if (isOrderDrawerOpen && !hasFetchedDrawerDataRef.current) {
-      hasFetchedDrawerDataRef.current = true;
-      if (customersList.length === 0) {
-        customerApi.getCustomers().then((res) => {
-          if (Array.isArray(res) && res.length > 0) setDbCustomers(res);
-        }).catch(() => {});
-      }
+    if (isOrderDrawerOpen) {
+      settingsApi.getPaymentConfig().then((cfg) => {
+        if (cfg) {
+          setPaymentConfig(cfg);
+          try { setStoredAdminData(ADMIN_STORAGE_KEYS.PAYMENT_SETTINGS, cfg); } catch {}
+        }
+      }).catch(() => {});
 
-      if (catalogList.length === 0) {
-        productApi.getProducts().then((res) => {
-          if (Array.isArray(res) && res.length > 0) setDbProducts(res);
+      if (!hasFetchedDrawerDataRef.current) {
+        hasFetchedDrawerDataRef.current = true;
+        if (customersList.length === 0) {
+          customerApi.getCustomers().then((res) => {
+            if (Array.isArray(res) && res.length > 0) setDbCustomers(res);
+          }).catch(() => {});
+        }
+
+        if (catalogList.length === 0) {
+          productApi.getProducts({ pageSize: 500 }).then((res) => {
+            if (Array.isArray(res) && res.length > 0) setDbProducts(res);
+          }).catch(() => {});
+        }
+
+        productApi.getMaterials().then((mats) => {
+          if (Array.isArray(mats) && mats.length > 0) {
+            setDbMaterials(mats.map((m) => m.name).filter(Boolean));
+          }
         }).catch(() => {});
       }
     }
@@ -234,13 +332,16 @@ export function OrdersTab({
 
   // Filtered orders calculation
   const filteredOrders = useMemo(() => {
+    const q = searchQuery ? searchQuery.trim().toLowerCase() : '';
     return branchScopedOrders.filter((item) => {
       const matchSearch =
-        !searchQuery ||
-        item.orderCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.customerPhone.includes(searchQuery) ||
-        item.productName.toLowerCase().includes(searchQuery.toLowerCase());
+        !q ||
+        (item.orderCode ? item.orderCode.toLowerCase().includes(q) : false) ||
+        (item.customerName ? item.customerName.toLowerCase().includes(q) : false) ||
+        (item.customerPhone ? item.customerPhone.includes(q) : false) ||
+        (item.recipientName ? item.recipientName.toLowerCase().includes(q) : false) ||
+        (item.recipientPhone ? item.recipientPhone.includes(q) : false) ||
+        (item.productName ? item.productName.toLowerCase().includes(q) : false);
 
       const itemStatus = normalizeOrderStatus(item.status);
       const matchStatus = statusFilter === 'all' || itemStatus === statusFilter;
@@ -554,22 +655,40 @@ export function OrdersTab({
       return;
     }
     setEditingOrder(null);
+    setSelectedProductData(null);
     setIsOrderDrawerOpen(true);
+
+    const defaultBranch = selectedGlobalBranch !== 'all'
+      ? selectedGlobalBranch
+      : (effectiveBranches[0]?.name || 'Chi Nhánh Phú Quốc');
+
+    const generatedCode = `DH${dayjs().format('YYMMDD')}-${Math.floor(100 + Math.random() * 900)}`;
 
     setTimeout(() => {
       form.resetFields();
       form.setFieldsValue({
-        orderCode: `DH-${Date.now().toString().slice(-4)}`,
-        woodType: '',
+        orderCode: generatedCode,
         orderType: 'retail',
         status: 'pending',
+        showroom: defaultBranch,
+        customerId: undefined,
+        customerName: '',
+        customerPhone: '',
         customerProvince: undefined,
         customerDistrict: undefined,
         customerAddress: '',
+        productId: undefined,
+        productName: '',
+        productSku: '',
+        woodType: '',
+        productSpec: '',
+        quantity: 1,
+        unitPrice: 0,
         value: 0,
+        depositPercent: settingDepositPercent,
         depositAmount: 0,
+        paymentMethod: 'VietQR',
         deadlineToPicker: dayjs().add(7, 'day'),
-        showroom: selectedGlobalBranch !== 'all' ? selectedGlobalBranch : '',
       });
     }, 0);
   };
@@ -582,6 +701,16 @@ export function OrdersTab({
     setEditingOrder(order);
     setIsOrderDrawerOpen(true);
 
+    // Locate matching real catalog product
+    const matchedProduct = effectiveProducts.find(
+      (p) =>
+        (order.productId && p.id === order.productId) ||
+        (order.items?.[0]?.productId && p.id === order.items[0].productId) ||
+        (order.items?.[0]?.productSku && (p.code === order.items[0].productSku || (p as any).sku === order.items[0].productSku)) ||
+        (Boolean(order.productName) && Boolean(p.name) && p.name.trim().toLowerCase() === order.productName.trim().toLowerCase())
+    );
+    setSelectedProductData(matchedProduct || null);
+
     let parsedDeadline = undefined;
     if (order.deadlineDate) {
       const trimmed = order.deadlineDate.trim();
@@ -592,24 +721,40 @@ export function OrdersTab({
       }
     }
 
+    const defaultBranch = order.showroom || order.branch || (selectedGlobalBranch !== 'all' ? selectedGlobalBranch : (effectiveBranches[0]?.name || ''));
+    const orderQty = order.quantity || order.items?.[0]?.quantity || 1;
+    const orderUnitPrice = order.items?.[0]?.unitPrice || (orderQty ? Math.round(order.value / orderQty) : order.value);
+    const orderDepositPct = order.depositPercent !== undefined && order.depositPercent !== null
+      ? order.depositPercent
+      : (order.value > 0 ? Math.round((order.depositAmount / order.value) * 100) : 0);
+
     setTimeout(() => {
       form.resetFields();
       form.setFieldsValue({
         orderCode: order.orderCode,
+        customerId: order.customerId || undefined,
         customerName: order.customerName,
         customerPhone: order.customerPhone,
+        recipientName: order.recipientName || '',
+        recipientPhone: order.recipientPhone || '',
         customerProvince: order.customerProvince,
         customerDistrict: order.customerDistrict,
         customerAddress: order.customerAddress,
+        productId: order.productId || order.items?.[0]?.productId || matchedProduct?.id || undefined,
         productName: order.productName,
+        productSku: order.items?.[0]?.productSku || matchedProduct?.code || '',
         productSpec: order.productSpec,
         woodType: order.woodType,
+        quantity: orderQty,
+        unitPrice: orderUnitPrice,
         orderType: order.orderType || 'retail',
         status: normalizeOrderStatus(order.status),
         value: order.value,
+        depositPercent: orderDepositPct,
         depositAmount: order.depositAmount,
+        paymentMethod: order.paymentMethod || 'VietQR',
         deadlineToPicker: parsedDeadline && parsedDeadline.isValid() ? parsedDeadline : dayjs().add(7, 'day'),
-        showroom: order.showroom || '',
+        showroom: defaultBranch,
       });
     }, 0);
   };
@@ -628,7 +773,9 @@ export function OrdersTab({
       };
       const normStatus = normalizeOrderStatus(values.status);
 
-      const depositPercent = values.value > 0 ? Math.round(((values.depositAmount || 0) / values.value) * 100) : 0;
+      const depositPercent = values.depositPercent !== undefined && values.depositPercent !== null && values.depositPercent !== ''
+        ? Number(values.depositPercent)
+        : (values.value > 0 ? Math.round(((values.depositAmount || 0) / values.value) * 100) : 0);
       const fullShippingAddress = [
         values.customerAddress,
         values.customerDistrict,
@@ -636,19 +783,48 @@ export function OrdersTab({
       ].filter(Boolean).join(', ');
 
       const formattedDeadline = values.deadlineToPicker
-        ? dayjs(values.deadlineToPicker).format('DD/MM/YYYY')
-        : dayjs().add(7, 'day').format('DD/MM/YYYY');
+        ? dayjs(values.deadlineToPicker).format('YYYY-MM-DD')
+        : dayjs().add(7, 'day').format('YYYY-MM-DD');
+
+      const isPaid = (values.depositAmount || 0) >= values.value && values.value > 0;
+      const paymentStatus = isPaid ? 'paid' : ((values.depositAmount || 0) > 0 ? 'partial' : 'pending');
+      const targetBranch = values.showroom || (selectedGlobalBranch !== 'all' ? selectedGlobalBranch : (effectiveBranches[0]?.name || 'Chi Nhánh Phú Quốc'));
+
+      const orderItemPayload = {
+        productId: values.productId || undefined,
+        productName: values.productName,
+        productSku: values.productSku || undefined,
+        productImage: selectedProductData?.image || undefined,
+        material: values.woodType,
+        dimensions: values.productSpec,
+        unitPrice: values.unitPrice || (values.quantity ? Math.round(values.value / values.quantity) : values.value),
+        quantity: values.quantity || 1,
+        totalPrice: values.value,
+      };
+
+      const finalRecipientName = values.recipientName?.trim() || values.customerName?.trim();
+      const finalRecipientPhone = values.recipientPhone?.trim() || values.customerPhone?.trim();
 
       if (editingOrder) {
         const updated = await orderApi.updateOrder(editingOrder.id, {
           ...values,
+          customerId: values.customerId || undefined,
+          productId: values.productId || undefined,
+          recipientName: finalRecipientName,
+          recipientPhone: finalRecipientPhone,
           status: normStatus,
+          paymentStatus,
+          paymentMethod: values.paymentMethod || 'VietQR',
           deadlineDate: formattedDeadline,
           city: values.customerProvince,
           district: values.customerDistrict,
           shippingAddress: fullShippingAddress || values.customerAddress,
           orderType: values.orderType || editingOrder.orderType || 'retail',
           depositPercent,
+          showroom: targetBranch,
+          branch: targetBranch,
+          quantity: values.quantity || 1,
+          items: [orderItemPayload],
         });
         invalidateApiCache('orders');
         setOrdersList((prev) => {
@@ -657,12 +833,22 @@ export function OrdersTab({
               ? {
                   ...item,
                   ...updated,
+                  customerId: values.customerId || item.customerId,
+                  productId: values.productId || item.productId,
+                  recipientName: finalRecipientName,
+                  recipientPhone: finalRecipientPhone,
                   status: normStatus,
+                  paymentStatus,
+                  paymentMethod: values.paymentMethod || item.paymentMethod || 'VietQR',
                   deadlineDate: formattedDeadline,
                   customerProvince: values.customerProvince,
                   customerDistrict: values.customerDistrict,
                   statusLabel: statusLabels[normStatus] || item.statusLabel,
                   depositPercent,
+                  showroom: targetBranch,
+                  branch: targetBranch,
+                  quantity: values.quantity || 1,
+                  items: [orderItemPayload],
                 }
               : item
           );
@@ -673,26 +859,35 @@ export function OrdersTab({
       } else {
         const created = await orderApi.createOrder({
           orderCode: values.orderCode,
+          customerId: values.customerId || undefined,
           customerName: values.customerName,
           customerPhone: values.customerPhone,
+          recipientName: finalRecipientName,
+          recipientPhone: finalRecipientPhone,
           customerAddress: values.customerAddress,
           customerProvince: values.customerProvince,
           customerDistrict: values.customerDistrict,
           city: values.customerProvince,
           district: values.customerDistrict,
           shippingAddress: fullShippingAddress || values.customerAddress,
+          productId: values.productId || undefined,
           productName: values.productName,
+          productSku: values.productSku || undefined,
           productSpec: values.productSpec || 'Theo thiết kế kỹ thuật',
           woodType: values.woodType || 'Gỗ tự nhiên cao cấp',
           value: values.value || 0,
+          quantity: values.quantity || 1,
           depositAmount: values.depositAmount || 0,
           depositPercent,
           status: normStatus,
+          paymentStatus,
+          paymentMethod: values.paymentMethod || 'VietQR',
           deadlineDate: formattedDeadline,
           orderType: values.orderType || 'retail',
           spaceType: 'living',
-          showroom: values.showroom || (selectedGlobalBranch !== 'all' ? selectedGlobalBranch : ''),
-          branch: selectedGlobalBranch !== 'all' ? selectedGlobalBranch : undefined,
+          showroom: targetBranch,
+          branch: targetBranch,
+          items: [orderItemPayload],
         });
         invalidateApiCache('orders');
         setOrdersList((prev) => {
@@ -1073,7 +1268,10 @@ export function OrdersTab({
                                 <div className="md:col-span-7 space-y-1.5">
                                   <label className="font-medium text-slate-700 block text-xs">Ghi chú &amp; Địa chỉ giao hàng</label>
                                   <div className="p-3 bg-slate-50 border border-slate-200 text-xs text-slate-700 space-y-1">
-                                    <div><span className="text-slate-400">Khách hàng:</span> <span className="font-medium text-slate-900">{order.customerName}</span> • <span className="text-slate-400">SĐT:</span> <span className="font-mono">{order.customerPhone}</span></div>
+                                    <div><span className="text-slate-400">Khách hàng đặt (Công nợ):</span> <span className="font-medium text-slate-900">{order.customerName}</span> • <span className="text-slate-400">SĐT:</span> <span className="font-mono">{order.customerPhone}</span></div>
+                                    {order.recipientName && (order.recipientName !== order.customerName || (order.recipientPhone && order.recipientPhone !== order.customerPhone)) ? (
+                                      <div><span className="text-slate-400">Người nhận hàng:</span> <span className="font-medium text-[#784e34]">{order.recipientName}</span> {order.recipientPhone ? <>• <span className="text-slate-400">SĐT:</span> <span className="font-mono">{order.recipientPhone}</span></> : null}</div>
+                                    ) : null}
                                     <div><span className="text-slate-400">Địa chỉ giao nhận:</span> <span>{order.customerAddress}</span></div>
                                     <div><span className="text-slate-400">Yêu cầu kỹ thuật:</span> <span>{order.productSpec}</span></div>
                                     <div><span className="text-slate-400">Ngày đặt hàng:</span> <span className="font-mono">{order.orderDate}</span> • <span className="text-slate-400">Hạn bàn giao:</span> <span className="font-mono text-rose-600">{order.deadlineDate}</span></div>
@@ -1082,7 +1280,7 @@ export function OrdersTab({
                                   {(order.returnReason || (order as any).returnImages?.length || order.status === 'returned' || order.status === 'returned_success') && (
                                     <div className="p-3 bg-rose-50/70 border border-rose-200 text-xs text-slate-800 space-y-2 mt-2">
                                       <div className="flex items-center gap-2 text-rose-800 font-semibold text-xs border-b border-rose-200/80 pb-1.5">
-                                        <span className="material-symbols-outlined text-[16px]">assignment_return</span>
+                                        <RollbackOutlined className="text-sm" />
                                         <span>Yêu cầu đổi trả / hoàn tiền từ khách hàng</span>
                                         {order.status === 'returned_success' ? (
                                           <Tag color="cyan" className="m-0 text-[10px]">Hoàn hàng thành công</Tag>
@@ -1102,7 +1300,7 @@ export function OrdersTab({
                                       {(order as any).returnImages && (order as any).returnImages.length > 0 && (
                                         <div className="pt-1">
                                           <div className="text-[11px] font-semibold text-slate-700 mb-1.5 flex items-center gap-1">
-                                            <span className="material-symbols-outlined text-[14px] text-rose-700">photo_library</span>
+                                            <PictureOutlined className="text-xs text-rose-700" />
                                             <span>Ảnh sản phẩm thực tế do khách hàng tải lên ({(order as any).returnImages.length} ảnh):</span>
                                           </div>
                                           <div className="flex flex-wrap gap-2">
@@ -1153,12 +1351,20 @@ export function OrdersTab({
                           {currentTab === 'info' && (
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 bg-white p-4 border border-slate-200 text-xs">
                               <div>
-                                <span className="text-slate-400 block mb-0.5">Khách hàng:</span>
+                                <span className="text-slate-400 block mb-0.5">Khách đặt (Công nợ):</span>
                                 <span className="font-medium text-slate-900 text-sm">{order.customerName}</span>
                               </div>
                               <div>
-                                <span className="text-slate-400 block mb-0.5">Số điện thoại:</span>
+                                <span className="text-slate-400 block mb-0.5">SĐT người đặt:</span>
                                 <span className="font-mono font-medium text-slate-900 text-sm">{order.customerPhone}</span>
+                              </div>
+                              <div>
+                                <span className="text-slate-400 block mb-0.5">Người nhận hàng:</span>
+                                <span className="font-medium text-[#784e34] text-sm">{order.recipientName || order.customerName}</span>
+                              </div>
+                              <div>
+                                <span className="text-slate-400 block mb-0.5">SĐT người nhận:</span>
+                                <span className="font-mono font-medium text-[#784e34] text-sm">{order.recipientPhone || order.customerPhone}</span>
                               </div>
                               <div>
                                 <span className="text-slate-400 block mb-0.5">Ngày đặt hàng:</span>
@@ -1324,19 +1530,32 @@ export function OrdersTab({
                       title: 'Khách hàng',
                       dataIndex: 'customerName',
                       key: 'customerName',
-                      width: 170,
-                      render: (text, record: OrderRow) => (
-                        <div className="flex flex-col">
-                          <span className="font-semibold text-slate-900 text-sm">
-                            {text || 'Khách lẻ'}
-                          </span>
-                          {record.customerPhone ? (
-                            <span className="font-mono text-xs text-slate-500 mt-0.5">
-                              {record.customerPhone}
+                      width: 190,
+                      render: (text, record: OrderRow) => {
+                        const hasDifferentRecipient =
+                          Boolean(record.recipientName) &&
+                          record.recipientName?.trim().toLowerCase() !== (text || '').trim().toLowerCase();
+                        return (
+                          <div className="flex flex-col">
+                            <span className="font-semibold text-slate-900 text-sm">
+                              {text || 'Khách lẻ'}
                             </span>
-                          ) : null}
-                        </div>
-                      ),
+                            {record.customerPhone ? (
+                              <span className="font-mono text-xs text-slate-500 mt-0.5">
+                                {record.customerPhone}
+                              </span>
+                            ) : null}
+                            {hasDifferentRecipient ? (
+                              <div className="mt-1 text-[11px] text-[#784e34] bg-amber-50/90 px-1.5 py-0.5 rounded border border-amber-200/80 inline-flex flex-col">
+                                <span className="font-medium">Nhận hàng: {record.recipientName}</span>
+                                {record.recipientPhone && record.recipientPhone !== record.customerPhone ? (
+                                  <span className="font-mono text-[10px] text-slate-500">SĐT: {record.recipientPhone}</span>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      },
                     },
                     {
                       title: 'Sản phẩm may đo',
@@ -1586,17 +1805,35 @@ export function OrdersTab({
                   <AppstoreOutlined className="text-[#784e34]" />
                   <span>1. Thông tin chung & Kênh tiếp nhận</span>
                 </div>
+                <Form.Item name="orderType" hidden>
+                  <Input />
+                </Form.Item>
                 <Row gutter={16}>
-                  <Col span={12}>
+                  <Col span={8}>
                     <Form.Item
                       label="Mã đơn hàng"
                       name="orderCode"
                       rules={[{ required: true, message: 'Vui lòng nhập mã đơn hàng' }]}
                     >
-                      <Input placeholder="VD: DH-2026-09" className="font-mono font-medium" />
+                      <Input placeholder="VD: DH261022-001" className="font-mono font-medium" />
                     </Form.Item>
                   </Col>
-                  <Col span={12}>
+                  <Col span={8}>
+                    <Form.Item
+                      label="Chi nhánh tiếp nhận"
+                      name="showroom"
+                      rules={[{ required: true, message: 'Vui lòng chọn chi nhánh' }]}
+                    >
+                      <Select
+                        placeholder="-- Chọn chi nhánh tiếp nhận --"
+                        options={effectiveBranches.map((b) => ({
+                          value: b.name,
+                          label: `🏬 ${b.name}`,
+                        }))}
+                      />
+                    </Form.Item>
+                  </Col>
+                  <Col span={8}>
                     <Form.Item label="Trạng thái đơn hàng" name="status">
                       <Select
                         options={[
@@ -1612,17 +1849,24 @@ export function OrdersTab({
                     </Form.Item>
                   </Col>
                 </Row>
-                <Form.Item label="Chi nhánh / Showroom" name="showroom">
-                  <Input placeholder="VD: Showroom Nam Từ Liêm (Hà Nội)" />
-                </Form.Item>
               </div>
 
               {/* Card 2: Thông tin khách hàng */}
               <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
-                <div className="flex items-center gap-2 text-sm font-semibold text-slate-800 pb-1 border-b border-slate-200">
-                  <UserOutlined className="text-[#784e34]" />
-                  <span>2. Thông tin khách hàng & Địa chỉ</span>
+                <div className="flex items-center justify-between pb-1 border-b border-slate-200">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                    <UserOutlined className="text-[#784e34]" />
+                    <span>2. Thông tin khách hàng & Địa chỉ</span>
+                  </div>
+                  {selectedCustomer && (
+                    <span className="text-xs font-medium text-emerald-700 flex items-center gap-1">
+                      <CheckCircleOutlined /> Khách hàng thật: {selectedCustomer.code || selectedCustomer.name}
+                    </span>
+                  )}
                 </div>
+                <Form.Item name="customerId" hidden>
+                  <Input />
+                </Form.Item>
                 <Row gutter={16}>
                   <Col span={12}>
                     <Form.Item
@@ -1631,19 +1875,34 @@ export function OrdersTab({
                       rules={[{ required: true, message: 'Vui lòng nhập tên khách hàng' }]}
                     >
                       <AutoComplete
-                        options={effectiveCustomers.map((c) => ({
-                          value: c.name,
-                          label: (
-                            <div className="flex justify-between items-center py-0.5">
-                              <div>
-                                <span className="font-semibold text-slate-800 mr-2">{c.name}</span>
-                                {c.code && <span className="text-[11px] font-mono text-slate-400">({c.code})</span>}
+                        options={effectiveCustomers.map((c) => {
+                          const isVip = c.type === 'vip' || c.tier === 'diamond' || c.tier === 'gold';
+                          return {
+                            value: c.name,
+                            label: (
+                              <div className="flex justify-between items-center py-1">
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <span className="font-semibold text-slate-800 text-xs truncate">{c.name}</span>
+                                  {c.code && (
+                                    <span className="text-[10px] font-mono px-1 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                                      {c.code}
+                                    </span>
+                                  )}
+                                  {isVip && (
+                                    <span className="text-[9px] font-bold px-1 rounded bg-amber-100 text-amber-800 border border-amber-300">
+                                      {c.tier ? `VIP ${c.tier.toUpperCase()}` : 'VIP'}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 flex-shrink-0 text-slate-500">
+                                  <span className="text-[11px] font-mono">{c.phone}</span>
+                                  {c.branch && <span className="text-[10px] text-slate-400">({c.branch.replace('Chi nhánh ', 'CN ')})</span>}
+                                </div>
                               </div>
-                              <span className="text-xs text-slate-500 font-mono">{c.phone}</span>
-                            </div>
-                          ),
-                          customer: c,
-                        }))}
+                            ),
+                            customer: c,
+                          };
+                        })}
                         filterOption={(inputValue, option) => {
                           if (!inputValue) return true;
                           const c = (option as any)?.customer;
@@ -1659,15 +1918,28 @@ export function OrdersTab({
                         }}
                         onSelect={(_val, option: any) => {
                           if (option?.customer) {
+                            const cust = option.customer;
                             form.setFieldsValue({
-                              customerPhone: option.customer.phone || '',
-                              customerAddress: option.customer.address || '',
-                              customerProvince: option.customer.invoiceProvince || undefined,
-                              customerDistrict: option.customer.invoiceWard || undefined,
+                              customerId: cust.id,
+                              customerName: cust.name,
+                              customerPhone: cust.phone || '',
+                              customerAddress: cust.address || '',
+                              customerProvince: cust.invoiceProvince || cust.province || undefined,
+                              customerDistrict: cust.invoiceWard || cust.district || undefined,
                             });
                           }
                         }}
-                        placeholder="Nhập họ tên, SĐT hoặc chọn từ danh sách khách hàng..."
+                        onChange={() => {
+                          // If user edits name manually, clear linked customerId if it no longer matches
+                          const currentId = form.getFieldValue('customerId');
+                          if (currentId) {
+                            const currentCust = effectiveCustomers.find((c) => c.id === currentId);
+                            if (currentCust && currentCust.name !== form.getFieldValue('customerName')) {
+                              form.setFieldsValue({ customerId: undefined });
+                            }
+                          }
+                        }}
+                        placeholder="Tìm theo tên, SĐT hoặc mã khách hàng (VD: KH-006)..."
                       />
                     </Form.Item>
                   </Col>
@@ -1681,6 +1953,28 @@ export function OrdersTab({
                     </Form.Item>
                   </Col>
                 </Row>
+
+                {/* Live Customer Linked Info Box */}
+                {selectedCustomer && (
+                  <div className="p-2.5 rounded-lg bg-emerald-50/80 border border-emerald-200 text-xs flex flex-wrap items-center justify-between gap-2 text-emerald-800">
+                    <div className="flex items-center gap-2">
+                      <CheckCircleOutlined className="text-emerald-600" />
+                      <span>
+                        Hồ sơ: <strong>{selectedCustomer.name}</strong> - Mã: <code>{selectedCustomer.code}</code>
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 text-slate-600">
+                      <span>Đơn đã mua: <strong className="text-slate-800">{selectedCustomer.totalOrders || selectedCustomer.ordersCount || 0}</strong></span>
+                      {selectedCustomer.totalSpent > 0 && (
+                        <span>Chi tiêu: <strong className="text-emerald-700">{selectedCustomer.totalSpent.toLocaleString('vi-VN')} đ</strong></span>
+                      )}
+                      {selectedCustomer.debt > 0 && (
+                        <span className="text-rose-600 font-medium">Nợ cũ: {selectedCustomer.debt.toLocaleString('vi-VN')} đ</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <Row gutter={16}>
                   <Col span={12}>
                     <Form.Item label="Tỉnh / Thành phố" name="customerProvince">
@@ -1718,14 +2012,46 @@ export function OrdersTab({
                 <Form.Item label="Địa chỉ cụ thể nhận nội thất" name="customerAddress">
                   <Input placeholder="Số nhà, đường, tòa nhà, căn hộ..." />
                 </Form.Item>
+
+                <div className="pt-2 border-t border-slate-200/80">
+                  <div className="text-xs font-semibold text-slate-700 mb-2 flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-sm text-[#784e34]">local_shipping</span>
+                    <span>Thông tin người nhận hàng tại công trình (Tùy chọn nếu khác người đặt)</span>
+                  </div>
+                  <Row gutter={16}>
+                    <Col span={12}>
+                      <Form.Item label="Họ tên người nhận" name="recipientName">
+                        <Input placeholder="Mặc định lấy theo tên khách đặt..." />
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item label="SĐT người nhận" name="recipientPhone">
+                        <Input placeholder="Mặc định lấy theo SĐT khách đặt..." />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                </div>
               </div>
 
-              {/* Card 3: Sản phẩm may đo */}
+              {/* Card 3: Sản phẩm đặt làm / Mua hàng */}
               <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
-                <div className="flex items-center gap-2 text-sm font-semibold text-slate-800 pb-1 border-b border-slate-200">
-                  <ShoppingOutlined className="text-[#784e34]" />
-                  <span>3. Quy cách sản phẩm</span>
+                <div className="flex items-center justify-between pb-1 border-b border-slate-200">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                    <ShoppingOutlined className="text-[#784e34]" />
+                    <span>3. Sản phẩm & Quy cách may đo</span>
+                  </div>
+                  {selectedProductData && (
+                    <span className="text-xs font-medium text-amber-800 flex items-center gap-1 font-mono">
+                      SKU: {selectedProductData.code}
+                    </span>
+                  )}
                 </div>
+                <Form.Item name="productId" hidden>
+                  <Input />
+                </Form.Item>
+                <Form.Item name="productSku" hidden>
+                  <Input />
+                </Form.Item>
                 <Row gutter={16}>
                   <Col span={14}>
                     <Form.Item
@@ -1734,21 +2060,41 @@ export function OrdersTab({
                       rules={[{ required: true, message: 'Vui lòng nhập tên sản phẩm' }]}
                     >
                       <AutoComplete
-                        options={effectiveProducts.map((p) => ({
-                          value: p.name,
-                          label: (
-                            <div className="flex justify-between items-center py-0.5">
-                              <div>
-                                <span className="font-semibold text-slate-800 mr-2">{p.name}</span>
-                                {p.code && <span className="text-[11px] font-mono text-slate-400">({p.code})</span>}
+                        options={effectiveProducts.map((p) => {
+                          const branchStock = getProductStockForBranch(p, selectedShowroom);
+                          const totalStock = p.inStock ?? 0;
+                          return {
+                            value: p.name,
+                            label: (
+                              <div className="flex justify-between items-center py-1 gap-2">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  {p.image ? (
+                                    <img src={p.image} alt="" className="w-8 h-8 rounded object-cover flex-shrink-0 border border-slate-200" />
+                                  ) : (
+                                    <div className="w-8 h-8 rounded bg-slate-100 flex items-center justify-center flex-shrink-0 text-slate-400">
+                                      <ShoppingOutlined className="text-xs" />
+                                    </div>
+                                  )}
+                                  <div className="min-w-0">
+                                    <div className="font-semibold text-slate-800 truncate text-xs">{p.name}</div>
+                                    <div className="text-[11px] font-mono text-slate-400 truncate">
+                                      SKU: {p.code} {p.material ? `• ${p.material}` : ''}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="flex flex-col items-end flex-shrink-0">
+                                  <span className="text-xs text-[#784e34] font-mono font-semibold">
+                                    {p.price.toLocaleString('vi-VN')} đ
+                                  </span>
+                                  <span className={`text-[10px] font-mono px-1 rounded ${branchStock > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                                    Kho: {branchStock} | Tổng: {totalStock}
+                                  </span>
+                                </div>
                               </div>
-                              <span className="text-xs text-[#784e34] font-mono font-medium whitespace-nowrap ml-2">
-                                {p.price.toLocaleString('vi-VN')} đ
-                              </span>
-                            </div>
-                          ),
-                          product: p,
-                        }))}
+                            ),
+                            product: p,
+                          };
+                        })}
                         filterOption={(inputValue, option) => {
                           if (!inputValue) return true;
                           const p = (option as any)?.product;
@@ -1758,24 +2104,36 @@ export function OrdersTab({
                           return (
                             matchVietnameseText(inputValue, p.name || '') ||
                             matchVietnameseText(inputValue, p.code || '') ||
-                            matchVietnameseText(inputValue, p.sku || '') ||
+                            matchVietnameseText(inputValue, (p as any).sku || '') ||
                             matchVietnameseText(inputValue, p.categoryName || '') ||
+                            matchVietnameseText(inputValue, p.material || '') ||
                             matchVietnameseText(inputValue, p.collection || '')
                           );
                         }}
                         onSelect={(_val, option: any) => {
                           if (option?.product) {
-                            const realMaterial = option.product.material || '';
+                            const p = option.product;
+                            const realMaterial = p.material || '';
+                            const unitP = p.price || 0;
+                            const curQty = form.getFieldValue('quantity') || 1;
+                            const totalVal = unitP * curQty;
+                            const autoDeposit = Math.round(totalVal * (settingDepositPercent / 100));
                             form.setFieldsValue({
-                              value: option.product.price || 0,
+                              productId: p.id,
+                              productSku: p.sku || p.code || '',
+                              productName: p.name,
+                              unitPrice: unitP,
+                              value: totalVal,
+                              depositAmount: autoDeposit,
                               woodType: realMaterial,
-                              productSpec: option.product.dimensions
-                                ? `${option.product.dimensions}${realMaterial ? ` - ${realMaterial}` : ''}`
-                                : option.product.specs?.[0] || option.product.collection || 'Theo quy cách xuất xưởng',
+                              productSpec: p.dimensions
+                                ? `${p.dimensions}${realMaterial ? ` - ${realMaterial}` : ''}`
+                                : p.specs?.[0] || p.collection || 'Theo quy cách xuất xưởng',
                             });
+                            setSelectedProductData(p);
                           }
                         }}
-                        placeholder="Gõ tên, mã sản phẩm (VD: Tủ áo, Kệ Tivi, Sofa...)"
+                        placeholder="Gõ tên, mã SKU sản phẩm (VD: KTV-G42, Tủ áo, Kệ Tivi...)"
                       />
                     </Form.Item>
                   </Col>
@@ -1784,13 +2142,110 @@ export function OrdersTab({
                       <AutoComplete
                         options={availableWoodTypes.map((mat) => ({
                           value: mat,
-                          label: mat,
+                          label: (
+                            <div className="flex justify-between items-center py-0.5">
+                              <span className="text-xs text-slate-800">{mat}</span>
+                              <Tag color="cyan" className="text-[10px] m-0">Thực tế</Tag>
+                            </div>
+                          ),
                         }))}
                         filterOption={(inputValue, option) => {
                           if (!inputValue) return true;
                           return matchVietnameseText(inputValue, String(option?.value || ''));
                         }}
-                        placeholder="VD: Gỗ Óc Chó FAS, Gỗ Sồi Mỹ..."
+                        placeholder="Chọn hoặc gõ chất liệu gỗ..."
+                      />
+                    </Form.Item>
+                  </Col>
+                </Row>
+
+                {/* Live Real Stock & Product Specification Card */}
+                {selectedProductData && (
+                  <div className="p-3 rounded-lg bg-amber-50/70 border border-amber-200 text-xs space-y-2">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-2.5">
+                        {selectedProductData.image ? (
+                          <img
+                            src={selectedProductData.image}
+                            alt=""
+                            className="w-11 h-11 rounded-lg object-cover border border-amber-200 shadow-sm"
+                          />
+                        ) : (
+                          <div className="w-11 h-11 rounded-lg bg-amber-100 flex items-center justify-center text-[#784e34]">
+                            <ShopOutlined className="text-lg" />
+                          </div>
+                        )}
+                        <div>
+                          <div className="font-semibold text-slate-800 text-sm">{selectedProductData.name}</div>
+                          <div className="font-mono text-[11px] text-slate-600">
+                            Mã SKU: <span className="font-bold text-slate-800">{selectedProductData.code}</span>
+                            {selectedProductData.dimensions && ` • KT: ${selectedProductData.dimensions}`}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {(() => {
+                          const branchStock = getProductStockForBranch(selectedProductData, selectedShowroom);
+                          const totalStock = selectedProductData.inStock ?? 0;
+                          return (
+                            <>
+                              <Tag color={branchStock > 0 ? 'success' : 'warning'} className="font-semibold m-0 text-xs px-2 py-0.5">
+                                Tại {selectedShowroom ? selectedShowroom.replace('Chi nhánh ', 'CN ') : 'chi nhánh'}: {branchStock} cái
+                              </Tag>
+                              <Tag color="blue" className="font-mono m-0 text-xs px-2 py-0.5">
+                                Tổng hệ thống: {totalStock}
+                              </Tag>
+                            </>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <Row gutter={16}>
+                  <Col span={8}>
+                    <Form.Item label="Số lượng" name="quantity" rules={[{ required: true, message: 'Nhập số lượng' }]}>
+                      <InputNumber
+                        min={1}
+                        className="w-full"
+                        style={{ width: '100%' }}
+                        onChange={(qty) => {
+                          const unitP = form.getFieldValue('unitPrice') || 0;
+                          if (qty && unitP) {
+                            const totalVal = qty * unitP;
+                            const curPct = form.getFieldValue('depositPercent');
+                            const usePct = curPct !== undefined && curPct !== null ? Number(curPct) : settingDepositPercent;
+                            form.setFieldsValue({
+                              value: totalVal,
+                              depositAmount: Math.round(totalVal * (usePct / 100)),
+                            });
+                          }
+                        }}
+                      />
+                    </Form.Item>
+                  </Col>
+                  <Col span={16}>
+                    <Form.Item label="Đơn giá tham chiếu (VNĐ)" name="unitPrice">
+                      <InputNumber<number>
+                        className="w-full font-mono font-medium"
+                        style={{ width: '100%' }}
+                        min={0}
+                        formatter={(val) => `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                        parser={(val) => (val ? Number(val.replace(/\$\s?|(,*)/g, '')) : 0)}
+                        placeholder="Nhập đơn giá / bộ"
+                        onChange={(price) => {
+                          const curQty = form.getFieldValue('quantity') || 1;
+                          if (price !== null && price !== undefined) {
+                            const totalVal = price * curQty;
+                            const curPct = form.getFieldValue('depositPercent');
+                            const usePct = curPct !== undefined && curPct !== null ? Number(curPct) : settingDepositPercent;
+                            form.setFieldsValue({
+                              value: totalVal,
+                              depositAmount: Math.round(totalVal * (usePct / 100)),
+                            });
+                          }
+                        }}
                       />
                     </Form.Item>
                   </Col>
@@ -1804,64 +2259,239 @@ export function OrdersTab({
               <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-4">
                 <div className="flex items-center gap-2 text-sm font-semibold text-slate-800 pb-1 border-b border-slate-200">
                   <DollarOutlined className="text-[#784e34]" />
-                  <span>4. Giá trị đơn hàng, Đặt cọc & Hạn bàn giao</span>
+                  <span>4. Giá trị đơn hàng & Đặt cọc</span>
                 </div>
-                <Row gutter={16}>
-                  <Col span={12}>
+                {/* Hàng 1: 3 ô tài chính ngang hàng tuyệt đối */}
+                <Row gutter={12} className="items-start">
+                  <Col span={8}>
                     <Form.Item
-                      label="Tổng giá trị đơn hàng (VNĐ)"
+                      label={<span className="whitespace-nowrap text-xs font-semibold text-slate-700">Tổng giá trị đơn</span>}
                       name="value"
                       rules={[{ required: true, message: 'Vui lòng nhập tổng giá trị' }]}
+                      className="mb-0 [&_.ant-form-item-label]:h-6 [&_.ant-form-item-label]:leading-6 [&_.ant-form-item-label]:mb-1"
                     >
                       <InputNumber<number>
                         className="w-full font-mono text-base font-bold text-[#784e34]"
                         style={{ width: '100%' }}
                         controls={false}
                         min={0}
+                        suffix={<span className="text-slate-400 font-sans text-xs">đ</span>}
                         formatter={(val) => `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
                         parser={(val) => (val ? Number(val.replace(/\$\s?|(,*)/g, '')) : 0)}
                         placeholder="0"
+                        onChange={(val) => {
+                          const total = val || 0;
+                          const pct = form.getFieldValue('depositPercent');
+                          const usePct = pct !== undefined && pct !== null ? Number(pct) : settingDepositPercent;
+                          form.setFieldsValue({
+                            depositAmount: Math.round(total * (usePct / 100)),
+                          });
+                        }}
                       />
                     </Form.Item>
                   </Col>
-                  <Col span={12}>
-                    <Form.Item label="Đã đặt cọc (VNĐ)" name="depositAmount">
+                  <Col span={8}>
+                    <Form.Item
+                      label={
+                        <span className="whitespace-nowrap text-xs font-semibold text-slate-700 flex items-center gap-1">
+                          Tỷ lệ đặt cọc
+                          <Tooltip title={`Tỷ lệ cọc mặc định từ Cài đặt hệ thống là ${settingDepositPercent}%. Bạn có thể chọn các mức cọc bên dưới hoặc tự nhập số % tuỳ ý.`}>
+                            <InfoCircleOutlined className="text-slate-400 text-xs" />
+                          </Tooltip>
+                        </span>
+                      }
+                      name="depositPercent"
+                      className="mb-0 [&_.ant-form-item-label]:h-6 [&_.ant-form-item-label]:leading-6 [&_.ant-form-item-label]:mb-1"
+                    >
+                      <InputNumber<number>
+                        className="w-full font-mono text-base font-bold text-blue-700"
+                        style={{ width: '100%' }}
+                        min={0}
+                        max={100}
+                        controls={false}
+                        suffix={<span className="text-slate-400 font-sans text-xs">%</span>}
+                        placeholder={String(settingDepositPercent)}
+                        onChange={(pctVal) => {
+                          const pct = pctVal !== null && pctVal !== undefined ? Number(pctVal) : 0;
+                          const total = form.getFieldValue('value') || 0;
+                          form.setFieldsValue({
+                            depositAmount: Math.round(total * (pct / 100)),
+                          });
+                        }}
+                      />
+                    </Form.Item>
+                  </Col>
+                  <Col span={8}>
+                    <Form.Item
+                      label={<span className="whitespace-nowrap text-xs font-semibold text-slate-700">Số tiền đặt cọc</span>}
+                      name="depositAmount"
+                      className="mb-0 [&_.ant-form-item-label]:h-6 [&_.ant-form-item-label]:leading-6 [&_.ant-form-item-label]:mb-1"
+                    >
                       <InputNumber<number>
                         className="w-full font-mono text-base font-bold text-emerald-700"
                         style={{ width: '100%' }}
                         controls={false}
                         min={0}
+                        suffix={<span className="text-slate-400 font-sans text-xs">đ</span>}
                         formatter={(val) => `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
                         parser={(val) => (val ? Number(val.replace(/\$\s?|(,*)/g, '')) : 0)}
                         placeholder="0"
+                        onChange={(amtVal) => {
+                          const amt = amtVal || 0;
+                          const total = form.getFieldValue('value') || 0;
+                          const calculatedPct = total > 0 ? Math.round((amt / total) * 100) : 0;
+                          form.setFieldsValue({
+                            depositPercent: calculatedPct,
+                          });
+                        }}
                       />
                     </Form.Item>
                   </Col>
                 </Row>
-                <Row gutter={16}>
+
+                {/* Hàng 2: Chọn nhanh mức cọc theo hàng ngang đồng đều */}
+                <div className="space-y-1.5 pt-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-500 font-medium">Mức cọc nhanh:</span>
+                    <span className="text-slate-600 font-mono text-xs">
+                      Tỷ lệ đang chọn:{' '}
+                      <strong className="text-[#784e34] font-bold">
+                        {currentDepositPercent}%
+                      </strong>
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-4 sm:grid-cols-7 gap-1.5 w-full">
+                    {depositPresets.map((preset) => {
+                      const isSelected = currentDepositPercent === preset.percent;
+                      return (
+                        <Button
+                          key={preset.percent}
+                          size="small"
+                          type={isSelected ? 'primary' : 'default'}
+                          className={
+                            isSelected
+                              ? '!bg-[#784e34] hover:!bg-[#633e28] !border-[#784e34] font-bold text-white shadow-sm ring-2 ring-[#784e34]/30 w-full text-center px-1'
+                              : 'bg-white text-slate-700 hover:text-[#784e34] hover:border-[#784e34] font-medium transition-all w-full text-center px-1'
+                          }
+                          onClick={() => {
+                            const total = form.getFieldValue('value') || 0;
+                            const amount = Math.round(total * (preset.percent / 100));
+                            form.setFieldsValue({
+                              depositPercent: preset.percent,
+                              depositAmount: amount,
+                            });
+                          }}
+                        >
+                          <span className="text-[11px] truncate">{preset.label}</span>
+                        </Button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Hàng 3: Hình thức thanh toán & Còn phải thu ngang hàng nhau */}
+                <Row gutter={12} className="items-end pt-1">
                   <Col span={12}>
                     <Form.Item
-                      label="Hạn bàn giao & Lắp đặt"
-                      name="deadlineToPicker"
-                      rules={[{ required: true, message: 'Vui lòng chọn hạn bàn giao' }]}
+                      label={<span className="whitespace-nowrap text-xs font-semibold text-slate-700">Hình thức thanh toán</span>}
+                      name="paymentMethod"
+                      className="mb-0 [&_.ant-form-item-label]:h-6 [&_.ant-form-item-label]:leading-6 [&_.ant-form-item-label]:mb-1"
                     >
-                      <DatePicker
-                        className="w-full h-9 font-medium"
-                        style={{ width: '100%' }}
-                        format="DD/MM/YYYY"
-                        placeholder="Chọn ngày (DD/MM/YYYY)"
+                      <Select
+                        className="w-full"
+                        options={[
+                          { value: 'VietQR', label: '💳 VietQR (Chuyển khoản)' },
+                          { value: 'Tiền mặt', label: '💵 Tiền mặt (Cash)' },
+                          { value: 'POS', label: '🏧 Thẻ ngân hàng / POS' },
+                        ]}
                       />
                     </Form.Item>
                   </Col>
                   <Col span={12}>
-                    <div className="p-2.5 rounded-lg bg-amber-50/70 border border-amber-200/80 text-xs text-amber-900 flex items-center justify-between h-9 mt-6">
-                      <span className="text-slate-600 font-medium">Còn phải thu khi giao:</span>
-                      <span className="font-mono font-bold text-rose-600 text-sm">
-                        {Math.max(0, (Form.useWatch('value', form) || 0) - (Form.useWatch('depositAmount', form) || 0)).toLocaleString('vi-VN')} đ
+                    <div className="flex items-center justify-between px-3 h-[32px] rounded-lg bg-emerald-50/90 border border-emerald-200 text-xs font-medium">
+                      <span className="text-slate-600">Còn phải thu khi giao:</span>
+                      <span className="font-mono font-bold text-emerald-800 text-sm">
+                        {Math.max(0, (currentTotalValue || 0) - (currentDepositAmount || 0)).toLocaleString('vi-VN')} đ
                       </span>
                     </div>
                   </Col>
                 </Row>
+
+                {/* Hiển thị Mã VietQR Thật khi chọn phương thức VietQR */}
+                {currentPaymentMethod === 'VietQR' && (
+                  <div className="p-3.5 rounded-xl bg-gradient-to-br from-emerald-50/90 via-slate-50 to-amber-50/50 border border-emerald-200 shadow-xs space-y-2.5">
+                    <div className="flex items-center justify-between pb-1.5 border-b border-emerald-200/60">
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-900">
+                        <QrcodeOutlined className="text-emerald-600 text-sm" />
+                        <span>Mã VietQR thanh toán tự động (Thiết lập tại Cài đặt)</span>
+                      </div>
+                      {paymentConfig?.bankName && (
+                        <Tag color="cyan" className="font-mono m-0 text-[10px]">
+                          {paymentConfig.bankName}
+                        </Tag>
+                      )}
+                    </div>
+
+                    {(paymentConfig?.accountNumber || paymentConfig?.bankAccountNumber) ? (
+                      <div className="flex flex-col sm:flex-row items-center gap-3">
+                        <div className="flex-shrink-0 bg-white p-2 rounded-lg border border-emerald-200 shadow-xs flex items-center justify-center">
+                          <VietQrCard
+                            bankName={paymentConfig?.bankName || 'MB Bank'}
+                            accountNumber={paymentConfig?.accountNumber || paymentConfig?.bankAccountNumber || ''}
+                            accountName={paymentConfig?.accountName || paymentConfig?.bankAccountName || ''}
+                            paymentPrefix={paymentConfig?.paymentPrefix || 'D2L'}
+                            orderCode={currentOrderCode}
+                            amount={qrTransferAmount}
+                            template={(paymentConfig?.vietQrTemplate as any) || 'compact'}
+                            size="small"
+                            showDetails={false}
+                            className="!max-w-[135px] !p-0 !border-0 !bg-transparent"
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0 space-y-1.5 text-xs w-full">
+                          <div className="bg-white p-2.5 rounded-lg border border-slate-200 space-y-1 font-mono text-[11px]">
+                            <div className="flex justify-between items-center">
+                              <span className="text-slate-500 font-sans">Ngân hàng:</span>
+                              <span className="font-bold text-slate-800">{paymentConfig?.bankName || 'MB Bank'}</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-slate-500 font-sans">Số tài khoản:</span>
+                              <span className="font-bold text-[#784e34]">{paymentConfig?.accountNumber || paymentConfig?.bankAccountNumber}</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-slate-500 font-sans">Chủ tài khoản:</span>
+                              <span className="font-bold text-slate-800 uppercase">{paymentConfig?.accountName || paymentConfig?.bankAccountName}</span>
+                            </div>
+                            <div className="flex justify-between items-center pt-1 border-t border-slate-100">
+                              <span className="text-slate-500 font-sans">Số tiền cọc:</span>
+                              <span className="font-bold text-emerald-700 text-xs">
+                                {qrTransferAmount.toLocaleString('vi-VN')} đ {currentDepositAmount > 0 ? `(Cọc ${currentTotalValue > 0 ? Math.round((currentDepositAmount / currentTotalValue) * 100) : 0}%)` : '(Tổng đơn)'}
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-slate-500 font-sans">Nội dung CK:</span>
+                              <span className="font-bold text-slate-800 bg-amber-100/70 text-amber-900 px-1.5 py-0.5 rounded text-[10px]">
+                                {`${paymentConfig?.paymentPrefix || 'D2L'} ${currentOrderCode}`.trim()}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="text-[11px] text-slate-500 flex items-center gap-1">
+                            <InfoCircleOutlined className="text-emerald-600" />
+                            <span>Mã VietQR đã gán sẵn số tiền {qrTransferAmount.toLocaleString('vi-VN')} đ và cú pháp để khách chuyển khoản tức thì.</span>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <ExclamationCircleOutlined className="text-amber-600" />
+                          <span>Chưa cấu hình tài khoản ngân hàng trong tab <strong>Cài đặt &gt; Thanh toán</strong>.</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
               </div>
             </Form>
           </Drawer>

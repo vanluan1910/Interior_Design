@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import { motion, useScroll, useTransform, useSpring } from 'framer-motion';
 import { Product } from '@/types';
 
 interface MaterialExperienceProps {
@@ -126,10 +127,31 @@ export default function MaterialExperience({ onOpenSampleModal, products = [] }:
 
   const displayImage = randomImage || current.defaultImage;
 
+  const sectionRef = useRef<HTMLElement>(null);
+  const { scrollYProgress } = useScroll({
+    target: sectionRef,
+    offset: ['start end', 'start 55%'],
+  });
+
+  const smoothProgress = useSpring(scrollYProgress, {
+    stiffness: 85,
+    damping: 26,
+    restDelta: 0.001,
+  });
+
+  const headerY = useTransform(smoothProgress, [0, 0.8], [35, 0]);
+  const leftX = useTransform(smoothProgress, [0, 1], [-75, 0]);
+  const rightX = useTransform(smoothProgress, [0, 1], [75, 0]);
+  const opacity = useTransform(smoothProgress, [0, 0.8], [0, 1]);
+
   return (
-    <section className="w-full py-7 md:py-9 bg-[#f5ece8] border-b border-[#ebdcd2]">
+    <section ref={sectionRef} className="w-full py-7 md:py-9 bg-[#f5ece8] border-b border-[#ebdcd2] overflow-hidden">
       <div className="w-full max-w-[1720px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-16">
-        <div className="max-w-2xl mx-auto text-center mb-5 md:mb-6">
+        {/* HEADER SECTION (NỔI LÊN THEO ĐỘ LĂN CHUỘT) */}
+        <motion.div
+          style={{ y: headerY, opacity }}
+          className="max-w-2xl mx-auto text-center mb-5 md:mb-6"
+        >
           <span className="font-label-sm text-xs uppercase tracking-widest text-[#5d371f] font-semibold">
             Tự Do Tuỳ Biến
           </span>
@@ -139,11 +161,14 @@ export default function MaterialExperience({ onOpenSampleModal, products = [] }:
           <p className="font-body-md text-sm sm:text-base text-[#51443d] mt-2">
             Chọn loại gỗ và chất liệu bề mặt để cảm nhận cách nội thất D2 LUXURY hòa nhịp vào phong cách ngôi nhà bạn.
           </p>
-        </div>
+        </motion.div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-center bg-white rounded-none p-6 sm:p-8 shadow-sm border border-[#eae1dd]">
-          {/* Visual Showcase: Clean Image Only */}
-          <div className="lg:col-span-7 aspect-[16/10] rounded-none overflow-hidden bg-[#eae1dd] relative shadow-inner">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-center bg-white rounded-none p-6 sm:p-8 shadow-sm border border-[#eae1dd] overflow-hidden">
+          {/* Visual Showcase: Clean Image Only (Trượt từ bên trái vào theo độ lăn chuột) */}
+          <motion.div
+            style={{ x: leftX, opacity }}
+            className="lg:col-span-7 aspect-[16/10] rounded-none overflow-hidden bg-[#eae1dd] relative shadow-inner"
+          >
             <img
               alt={current.title}
               className="w-full h-full object-cover transition-all duration-700 ease-out"
@@ -159,10 +184,13 @@ export default function MaterialExperience({ onOpenSampleModal, products = [] }:
                 {current.desc}
               </span>
             </div>
-          </div>
+          </motion.div>
 
-          {/* Options & Controls */}
-          <div className="lg:col-span-5 flex flex-col gap-4">
+          {/* Options & Controls (Trượt từ bên phải vào theo độ lăn chuột) */}
+          <motion.div
+            style={{ x: rightX, opacity }}
+            className="lg:col-span-5 flex flex-col gap-4"
+          >
             <h3 className="font-headline-sm text-lg sm:text-xl text-[#1f1b19]">
               Chọn mẫu vật liệu gửi tận nhà:
             </h3>
@@ -233,7 +261,7 @@ export default function MaterialExperience({ onOpenSampleModal, products = [] }:
                 Khám phá các sản phẩm từ {current.name.split('(')[0].trim()} →
               </Link>
             </div>
-          </div>
+          </motion.div>
         </div>
       </div>
     </section>

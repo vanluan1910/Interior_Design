@@ -20,6 +20,8 @@ public sealed record CreateOrderRequest
     public string CustomerName { get; init; } = string.Empty;
     public string CustomerPhone { get; init; } = string.Empty;
     public string? CustomerEmail { get; init; }
+    public string? RecipientName { get; init; }
+    public string? RecipientPhone { get; init; }
     public string? ShippingAddress { get; init; }
     public string? CustomerAddress { get; init; }
     public string? CustomerProvince { get; init; }
@@ -56,6 +58,8 @@ public sealed record UpdateOrderRequest
     public string CustomerName { get; init; } = string.Empty;
     public string CustomerPhone { get; init; } = string.Empty;
     public string? CustomerEmail { get; init; }
+    public string? RecipientName { get; init; }
+    public string? RecipientPhone { get; init; }
     public string? ShippingAddress { get; init; }
     public string? CustomerAddress { get; init; }
     public string? CustomerProvince { get; init; }

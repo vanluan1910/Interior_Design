@@ -373,7 +373,7 @@ function HeaderContent({
                 className="relative focus:outline-none cursor-pointer flex items-center group"
                 aria-label="Tài khoản cá nhân"
               >
-                <div className="w-8 h-8 rounded-none bg-gradient-to-br from-[#5d371f] to-[#382012] text-[#ffdbb5] font-serif font-bold text-xs flex items-center justify-center ring-1 ring-[#d5c3ba] group-hover:ring-[#5d371f] transition-all select-none shrink-0">
+                <div className="w-8 h-8 rounded-none bg-gradient-to-br from-[#5d371f] to-[#382012] text-[#ffdbb5] font-sans font-bold text-xs flex items-center justify-center ring-1 ring-[#d5c3ba] group-hover:ring-[#5d371f] transition-all select-none shrink-0">
                   {user.name ? user.name.trim().charAt(0).toUpperCase() : 'G'}
                 </div>
                 {isAdmin && (
@@ -400,7 +400,7 @@ function HeaderContent({
               <div className="absolute right-0 top-full mt-2.5 w-64 sm:w-72 bg-[#fff8f5] border border-[#eae1dd] shadow-xl z-50 animate-in fade-in-0 zoom-in-95 duration-150 flex flex-col">
                 {/* Dropdown Header */}
                 <div className="p-4 bg-[#241c18] text-white flex items-center gap-3">
-                  <div className="w-10 h-10 bg-gradient-to-br from-[#5d371f] to-[#382012] text-[#ffdbb5] font-serif font-bold text-sm flex items-center justify-center ring-1 ring-[#d5c3ba] shrink-0 select-none">
+                  <div className="w-10 h-10 bg-gradient-to-br from-[#5d371f] to-[#382012] text-[#ffdbb5] font-sans font-bold text-sm flex items-center justify-center ring-1 ring-[#d5c3ba] shrink-0 select-none">
                     {user.name ? user.name.trim().charAt(0).toUpperCase() : 'G'}
                   </div>
                   <div className="flex flex-col min-w-0 flex-1 text-left">
@@ -574,7 +574,7 @@ function HeaderContent({
             <span className="material-symbols-outlined text-[24px]">lock</span>
           </div>
           <div>
-            <h3 className="font-serif text-xl font-bold text-[#1f1b19]">
+            <h3 className="font-sans text-xl font-bold text-[#1f1b19]">
               Đăng Nhập Tài Khoản D2 LUXURY
             </h3>
             <p className="text-xs text-[#83746c] mt-1">

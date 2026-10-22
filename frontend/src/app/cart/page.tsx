@@ -541,10 +541,10 @@ function CartContent() {
                       <p className="text-xs text-[#1f1b19] font-bold">Cần tư vấn phối cảnh 3D?</p>
                       <p className="text-[11px] text-[#83746c]">KTS D2 LUXURY hỗ trợ trực tiếp (08:00 - 22:00)</p>
                       <a
-                        href="tel:0967323335"
+                        href="tel:0867612199"
                         className="font-serif text-base font-bold text-[#5d371f] tracking-tight block mt-0.5"
                       >
-                        0967 323 335
+                        0867 612 199
                       </a>
                     </div>
                   </div>

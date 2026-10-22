@@ -21,6 +21,7 @@ export interface OrderApiResponse<T> {
 }
 
 export interface CreateOrderPayload extends Partial<OrderRow> {
+  productSku?: string;
   items?: any[];
   shippingAddress?: string;
   customerAddress?: string;
@@ -29,6 +30,8 @@ export interface CreateOrderPayload extends Partial<OrderRow> {
   city?: string;
   district?: string;
   customerEmail?: string;
+  recipientName?: string;
+  recipientPhone?: string;
   note?: string;
   paymentMethod?: string;
   paymentStatus?: string;
@@ -73,9 +76,53 @@ export function normalizeOrderRow(order: OrderRow): OrderRow {
   const status = normalizeOrderStatus(order.status);
   return {
     ...order,
+    orderCode: order.orderCode || '',
+    customerName: order.customerName || '',
+    customerPhone: order.customerPhone || '',
+    recipientName: order.recipientName || '',
+    recipientPhone: order.recipientPhone || '',
+    productName: order.productName || 'Nội thất may đo',
+    productSpec: order.productSpec || '',
+    woodType: order.woodType || '',
     status,
     statusLabel: ORDER_STATUS_LABELS[status] || order.statusLabel || 'Chờ duyệt',
   };
+}
+
+const GUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function parseApiErrorMessage(err: any, fallbackStatus: number, actionName: string): string {
+  if (!err) return `${actionName} (${fallbackStatus})`;
+  if (typeof err.message === 'string' && err.message.trim()) return err.message;
+  if (err.errors && typeof err.errors === 'object') {
+    const errorDetails = Object.values(err.errors).flat().filter(Boolean).join('; ');
+    if (errorDetails) return errorDetails;
+  }
+  if (typeof err.title === 'string' && err.title.trim()) return err.title;
+  return `${actionName} (${fallbackStatus})`;
+}
+
+function sanitizeOrderPayload(payload: CreateOrderPayload): CreateOrderPayload {
+  const sanitized = { ...payload };
+
+  if (sanitized.customerId && !GUID_REGEX.test(sanitized.customerId)) {
+    delete sanitized.customerId;
+  }
+  if (sanitized.productId && !GUID_REGEX.test(sanitized.productId)) {
+    delete sanitized.productId;
+  }
+  if (Array.isArray(sanitized.items)) {
+    sanitized.items = sanitized.items.map((item: any) => {
+      if (!item) return item;
+      const cleanItem = { ...item };
+      if (cleanItem.productId && !GUID_REGEX.test(cleanItem.productId)) {
+        delete cleanItem.productId;
+      }
+      return cleanItem;
+    });
+  }
+
+  return sanitized;
 }
 
 export const orderApi = {
@@ -94,6 +141,7 @@ export const orderApi = {
     includeDeleted?: boolean;
     page?: number;
     pageSize?: number;
+    bypassCache?: boolean;
   }): Promise<OrderRow[]> {
     const query = new URLSearchParams();
     if (params?.page !== undefined) query.append('page', String(params.page));
@@ -109,6 +157,17 @@ export const orderApi = {
     if (params?.fromDate) query.append('fromDate', params.fromDate);
     if (params?.toDate) query.append('toDate', params.toDate);
     if (params?.includeDeleted) query.append('includeDeleted', 'true');
+
+    if (params?.bypassCache) {
+      const res = await fetch(`${API_BASE_URL}/api/orders?${query.toString()}`, {
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) {
+        throw new Error(`Failed to fetch orders (${res.status})`);
+      }
+      const json: OrderApiResponse<OrderRow[]> = await res.json();
+      return (json.data || []).map(normalizeOrderRow);
+    }
 
     const cacheKey = `orders:${query.toString()}`;
     return cachedFetch(cacheKey, async () => {
@@ -177,15 +236,16 @@ export const orderApi = {
    * Tạo mới đơn hàng
    */
   async createOrder(payload: CreateOrderPayload): Promise<OrderRow> {
+    const cleanPayload = sanitizeOrderPayload(payload);
     const res = await fetch(`${API_BASE_URL}/api/orders`, {
       method: 'POST',
       headers: getAuthHeaders(),
-      body: JSON.stringify(payload),
+      body: JSON.stringify(cleanPayload),
     });
 
     if (!res.ok) {
       const err = await res.json().catch(() => null);
-      throw new Error(err?.message || `Thêm đơn hàng thất bại (${res.status})`);
+      throw new Error(parseApiErrorMessage(err, res.status, 'Thêm đơn hàng thất bại'));
     }
 
     const json: OrderApiResponse<OrderRow> = await res.json();
@@ -201,15 +261,16 @@ export const orderApi = {
    * Cập nhật đơn hàng
    */
   async updateOrder(id: string, payload: CreateOrderPayload): Promise<OrderRow> {
+    const cleanPayload = sanitizeOrderPayload(payload);
     const res = await fetch(`${API_BASE_URL}/api/orders/${id}`, {
       method: 'PUT',
       headers: getAuthHeaders(),
-      body: JSON.stringify(payload),
+      body: JSON.stringify(cleanPayload),
     });
 
     if (!res.ok) {
       const err = await res.json().catch(() => null);
-      throw new Error(err?.message || `Cập nhật đơn hàng thất bại (${res.status})`);
+      throw new Error(parseApiErrorMessage(err, res.status, 'Cập nhật đơn hàng thất bại'));
     }
 
     const json: OrderApiResponse<OrderRow> = await res.json();
@@ -233,7 +294,7 @@ export const orderApi = {
 
     if (!res.ok) {
       const err = await res.json().catch(() => null);
-      throw new Error(err?.message || `Cập nhật trạng thái đơn hàng thất bại (${res.status})`);
+      throw new Error(parseApiErrorMessage(err, res.status, 'Cập nhật trạng thái đơn hàng thất bại'));
     }
 
     const json: OrderApiResponse<OrderRow> = await res.json();

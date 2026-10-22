@@ -1910,6 +1910,7 @@ export function WorkshopTab({
       await supplierReturnApi.createSupplierReturn(payload);
       await loadReturnsFromApi();
       await refreshCatalogProducts();
+      await loadImportsFromApi();
 
       if (targetStatus === 'draft') {
         message.success(`Đã lưu tạm phiếu trả hàng "${payload.code}" vào Database thành công!`);
@@ -1953,6 +1954,7 @@ export function WorkshopTab({
       setSelectedReturnKeys((prev) => prev.filter((k) => k !== id));
       setExpandedReturnRowKeys((prev) => prev.filter((k) => k !== id));
       await loadReturnsFromApi();
+      await loadImportsFromApi();
       message.success(`Đã xóa phiếu trả hàng ${code}!`);
     } catch (err: any) {
       console.error('Error deleting supplier return:', err);
@@ -2815,7 +2817,7 @@ export function WorkshopTab({
                       const totalGoods = imp.totalValue || activeItemsList.reduce((acc, item) => acc + (item.total || 0), 0);
                       const discountAmount = imp.discount || 0;
                       const paidAmount = imp.paidAmount !== undefined ? imp.paidAmount : totalGoods;
-                      const returnDeduction = getImportReturnDeduction(imp.code);
+                      const returnDeduction = getImportReturnDeduction(imp);
                       const netDebt = Math.max(0, (totalGoods - paidAmount) - returnDeduction);
 
                       return (
@@ -5093,8 +5095,6 @@ export function WorkshopTab({
               >
                 <AutoComplete
                   className="w-full text-xs sm:text-sm"
-                  placeholder="Chọn/nhập tỉnh..."
-                  allowClear
                   options={provincesList.map((p) => ({ value: p.name, label: p.name }))}
                   onChange={() => {
                     warehouseForm.setFieldsValue({
@@ -5106,7 +5106,11 @@ export function WorkshopTab({
                     (option?.value ?? '').toLowerCase().includes(inputValue.toLowerCase())
                   }
                 >
-                  <Input className="h-9 rounded-lg text-xs sm:text-sm" />
+                  <Input
+                    placeholder="Chọn/nhập tỉnh..."
+                    allowClear
+                    className="h-9 rounded-lg text-xs sm:text-sm"
+                  />
                 </AutoComplete>
               </Form.Item>
             </Col>
@@ -5117,8 +5121,6 @@ export function WorkshopTab({
               >
                 <AutoComplete
                   className="w-full text-xs sm:text-sm"
-                  placeholder={selectedWarehouseProvince ? 'Chọn/nhập quận/huyện...' : 'Chọn tỉnh trước'}
-                  allowClear
                   disabled={!selectedWarehouseProvince}
                   options={districtOptions.map((d) => ({ value: d.name, label: d.name }))}
                   onChange={() => {
@@ -5128,7 +5130,12 @@ export function WorkshopTab({
                     (option?.value ?? '').toLowerCase().includes(inputValue.toLowerCase())
                   }
                 >
-                  <Input className="h-9 rounded-lg text-xs sm:text-sm" />
+                  <Input
+                    placeholder={selectedWarehouseProvince ? 'Chọn/nhập quận/huyện...' : 'Chọn tỉnh trước'}
+                    allowClear
+                    disabled={!selectedWarehouseProvince}
+                    className="h-9 rounded-lg text-xs sm:text-sm"
+                  />
                 </AutoComplete>
               </Form.Item>
             </Col>
@@ -5139,15 +5146,18 @@ export function WorkshopTab({
               >
                 <AutoComplete
                   className="w-full text-xs sm:text-sm"
-                  placeholder={selectedWarehouseDistrict ? 'Chọn/nhập phường/xã...' : 'Chọn quận/huyện trước'}
-                  allowClear
                   disabled={!selectedWarehouseDistrict}
                   options={wardOptions.map((w) => ({ value: w.name, label: w.name }))}
                   filterOption={(inputValue, option) =>
                     (option?.value ?? '').toLowerCase().includes(inputValue.toLowerCase())
                   }
                 >
-                  <Input className="h-9 rounded-lg text-xs sm:text-sm" />
+                  <Input
+                    placeholder={selectedWarehouseDistrict ? 'Chọn/nhập phường/xã...' : 'Chọn quận/huyện trước'}
+                    allowClear
+                    disabled={!selectedWarehouseDistrict}
+                    className="h-9 rounded-lg text-xs sm:text-sm"
+                  />
                 </AutoComplete>
               </Form.Item>
             </Col>

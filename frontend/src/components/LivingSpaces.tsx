@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useState, useRef } from 'react';
+import { motion, AnimatePresence, useScroll, useTransform, useSpring } from 'framer-motion';
 import { HomeSpace } from '@/api/homeApi';
 
 interface LivingSpacesProps {
@@ -65,25 +65,45 @@ export default function LivingSpaces({ onSelectCategory, spaces }: LivingSpacesP
     .filter((s) => s.key !== 'san-pham-khac' && s.key !== 'other' && s.key !== 'KG06')
     .slice(0, 4);
 
+  const sectionRef = useRef<HTMLElement>(null);
+  const { scrollYProgress } = useScroll({
+    target: sectionRef,
+    offset: ['start end', 'start 55%'],
+  });
+
+  const smoothProgress = useSpring(scrollYProgress, {
+    stiffness: 85,
+    damping: 26,
+    restDelta: 0.001,
+  });
+
+  const headerY = useTransform(smoothProgress, [0, 0.8], [35, 0]);
+  const rowY = useTransform(smoothProgress, [0, 1], [65, 0]);
+  const opacity = useTransform(smoothProgress, [0, 0.8], [0, 1]);
+
   return (
     <section
+      ref={sectionRef}
       id="living-spaces"
       className="w-full py-7 md:py-9 bg-[#fff8f5] overflow-hidden border-b border-[#ebdcd2]"
     >
       <div className="w-full max-w-[1720px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-16">
-        
-        {/* HEADER SECTION */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-6 md:mb-7">
+
+        {/* HEADER SECTION (NỔI LÊN THEO ĐỘ LĂN CHUỘT) */}
+        <motion.div
+          style={{ y: headerY, opacity }}
+          className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-6 md:mb-7"
+        >
           <div>
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-none bg-[#f4ebe3] text-[#5d371f] text-xs uppercase tracking-widest font-semibold mb-2">
               <span className="w-1.5 h-1.5 rounded-none bg-[#5d371f]" />
               <span>Bộ Sưu Tập Theo Phòng • Nghệ Thuật Không Gian</span>
             </div>
-            <h2 className="font-serif text-2xl sm:text-3xl md:text-4xl text-[#1f1b19] font-normal tracking-tight">
+            <h2 className="font-sans text-2xl sm:text-3xl md:text-4xl text-[#1f1b19] font-bold tracking-tight">
               Không Gian Trải Nghiệm
             </h2>
           </div>
-          
+
           {/* Nav Indicators */}
           <div className="hidden lg:flex items-center gap-2 shrink-0">
             {displaySpaces.map((_, idx) => (
@@ -97,10 +117,13 @@ export default function LivingSpaces({ onSelectCategory, spaces }: LivingSpacesP
               />
             ))}
           </div>
-        </div>
+        </motion.div>
 
-        {/* DESKTOP: BỐ CỤC HÀNG NGANG TƯƠNG TÁC DÃN NỞ (EXPANDABLE HORIZONTAL ACCORDION) */}
-        <div className="hidden md:flex flex-row gap-4 h-[520px] lg:h-[560px] w-full">
+        {/* DESKTOP: BỐ CỤC HÀNG NGANG TƯƠNG TÁC DÃN NỞ (CHIỀU CAO GỌN GÀNG, TRƯỢT THEO ĐỘ LĂN CHUỘT) */}
+        <motion.div
+          style={{ y: rowY, opacity }}
+          className="hidden md:flex flex-row gap-4 h-[380px] lg:h-[420px] w-full"
+        >
           {displaySpaces.map((item, idx) => {
             const isActive = activeIndex === idx;
 
@@ -110,10 +133,10 @@ export default function LivingSpaces({ onSelectCategory, spaces }: LivingSpacesP
                 onMouseEnter={() => setActiveIndex(idx)}
                 layout
                 transition={{
-                  layout: { duration: 0.55, ease: [0.25, 1, 0.5, 1] },
+                  layout: { duration: 0.55, ease: [0.16, 1, 0.3, 1] },
                 }}
-                className={`relative rounded-none overflow-hidden cursor-pointer shadow-sm hover:shadow-2xl transition-shadow duration-500 will-change-transform ${
-                  isActive ? 'flex-[2.6]' : 'flex-1'
+                className={`relative rounded-none overflow-hidden cursor-pointer shadow-sm hover:shadow-2xl transition-all duration-500 will-change-transform border ${
+                  isActive ? 'flex-[2.8] border-[#c5a880]' : 'flex-1 border-[#d5c3ba]/50 hover:border-[#c5a880]/80'
                 }`}
               >
                 {/* Background Image with Parallax Zoom */}
@@ -127,11 +150,10 @@ export default function LivingSpaces({ onSelectCategory, spaces }: LivingSpacesP
 
                 {/* Gradient Overlays: Subtle when inactive, deeper when active */}
                 <div
-                  className={`absolute inset-0 transition-opacity duration-500 ${
-                    isActive
+                  className={`absolute inset-0 transition-opacity duration-500 ${isActive
                       ? 'bg-gradient-to-t from-[#1f1b19]/95 via-[#1f1b19]/45 to-black/20'
                       : 'bg-gradient-to-t from-[#1f1b19]/90 via-[#1f1b19]/30 to-black/30 hover:from-[#1f1b19]/95'
-                  }`}
+                    }`}
                 />
 
                 {/* Top Code Badge (e.g., 01 / PHÒNG KHÁCH) */}
@@ -148,16 +170,16 @@ export default function LivingSpaces({ onSelectCategory, spaces }: LivingSpacesP
                 </div>
 
                 {/* Content Overlay */}
-                <div className="absolute bottom-0 left-0 right-0 p-6 lg:p-8 flex flex-col justify-end text-white z-10">
-                  
+                <div className="absolute bottom-0 left-0 right-0 p-5 lg:p-6 flex flex-col justify-end text-white z-10">
+
                   {/* Tagline */}
-                  <span className="text-[11px] uppercase tracking-widest text-[#ffdbc8] font-semibold mb-1">
+                  <span className="text-[10px] sm:text-[11px] uppercase tracking-widest text-[#ffdbc8] font-semibold mb-0.5">
                     {item.tagline}
                   </span>
 
                   {/* Room Name */}
-                  <h3 className={`font-serif text-white font-normal transition-all duration-300 ${
-                    isActive ? 'text-2xl lg:text-3xl' : 'text-xl lg:text-2xl line-clamp-1'
+                  <h3 className={`font-sans text-white font-bold transition-all duration-300 ${
+                    isActive ? 'text-xl sm:text-2xl lg:text-[26px]' : 'text-lg lg:text-xl line-clamp-1'
                   }`}>
                     {item.name}
                   </h3>
@@ -166,32 +188,32 @@ export default function LivingSpaces({ onSelectCategory, spaces }: LivingSpacesP
                   <AnimatePresence>
                     {isActive ? (
                       <motion.div
-                        initial={{ opacity: 0, height: 0, y: 15 }}
+                        initial={{ opacity: 0, height: 0, y: 10 }}
                         animate={{ opacity: 1, height: 'auto', y: 0 }}
-                        exit={{ opacity: 0, height: 0, y: 15 }}
+                        exit={{ opacity: 0, height: 0, y: 10 }}
                         transition={{ duration: 0.35, ease: 'easeOut' }}
                         className="overflow-hidden"
                       >
-                        <p className="text-xs sm:text-sm text-white/80 leading-relaxed mt-2.5 max-w-lg line-clamp-2">
+                        <p className="text-xs text-white/80 leading-relaxed mt-1.5 max-w-lg line-clamp-2">
                           {item.description}
                         </p>
 
-                        <div className="flex items-center gap-3.5 mt-5">
+                        <div className="flex items-center gap-3 mt-3.5">
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
                               onSelectCategory(item.key);
                             }}
-                            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-none bg-[#5d371f] hover:bg-[#724528] text-white text-xs font-semibold shadow-lg hover:shadow-xl transition-all cursor-pointer group"
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded-none bg-[#5d371f] hover:bg-[#724528] text-white text-xs font-semibold shadow-md hover:shadow-xl transition-all cursor-pointer group"
                           >
                             <span>{item.countText || 'Khám phá ngay'}</span>
-                            <span className="material-symbols-outlined text-[16px] transition-transform group-hover:translate-x-1">
+                            <span className="material-symbols-outlined text-[15px] transition-transform group-hover:translate-x-1">
                               arrow_forward
                             </span>
                           </button>
 
-                          <span className="text-xs text-white/60 font-mono">
+                          <span className="text-[11px] text-white/60 font-mono">
                             D2 Luxury Bespoke
                           </span>
                         </div>
@@ -200,10 +222,10 @@ export default function LivingSpaces({ onSelectCategory, spaces }: LivingSpacesP
                       <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
-                        className="mt-3 flex items-center gap-1 text-xs text-white/70 font-medium"
+                        className="mt-2 flex items-center gap-1 text-[11px] text-white/70 font-medium"
                       >
                         <span>Chạm để mở rộng</span>
-                        <span className="material-symbols-outlined text-[15px]">expand_content</span>
+                        <span className="material-symbols-outlined text-[14px]">expand_content</span>
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -212,15 +234,18 @@ export default function LivingSpaces({ onSelectCategory, spaces }: LivingSpacesP
               </motion.div>
             );
           })}
-        </div>
+        </motion.div>
 
-        {/* MOBILE & TABLET: HORIZONTAL SMOOTH SWIPE CAROUSEL */}
-        <div className="flex md:hidden overflow-x-auto snap-x snap-mandatory gap-4 pb-6 pt-2 -mx-4 px-4 no-scrollbar">
+        {/* MOBILE & TABLET: HORIZONTAL SMOOTH SWIPE CAROUSEL (CHIỀU CAO GỌN GÀNG, TRƯỢT THEO ĐỘ LĂN CHUỘT) */}
+        <motion.div
+          style={{ y: rowY, opacity }}
+          className="flex md:hidden overflow-x-auto snap-x snap-mandatory gap-4 pb-6 pt-2 -mx-4 px-4 no-scrollbar"
+        >
           {displaySpaces.map((item, idx) => (
             <div
               key={`mob-${item.key}-${idx}`}
               onClick={() => onSelectCategory(item.key)}
-              className="min-w-[85%] sm:min-w-[55%] h-[420px] relative rounded-none overflow-hidden snap-center shadow-md shrink-0 cursor-pointer"
+              className="min-w-[85%] sm:min-w-[55%] h-[320px] relative rounded-none overflow-hidden snap-center shadow-md shrink-0 cursor-pointer"
             >
               <div
                 className="absolute inset-0 bg-cover bg-center"
@@ -238,7 +263,7 @@ export default function LivingSpaces({ onSelectCategory, spaces }: LivingSpacesP
                 <span className="text-[10px] uppercase tracking-wider text-[#ffdbc8] font-semibold mb-0.5">
                   {item.tagline}
                 </span>
-                <h3 className="font-serif text-xl font-medium text-white">
+                <h3 className="font-sans text-xl font-bold text-white">
                   {item.name}
                 </h3>
                 <p className="text-xs text-white/80 line-clamp-2 mt-1.5 leading-relaxed">
@@ -253,7 +278,7 @@ export default function LivingSpaces({ onSelectCategory, spaces }: LivingSpacesP
               </div>
             </div>
           ))}
-        </div>
+        </motion.div>
 
       </div>
     </section>

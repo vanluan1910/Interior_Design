@@ -16,11 +16,16 @@ export interface OrderRow {
   orderCode: string;
   orderType: 'retail' | 'custom' | 'package' | 'project' | 'subcontract' | 'ready';
   orderTypeLabel?: string;
+  customerId?: string;
   customerName: string;
   customerProvince?: string;
   customerDistrict?: string;
   customerAddress?: string;
   customerPhone: string;
+  customerEmail?: string;
+  recipientName?: string;
+  recipientPhone?: string;
+  productId?: string;
   productName: string;
   productSpec: string;
   woodType?: string;

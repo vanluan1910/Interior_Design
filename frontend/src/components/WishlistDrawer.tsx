@@ -142,7 +142,7 @@ export default function WishlistDrawer({ isOpen, onClose }: WishlistDrawerProps)
             <HeartFilled className="text-base text-[#ba1a1a]" />
           </div>
           <div>
-            <h3 className="font-serif text-lg font-bold text-[#1f1b19]">
+            <h3 className="font-sans text-lg font-bold text-[#1f1b19]">
               Tác Phẩm Yêu Thích
             </h3>
             <p className="text-xs text-[#83746c]">
@@ -169,7 +169,7 @@ export default function WishlistDrawer({ isOpen, onClose }: WishlistDrawerProps)
             <div className="w-16 h-16 bg-[#f5ece8] rounded-none flex items-center justify-center text-[#d5c3ba] mb-4">
               <HeartFilled className="text-3xl text-[#d5c3ba]" />
             </div>
-            <h4 className="font-serif text-lg font-bold text-[#1f1b19] mb-1">
+            <h4 className="font-sans text-lg font-bold text-[#1f1b19] mb-1">
               Danh sách yêu thích đang trống
             </h4>
             <p className="text-xs text-[#83746c] max-w-xs mb-6 leading-relaxed">
@@ -223,7 +223,7 @@ export default function WishlistDrawer({ isOpen, onClose }: WishlistDrawerProps)
                       <Link
                         href={`/products/${item.id}`}
                         onClick={onClose}
-                        className="font-serif text-sm font-bold text-[#1f1b19] hover:text-[#5d371f] transition-colors truncate block"
+                        className="font-sans text-sm font-bold text-[#1f1b19] hover:text-[#5d371f] transition-colors truncate block"
                       >
                         {item.name}
                       </Link>
