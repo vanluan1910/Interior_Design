@@ -102,7 +102,7 @@ export default function ProfileModal({ open, onClose, onGoToAdmin }: ProfileModa
 
               <div className="flex flex-col">
                 <div className="flex items-center gap-2">
-                  <h3 className="font-serif text-xl sm:text-2xl font-bold text-[#fff8f5]">
+                  <h3 className="font-sans text-xl sm:text-2xl font-bold text-[#fff8f5]">
                     {user.name}
                   </h3>
                 </div>

@@ -1274,7 +1274,7 @@ export function InventoryTab({
                         />
                       ) : (
                         <div className="w-10 h-10 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0 text-slate-400">
-                          <span className="material-symbols-outlined text-lg">chair</span>
+                          <AppstoreOutlined className="text-lg" />
                         </div>
                       )}
                       <div className="min-w-0">
@@ -1814,13 +1814,16 @@ export function InventoryTab({
               >
                 <AutoComplete
                   options={woodMaterialOptions}
-                  placeholder="VD: Gỗ Óc Chó Bắc Mỹ, Gỗ Sồi tự nhiên, Gỗ Tần Bì..."
                   className="w-full text-sm"
                   filterOption={(inputValue, option) =>
                     (option?.value ?? '').toLowerCase().includes(inputValue.toLowerCase())
                   }
                 >
-                  <Input className="h-10 text-sm rounded-lg" />
+                  <Input
+                    placeholder="VD: Gỗ Óc Chó Bắc Mỹ, Gỗ Sồi tự nhiên, Gỗ Tần Bì..."
+                    allowClear
+                    className="h-10 text-sm rounded-lg"
+                  />
                 </AutoComplete>
               </Form.Item>
             </Col>

@@ -100,6 +100,8 @@ public sealed class InteriorDbContext : DbContext
             entity.Property(e => e.CustomerName).IsRequired().HasMaxLength(255);
             entity.Property(e => e.CustomerPhone).IsRequired().HasMaxLength(50);
             entity.Property(e => e.CustomerEmail).HasMaxLength(150);
+            entity.Property(e => e.RecipientName).HasMaxLength(255);
+            entity.Property(e => e.RecipientPhone).HasMaxLength(50);
             entity.Property(e => e.ShippingAddress).HasMaxLength(500);
             entity.Property(e => e.City).HasMaxLength(100);
             entity.Property(e => e.District).HasMaxLength(100);

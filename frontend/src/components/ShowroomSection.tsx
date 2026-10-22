@@ -1,6 +1,7 @@
 'use client';
 
-import React from 'react';
+import React, { useRef } from 'react';
+import { motion, useScroll, useTransform, useSpring } from 'framer-motion';
 import { HomeShowroom, HomeCompanyInfo } from '@/api/homeApi';
 
 interface ShowroomSectionProps {
@@ -14,7 +15,7 @@ const DEFAULT_SHOWROOMS: HomeShowroom[] = [
     id: '1',
     name: 'Trụ sở & Showroom Phú Quốc',
     address: 'Ngã 4 Cửa Cạn, đặc khu Phú Quốc, tỉnh An Giang',
-    phone: '0967 323 335',
+    phone: '0867 612 199',
     openingHours: 'Giờ mở cửa: 08:30 - 21:00 (Hàng ngày)',
     isHeadquarter: true,
   },
@@ -22,13 +23,34 @@ const DEFAULT_SHOWROOMS: HomeShowroom[] = [
 
 export default function ShowroomSection({ onOpenBooking, showrooms, companyInfo }: ShowroomSectionProps) {
   const displayShowrooms = showrooms && showrooms.length > 0 ? showrooms : DEFAULT_SHOWROOMS;
+  const sectionRef = useRef<HTMLElement>(null);
+
+  // Gắn chuyển động trực tiếp theo độ cuộn chuột (scroll-driven smooth animation)
+  const { scrollYProgress } = useScroll({
+    target: sectionRef,
+    offset: ['start end', 'start 55%'],
+  });
+
+  const smoothProgress = useSpring(scrollYProgress, {
+    stiffness: 85,
+    damping: 26,
+    restDelta: 0.001,
+  });
+
+  // Chuyển động chậm rãi, êm dịu từ 2 bên mép vào theo nhịp lăn chuột
+  const leftX = useTransform(smoothProgress, [0, 1], [-75, 0]);
+  const rightX = useTransform(smoothProgress, [0, 1], [75, 0]);
+  const opacity = useTransform(smoothProgress, [0, 0.8], [0, 1]);
 
   return (
-    <section id="showrooms" className="w-full py-7 md:py-9 bg-[#fbf2ee] border-b border-[#ebdcd2]">
+    <section ref={sectionRef} id="showrooms" className="w-full py-7 md:py-9 bg-[#fbf2ee] border-b border-[#ebdcd2] overflow-hidden">
       <div className="w-full max-w-[1720px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-16">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-14 items-center">
-          {/* Showroom Information */}
-          <div className="lg:col-span-5 flex flex-col gap-5">
+          {/* Showroom Information (Trượt từ bên trái vào theo độ lăn chuột) */}
+          <motion.div
+            style={{ x: leftX, opacity }}
+            className="lg:col-span-5 flex flex-col gap-5"
+          >
             <span className="font-label-sm text-xs uppercase tracking-widest text-[#5d371f] font-semibold">
               Không Gian Trải Nghiệm Thực Tế
             </span>
@@ -52,7 +74,7 @@ export default function ShowroomSection({ onOpenBooking, showrooms, companyInfo 
                   const cleanedName = sr.name.includes('Phú Quốc') || sr.isHeadquarter
                     ? 'Trụ sở & Showroom Phú Quốc'
                     : sr.name;
-                  const displayPhone = sr.phone && !sr.phone.startsWith('1900') ? sr.phone : '0967 323 335';
+                  const displayPhone = sr.phone && !sr.phone.startsWith('1900') ? sr.phone : (companyInfo?.hotline || '0867 612 199');
                   return (
                     <div
                       key={sr.id ? `showroom-${sr.id}-${idx}` : `showroom-${idx}`}
@@ -90,10 +112,13 @@ export default function ShowroomSection({ onOpenBooking, showrooms, companyInfo 
                   );
                 })}
             </div>
-          </div>
+          </motion.div>
 
-          {/* Showroom Map & Interior Views */}
-          <div className="lg:col-span-7 flex flex-col gap-4">
+          {/* Showroom Map & Interior Views (Trượt từ bên phải vào theo độ lăn chuột) */}
+          <motion.div
+            style={{ x: rightX, opacity }}
+            className="lg:col-span-7 flex flex-col gap-4"
+          >
             <div
               className="w-full h-72 md:h-80 rounded-none overflow-hidden shadow-md bg-cover bg-center border border-[#d5c3ba]/60 relative"
               style={{
@@ -123,7 +148,7 @@ export default function ShowroomSection({ onOpenBooking, showrooms, companyInfo 
                 />
               </div>
             </div>
-          </div>
+          </motion.div>
         </div>
       </div>
     </section>

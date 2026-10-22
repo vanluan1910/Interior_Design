@@ -162,22 +162,57 @@ function CheckoutContent() {
 
   useEffect(() => {
     let isMounted = true;
-    settingsApi
-      .getPaymentConfig()
-      .then((res) => {
-        if (isMounted && res) {
-          setPaymentConfig(res);
-        }
-      })
-      .catch((err) => {
-        console.warn('Could not load payment config from API:', err);
-        const stored = getStoredAdminData<any>(ADMIN_STORAGE_KEYS.PAYMENT_SETTINGS, null);
-        if (isMounted && stored) {
-          setPaymentConfig(stored);
-        }
-      });
+
+    // 1. Initial cached load on client mount
+    const stored = getStoredAdminData<any>(ADMIN_STORAGE_KEYS.PAYMENT_SETTINGS, null);
+    if (stored && isMounted) {
+      setPaymentConfig(stored);
+    }
+
+    // 2. Fetch fresh from API
+    const loadConfig = () => {
+      settingsApi
+        .getPaymentConfig()
+        .then((res) => {
+          if (isMounted && res) {
+            setPaymentConfig(res);
+            try { setStoredAdminData(ADMIN_STORAGE_KEYS.PAYMENT_SETTINGS, res); } catch {}
+          }
+        })
+        .catch((err) => {
+          console.warn('Could not load payment config from API:', err);
+          const s = getStoredAdminData<any>(ADMIN_STORAGE_KEYS.PAYMENT_SETTINGS, null);
+          if (isMounted && s) {
+            setPaymentConfig(s);
+          }
+        });
+    };
+
+    loadConfig();
+
+    const handleSettingsUpdated = (e: any) => {
+      if (e?.detail && isMounted) {
+        setPaymentConfig(e.detail);
+      } else {
+        loadConfig();
+      }
+    };
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === ADMIN_STORAGE_KEYS.PAYMENT_SETTINGS && e.newValue && isMounted) {
+        try {
+          setPaymentConfig(JSON.parse(e.newValue));
+        } catch {}
+      }
+    };
+
+    window.addEventListener('store_settings_updated', handleSettingsUpdated);
+    window.addEventListener('storage', handleStorage);
+
     return () => {
       isMounted = false;
+      window.removeEventListener('store_settings_updated', handleSettingsUpdated);
+      window.removeEventListener('storage', handleStorage);
     };
   }, []);
 
@@ -483,15 +518,45 @@ function CheckoutContent() {
     return subtotal;
   }, [subtotal]);
 
+  // Deposit configuration from Admin Settings
+  const settingDepositPercent = useMemo(() => {
+    if (paymentConfig?.defaultDeposit !== undefined && paymentConfig?.defaultDeposit !== null) {
+      const parsed = Number(paymentConfig.defaultDeposit);
+      if (!isNaN(parsed) && parsed >= 0 && parsed <= 100) return parsed;
+    }
+    return 30; // standard fallback
+  }, [paymentConfig]);
+
+  // User choice: 'deposit' | 'full'
+  const [depositChoice, setDepositChoice] = useState<'deposit' | 'full'>('deposit');
+
+  const isCod = paymentMethod === 'cod';
+
+  const activeDepositPercent = useMemo(() => {
+    if (isCod) return 0;
+    if (depositChoice === 'full' || settingDepositPercent >= 100) return 100;
+    return settingDepositPercent;
+  }, [isCod, depositChoice, settingDepositPercent]);
+
+  const payableNow = useMemo(() => {
+    if (isCod) return 0;
+    if (activeDepositPercent === 100) return finalTotal;
+    return Math.round(finalTotal * (activeDepositPercent / 100));
+  }, [isCod, activeDepositPercent, finalTotal]);
+
+  const remainingOnDelivery = useMemo(() => {
+    return Math.max(0, finalTotal - payableNow);
+  }, [finalTotal, payableNow]);
+
   // Dynamic Bank and VietQR details from Store Configuration
   const activeBankName = paymentConfig?.bankName || 'MB Bank';
-  const activeAccountNumber = (paymentConfig?.accountNumber || paymentConfig?.bankAccountNumber || '0379241075').trim();
-  const activeAccountName = (paymentConfig?.accountName || paymentConfig?.bankAccountName || 'Nguyễn Văn Luân').trim();
+  const activeAccountNumber = (paymentConfig?.accountNumber || paymentConfig?.bankAccountNumber || '00867612199999').trim();
+  const activeAccountName = (paymentConfig?.accountName || paymentConfig?.bankAccountName || 'BÙI VĂN DŨNG').trim();
   const activeBankBin = paymentConfig?.bankBin || getBankBin(activeBankName);
   const transferMemo = `D2 ${phone.replace(/\s+/g, '') || 'LUXURY'}`;
   const qrTemplate = paymentConfig?.vietQrTemplate || 'compact';
 
-  const dynamicQrUrl = `https://img.vietqr.io/image/${activeBankBin}-${activeAccountNumber}-${qrTemplate}.png?amount=${finalTotal}&addInfo=${encodeURIComponent(transferMemo)}&accountName=${encodeURIComponent(activeAccountName)}`;
+  const dynamicQrUrl = `https://img.vietqr.io/image/${activeBankBin}-${activeAccountNumber}-${qrTemplate}.png?amount=${payableNow}&addInfo=${encodeURIComponent(transferMemo)}&accountName=${encodeURIComponent(activeAccountName)}`;
 
   // Order Success Modal
   const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
@@ -542,19 +607,44 @@ function CheckoutContent() {
       const fullShippingAddress = `${address}, ${district}, ${city}`;
 
       const isGuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      const isCod = paymentMethod === 'cod';
-      const orderDepositAmount = isCod ? 0 : finalTotal;
-      const orderDepositPercent = isCod ? 0 : 100;
-      const orderPaymentMethod = isCod ? 'COD' : 'VietQR';
+      const orderDepositAmount = isCod ? 0 : payableNow;
+      const orderDepositPercent = isCod ? 0 : activeDepositPercent;
+      const orderPaymentMethod = isCod
+        ? 'COD'
+        : activeDepositPercent < 100
+        ? `VietQR (Cọc ${activeDepositPercent}%)`
+        : 'VietQR (Đủ 100%)';
       const orderPaymentStatus = 'Pending';
+
+      // Phân định chính xác: Chủ tài khoản đặt hàng (Tính công nợ) và Người nhận hàng (Bàn giao tại địa chỉ)
+      const buyerName = ((user as any)?.name || (user as any)?.fullName || '').trim() || fullName.trim();
+      const buyerPhone = (user?.phone || '').trim() || phone.trim();
+      const buyerEmail = user?.email?.trim() || undefined;
+      const recipientName = fullName.trim() || buyerName;
+      const recipientPhone = phone.trim() || buyerPhone;
+
+      let finalOrderNote = specialNote.trim();
+      const isRecipientDifferent =
+        recipientName.toLowerCase() !== buyerName.toLowerCase() ||
+        recipientPhone.replace(/\s+/g, '') !== buyerPhone.replace(/\s+/g, '');
+
+      if (isRecipientDifferent) {
+        const handoverTag = `[Người nhận hàng: ${recipientName} - SĐT: ${recipientPhone}]`;
+        if (!finalOrderNote.includes(handoverTag)) {
+          finalOrderNote = finalOrderNote ? `${handoverTag} ${finalOrderNote}` : handoverTag;
+        }
+      }
 
       const created = await orderApi.createOrder({
         orderType: 'retail',
         branch: undefined,
         showroom: undefined,
-        customerName: fullName.trim(),
-        customerPhone: phone.trim(),
-        customerEmail: user?.email || undefined,
+        customerId: user?.id && isGuidRegex.test(user.id) ? user.id : undefined,
+        customerName: buyerName,
+        customerPhone: buyerPhone,
+        customerEmail: buyerEmail,
+        recipientName: recipientName,
+        recipientPhone: recipientPhone,
         customerAddress: fullShippingAddress,
         shippingAddress: fullShippingAddress,
         city: city,
@@ -567,7 +657,7 @@ function CheckoutContent() {
         paymentMethod: orderPaymentMethod,
         paymentStatus: orderPaymentStatus,
         status: 'pending',
-        note: specialNote.trim() || undefined,
+        note: finalOrderNote || undefined,
         items: activeItems.map((i) => ({
           productId: isGuidRegex.test(i.id) ? i.id : undefined,
           productSku: i.sku || undefined,
@@ -581,6 +671,22 @@ function CheckoutContent() {
       });
 
       setCreatedOrderCode(created.orderCode);
+
+      // Bắn thông báo thời gian thực ngay lập tức sang tab Admin
+      try {
+        const orderNotificationEvent = {
+          orderCode: created.orderCode,
+          customerName: buyerName,
+          recipientName: recipientName,
+          value: finalTotal,
+          productName: productNameSummary || 'Nội thất D2 Luxury',
+          timestamp: Date.now(),
+        };
+        localStorage.setItem('d2_latest_order_event', JSON.stringify(orderNotificationEvent));
+        window.dispatchEvent(new CustomEvent('d2_new_order_placed', { detail: orderNotificationEvent }));
+      } catch (evtErr) {
+        console.warn('Could not dispatch new order event:', evtErr);
+      }
 
       // Save order into user's isolated order storage
       if (user?.id) {
@@ -967,9 +1073,29 @@ function CheckoutContent() {
                       </div>
                     )}
 
+                    {/* Account Holder Indicator & Recipient Clarification */}
+                    {user && (
+                      <div className="md:col-span-2 p-3 bg-amber-50/70 border border-amber-200/80 text-xs text-[#5d371f] flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-2xs">
+                        <div className="flex items-center gap-2">
+                          <span className="material-symbols-outlined text-[18px] text-[#5d371f] shrink-0">verified_user</span>
+                          <span>
+                            Đơn hàng đứng tên tài khoản: <strong>{user.name || (user as any).fullName}</strong> {user.phone ? `(${user.phone})` : ''} • Lịch sử mua sắm, điểm thưởng &amp; công nợ sẽ được tính cho tài khoản này.
+                          </span>
+                        </div>
+                        {((fullName.trim() && fullName.trim().toLowerCase() !== ((user.name || (user as any).fullName || '').trim().toLowerCase())) ||
+                          (phone.trim() && user.phone && phone.replace(/\s+/g, '') !== user.phone.replace(/\s+/g, ''))) ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold bg-[#5d371f] text-white px-2.5 py-0.5 self-start sm:self-auto shrink-0 shadow-2xs">
+                            <span className="material-symbols-outlined text-[13px]">local_shipping</span>
+                            Giao cho: {fullName.trim() || 'Người nhận hộ'}
+                          </span>
+                        ) : null}
+                      </div>
+                    )}
+
                     <div className="flex flex-col gap-1.5">
-                      <label className="font-semibold text-[#1f1b19]">
-                        Họ &amp; Tên người nhận *
+                      <label className="font-semibold text-[#1f1b19] flex items-center justify-between">
+                        <span>Họ &amp; Tên người nhận *</span>
+                        <span className="text-[10px] text-[#83746c] font-normal">(Người nhận tại công trình / nhận hộ)</span>
                       </label>
                       <input
                         type="text"
@@ -981,8 +1107,9 @@ function CheckoutContent() {
                     </div>
 
                     <div className="flex flex-col gap-1.5">
-                      <label className="font-semibold text-[#1f1b19]">
-                        Số điện thoại liên lạc *
+                      <label className="font-semibold text-[#1f1b19] flex items-center justify-between">
+                        <span>Số điện thoại người nhận *</span>
+                        <span className="text-[10px] text-[#83746c] font-normal">(Để tài xế liên hệ khi giao hàng)</span>
                       </label>
                       <input
                         type="tel"
@@ -1121,6 +1248,72 @@ function CheckoutContent() {
                             Hệ thống kích hoạt bảo chứng đơn hàng tự động sau 10 giây qua Napas 24/7.
                           </p>
 
+                          {/* VietQR Deposit Selection Toggle */}
+                          {paymentMethod === 'qr' && settingDepositPercent < 100 && (
+                            <div className="mt-3.5 p-3.5 bg-white border border-[#eae1dd] flex flex-col gap-2 shadow-2xs">
+                              <div className="flex items-center justify-between flex-wrap gap-1">
+                                <span className="text-xs font-bold text-[#1f1b19] flex items-center gap-1.5">
+                                  <span>Mức thanh toán đơn hàng:</span>
+                                </span>
+                                <span className="text-[11px] text-[#784e34] font-semibold bg-[#ffdbc8]/50 px-2 py-0.5 border border-[#784e34]/20">
+                                  Tỷ lệ cọc cài đặt: {settingDepositPercent}%
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setDepositChoice('deposit')}
+                                  className={`p-3 text-left border transition-all cursor-pointer flex flex-col gap-1 ${
+                                    depositChoice === 'deposit'
+                                      ? 'border-[#5d371f] bg-[#fbf2ee] ring-1 ring-[#5d371f]'
+                                      : 'border-[#eae1dd] bg-white hover:border-[#5d371f]/40'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs font-bold text-[#5d371f]">
+                                      Đặt cọc {settingDepositPercent}%
+                                    </span>
+                                    <span className="text-[9px] font-bold px-1.5 py-0.5 bg-[#5d371f] text-white">
+                                      Khuyên dùng
+                                    </span>
+                                  </div>
+                                  <div className="text-sm font-data-mono font-bold text-[#1f1b19]">
+                                    {Math.round(finalTotal * (settingDepositPercent / 100)).toLocaleString('vi-VN')}₫
+                                  </div>
+                                  <span className="text-[10px] text-[#83746c]">
+                                    Còn lại {(finalTotal - Math.round(finalTotal * (settingDepositPercent / 100))).toLocaleString('vi-VN')}₫ khi nhận hàng
+                                  </span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => setDepositChoice('full')}
+                                  className={`p-3 text-left border transition-all cursor-pointer flex flex-col gap-1 ${
+                                    depositChoice === 'full'
+                                      ? 'border-[#5d371f] bg-[#fbf2ee] ring-1 ring-[#5d371f]'
+                                      : 'border-[#eae1dd] bg-white hover:border-[#5d371f]/40'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs font-bold text-[#1f1b19]">
+                                      Thanh toán 100%
+                                    </span>
+                                    <span className="text-[9px] text-[#83746c]">
+                                      Toàn bộ
+                                    </span>
+                                  </div>
+                                  <div className="text-sm font-data-mono font-bold text-[#1f1b19]">
+                                    {finalTotal.toLocaleString('vi-VN')}₫
+                                  </div>
+                                  <span className="text-[10px] text-[#83746c]">
+                                    Thanh toán trọn gói một lần
+                                  </span>
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
                           {/* VietQR Bank Preview Box */}
                           {paymentMethod === 'qr' && (
                             <div className="mt-4 p-4 sm:p-5 bg-white border border-[#eae1dd] flex flex-col md:flex-row items-center gap-5 shadow-sm animate-scale-in">
@@ -1166,12 +1359,19 @@ function CheckoutContent() {
 
                                 <div className="flex items-center justify-between py-1 border-b border-[#eae1dd]/60">
                                   <div>
-                                    <span className="text-[10px] text-[#83746c] block">Số tiền thanh toán:</span>
-                                    <strong className="font-data-mono text-sm text-[#5d371f]">{finalTotal.toLocaleString('vi-VN')}₫</strong>
+                                    <span className="text-[10px] text-[#83746c] block">
+                                      {activeDepositPercent < 100 ? `Số tiền đặt cọc (${activeDepositPercent}%):` : 'Số tiền thanh toán (100%):'}
+                                    </span>
+                                    <strong className="font-data-mono text-sm text-[#5d371f]">{payableNow.toLocaleString('vi-VN')}₫</strong>
+                                    {activeDepositPercent < 100 && (
+                                      <span className="text-[10px] text-[#83746c] block mt-0.5">
+                                        (Còn lại: {remainingOnDelivery.toLocaleString('vi-VN')}₫ thanh toán khi nhận hàng)
+                                      </span>
+                                    )}
                                   </div>
                                   <button
                                     type="button"
-                                    onClick={() => handleCopy(finalTotal.toString(), 'Số tiền')}
+                                    onClick={() => handleCopy(payableNow.toString(), 'Số tiền')}
                                     className="px-2.5 py-1 bg-[#fbf2ee] hover:bg-[#eae1dd] border border-[#eae1dd] text-[11px] font-bold text-[#5d371f] flex items-center gap-1 transition-colors cursor-pointer"
                                   >
                                     <CopyOutlined /> Sao chép
@@ -1275,20 +1475,55 @@ function CheckoutContent() {
                         Miễn phí
                       </span>
                     </div>
+
+                    <div className="flex justify-between text-[#1f1b19] font-semibold pt-1 border-t border-[#eae1dd]/60">
+                      <span>Tổng giá trị đơn hàng:</span>
+                      <span className="font-data-mono text-sm">
+                        {finalTotal.toLocaleString('vi-VN')}đ
+                      </span>
+                    </div>
+
+                    {!isCod && activeDepositPercent < 100 && (
+                      <>
+                        <div className="flex justify-between text-[#5d371f] font-semibold pt-1 border-t border-dashed border-[#eae1dd]">
+                          <span>Tiền đặt cọc ({activeDepositPercent}% theo cài đặt):</span>
+                          <span className="font-data-mono text-sm font-bold">
+                            {payableNow.toLocaleString('vi-VN')}đ
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-[#83746c]">
+                          <span>Còn lại khi nhận hàng ({100 - activeDepositPercent}%):</span>
+                          <span className="font-data-mono font-semibold">
+                            {remainingOnDelivery.toLocaleString('vi-VN')}đ
+                          </span>
+                        </div>
+                      </>
+                    )}
                   </div>
 
                   {/* Grand Total box */}
                   <div className="bg-[#fbf2ee] border border-[#eae1dd] p-4 flex flex-col gap-1">
                     <div className="flex items-baseline justify-between">
                       <div>
-                        <span className="text-sm font-bold text-[#1f1b19]">Tổng thanh toán:</span>
+                        <span className="text-sm font-bold text-[#1f1b19]">
+                          {!isCod && activeDepositPercent < 100
+                            ? `Cần thanh toán hôm nay (Cọc ${activeDepositPercent}%):`
+                            : isCod
+                            ? 'Thanh toán khi nhận hàng (COD):'
+                            : 'Tổng thanh toán:'}
+                        </span>
                         <span className="block text-[10px] text-[#83746c]">
-                          Đã bao gồm 8% thuế GTGT &amp; bảo hiểm hành trình
+                          {!isCod && activeDepositPercent < 100
+                            ? `Còn lại ${remainingOnDelivery.toLocaleString('vi-VN')}đ thanh toán khi giao lắp & nghiệm thu`
+                            : 'Đã bao gồm 8% thuế GTGT & bảo hiểm hành trình'}
                         </span>
                       </div>
                       <div className="text-right">
                         <span className="font-serif text-xl sm:text-2xl font-bold text-[#5d371f] font-data-mono">
-                          {finalTotal.toLocaleString('vi-VN')}đ
+                          {(!isCod && activeDepositPercent < 100
+                            ? payableNow
+                            : finalTotal
+                          ).toLocaleString('vi-VN')}đ
                         </span>
                       </div>
                     </div>
@@ -1354,10 +1589,10 @@ function CheckoutContent() {
                       </div>
                     </div>
                     <a
-                      href="tel:0967323335"
+                      href="tel:0867612199"
                       className="px-3 py-1.5 bg-white border border-[#eae1dd] text-xs font-bold text-[#5d371f] hover:bg-[#5d371f] hover:text-white transition-colors"
                     >
-                      0967 323 335
+                      0867 612 199
                     </a>
                   </div>
                 </div>

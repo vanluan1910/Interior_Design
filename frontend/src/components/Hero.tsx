@@ -2,6 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
+import { motion } from 'framer-motion';
 import { HomeHero } from '@/api/homeApi';
 
 interface HeroProps {
@@ -34,7 +35,7 @@ export default function Hero({ onOpenBooking, hero }: HeroProps) {
     <section id="hero" className="relative w-full overflow-hidden bg-[#faf3ef] border-b border-[#ebdcd2]">
       {/* BACKGROUND IMAGE & VIBRANT SHOWROOM DEPTH */}
       <div className="absolute inset-0 z-0 overflow-hidden">
-        {/* Crisp background image aligned right */}
+        {/* Crisp background image aligned right with subtle ambient zoom */}
         <div
           className="w-full h-full bg-cover bg-center md:bg-[center_right] transition-transform duration-1000 scale-100 hover:scale-102"
           style={{ backgroundImage: `url('${bgImage}')` }}
@@ -50,25 +51,45 @@ export default function Hero({ onOpenBooking, hero }: HeroProps) {
         <div className="max-w-2xl lg:max-w-3xl flex flex-col gap-4 sm:gap-5">
           
           {/* Refined Badge */}
-          <div className="inline-flex items-center gap-2 self-start px-3.5 py-1.5 rounded-none bg-white/90 backdrop-blur-md shadow-xs border border-[#d5c3ba]/60">
+          <motion.div
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+            className="inline-flex items-center gap-2 self-start px-3.5 py-1.5 rounded-none bg-white/90 backdrop-blur-md shadow-xs border border-[#d5c3ba]/60"
+          >
             <span className="w-1.5 h-1.5 rounded-none bg-[#5d371f]" />
             <span className="text-[11px] uppercase tracking-widest text-[#5d371f] font-semibold">
               {tagline}
             </span>
-          </div>
+          </motion.div>
 
           {/* Main Title: Editorial & Luxury Headline */}
-          <h1 className="font-serif text-3xl sm:text-4xl md:text-5xl lg:text-[52px] xl:text-[56px] text-[#1f1b19] leading-[1.14] font-normal tracking-tight">
+          <motion.h1
+            initial={{ opacity: 0, y: 22 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.75, delay: 0.12, ease: [0.16, 1, 0.3, 1] }}
+            className="font-sans text-3xl sm:text-4xl md:text-5xl lg:text-[52px] xl:text-[56px] text-[#1f1b19] leading-[1.14] font-bold tracking-tight"
+          >
             {title}
-          </h1>
+          </motion.h1>
 
           {/* Subtitle: High Legibility & Balanced Tone */}
-          <p className="text-sm sm:text-base md:text-[17px] text-[#51443d] max-w-xl leading-relaxed">
+          <motion.p
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.75, delay: 0.24, ease: [0.16, 1, 0.3, 1] }}
+            className="text-sm sm:text-base md:text-[17px] text-[#51443d] max-w-xl leading-relaxed"
+          >
             {subtitle}
-          </p>
+          </motion.p>
 
           {/* Animated Single CTA: Liên hệ ngay */}
-          <div className="pt-2 flex items-center">
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.36, ease: [0.16, 1, 0.3, 1] }}
+            className="pt-2 flex items-center"
+          >
             <div className="relative group inline-flex">
               {/* Soft luxury ambient glow behind the button */}
               <div className="absolute -inset-1 rounded-none bg-gradient-to-r from-[#5d371f]/50 via-[#c5a880]/40 to-[#5d371f]/50 blur-lg opacity-60 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
@@ -100,15 +121,20 @@ export default function Hero({ onOpenBooking, hero }: HeroProps) {
                 </span>
               </button>
             </div>
-          </div>
+          </motion.div>
 
           {/* Metrics & Trust Row (Clean Single Row) */}
-          <div className="flex items-center gap-6 sm:gap-10 pt-5 text-[#51443d] flex-wrap border-t border-[#ecdcd2]/70 mt-2">
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.48, ease: [0.16, 1, 0.3, 1] }}
+            className="flex items-center gap-6 sm:gap-10 pt-5 text-[#51443d] flex-wrap border-t border-[#ecdcd2]/70 mt-2"
+          >
             {stats.map((stat, idx) => (
               <React.Fragment key={idx}>
                 {idx > 0 && <div className="hidden sm:block w-px h-8 bg-[#e8ded7]" />}
                 <div className="flex flex-col">
-                  <span className="font-serif text-2xl sm:text-3xl text-[#5d371f] font-semibold">
+                  <span className="font-sans text-2xl sm:text-3xl text-[#5d371f] font-bold">
                     {stat.value}
                   </span>
                   <span className="text-xs sm:text-[13px] text-[#83746c] mt-0.5">
@@ -117,7 +143,7 @@ export default function Hero({ onOpenBooking, hero }: HeroProps) {
                 </div>
               </React.Fragment>
             ))}
-          </div>
+          </motion.div>
 
         </div>
       </div>

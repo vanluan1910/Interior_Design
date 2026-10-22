@@ -197,14 +197,14 @@ export function SettingsTab({
     representative: 'Nguyễn Văn Luận',
     representativeRole: 'Tổng Giám Đốc',
     businessSector: '',
-    phone: '0343 136 004',
-    hotline: '0967 323 335',
+    phone: '0867 612 199',
+    hotline: '0867 612 199',
     email: 'contact@d2luxury.vn',
     website: 'https://d2luxury.vn',
-    zalo: 'https://zalo.me/0967323335',
+    zalo: 'https://zalo.me/0867612199',
     fanpage: 'https://www.facebook.com/profile.php?id=61575009790250',
     headquarters: 'Ngã 4 Cửa Cạn, Đặc khu Phú Quốc, tỉnh Kiên Giang',
-    warehouseAddress: 'Khu tiểu thủ công nghiệp Cửa Cạn, TP. Phú Quốc, tỉnh Kiên Giang',
+    warehouseAddress: '08 - Ngõ Như Ý - Huyện Thạch Thất - Tp Hà Nội',
     country: 'Việt Nam',
     province: 'Kiên Giang',
     district: 'TP. Phú Quốc',
@@ -995,10 +995,21 @@ export function SettingsTab({
       cleanHeadquarters = 'Ngã 4 Cửa Cạn, Đặc khu Phú Quốc, tỉnh Kiên Giang';
     }
 
+    // Auto format Zalo if just digits entered or auto-fallback to hotline/phone
+    let zaloUrl = values.zalo?.trim() || companyInfo.zalo;
+    const phoneDigits = (values.hotline || values.phone || '0867612199').replace(/\D/g, '');
+    if (zaloUrl && !zaloUrl.startsWith('http://') && !zaloUrl.startsWith('https://')) {
+      const cleanZalo = zaloUrl.replace(/\D/g, '');
+      zaloUrl = `https://zalo.me/${cleanZalo || phoneDigits}`;
+    } else if (!zaloUrl) {
+      zaloUrl = `https://zalo.me/${phoneDigits}`;
+    }
+
     const payload: AdminCompanyInfo = {
       ...EMPTY_COMPANY_INFO,
       ...companyInfo,
       ...values,
+      zalo: zaloUrl,
       headquarters: cleanHeadquarters,
       brandName: values.companyName || companyInfo.brandName || '',
     };
@@ -1007,6 +1018,7 @@ export function SettingsTab({
       const nextData: AdminCompanyInfo = {
         ...payload,
         ...(res || {}),
+        zalo: zaloUrl,
         headquarters: cleanHeadquarters,
       };
       setCompanyInfo(nextData);
@@ -1329,6 +1341,7 @@ export function SettingsTab({
                   taxId: companyInfo.taxId || EMPTY_COMPANY_INFO.taxId,
                   phone: companyInfo.phone || EMPTY_COMPANY_INFO.phone,
                   hotline: companyInfo.hotline || EMPTY_COMPANY_INFO.hotline,
+                  zalo: companyInfo.zalo || EMPTY_COMPANY_INFO.zalo,
                   email: companyInfo.email || EMPTY_COMPANY_INFO.email,
                   website: companyInfo.website || EMPTY_COMPANY_INFO.website,
                   representative: companyInfo.representative || EMPTY_COMPANY_INFO.representative,
@@ -1470,7 +1483,13 @@ export function SettingsTab({
                       <Form.Item label="Hotline CSKH / Bán hàng" name="hotline">
                         <Input
                           prefix={<PhoneOutlined className="text-slate-400 mr-1" />}
-                          placeholder="VD: 0986.739.587"
+                          placeholder="VD: 0867 612 199"
+                          className="h-9 sm:h-10 rounded-lg text-xs sm:text-sm"
+                        />
+                      </Form.Item>
+                      <Form.Item label="Số điện thoại / Zalo tư vấn" name="zalo">
+                        <Input
+                          placeholder="VD: 0867612199 hoặc https://zalo.me/0867612199"
                           className="h-9 sm:h-10 rounded-lg text-xs sm:text-sm"
                         />
                       </Form.Item>

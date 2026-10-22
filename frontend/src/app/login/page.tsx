@@ -431,7 +431,7 @@ function AuthPageContent() {
                 />
                 <div className="flex flex-col min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="font-serif text-base sm:text-lg font-normal text-[#5d371f] tracking-wide leading-none">
+                    <span className="font-sans text-base sm:text-lg font-bold text-[#5d371f] tracking-wide leading-none">
                       D2 LUXURY
                     </span>
                     <span className="px-2 py-0.5 bg-[#f5ece8] border border-[#eae1dd] text-[#5d371f] text-[10px] font-normal rounded-none">
@@ -480,7 +480,7 @@ function AuthPageContent() {
               {activeTab === 'login' && (
                 <div className="flex flex-col animate-in fade-in-50 duration-200">
                   <div className="mb-3.5">
-                    <h2 className="font-serif text-xl sm:text-2xl font-normal text-[#1f1b19] tracking-tight">
+                    <h2 className="font-sans text-xl sm:text-2xl font-bold text-[#1f1b19] tracking-tight">
                       Chào mừng quay trở lại
                     </h2>
                   </div>
@@ -632,7 +632,7 @@ function AuthPageContent() {
               {activeTab === 'register' && (
                 <div className="flex flex-col animate-in fade-in-50 duration-200">
                   <div className="mb-3.5">
-                    <h2 className="font-serif text-xl sm:text-2xl font-normal text-[#1f1b19] tracking-tight">
+                    <h2 className="font-sans text-xl sm:text-2xl font-bold text-[#1f1b19] tracking-tight">
                       Đăng ký thành viên
                     </h2>
                   </div>
@@ -861,7 +861,7 @@ function AuthPageContent() {
                   <div className="w-12 h-[1px] bg-[#5d371f]/50"></div>
                 </div>
 
-                <h1 className="font-serif text-3xl sm:text-4xl lg:text-5xl font-normal text-[#1f1b19] leading-[1.15] mb-4 tracking-tight">
+                <h1 className="font-sans text-3xl sm:text-4xl lg:text-5xl font-bold text-[#1f1b19] leading-[1.15] mb-4 tracking-tight">
                   Nơi Mỗi Thớ Gỗ<br />Kể Câu Chuyện Không Gian
                 </h1>
 
@@ -931,7 +931,7 @@ function AuthPageContent() {
               <KeyOutlined className="text-xl" />
             </div>
             <div>
-              <h3 className="font-serif text-lg font-normal text-[#1f1b19] leading-tight">
+              <h3 className="font-sans text-lg font-bold text-[#1f1b19] leading-tight">
                 Đặt Lại Mật Khẩu Gia Chủ
               </h3>
               <p className="text-[11px] text-[#83746c] mt-0.5 font-normal">

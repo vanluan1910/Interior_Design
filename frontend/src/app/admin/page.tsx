@@ -40,6 +40,8 @@ import {
   SuppliersTab,
   SettingsTab,
 } from '@/components/admin/tabs';
+import { NotificationPopover } from '@/components/admin/NotificationPopover';
+import { triggerDesktopNotification, playChimeSound } from '@/utils/desktopNotification';
 import { branchApi } from '@/api/branchApi';
 import { categoryApi } from '@/api/categoryApi';
 import { spaceApi } from '@/api/spaceApi';
@@ -78,12 +80,14 @@ function AdminPageContent({
 }: {
   initialTab?: 'overview' | 'orders' | 'inventory' | 'categories' | 'workshop' | 'customers' | 'suppliers' | 'branches' | 'settings';
 }) {
-  const { message } = App.useApp();
+  const { message, notification } = App.useApp();
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, isLoading, logout, hasPermission, hasAnyPermission } = useAuth();
 
   const [mounted, setMounted] = useState(false);
+  const knownOrderCodesRef = React.useRef<Set<string>>(new Set());
+  const isInitialOrderLoadRef = React.useRef(true);
 
   useEffect(() => {
     setMounted(true);
@@ -162,6 +166,24 @@ function AdminPageContent({
 
   const handleClearProductSearch = useCallback(() => {
     setTargetProductSearch(null);
+  }, []);
+
+  const [targetOrderSearch, setTargetOrderSearch] = useState<string | null>(null);
+
+  const handleNavigateToOrder = useCallback((orderCode: string) => {
+    const clean = orderCode.trim();
+    setTargetOrderSearch(clean);
+    setActiveNavState('orders');
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', 'orders');
+      url.searchParams.set('search', clean);
+      window.history.pushState({}, '', url.toString());
+    }
+  }, []);
+
+  const handleClearOrderSearch = useCallback(() => {
+    setTargetOrderSearch(null);
   }, []);
 
   const handleNavigateToCreateImport = useCallback((product: FeaturedCatalogProduct) => {
@@ -281,6 +303,13 @@ function AdminPageContent({
       setSelectedGlobalBranch(storedBranch);
     }
 
+    customerApi.getCustomers().then((res) => {
+      if (Array.isArray(res) && res.length > 0) {
+        setCustomersList(res);
+        setStoredAdminData(ADMIN_STORAGE_KEYS.CUSTOMERS, res);
+      }
+    }).catch(() => {});
+
     const handleBranchSync = (e: any) => {
       const branch = e?.detail?.branchName;
       if (branch && branch !== selectedGlobalBranch) {
@@ -295,6 +324,7 @@ function AdminPageContent({
     try {
       const products = await productApi.getProducts({
         branch: selectedGlobalBranch !== 'all' ? selectedGlobalBranch : undefined,
+        pageSize: 500,
       });
       if (products && Array.isArray(products)) {
         setCatalogList(products);
@@ -308,7 +338,7 @@ function AdminPageContent({
 
   // Load real product catalog from DB whenever branch changes or tab is active
   useEffect(() => {
-    if (activeNav === 'workshop' || activeNav === 'inventory' || activeNav === 'overview') {
+    if (activeNav === 'workshop' || activeNav === 'inventory' || activeNav === 'overview' || activeNav === 'orders') {
       loadProducts();
     }
   }, [selectedGlobalBranch, activeNav, loadProducts]);
@@ -427,6 +457,12 @@ function AdminPageContent({
         const orders = await orderApi.getOrders();
         if (orders && Array.isArray(orders)) {
           const normalized = orders.map(normalizeOrderRow);
+          if (isInitialOrderLoadRef.current) {
+            normalized.forEach((o) => {
+              if (o.orderCode) knownOrderCodesRef.current.add(o.orderCode);
+            });
+            isInitialOrderLoadRef.current = false;
+          }
           setOrdersList(normalized);
           setStoredAdminData(ADMIN_STORAGE_KEYS.ORDERS, normalized);
           return;
@@ -435,7 +471,14 @@ function AdminPageContent({
         console.warn('Could not fetch orders from API, using fallback:', err);
       }
       const cached = getStoredAdminData(ADMIN_STORAGE_KEYS.ORDERS, []);
-      setOrdersList(Array.isArray(cached) ? cached.map(normalizeOrderRow) : []);
+      const normalizedCached = Array.isArray(cached) ? cached.map(normalizeOrderRow) : [];
+      if (isInitialOrderLoadRef.current) {
+        normalizedCached.forEach((o) => {
+          if (o.orderCode) knownOrderCodesRef.current.add(o.orderCode);
+        });
+        isInitialOrderLoadRef.current = false;
+      }
+      setOrdersList(normalizedCached);
     };
 
     // Fetch Roles directly from Backend API (Real Data)
@@ -468,8 +511,10 @@ function AdminPageContent({
       setEmployeesList(getStoredAdminData(ADMIN_STORAGE_KEYS.EMPLOYEES, INITIAL_EMPLOYEES));
     };
 
-    // 1. Always load common master data (branches, uoms)
+    // 1. Luôn tải danh sách đơn hàng & sản phẩm ngay khi vào trang Admin để chuông thông báo & cảnh báo kho có dữ liệu
     loadBranches();
+    loadOrders();
+    loadProducts();
 
     // 2. Load tab-specific datasets lazily based on active tab
     if (activeNav === 'inventory' || activeNav === 'categories') {
@@ -479,10 +524,8 @@ function AdminPageContent({
       loadCategories();
       loadSpaces();
     } else if (activeNav === 'workshop') {
-      loadProducts();
       loadSuppliers();
     } else if (activeNav === 'orders') {
-      loadOrders();
       loadCustomers();
     } else if (activeNav === 'customers') {
       loadCustomers();
@@ -493,6 +536,128 @@ function AdminPageContent({
       loadEmployees();
     }
   }, [activeNav]);
+
+  // Hàm phát thông báo đơn hàng mới: Âm thanh chuông + Thông báo Desktop Windows + Popup nổi
+  const notifyNewOrderArrival = useCallback((newOrder: {
+    orderCode: string;
+    customerName?: string;
+    productName?: string;
+    value?: number;
+  }) => {
+    if (!newOrder || !newOrder.orderCode) return;
+    if (knownOrderCodesRef.current.has(newOrder.orderCode)) return;
+    knownOrderCodesRef.current.add(newOrder.orderCode);
+
+    // 1. Âm thanh chuông "Ting ting"
+    playChimeSound();
+
+    const formattedVal = new Intl.NumberFormat('vi-VN', {
+      style: 'currency',
+      currency: 'VND',
+    }).format(newOrder.value || 0);
+
+    // 2. Bắn thông báo ra góc màn hình máy tính (Desktop Notification kiểu Zalo / Facebook)
+    triggerDesktopNotification(`🔔 D2 LUXURY: Đơn hàng mới #${newOrder.orderCode}!`, {
+      body: `Khách ${newOrder.customerName || 'Vãng lai'} vừa đặt mua ${newOrder.productName || 'nội thất'} (${formattedVal})`,
+      onClick: () => handleNavigateToOrder(newOrder.orderCode),
+      requireInteraction: true,
+    });
+
+    // 3. Hiển thị popup nổi trực tiếp trên trang Admin
+    notification.open({
+      message: <span className="font-bold text-[#5d371f] text-sm">🔔 Đơn hàng mới: #{newOrder.orderCode}</span>,
+      description: (
+        <div className="text-xs text-slate-700 mt-1 space-y-0.5">
+          <div>Khách hàng: <strong>{newOrder.customerName || 'Vãng lai'}</strong></div>
+          <div>Sản phẩm: <strong>{newOrder.productName || 'Nội thất may đo'}</strong></div>
+          <div className="font-semibold text-emerald-700">Giá trị: {formattedVal}</div>
+        </div>
+      ),
+      placement: 'bottomRight',
+      duration: 10,
+      btn: (
+        <Button
+          type="primary"
+          size="small"
+          style={{ backgroundColor: '#5d371f', borderColor: '#5d371f' }}
+          onClick={() => handleNavigateToOrder(newOrder.orderCode)}
+        >
+          Xem đơn hàng ngay
+        </Button>
+      ),
+    });
+  }, [handleNavigateToOrder, notification]);
+
+  // Nhận thông báo tức thì khi có khách đặt hàng từ tab Checkout (Instant Cross-Tab Event)
+  useEffect(() => {
+    if (!mounted) return;
+
+    const handleStorageEvent = (e: StorageEvent) => {
+      if (e.key === 'd2_latest_order_event' && e.newValue) {
+        try {
+          const orderData = JSON.parse(e.newValue);
+          notifyNewOrderArrival(orderData);
+          // Tải lại danh sách đơn hàng ngay lập tức
+          orderApi.getOrders({ bypassCache: true }).then((fresh) => {
+            if (Array.isArray(fresh)) setOrdersList(fresh.map(normalizeOrderRow));
+          }).catch(() => {});
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', handleStorageEvent);
+
+    const handleCustomOrderEvent = (e: any) => {
+      if (e.detail) {
+        notifyNewOrderArrival(e.detail);
+        orderApi.getOrders({ bypassCache: true }).then((fresh) => {
+          if (Array.isArray(fresh)) setOrdersList(fresh.map(normalizeOrderRow));
+        }).catch(() => {});
+      }
+    };
+    window.addEventListener('d2_new_order_placed', handleCustomOrderEvent);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageEvent);
+      window.removeEventListener('d2_new_order_placed', handleCustomOrderEvent);
+    };
+  }, [mounted, notifyNewOrderArrival]);
+
+  // Realtime Polling: Kiểm tra đơn hàng mới từ máy khác định kỳ mỗi 10 giây (bỏ qua cache)
+  useEffect(() => {
+    if (!mounted || !user || user.role !== 'admin') return;
+
+    const interval = setInterval(async () => {
+      try {
+        const freshOrders = await orderApi.getOrders({ bypassCache: true });
+        if (freshOrders && Array.isArray(freshOrders)) {
+          const normalized = freshOrders.map(normalizeOrderRow);
+
+          if (!isInitialOrderLoadRef.current) {
+            const newOrders = normalized.filter(
+              (o) => o.orderCode && !knownOrderCodesRef.current.has(o.orderCode)
+            );
+
+            if (newOrders.length > 0) {
+              newOrders.forEach((no) => {
+                notifyNewOrderArrival(no);
+              });
+            }
+          } else {
+            normalized.forEach((o) => {
+              if (o.orderCode) knownOrderCodesRef.current.add(o.orderCode);
+            });
+            isInitialOrderLoadRef.current = false;
+          }
+
+          setOrdersList(normalized);
+        }
+      } catch (e) {
+        // silent polling catch
+      }
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [mounted, user, notifyNewOrderArrival]);
 
   // Settings Sub-tab state
   const urlSettingsTab = searchParams.get('settingsTab');
@@ -526,6 +691,31 @@ function AdminPageContent({
     }
   }, [validUrlTab, initialTab]);
 
+  // Hỗ trợ nút Back/Forward trên trình duyệt để chuyển tab ngay lập tức mà không reload trang
+  useEffect(() => {
+    const handlePopState = () => {
+      if (typeof window === 'undefined') return;
+      const pathname = window.location.pathname;
+      const sp = new URLSearchParams(window.location.search);
+      const tabParam = sp.get('tab');
+      if (tabParam && ['overview', 'orders', 'inventory', 'categories', 'workshop', 'customers', 'suppliers', 'branches', 'settings'].includes(tabParam)) {
+        setActiveNavState(tabParam as any);
+        return;
+      }
+      if (pathname.includes('/admin/orders')) setActiveNavState('orders');
+      else if (pathname.includes('/admin/inventory')) setActiveNavState('inventory');
+      else if (pathname.includes('/admin/categories')) setActiveNavState('categories');
+      else if (pathname.includes('/admin/workshop')) setActiveNavState('workshop');
+      else if (pathname.includes('/admin/customers')) setActiveNavState('customers');
+      else if (pathname.includes('/admin/suppliers')) setActiveNavState('suppliers');
+      else if (pathname.includes('/admin/settings')) setActiveNavState('settings');
+      else if (pathname === '/admin' || pathname === '/admin/') setActiveNavState('overview');
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
   const handleNavChange = (
     tab: 'overview' | 'orders' | 'inventory' | 'categories' | 'workshop' | 'customers' | 'suppliers' | 'branches' | 'settings'
   ) => {
@@ -548,7 +738,9 @@ function AdminPageContent({
     };
 
     const targetUrl = routeMap[targetTab] || `/admin?tab=${targetTab}`;
-    router.push(targetUrl);
+    if (typeof window !== 'undefined') {
+      window.history.pushState({ tab: targetTab }, '', targetUrl);
+    }
   };
 
   const profileMenuItems: MenuProps['items'] = [
@@ -579,7 +771,7 @@ function AdminPageContent({
 
   if (!mounted || isLoading || !user || user.role !== 'admin') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#fff8f5]">
+      <div className="min-h-screen flex items-center justify-center bg-[#fff8f5] font-sans">
         <div className="flex flex-col items-center gap-2">
           <div className="w-8 h-8 border-2 border-[#5d371f] border-t-transparent rounded-full animate-spin" />
           <span className="text-xs text-[#83746c]">Đang kiểm tra quyền quản trị D2 LUXURY...</span>
@@ -589,7 +781,7 @@ function AdminPageContent({
   }
 
   return (
-    <Layout className="min-h-screen bg-[#fff8f5] flex flex-col">
+    <Layout className="min-h-screen bg-[#fff8f5] flex flex-col font-sans admin-underline-mode">
       <Header
         style={{ height: '80px', lineHeight: 'normal' }}
         className="!bg-[#fff8f5]/95 backdrop-blur-xl border-b border-[#eae1dd]/60 !px-0 flex items-center sticky top-0 z-50 shadow-[0_1px_8px_rgba(0,0,0,0.04)] !leading-none w-full shrink-0"
@@ -597,7 +789,14 @@ function AdminPageContent({
         <div className="h-20 w-full px-3 sm:px-5 lg:px-6 xl:px-8 flex items-center justify-between flex-nowrap whitespace-nowrap gap-2 sm:gap-4">
           {/* Left: Brand + Main Nav */}
           <div className="flex items-center gap-3 xl:gap-5 2xl:gap-6 min-w-0">
-            <Link href="/admin" className="flex items-center group shrink-0 select-none py-1">
+            <Link
+              href="/admin"
+              onClick={(e) => {
+                e.preventDefault();
+                handleNavChange('overview');
+              }}
+              className="flex items-center group shrink-0 select-none py-1"
+            >
               <img
                 alt={storeHeaderInfo.brandName || 'Logo'}
                 className="h-14 sm:h-16 lg:h-[66px] w-auto max-h-[72px] object-contain transition-transform group-hover:scale-105"
@@ -721,14 +920,14 @@ function AdminPageContent({
               />
             </div>
 
-            {/* Notifications */}
-            <Badge dot offset={[-2, 2]} color="#5d371f">
-              <Button
-                type="text"
-                icon={<BellOutlined className="text-base text-[#2e1d13] hover:text-[#5d371f]" />}
-                className="hover:!bg-[#f5ece8] flex items-center justify-center shrink-0"
-              />
-            </Badge>
+            {/* Notifications Popover */}
+            <NotificationPopover
+              orders={ordersList}
+              products={catalogList}
+              onNavigateToTab={handleNavChange}
+              onNavigateToProduct={handleNavigateToProduct}
+              onNavigateToOrder={handleNavigateToOrder}
+            />
 
             {/* User Profile */}
             <Dropdown menu={{ items: profileMenuItems }} placement="bottomRight" arrow trigger={['click']}>
@@ -767,6 +966,8 @@ function AdminPageContent({
             branchesList={branchesList}
             selectedGlobalBranch={selectedGlobalBranch}
             onNavigateToProduct={handleNavigateToProduct}
+            initialSearch={targetOrderSearch || undefined}
+            onClearInitialSearch={handleClearOrderSearch}
           />
         )}
 

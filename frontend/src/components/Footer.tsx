@@ -2,8 +2,11 @@
 
 import React from 'react';
 import Link from 'next/link';
+import { useCompanyInfo } from '@/hooks/useCompanyInfo';
 
 export default function Footer() {
+  const { company, rawPhone, displayPhone, warehouseAddress, zaloUrl } = useCompanyInfo();
+
   return (
     <footer className="w-full bg-[#fbf2ee] text-[#1f1b19] pt-8 pb-8 border-t border-[#eae1dd]">
       <div className="w-full max-w-[1720px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-16">
@@ -17,11 +20,11 @@ export default function Footer() {
                 src="/logo.png"
               />
               <div className="flex flex-col">
-                <span className="font-headline-sm text-lg text-[#5d371f] tracking-tight font-bold">
-                  D2 LUXURY
+                <span className="font-headline-sm text-lg text-[#5d371f] tracking-tight font-bold" suppressHydrationWarning>
+                  {company.brandName || 'D2 LUXURY'}
                 </span>
-                <span className="font-label-sm text-[10px] text-[#83746c] tracking-widest uppercase">
-                  Nội Thất Gỗ Tự Nhiên
+                <span className="font-label-sm text-[10px] text-[#83746c] tracking-widest uppercase" suppressHydrationWarning>
+                  {company.businessSector || 'Nội Thất Gỗ Tự Nhiên'}
                 </span>
               </div>
             </div>
@@ -33,8 +36,8 @@ export default function Footer() {
             <div className="flex flex-col gap-1.5 text-xs text-[#51443d] pt-1 border-t border-[#ebdcd2]">
               <div className="flex items-center gap-2">
                 <span className="text-[#83746c] shrink-0">Tư vấn KTS:</span>
-                <a href="tel:0967323335" className="hover:text-[#5d371f] transition-colors font-bold text-[#5d371f]">
-                  0967 323 335
+                <a href={`tel:${rawPhone}`} className="hover:text-[#5d371f] transition-colors font-bold text-[#5d371f]" suppressHydrationWarning>
+                  {displayPhone}
                 </a>
               </div>
             </div>
@@ -47,14 +50,18 @@ export default function Footer() {
             </h3>
             <div className="flex flex-col gap-1 text-xs sm:text-sm text-[#51443d]">
               <p className="font-title-md text-xs text-[#1f1b19] font-bold">Trụ sở &amp; Showroom trải nghiệm:</p>
-              <p className="text-xs">Ngã 4 Cửa Cạn, đặc khu Phú Quốc, tỉnh An Giang</p>
+              <p className="text-xs" suppressHydrationWarning>{company.headquarters || 'Ngã 4 Cửa Cạn, đặc khu Phú Quốc, tỉnh An Giang'}</p>
               <p className="text-[#83746c] font-data-mono text-xs">
-                Hotline &amp; Zalo: 0967 323 335 (8:30 - 21:00)
+                Hotline &amp; Zalo:{' '}
+                <a href={zaloUrl} target="_blank" rel="noopener noreferrer" className="text-[#5d371f] font-bold hover:underline" suppressHydrationWarning>
+                  {displayPhone}
+                </a>{' '}
+                (8:30 - 21:00)
               </p>
             </div>
             <div className="flex flex-col gap-1 text-xs sm:text-sm text-[#51443d] pt-2 border-t border-[#ebdcd2]">
               <p className="font-title-md text-xs text-[#1f1b19] font-bold">Nhà máy &amp; Xưởng chế tác:</p>
-              <p className="text-xs">Xưởng mộc chế tác nội thất cao cấp D2 LUXURY</p>
+              <p className="text-xs" suppressHydrationWarning>{warehouseAddress || '08 - Ngõ Như Ý - Huyện Thạch Thất - Tp Hà Nội'}</p>
               <p className="text-[#83746c] text-xs">Nhận may đo &amp; lên bản vẽ 3D theo yêu cầu</p>
             </div>
           </div>

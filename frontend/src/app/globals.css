@@ -55,18 +55,20 @@
   --color-on-error: #ffffff;
   --color-on-error-container: #93000a;
 
-  --font-sans: var(--font-be-vietnam-pro), 'Be Vietnam Pro', sans-serif;
-  --font-body-sm: var(--font-be-vietnam-pro), 'Be Vietnam Pro', sans-serif;
-  --font-body-md: var(--font-be-vietnam-pro), 'Be Vietnam Pro', sans-serif;
-  --font-body-lg: var(--font-be-vietnam-pro), 'Be Vietnam Pro', sans-serif;
-  --font-title-md: var(--font-be-vietnam-pro), 'Be Vietnam Pro', sans-serif;
-  --font-title-lg: var(--font-be-vietnam-pro), 'Be Vietnam Pro', sans-serif;
-  --font-label-sm: var(--font-be-vietnam-pro), 'Be Vietnam Pro', sans-serif;
-  --font-label-md: var(--font-be-vietnam-pro), 'Be Vietnam Pro', sans-serif;
-  --font-headline-sm: var(--font-be-vietnam-pro), 'Be Vietnam Pro', sans-serif;
-  --font-headline-md: var(--font-be-vietnam-pro), 'Be Vietnam Pro', sans-serif;
-  --font-headline-lg: var(--font-be-vietnam-pro), 'Be Vietnam Pro', sans-serif;
-  --font-display-xl: var(--font-be-vietnam-pro), 'Be Vietnam Pro', sans-serif;
+  --font-sans: 'Be Vietnam Pro', var(--font-be-vietnam-pro), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-serif: 'Be Vietnam Pro', var(--font-be-vietnam-pro), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  --font-body-sm: 'Be Vietnam Pro', var(--font-be-vietnam-pro), sans-serif;
+  --font-body-md: 'Be Vietnam Pro', var(--font-be-vietnam-pro), sans-serif;
+  --font-body-lg: 'Be Vietnam Pro', var(--font-be-vietnam-pro), sans-serif;
+  --font-title-md: 'Be Vietnam Pro', var(--font-be-vietnam-pro), sans-serif;
+  --font-title-lg: 'Be Vietnam Pro', var(--font-be-vietnam-pro), sans-serif;
+  --font-label-sm: 'Be Vietnam Pro', var(--font-be-vietnam-pro), sans-serif;
+  --font-label-md: 'Be Vietnam Pro', var(--font-be-vietnam-pro), sans-serif;
+  --font-headline-sm: 'Be Vietnam Pro', var(--font-be-vietnam-pro), sans-serif;
+  --font-headline-md: 'Be Vietnam Pro', var(--font-be-vietnam-pro), sans-serif;
+  --font-headline-lg: 'Be Vietnam Pro', var(--font-be-vietnam-pro), sans-serif;
+  --font-display-xl: 'Be Vietnam Pro', var(--font-be-vietnam-pro), sans-serif;
 
   --spacing-margin: 2rem;
   --spacing-margin-sm: 1rem;
@@ -81,14 +83,21 @@
   --spacing-space-xl: 3rem;
 }
 
+:root {
+  --font-be-vietnam-pro: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
 /* Global Font Enforcement */
-* {
-  font-family: var(--font-be-vietnam-pro), 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+html,
+body {
+  font-family: 'Be Vietnam Pro', var(--font-be-vietnam-pro), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* Custom Typography & Utility Classes */
 .font-display-xl {
-  font-family: var(--font-be-vietnam-pro), 'Be Vietnam Pro', sans-serif;
+  font-family: 'Be Vietnam Pro', var(--font-be-vietnam-pro), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   font-size: 56px;
   line-height: 68px;
   letter-spacing: -0.02em;
@@ -102,7 +111,7 @@
 }
 
 .font-headline-lg {
-  font-family: var(--font-be-vietnam-pro), 'Be Vietnam Pro', sans-serif;
+  font-family: 'Be Vietnam Pro', var(--font-be-vietnam-pro), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   font-size: 36px;
   line-height: 44px;
   letter-spacing: -0.01em;
@@ -110,53 +119,53 @@
 }
 
 .font-headline-md {
-  font-family: var(--font-be-vietnam-pro), 'Be Vietnam Pro', sans-serif;
+  font-family: 'Be Vietnam Pro', var(--font-be-vietnam-pro), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   font-size: 26px;
   line-height: 34px;
   font-weight: 500;
 }
 
 .font-headline-sm {
-  font-family: var(--font-be-vietnam-pro), 'Be Vietnam Pro', sans-serif;
+  font-family: 'Be Vietnam Pro', var(--font-be-vietnam-pro), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   font-size: 20px;
   line-height: 28px;
   font-weight: 500;
 }
 
 .font-title-lg {
-  font-family: var(--font-be-vietnam-pro), 'Be Vietnam Pro', sans-serif;
+  font-family: 'Be Vietnam Pro', var(--font-be-vietnam-pro), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   font-size: 18px;
   line-height: 26px;
   font-weight: 500;
 }
 
 .font-title-md {
-  font-family: var(--font-be-vietnam-pro), 'Be Vietnam Pro', sans-serif;
+  font-family: 'Be Vietnam Pro', var(--font-be-vietnam-pro), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   font-size: 16px;
   line-height: 24px;
   font-weight: 500;
 }
 
 .font-body-lg {
-  font-family: var(--font-be-vietnam-pro), 'Be Vietnam Pro', sans-serif;
+  font-family: 'Be Vietnam Pro', var(--font-be-vietnam-pro), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   font-size: 17px;
   line-height: 28px;
 }
 
 .font-body-md {
-  font-family: var(--font-be-vietnam-pro), 'Be Vietnam Pro', sans-serif;
+  font-family: 'Be Vietnam Pro', var(--font-be-vietnam-pro), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   font-size: 15px;
   line-height: 24px;
 }
 
 .font-body-sm {
-  font-family: var(--font-be-vietnam-pro), 'Be Vietnam Pro', sans-serif;
+  font-family: 'Be Vietnam Pro', var(--font-be-vietnam-pro), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   font-size: 13px;
   line-height: 20px;
 }
 
 .font-label-md {
-  font-family: var(--font-be-vietnam-pro), 'Be Vietnam Pro', sans-serif;
+  font-family: 'Be Vietnam Pro', var(--font-be-vietnam-pro), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   font-size: 12px;
   line-height: 16px;
   letter-spacing: 0.04em;
@@ -164,7 +173,7 @@
 }
 
 .font-label-sm {
-  font-family: var(--font-be-vietnam-pro), 'Be Vietnam Pro', sans-serif;
+  font-family: 'Be Vietnam Pro', var(--font-be-vietnam-pro), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   font-size: 11px;
   line-height: 14px;
   letter-spacing: 0.06em;
@@ -194,18 +203,54 @@
   -webkit-font-smoothing: antialiased;
 }
 
-html {
+html[data-scroll-behavior="smooth"] {
   scroll-behavior: smooth;
 }
 
 body {
   background-color: #fff8f5;
   color: #1f1b19;
-  font-family: var(--font-be-vietnam-pro), 'Be Vietnam Pro', sans-serif;
+  font-family: 'Be Vietnam Pro', var(--font-be-vietnam-pro), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
-h1, h2, h3, h4, h5, h6, p, span, a, button, input, select, textarea, label {
-  font-family: var(--font-be-vietnam-pro), 'Be Vietnam Pro', sans-serif;
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p,
+span,
+a,
+button,
+input,
+select,
+textarea,
+label {
+  font-family: inherit;
+}
+
+/* Explicit font family utilities */
+.font-sans {
+  font-family: 'Be Vietnam Pro', var(--font-be-vietnam-pro), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
+}
+
+.font-serif {
+  font-family: 'Be Vietnam Pro', var(--font-be-vietnam-pro), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
+}
+
+.font-mono,
+.ant-table-cell .font-mono,
+.ant-table-tbody td .font-mono,
+.ant-tag .font-mono,
+.ant-card .font-mono,
+.ant-statistic-content .font-mono,
+span.font-mono,
+div.font-mono,
+td.font-mono,
+th.font-mono,
+p.font-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace !important;
 }
 
 ::-webkit-scrollbar {
@@ -234,6 +279,7 @@ h1, h2, h3, h4, h5, h6, p, span, a, button, input, select, textarea, label {
   from {
     opacity: 0;
   }
+
   to {
     opacity: 1;
   }
@@ -244,6 +290,7 @@ h1, h2, h3, h4, h5, h6, p, span, a, button, input, select, textarea, label {
     opacity: 0;
     transform: translateY(20px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -255,6 +302,7 @@ h1, h2, h3, h4, h5, h6, p, span, a, button, input, select, textarea, label {
     opacity: 0;
     transform: translateY(-20px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -266,6 +314,7 @@ h1, h2, h3, h4, h5, h6, p, span, a, button, input, select, textarea, label {
     opacity: 0;
     transform: scale(0.96);
   }
+
   to {
     opacity: 1;
     transform: scale(1);
@@ -273,18 +322,24 @@ h1, h2, h3, h4, h5, h6, p, span, a, button, input, select, textarea, label {
 }
 
 @keyframes floatGentle {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: translateY(0);
   }
+
   50% {
     transform: translateY(-6px);
   }
 }
 
 @keyframes pulseGlow {
-  0%, 100% {
+
+  0%,
+  100% {
     box-shadow: 0 0 0 0 rgba(93, 55, 31, 0.25);
   }
+
   50% {
     box-shadow: 0 0 0 8px rgba(93, 55, 31, 0);
   }
@@ -294,6 +349,7 @@ h1, h2, h3, h4, h5, h6, p, span, a, button, input, select, textarea, label {
   0% {
     background-position: -200% 0;
   }
+
   100% {
     background-position: 200% 0;
   }
@@ -305,6 +361,7 @@ h1, h2, h3, h4, h5, h6, p, span, a, button, input, select, textarea, label {
     opacity: 0;
     transform: translateY(30px);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0);
@@ -316,6 +373,7 @@ h1, h2, h3, h4, h5, h6, p, span, a, button, input, select, textarea, label {
     opacity: 0;
     transform: translateX(-35px);
   }
+
   100% {
     opacity: 1;
     transform: translateX(0);
@@ -327,6 +385,7 @@ h1, h2, h3, h4, h5, h6, p, span, a, button, input, select, textarea, label {
     opacity: 0;
     transform: translateX(35px);
   }
+
   100% {
     opacity: 1;
     transform: translateX(0);
@@ -338,6 +397,7 @@ h1, h2, h3, h4, h5, h6, p, span, a, button, input, select, textarea, label {
     opacity: 0;
     transform: translateY(-25px);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0);
@@ -365,6 +425,7 @@ h1, h2, h3, h4, h5, h6, p, span, a, button, input, select, textarea, label {
     opacity: 0;
     transform: translateX(50px);
   }
+
   100% {
     opacity: 1;
     transform: translateX(0);
@@ -597,14 +658,14 @@ body .ant-modal .ant-picker-focused {
 }
 
 /* Inner input inside Affix Wrapper (e.g. search inputs or suffix buttons) */
-body .admin-underline-mode .ant-input-affix-wrapper > input.ant-input,
-body .admin-underline-mode .ant-input-affix-wrapper-outlined > input.ant-input,
-body .ant-drawer .ant-input-affix-wrapper > input.ant-input,
-body .ant-drawer .ant-input-affix-wrapper-outlined > input.ant-input,
-body .ant-modal .ant-input-affix-wrapper > input.ant-input,
-body .ant-modal .ant-input-affix-wrapper-outlined > input.ant-input,
+body .admin-underline-mode .ant-input-affix-wrapper>input.ant-input,
+body .admin-underline-mode .ant-input-affix-wrapper-outlined>input.ant-input,
+body .ant-drawer .ant-input-affix-wrapper>input.ant-input,
+body .ant-drawer .ant-input-affix-wrapper-outlined>input.ant-input,
+body .ant-modal .ant-input-affix-wrapper>input.ant-input,
+body .ant-modal .ant-input-affix-wrapper-outlined>input.ant-input,
 body input.ant-select-selection-search-input,
-body .ant-select-selection-search > input,
+body .ant-select-selection-search>input,
 body .ant-select-selection-search input,
 body .ant-select-selection-search,
 body .ant-select input,
@@ -738,7 +799,7 @@ body .admin-underline-mode .ant-select input {
 }
 
 /* Ensure Table Headers Always Stay on 1 Single Line */
-.ant-table-thead > tr > th {
+.ant-table-thead>tr>th {
   white-space: nowrap !important;
 }
 
@@ -753,52 +814,151 @@ body .admin-underline-mode .ant-select input {
 
 /* Active Expanded & Hovered Row in Admin Orders Table */
 .admin-order-row-active,
-.admin-order-row-active > td,
-.admin-order-row-active.ant-table-row > td {
+.admin-order-row-active>td,
+.admin-order-row-active.ant-table-row>td {
   background-color: #fbf5f0 !important;
 }
 
-.admin-order-row-active:hover > td,
-.admin-order-row-active.ant-table-row:hover > td {
+.admin-order-row-active:hover>td,
+.admin-order-row-active.ant-table-row:hover>td {
   background-color: #f5ebe1 !important;
 }
 
 /* Subtle, clear hover for table rows ensuring text and badges remain crystal clear */
-.ant-table-wrapper .ant-table-tbody > tr.ant-table-row:hover > td {
+.ant-table-wrapper .ant-table-tbody>tr.ant-table-row:hover>td {
   background-color: #faf6f1 !important;
+}
+
+/* ==========================================================================
+   Comprehensive Ant Design Font Unification for Admin & Frontend
+   ========================================================================== */
+.ant-app,
+.ant-typography,
+.ant-btn,
+.ant-input,
+.ant-input-affix-wrapper,
+.ant-input-number,
+.ant-select,
+.ant-select-selector,
+.ant-select-item,
+.ant-select-dropdown,
+.ant-picker,
+.ant-picker-dropdown,
+.ant-modal,
+.ant-modal-content,
+.ant-modal-header,
+.ant-modal-title,
+.ant-modal-body,
+.ant-drawer,
+.ant-drawer-content,
+.ant-drawer-header,
+.ant-drawer-title,
+.ant-drawer-body,
+.ant-dropdown,
+.ant-dropdown-menu,
+.ant-dropdown-menu-item,
+.ant-popover,
+.ant-popover-inner,
+.ant-tooltip,
+.ant-tooltip-inner,
+.ant-message,
+.ant-notification,
+.ant-segmented,
+.ant-segmented-item,
+.ant-segmented-item-label,
+.ant-tag,
+.ant-badge,
+.ant-card,
+.ant-card-head-title,
+.ant-card-body,
+.ant-form,
+.ant-form-item-label,
+.ant-form-item-explain,
+.ant-pagination,
+.ant-pagination-item,
+.ant-pagination-options,
+.ant-tabs,
+.ant-tabs-nav,
+.ant-tabs-tab,
+.ant-tabs-tab-btn,
+.ant-statistic,
+.ant-statistic-title,
+.ant-statistic-content,
+.ant-table,
+.ant-table-thead > tr > th,
+.ant-table-tbody > tr > td,
+.ant-table-cell {
+  font-family: 'Be Vietnam Pro', var(--font-be-vietnam-pro), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
+}
+
+/* Ant Design Icon safeguard */
+.anticon,
+.anticon * {
+  font-family: inherit;
+}
+
+/* Material Symbols Icon safeguard - must never be overridden by font rules */
+.material-symbols-outlined,
+span.material-symbols-outlined,
+i.material-symbols-outlined,
+.ant-layout .material-symbols-outlined,
+.ant-segmented .material-symbols-outlined,
+.ant-btn .material-symbols-outlined,
+.ant-table .material-symbols-outlined,
+.ant-drawer .material-symbols-outlined,
+.ant-modal .material-symbols-outlined {
+  font-family: 'Material Symbols Outlined' !important;
+  font-weight: normal !important;
+  font-style: normal !important;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Monospace Numbers, Codes and Currency safeguard */
+.font-mono,
+span.font-mono,
+div.font-mono,
+td.font-mono,
+th.font-mono,
+.ant-layout .font-mono,
+.ant-table .font-mono,
+.ant-tag .font-mono,
+.ant-card .font-mono,
+.ant-statistic .font-mono,
+.ant-segmented .font-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace !important;
 }
 
 /* ================= ADMIN INTERFACE CLEAN LIGHT TYPOGRAPHY ================= */
 .admin-underline-mode {
-  font-weight: 400 !important;
+  font-family: 'Be Vietnam Pro', var(--font-be-vietnam-pro), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
 }
 
 .admin-underline-mode .ant-table-thead > tr > th,
 .admin-underline-mode .ant-table-thead th {
-  font-weight: 500 !important;
-  color: #475569 !important;
-  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: #334155 !important;
+  font-size: 12.5px !important;
 }
 
 .admin-underline-mode .ant-table-tbody > tr > td {
-  font-weight: 400 !important;
   color: #334155 !important;
 }
 
-.admin-underline-mode .ant-table-cell {
-  font-weight: 400 !important;
-}
-
 .admin-underline-mode .ant-segmented-item-label {
-  font-weight: 400 !important;
-}
-
-.admin-underline-mode .ant-segmented-item-selected .ant-segmented-item-label {
   font-weight: 500 !important;
 }
 
-.admin-underline-mode .ant-btn {
-  font-weight: 400 !important;
+.admin-underline-mode .ant-segmented-item-selected .ant-segmented-item-label {
+  font-weight: 600 !important;
 }
 
 /* ================= PRINT ISOLATION RULES ================= */

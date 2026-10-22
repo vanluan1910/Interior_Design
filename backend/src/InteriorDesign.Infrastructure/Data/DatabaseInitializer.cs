@@ -337,6 +337,20 @@ public static class DatabaseInitializer
                     CREATE UNIQUE NONCLUSTERED INDEX [IX_roles_Code] ON [dbo].[roles] ([Code]) WHERE [IsDeleted] = 0;
                 END
             ");
+
+            await ExecuteSafeSqlAsync(context, "Orders Recipient Columns", @"
+                IF EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'orders')
+                BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'orders' AND COLUMN_NAME = 'RecipientName')
+                    BEGIN
+                        ALTER TABLE [dbo].[orders] ADD [RecipientName] NVARCHAR(255) NULL;
+                    END
+                    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'orders' AND COLUMN_NAME = 'RecipientPhone')
+                    BEGIN
+                        ALTER TABLE [dbo].[orders] ADD [RecipientPhone] NVARCHAR(50) NULL;
+                    END
+                END
+            ");
         }
         else
         {

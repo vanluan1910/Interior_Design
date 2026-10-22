@@ -11,6 +11,8 @@ public sealed class Order
     public string CustomerName { get; set; } = string.Empty;
     public string CustomerPhone { get; set; } = string.Empty;
     public string CustomerEmail { get; set; } = string.Empty;
+    public string? RecipientName { get; set; }
+    public string? RecipientPhone { get; set; }
     public string ShippingAddress { get; set; } = string.Empty;
     public string City { get; set; } = string.Empty;
     public string District { get; set; } = string.Empty;
