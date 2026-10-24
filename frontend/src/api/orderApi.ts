@@ -159,28 +159,40 @@ export const orderApi = {
     if (params?.includeDeleted) query.append('includeDeleted', 'true');
 
     if (params?.bypassCache) {
-      const res = await fetch(`${API_BASE_URL}/api/orders?${query.toString()}`, {
-        headers: getAuthHeaders(),
-      });
-      if (!res.ok) {
-        throw new Error(`Failed to fetch orders (${res.status})`);
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/orders?${query.toString()}`, {
+          headers: getAuthHeaders(),
+        });
+        if (!res.ok) {
+          console.warn(`Backend returned status ${res.status} for orders`);
+          return [];
+        }
+        const json: OrderApiResponse<OrderRow[]> = await res.json();
+        return (json.data || []).map(normalizeOrderRow);
+      } catch (err) {
+        console.warn('Network error fetching orders:', err);
+        return [];
       }
-      const json: OrderApiResponse<OrderRow[]> = await res.json();
-      return (json.data || []).map(normalizeOrderRow);
     }
 
     const cacheKey = `orders:${query.toString()}`;
     return cachedFetch(cacheKey, async () => {
-      const res = await fetch(`${API_BASE_URL}/api/orders?${query.toString()}`, {
-        headers: getAuthHeaders(),
-      });
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/orders?${query.toString()}`, {
+          headers: getAuthHeaders(),
+        });
 
-      if (!res.ok) {
-        throw new Error(`Failed to fetch orders (${res.status})`);
+        if (!res.ok) {
+          console.warn(`Backend returned status ${res.status} for orders`);
+          return [];
+        }
+
+        const json: OrderApiResponse<OrderRow[]> = await res.json();
+        return (json.data || []).map(normalizeOrderRow);
+      } catch (err) {
+        console.warn('Network error fetching orders:', err);
+        return [];
       }
-
-      const json: OrderApiResponse<OrderRow[]> = await res.json();
-      return (json.data || []).map(normalizeOrderRow);
     }, 15000);
   },
 
@@ -188,16 +200,43 @@ export const orderApi = {
    * Lấy thống kê tổng quan đơn hàng
    */
   async getStats(): Promise<OrderStats> {
-    const res = await fetch(`${API_BASE_URL}/api/orders/stats`, {
-      headers: getAuthHeaders(),
-    });
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/orders/stats`, {
+        headers: getAuthHeaders(),
+      });
 
-    if (!res.ok) {
-      throw new Error(`Failed to fetch order stats (${res.status})`);
+      if (!res.ok) {
+        console.warn(`Backend returned status ${res.status} for order stats`);
+        return {
+          totalOrders: 0,
+          pendingOrders: 0,
+          processingOrders: 0,
+          completedOrders: 0,
+          totalRevenue: 0,
+          totalDeposit: 0,
+        };
+      }
+
+      const json: OrderApiResponse<OrderStats> = await res.json();
+      return json.data || {
+        totalOrders: 0,
+        pendingOrders: 0,
+        processingOrders: 0,
+        completedOrders: 0,
+        totalRevenue: 0,
+        totalDeposit: 0,
+      };
+    } catch (err) {
+      console.warn('Network error fetching order stats:', err);
+      return {
+        totalOrders: 0,
+        pendingOrders: 0,
+        processingOrders: 0,
+        completedOrders: 0,
+        totalRevenue: 0,
+        totalDeposit: 0,
+      };
     }
-
-    const json: OrderApiResponse<OrderStats> = await res.json();
-    return json.data;
   },
 
   /**

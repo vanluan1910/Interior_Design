@@ -270,7 +270,7 @@ public sealed class StockAuditsController : ApiControllerBase
             if (string.IsNullOrWhiteSpace(targetBranch))
             {
                 var defBr = allBranches.FirstOrDefault(b => b.Status == "active");
-                targetBranch = defBr?.Name ?? "Chi nhánh Hà Nội";
+                targetBranch = defBr?.Name ?? allBranches.FirstOrDefault()?.Name ?? "Mặc định";
             }
 
             var matchedBranch = BranchMatcher.FindMatchingBranch(allBranches, targetBranch, allWarehouses);

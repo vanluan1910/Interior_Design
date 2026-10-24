@@ -26,7 +26,6 @@ import {
   PlusOutlined,
   ReloadOutlined,
   DownloadOutlined,
-  ThunderboltOutlined,
   UploadOutlined,
   InboxOutlined,
   CloseCircleFilled,
@@ -55,6 +54,8 @@ import {
   AdminFormDrawer,
   AdminFilterSidebar,
   AdminSidebarSummary,
+  AutoCodeButton,
+  getNextCode,
 } from '@/components/admin';
 import type { FeaturedCatalogProduct, AdminCategory, AdminSpace } from '@/types/admin';
 import { exportToExcel } from '@/utils/exportExcel';
@@ -125,28 +126,16 @@ export function InventoryTab({
         if (spaces && Array.isArray(spaces) && spaces.length > 0) {
           setCurrentSpaces(spaces);
         }
-      }).catch(() => {});
+      }).catch(() => { });
     }
   }, [spacesList]);
 
   const spaceSelectOptions = useMemo(() => {
-    const defaultSpaces = [
-      { value: 'LivingRoom', label: 'Phòng khách' },
-      { value: 'DiningRoom', label: 'Phòng ăn & Bếp' },
-      { value: 'BedRoom', label: 'Phòng ngủ' },
-      { value: 'Office', label: 'Phòng làm việc' },
-      { value: 'Decor', label: 'Đồ trang trí & Phụ kiện' },
-    ];
-    if (!currentSpaces || currentSpaces.length === 0) return defaultSpaces;
-    const fromApi = currentSpaces.map((s) => ({
-      value: s.slug || s.name,
+    if (!currentSpaces || currentSpaces.length === 0) return [];
+    return currentSpaces.map((s) => ({
+      value: s.name,
       label: s.name,
     }));
-    const uniqueMap = new Map<string, string>();
-    [...fromApi, ...defaultSpaces].forEach((opt) => {
-      if (!uniqueMap.has(opt.value)) uniqueMap.set(opt.value, opt.label);
-    });
-    return Array.from(uniqueMap.entries()).map(([value, label]) => ({ value, label }));
   }, [currentSpaces]);
 
   // Dynamic Real Wood Materials from Database for Form AutoComplete
@@ -156,7 +145,7 @@ export function InventoryTab({
       if (Array.isArray(res) && res.length > 0) {
         setDbWoodMaterials(res.map((r) => r.name).filter(Boolean));
       }
-    }).catch(() => {});
+    }).catch(() => { });
   }, []);
 
   const woodMaterialOptions = useMemo(() => {
@@ -262,7 +251,7 @@ export function InventoryTab({
     try {
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: 'array' });
-      
+
       // Ưu tiên sheet San_Pham hoặc Sản phẩm hoặc sheet đầu tiên
       const productSheetName = workbook.SheetNames.find((s) =>
         ['san_pham', 'sản phẩm', 'san pham', 'products', 'sanpham'].includes(s.trim().toLowerCase())
@@ -282,6 +271,7 @@ export function InventoryTab({
       }
 
       const productsToImport: any[] = [];
+      const usedSkusInBatch = new Set<string>();
       rawRows.forEach((row: any, idx: number) => {
         const name = String(row['Tên sản phẩm'] || row['name'] || row['Tên'] || '').trim();
         if (!name) return;
@@ -289,7 +279,7 @@ export function InventoryTab({
         const sku = String(row['Mã SKU'] || row['Mã'] || row['sku'] || row['code'] || '').trim();
         const categoryStr = String(row['Danh mục'] || row['Category'] || row['Bộ sưu tập'] || '').trim();
         const spaceStr = String(row['Không gian'] || row['Không gian nội thất'] || row['space'] || '').trim();
-        
+
         // Xử lý giá bán
         let rawPrice = row['Giá bán'] || row['Giá'] || row['price'] || 0;
         let price = 0;
@@ -313,7 +303,7 @@ export function InventoryTab({
         const mainImage = String(row['Ảnh đại diện'] || row['image'] || row['Image'] || '').trim();
         const allImagesRaw = String(row['Tất cả liên kết ảnh'] || row['images'] || row['Ảnh phụ'] || '').trim();
         const imagesList = allImagesRaw
-          ? allImagesRaw.split(/[\n,;]/).map((s) => s.trim()).filter((s) => s.startsWith('http'))
+          ? allImagesRaw.split(/[\n,;]/).map((s) => s.trim()).filter((s) => s.startsWith('http') || s.startsWith('/'))
           : (mainImage ? [mainImage] : []);
 
         const rawDimensions = String(row['Kích thước'] || row['dimensions'] || row['Thông số / Kích thước'] || '').trim();
@@ -321,30 +311,64 @@ export function InventoryTab({
         const rawColor = String(row['Màu sắc / Màu sơn'] || row['Màu sắc'] || row['Màu sơn gỗ'] || row['color'] || '').trim();
         const rawWarranty = String(row['Bảo hành'] || row['warranty'] || '').trim();
         const rawShipping = String(row['Giao hàng / Lắp đặt'] || row['Vận chuyển & Lắp đặt'] || row['shippingNote'] || '').trim();
-        const description = String(row['Mô tả chi tiết'] || row['Mô tả'] || row['description'] || name).trim();
+        const description = String(row['Mô tả sản phẩm'] || row['Mô tả chi tiết'] || row['Mô tả'] || row['description'] || name).trim();
+
+        // Tự động nhận diện chính xác danh mục nếu tên sản phẩm hoặc mã SKU là đặc trưng:
+        let resolvedCategoryStr = categoryStr;
+        const lowerName = name.toLowerCase();
+        const upperSku = sku.toUpperCase();
+        if (lowerName.includes('táp') || upperSku.startsWith('TAP')) {
+          resolvedCategoryStr = 'Táp đầu giường';
+        }
 
         // Tách các danh mục bị gộp bởi dấu phẩy thành các sản phẩm riêng biệt nếu có
-        const categories = categoryStr
-          ? categoryStr.split(',').map((c) => c.trim()).filter(Boolean)
-          : ['Bàn ăn Gỗ Mây'];
+        const categories = resolvedCategoryStr
+          ? resolvedCategoryStr.split(',').map((c) => c.trim()).filter(Boolean)
+          : ['Sản phẩm nội thất'];
 
         categories.forEach((catItem, subIdx) => {
-          let matchedCatId = '';
-          const lowerCat = catItem.toLowerCase();
-          const matchedCat = currentCategories.find((c) =>
-            lowerCat === c.name.toLowerCase() ||
-            lowerCat.includes(c.name.toLowerCase()) ||
-            c.name.toLowerCase().includes(lowerCat)
-          );
-          if (matchedCat) {
-            matchedCatId = matchedCat.id;
-          } else if (currentCategories.length > 0) {
-            matchedCatId = currentCategories[0].id;
+          let matchedCatId = '00000000-0000-0000-0000-000000000000';
+          const lowerCat = catItem.toLowerCase().trim();
+          
+          // 1. Ưu tiên khớp chính xác tên danh mục trước
+          let matchedCat = currentCategories.find((c) => lowerCat === c.name.toLowerCase().trim());
+          if (!matchedCat) {
+            // 2. Nếu không khớp chính xác, thử khớp chứa (ưu tiên tên danh mục dài hơn trước)
+            const sortedByLength = [...currentCategories].sort((a, b) => (b.name?.length || 0) - (a.name?.length || 0));
+            matchedCat = sortedByLength.find((c) =>
+              lowerCat.includes(c.name.toLowerCase().trim()) ||
+              c.name.toLowerCase().trim().includes(lowerCat)
+            );
           }
 
-          const finalSku = sku
+          if (matchedCat && matchedCat.id) {
+            matchedCatId = matchedCat.id;
+          }
+
+          // Chuẩn hóa không gian: Ưu tiên không gian chuẩn của danh mục đã cấu hình
+          let finalSpace = matchedCat?.space || spaceStr;
+          if (!finalSpace || finalSpace === 'Phòng ăn' && (lowerCat.includes('bàn trà') || lowerCat.includes('bàn nước'))) {
+            if (lowerCat.includes('bàn trà') || lowerCat.includes('bàn nước') || lowerCat.includes('sofa') || lowerCat.includes('kệ tivi') || lowerCat.includes('tủ giày')) {
+              finalSpace = 'Phòng Khách';
+            } else if (lowerCat.includes('bàn ăn') || lowerCat.includes('ghế ăn') || lowerCat.includes('chạn ly')) {
+              finalSpace = 'Phòng Ăn';
+            } else if (lowerCat.includes('giường') || lowerCat.includes('táp') || lowerCat.includes('tủ áo') || lowerCat.includes('quần áo') || lowerCat.includes('trang điểm')) {
+              finalSpace = 'Phòng Ngủ';
+            } else if (lowerCat.includes('làm việc') || lowerCat.includes('giá sách')) {
+              finalSpace = 'Phòng Làm Việc';
+            } else {
+              finalSpace = 'Phòng Khách';
+            }
+          }
+
+          let finalSku = sku
             ? (subIdx === 0 ? sku : `${sku}-D${subIdx + 1}`)
             : `SP${(idx + 1).toString().padStart(4, '0')}${subIdx > 0 ? `-D${subIdx + 1}` : ''}`;
+
+          if (usedSkusInBatch.has(finalSku.toLowerCase())) {
+            finalSku = `${finalSku}-${(idx + 1).toString().padStart(2, '0')}`;
+          }
+          usedSkusInBatch.add(finalSku.toLowerCase());
 
           productsToImport.push({
             name,
@@ -352,7 +376,7 @@ export function InventoryTab({
             code: finalSku,
             categoryId: matchedCatId,
             collection: catItem,
-            space: spaceStr || (matchedCat?.space || 'Phòng Khách'),
+            space: finalSpace,
             price: price,
             originalPrice: originalPrice > 0 ? originalPrice : price,
             mainImageUrl: mainImage,
@@ -377,6 +401,10 @@ export function InventoryTab({
       const result = await productApi.bulkImportProducts(productsToImport);
       hideLoading();
       message.success(result.message || `Đã nhập thành công ${result.count} sản phẩm!`);
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('categories_changed'));
+      }
 
       setCurrentPage(1);
       await fetchProducts(1, pageSize, searchQuery, inventoryCategoryFilter, inventoryStockTag);
@@ -427,15 +455,10 @@ export function InventoryTab({
   const selectedProductRecord = catalogList.find((p) => selectedProductKeys.includes(p.id));
 
   const handleGenerateProductCode = () => {
-    const existingCodes = new Set(catalogList.map((p) => (p.code || '').toUpperCase()));
-    let nextNum = catalogList.length + 1;
-    let genCode = `SP${nextNum.toString().padStart(4, '0')}`;
-    while (existingCodes.has(genCode)) {
-      nextNum++;
-      genCode = `SP${nextNum.toString().padStart(4, '0')}`;
-    }
+    const currentCode = form.getFieldValue('code');
+    const genCode = getNextCode(currentCode, productsList || catalogList, 'SP', 4);
     form.setFieldsValue({ code: genCode });
-    message.success(`Đã tự động tạo mã sản phẩm: ${genCode}`);
+    message.success(`Đã tự động tạo mã sản phẩm mới: ${genCode}`);
   };
 
   const handleOpenCreateModal = () => {
@@ -450,8 +473,8 @@ export function InventoryTab({
       form.setFieldsValue(draftCreateForm);
     } else {
       // Mở mới hoàn toàn: để trống toàn bộ, không tự điền dữ liệu giả định
-      const existingCodes = new Set(catalogList.map((p) => (p.code || '').toUpperCase()));
-      let nextNum = catalogList.length + 1;
+      const existingCodes = new Set((productsList || catalogList).map((p) => (p.code || '').toUpperCase()));
+      let nextNum = (totalProducts || productsList.length || catalogList.length) + 1;
       let autoCode = `SP${nextNum.toString().padStart(4, '0')}`;
       while (existingCodes.has(autoCode)) {
         nextNum++;
@@ -462,10 +485,9 @@ export function InventoryTab({
         code: autoCode,
         name: undefined,
         categoryId: undefined,
-        space: 'LivingRoom',
+        space: 'Phòng khách',
         collection: undefined,
-        stockType: 'in_stock',
-        stockNote: undefined,
+        stockNote: 0,
         unit: 'Bộ',
         originalPrice: undefined,
         discountPercent: 0,
@@ -489,7 +511,8 @@ export function InventoryTab({
       return;
     }
     setEditingProduct(product);
-    const rawNum = product.stockNote ? Number(product.stockNote.replace(/\D/g, '')) : 1;
+    const rawNum = product.stockNote ? Number(product.stockNote.replace(/[^-0-9]/g, '')) : 0;
+    const currentStock = product.inStock !== undefined ? product.inStock : (isNaN(rawNum) ? 0 : rawNum);
     const subImagesStr = Array.isArray(product.images) && product.images.length > 0
       ? product.images.join('\n')
       : (product.subImages || '');
@@ -497,20 +520,19 @@ export function InventoryTab({
     const initialDiscount = product.discountPercent !== undefined && product.discountPercent !== null
       ? product.discountPercent
       : (product.originalPrice && product.price && product.originalPrice > product.price
-          ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)
-          : 0);
+        ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)
+        : 0);
 
     form.setFieldsValue({
       name: product.name,
       code: product.code,
       categoryId: product.categoryId,
-      space: product.space || 'LivingRoom',
+      space: product.space || 'Phòng khách',
       collection: product.collection,
       originalPrice: product.originalPrice !== undefined ? product.originalPrice : (product.costPrice !== undefined ? product.costPrice : product.price),
       discountPercent: initialDiscount,
       price: product.price,
-      stockType: product.stockType,
-      stockNote: isNaN(rawNum) ? 1 : rawNum,
+      stockNote: currentStock,
       unit: product.unit || 'Bộ',
       image: product.image || '',
       subImages: subImagesStr,
@@ -661,44 +683,29 @@ export function InventoryTab({
       rawDiscount = Math.round(((rawOriginalPrice - rawPrice) / rawOriginalPrice) * 100);
     }
 
-    const inputStockNum = typeof values.stockNote === 'number'
-      ? values.stockNote
-      : parseInt(String(values.stockNote || '0').replace(/\D/g, '') || '0', 10);
-
     if (editingProduct) {
-      let updatedBranchStocksJson = editingProduct.branchStocksJson || '{}';
-      const effectiveBranch = branchFilter !== 'all' ? branchFilter : (selectedGlobalBranch !== 'all' ? selectedGlobalBranch : undefined);
-      if (effectiveBranch) {
-        try {
-          const bDict = JSON.parse(updatedBranchStocksJson);
-          if (Object.keys(bDict).length === 0 && branchesList && branchesList.length > 0) {
-            branchesList.forEach((b) => {
-              if (b.name) bDict[b.name] = editingProduct.inStock || 0;
-            });
-          }
-          bDict[effectiveBranch] = inputStockNum;
-          updatedBranchStocksJson = JSON.stringify(bDict);
-        } catch {
-          updatedBranchStocksJson = JSON.stringify({ [effectiveBranch]: inputStockNum });
-        }
-      }
+      // Tồn kho không sửa trực tiếp ở màn hình này mà được quản lý qua Nhập hàng, Trả hàng, Kiểm kho & Đơn hàng
+      const preservedStock = editingProduct.inStock !== undefined ? editingProduct.inStock : 0;
+      const preservedStockNote = editingProduct.stockNote || `${preservedStock}`;
+      const preservedBranchStocksJson = editingProduct.branchStocksJson || '{}';
+      const preservedStockType = editingProduct.stockType || (preservedStock <= 0 ? 'out_of_stock' : preservedStock <= 5 ? 'low' : 'in_stock');
 
       const payload: Partial<FeaturedCatalogProduct> = {
         name: values.name,
         code: values.code || editingProduct.code,
         categoryId: values.categoryId,
         categoryName: selectedCategory?.name || values.collection,
-        space: values.space || editingProduct.space || 'LivingRoom',
+        space: values.space || selectedCategory?.space || editingProduct.space || 'Phòng khách',
         collection: values.collection || '',
         originalPrice: rawOriginalPrice,
         discountPercent: rawDiscount,
         price: rawPrice,
-        stockType: values.stockType || 'in_stock',
-        stockNote: `${inputStockNum}`,
-        inStock: inputStockNum,
+        stockType: preservedStockType,
+        stockNote: preservedStockNote,
+        inStock: preservedStock,
         branch: selectedGlobalBranch !== 'all' ? selectedGlobalBranch : undefined,
-        branchStocksJson: updatedBranchStocksJson,
-        unit: values.unit || 'Bộ',
+        branchStocksJson: preservedBranchStocksJson,
+        unit: values.unit || editingProduct.unit || 'Bộ',
         image: values.image !== undefined ? values.image : (editingProduct.image || ''),
         images: subImagesList,
         subImages: values.subImages || '',
@@ -718,24 +725,20 @@ export function InventoryTab({
         message.error(err?.message || 'Cập nhật sản phẩm thất bại.');
       }
     } else {
-      let initialBranchStocksJson = '{}';
-      if (selectedGlobalBranch && selectedGlobalBranch !== 'all') {
-        initialBranchStocksJson = JSON.stringify({ [selectedGlobalBranch]: inputStockNum });
-      }
-
+      // Sản phẩm mới khởi tạo tồn kho là 0 (tồn kho sẽ được tăng khi tạo phiếu Nhập hàng hoặc Kiểm kho)
       const newProductPayload: Partial<FeaturedCatalogProduct> = {
         code: values.code || `SP${(totalProducts + 1).toString().padStart(4, '0')}`,
         name: values.name,
-        space: values.space || 'LivingRoom',
+        space: values.space || selectedCategory?.space || 'Phòng khách',
         collection: values.collection || '',
         categoryName: selectedCategory?.name || 'Nội Thất Gỗ',
         categoryId: values.categoryId || categoriesList[0]?.id,
         originalPrice: rawOriginalPrice,
         discountPercent: rawDiscount,
         price: rawPrice,
-        stockType: values.stockType || 'in_stock',
-        stockNote: `${inputStockNum}`,
-        inStock: inputStockNum,
+        stockType: 'out_of_stock',
+        stockNote: '0',
+        inStock: 0,
         unit: values.unit || 'Bộ',
         image: values.image || '',
         images: subImagesList,
@@ -747,7 +750,7 @@ export function InventoryTab({
         warranty: values.warranty || '',
         shippingNote: values.shippingNote || '',
         branch: values.branch || (selectedGlobalBranch !== 'all' ? selectedGlobalBranch : undefined),
-        branchStocksJson: initialBranchStocksJson,
+        branchStocksJson: '{}',
       };
       try {
         const created = await productApi.createProduct(newProductPayload);
@@ -785,12 +788,11 @@ export function InventoryTab({
     try {
       const allProds = await productApi.getProducts();
       const exportData = (allProds.length > 0 ? allProds : productsList).map((p) => {
-        const cat = categoriesList.find((c) => c.id === p.categoryId)?.name || p.categoryName;
+        const cat = categoriesList.find((c) => c.id === p.categoryId)?.name || p.categoryName || 'Chưa phân loại';
         return {
           'Mã sản phẩm': p.code,
           'Tên sản phẩm': p.name,
           'Danh mục': cat,
-          'Bộ sưu tập': p.collection,
           'Tồn kho': p.stockNote,
           'Giá niêm yết (VNĐ)': p.price,
         };
@@ -810,7 +812,7 @@ export function InventoryTab({
       setProductRowTabs((prev) => ({ ...prev, [prod.id]: t }));
     };
 
-    const catName = categoriesList.find((c) => c.id === prod.categoryId)?.name || prod.categoryName || prod.collection || 'Chưa có';
+    const catName = categoriesList.find((c) => c.id === prod.categoryId)?.name || prod.categoryName || 'Chưa có';
     const origPrice = prod.originalPrice !== undefined && prod.originalPrice !== null ? prod.originalPrice : (prod.costPrice || prod.price || 0);
     const salePrice = prod.price || 0;
 
@@ -836,11 +838,10 @@ export function InventoryTab({
                 e.stopPropagation();
                 setTab(tab.key as any);
               }}
-              className={`border-b-2 px-1 pb-2.5 text-xs font-normal whitespace-nowrap transition-colors cursor-pointer ${
-                currentTab === tab.key
+              className={`border-b-2 px-1 pb-2.5 text-xs font-normal whitespace-nowrap transition-colors cursor-pointer ${currentTab === tab.key
                   ? 'border-[#784e34] text-[#784e34]'
                   : 'border-transparent text-slate-600 hover:text-slate-900'
-              }`}
+                }`}
             >
               {tab.label}
             </button>
@@ -888,11 +889,7 @@ export function InventoryTab({
                     ) : (
                       <Tag className="border-0 bg-amber-50 text-amber-700 text-xs font-normal m-0">Sắp hết hàng</Tag>
                     )}
-                    {prod.collection && (
-                      <span className="px-2 py-0.5 bg-slate-100 text-slate-700 text-xs rounded font-normal">
-                        {prod.collection}
-                      </span>
-                    )}
+
                   </div>
                 </div>
               </div>
@@ -909,21 +906,17 @@ export function InventoryTab({
                   <div className="text-slate-900 text-sm">{catName}</div>
                 </div>
                 <div>
-                  <div className="text-slate-500 mb-1">Bộ sưu tập</div>
-                  <div className="text-slate-900 text-sm">{prod.collection || 'Chưa có'}</div>
-                </div>
-                <div>
                   <div className="text-slate-500 mb-1">Tình trạng tồn kho</div>
                   <div className="text-slate-900 text-sm">
                     {stockCount < 0 ? `Âm kho (${stockCount})` : stockCount === 0 || prod.stockType === 'out_of_stock' ? 'Hết hàng (0)' : prod.stockType === 'in_stock' ? 'Còn hàng sẵn' : prod.stockType === 'custom' ? 'May đo theo đơn' : 'Sắp hết hàng'}
                   </div>
                 </div>
-
-                {/* Row 2 */}
                 <div>
                   <div className="text-slate-500 mb-1">Số lượng tồn kho</div>
                   <div className="text-slate-900 text-sm font-semibold">{stockCount}</div>
                 </div>
+
+                {/* Row 2 */}
                 <div>
                   <div className="text-slate-500 mb-1">Giá gốc / Giá vốn</div>
                   <div className="text-slate-900 text-sm">{(origPrice || 0).toLocaleString('vi-VN')} đ</div>
@@ -936,12 +929,12 @@ export function InventoryTab({
                   <div className="text-slate-500 mb-1">Kích thước (D x R x C)</div>
                   <div className="text-slate-900 text-sm">{prod.dimensions || 'Chưa có'}</div>
                 </div>
-
-                {/* Row 3 */}
                 <div>
                   <div className="text-slate-500 mb-1">Chất liệu gỗ / đệm</div>
                   <div className="text-slate-900 text-sm">{prod.material || 'Chưa có'}</div>
                 </div>
+
+                {/* Row 3 */}
                 <div>
                   <div className="text-slate-500 mb-1">Màu sơn / Hoàn thiện</div>
                   <div className="text-slate-900 text-sm">{prod.color || 'Chưa có'}</div>
@@ -983,16 +976,20 @@ export function InventoryTab({
                     if (prod.branchStocksJson && prod.branchStocksJson !== '{}') {
                       try {
                         bStocks = JSON.parse(prod.branchStocksJson);
-                      } catch {}
+                      } catch { }
                     }
 
-                    const displayBranches = (branchesList && branchesList.length > 0)
-                      ? branchesList
-                      : [
-                          { id: 'b_hn', name: 'Chi nhánh Hà Nội' },
-                          { id: 'b_nd', name: 'Chi nhánh Nam Định' },
-                          { id: 'b_pq', name: 'Chi Nhánh Phú Quốc' },
-                        ];
+                    const displayBranches = branchesList || [];
+
+                    if (displayBranches.length === 0) {
+                      return (
+                        <tr>
+                          <td colSpan={4} className="px-3 py-6 text-center text-slate-400 italic">
+                            Chưa có dữ liệu chi nhánh
+                          </td>
+                        </tr>
+                      );
+                    }
 
                     return displayBranches.map((b) => {
                       const matchedKey = Object.keys(bStocks).find((k) => isMatchBranch(k, b.name));
@@ -1218,7 +1215,7 @@ export function InventoryTab({
               setSearchQuery(val);
               setCurrentPage(1);
             }}
-            searchPlaceholder="Tìm theo mã sản phẩm, tên, bộ sưu tập..."
+            searchPlaceholder="Tìm theo mã sản phẩm, tên, danh mục..."
             extraHeaderActions={
               <>
                 <Button
@@ -1260,7 +1257,7 @@ export function InventoryTab({
                 dataIndex: 'name',
                 key: 'name',
                 render: (text, prod) => {
-                  const catName = categoriesList.find((c) => c.id === prod.categoryId)?.name || prod.categoryName || prod.collection;
+                  const catName = categoriesList.find((c) => c.id === prod.categoryId)?.name || prod.categoryName || 'Chưa phân loại';
                   return (
                     <div className="flex items-center gap-3 min-w-0">
                       {prod.image ? (
@@ -1475,14 +1472,10 @@ export function InventoryTab({
                   placeholder="Tự động hoặc nhập tay"
                   className="h-10 text-sm font-mono uppercase font-semibold rounded-lg"
                   suffix={
-                    <button
-                      type="button"
-                      onClick={handleGenerateProductCode}
-                      className="text-[#784e34] hover:text-[#5d371f] border-none bg-transparent cursor-pointer p-0.5 inline-flex items-center"
-                      title="Tự động tạo mã"
-                    >
-                      <ThunderboltOutlined className="text-sm" />
-                    </button>
+                    <AutoCodeButton
+                      onGenerate={handleGenerateProductCode}
+                      tooltipTitle="Tự động tạo mã sản phẩm mới"
+                    />
                   }
                 />
               </Form.Item>
@@ -1500,6 +1493,12 @@ export function InventoryTab({
                     value: c.id,
                     label: `${c.code} - ${(c.name || '').replace(/\s*\([^)]*\)/g, '').trim()}`,
                   }))}
+                  onChange={(selectedCatId) => {
+                    const matchedCat = categoriesList.find((c) => c.id === selectedCatId);
+                    if (matchedCat && matchedCat.space) {
+                      form.setFieldsValue({ space: matchedCat.space });
+                    }
+                  }}
                 />
               </Form.Item>
             </Col>
@@ -1507,7 +1506,7 @@ export function InventoryTab({
               <Form.Item
                 label={<span className="text-xs font-semibold text-slate-700">Không gian nội thất</span>}
                 name="space"
-                initialValue="LivingRoom"
+                initialValue="Phòng khách"
               >
                 <Select
                   placeholder="Chọn không gian"
@@ -1518,38 +1517,20 @@ export function InventoryTab({
             </Col>
           </Row>
 
-          <Row gutter={16}>
-            <Col span={16}>
-              <Form.Item
-                label={<span className="text-xs font-semibold text-slate-700">Tên sản phẩm <span className="text-red-500">*</span></span>}
-                name="name"
-                rules={[{ required: true, message: 'Vui lòng nhập tên sản phẩm' }]}
-              >
-                <Input placeholder="VD: Sofa Gỗ Óc Chó Kyoto, Bàn Ăn Komorebi..." className="h-10 text-sm rounded-lg" />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item
-                label={<span className="text-xs font-semibold text-slate-700">Bộ sưu tập</span>}
-                name="collection"
-              >
-                <Input placeholder="VD: Kyoto Collection 2026" className="h-10 text-sm rounded-lg" />
-              </Form.Item>
-            </Col>
-          </Row>
+          <Form.Item
+            label={<span className="text-xs font-semibold text-slate-700">Tên sản phẩm <span className="text-red-500">*</span></span>}
+            name="name"
+            rules={[{ required: true, message: 'Vui lòng nhập tên sản phẩm' }]}
+          >
+            <Input placeholder="VD: Sofa Gỗ Óc Chó Kyoto, Bàn Ăn Komorebi..." className="h-10 text-sm rounded-lg" />
+          </Form.Item>
 
           {/* PRICING: GIÁ GỐC, GIẢM GIÁ (%), GIÁ BÁN THỰC TẾ */}
           <Row gutter={16}>
             <Col span={8}>
               <Form.Item
-                label={
-                  <div className="flex items-center gap-1">
-                    <span className="text-xs font-semibold text-slate-700">Giá gốc</span>
-                    <span className="text-[11px] text-slate-400 font-normal">(Giá ban đầu)</span>
-                  </div>
-                }
+                label={<span className="text-xs font-semibold text-slate-700">Giá gốc</span>}
                 name="originalPrice"
-                tooltip="Giá gốc ban đầu của sản phẩm trước khi giảm giá"
               >
                 <InputNumber
                   className="!w-full h-10 text-sm rounded-lg font-mono font-medium"
@@ -1563,14 +1544,8 @@ export function InventoryTab({
             </Col>
             <Col span={8}>
               <Form.Item
-                label={
-                  <div className="flex items-center gap-1">
-                    <span className="text-xs font-semibold text-slate-700">Giảm giá (%)</span>
-                    <span className="text-[11px] text-amber-600 font-semibold">(Khuyến mãi)</span>
-                  </div>
-                }
+                label={<span className="text-xs font-semibold text-slate-700">Giảm giá (%)</span>}
                 name="discountPercent"
-                tooltip="Phần trăm giảm giá (0% - 100%). Giá bán sẽ được tự động tính theo công thức"
               >
                 <InputNumber
                   className="!w-full h-10 text-sm rounded-lg font-mono font-bold text-amber-700"
@@ -1583,15 +1558,9 @@ export function InventoryTab({
             </Col>
             <Col span={8}>
               <Form.Item
-                label={
-                  <div className="flex items-center gap-1">
-                    <span className="text-xs font-semibold text-slate-700">Giá bán thực tế <span className="text-red-500">*</span></span>
-                    <span className="text-[11px] text-slate-400 font-normal">(Sau giảm)</span>
-                  </div>
-                }
+                label={<span className="text-xs font-semibold text-slate-700">Giá bán thực tế <span className="text-red-500">*</span></span>}
                 name="price"
                 rules={[{ required: true, message: 'Vui lòng nhập giá bán thực tế' }]}
-                tooltip="Giá bán tiêu chuẩn hiển thị cho khách hàng và lập đơn bán hàng"
               >
                 <InputNumber
                   className="!w-full h-10 text-sm rounded-lg font-mono font-bold text-[#784e34]"
@@ -1608,29 +1577,14 @@ export function InventoryTab({
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item
-                label={<span className="text-xs font-semibold text-slate-700">Tình trạng tồn kho</span>}
-                name="stockType"
-              >
-                <Select
-                  className="h-10 text-sm"
-                  options={[
-                    { value: 'in_stock', label: 'Còn hàng sẵn' },
-                    { value: 'custom', label: 'May đo theo đơn' },
-                    { value: 'low', label: 'Sắp hết hàng' },
-                  ]}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
                 label={<span className="text-xs font-semibold text-slate-700">Số lượng tồn kho</span>}
                 name="stockNote"
               >
                 <InputNumber
-                  min={0}
-                  className="!w-full h-10 text-sm rounded-lg"
+                  disabled
+                  className="!w-full h-10 text-sm rounded-lg !bg-slate-50 font-bold font-mono !text-slate-700 cursor-not-allowed"
                   controls={false}
-                  placeholder="VD: 10"
+                  placeholder="0"
                 />
               </Form.Item>
             </Col>
@@ -1641,7 +1595,6 @@ export function InventoryTab({
             <div className="flex items-center justify-between">
               <div>
                 <span className="text-xs font-semibold text-slate-700 block">Ảnh đại diện chính sản phẩm</span>
-                <span className="text-[11px] text-slate-400">Ảnh chất lượng cao hiển thị ở trang chủ, danh mục và chi tiết</span>
               </div>
               {currentMainImage && (
                 <Upload
@@ -1722,8 +1675,7 @@ export function InventoryTab({
           <div className="space-y-2 p-3.5 rounded-xl bg-slate-50 border border-slate-200/80">
             <div className="flex items-center justify-between">
               <div>
-                <span className="text-xs font-semibold text-slate-700 block">Ảnh phụ / Bộ sưu tập góc chụp</span>
-                <span className="text-[11px] text-slate-400">Tải nhiều góc cận cảnh, đường mộng, bề mặt gỗ (Mỗi link 1 dòng)</span>
+                <span className="text-xs font-semibold text-slate-700 block">Ảnh phụ / Các góc chụp khác</span>
               </div>
               <Upload
                 multiple
@@ -1800,7 +1752,7 @@ export function InventoryTab({
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item
-                label={<span className="text-xs font-semibold text-slate-700">Kích thước (Dài x Rộng x Cao)</span>}
+                label={<span className="text-xs font-semibold text-slate-700">Kích thước</span>}
                 name="dimensions"
               >
                 <Input placeholder="VD: L1800 x W800 x H750 mm" className="h-10 text-sm rounded-lg" />
@@ -1810,7 +1762,6 @@ export function InventoryTab({
               <Form.Item
                 label={<span className="text-xs font-semibold text-slate-700">Chất liệu gỗ / đệm</span>}
                 name="material"
-                tooltip="Chọn từ danh sách gỗ chuẩn của thương hiệu hoặc nhập chất liệu tùy chỉnh"
               >
                 <AutoComplete
                   options={woodMaterialOptions}

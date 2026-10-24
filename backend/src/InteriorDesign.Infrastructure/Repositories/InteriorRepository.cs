@@ -12,7 +12,7 @@ public sealed class InteriorRepository(InteriorDbContext db) : IInteriorReposito
     // Products
     public async Task<PagedResult<Product>> GetProductsAsync(int page, int pageSize, string? search, string? space, Guid? categoryId, string? category, ProductStatus? status, string? branch, string? material = null, CancellationToken cancellationToken = default)
     {
-        var baseQuery = db.Products.Include(p => p.Category).AsNoTracking().AsQueryable();
+        var baseQuery = db.Products.AsNoTracking().AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -76,7 +76,10 @@ public sealed class InteriorRepository(InteriorDbContext db) : IInteriorReposito
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(space) && !space.Equals("all", StringComparison.OrdinalIgnoreCase))
+        var hasSpecificCategoryFilter = (categoryId.HasValue && categoryId != Guid.Empty) ||
+                                        (!string.IsNullOrWhiteSpace(category) && !category.Equals("all", StringComparison.OrdinalIgnoreCase));
+
+        if (!hasSpecificCategoryFilter && !string.IsNullOrWhiteSpace(space) && !space.Equals("all", StringComparison.OrdinalIgnoreCase))
         {
             var sp = space.Trim().ToLower();
             if (sp == "living" || sp == "livingroom" || sp == "living-room" || sp.Contains("khách") || sp.Contains("khach") || sp == "kg01")
@@ -87,17 +90,17 @@ public sealed class InteriorRepository(InteriorDbContext db) : IInteriorReposito
             {
                 baseQuery = baseQuery.Where(p => p.Space.Contains("ngủ") || p.Space.Contains("Bed") || p.Space == "KG03");
             }
-            else if (sp == "dining" || sp == "diningroom" || sp == "dining-room" || sp.Contains("ăn") || sp.Contains("an") || sp.Contains("bếp") || sp == "kg02")
-            {
-                baseQuery = baseQuery.Where(p => p.Space.Contains("ăn") || p.Space.Contains("bếp") || p.Space.Contains("Dining") || p.Space == "KG02");
-            }
             else if (sp == "office" || sp == "work" || sp.Contains("việc") || sp.Contains("viec") || sp.Contains("sách") || sp == "kg04")
             {
                 baseQuery = baseQuery.Where(p => p.Space.Contains("việc") || p.Space.Contains("sách") || p.Space.Contains("Office") || p.Space == "KG04");
             }
-            else if (sp == "other" || sp.Contains("khác") || sp.Contains("khac") || sp == "kg05" || sp == "kg06")
+            else if (sp == "other" || sp.Contains("khác") || sp.Contains("khac") || sp.Contains("san-pham-khac") || sp == "kg05" || sp == "kg06")
             {
                 baseQuery = baseQuery.Where(p => p.Space.Contains("khác") || p.Space.Contains("Other") || p.Space == "KG05" || p.Space == "KG06");
+            }
+            else if (sp == "dining" || sp == "diningroom" || sp == "dining-room" || sp.Contains("ăn") || sp.Contains("phong an") || sp.Contains("phòng ăn") || sp.Contains("bếp") || sp == "an" || sp == "kg02")
+            {
+                baseQuery = baseQuery.Where(p => p.Space.Contains("ăn") || p.Space.Contains("bếp") || p.Space.Contains("Dining") || p.Space == "KG02");
             }
             else
             {
@@ -118,7 +121,20 @@ public sealed class InteriorRepository(InteriorDbContext db) : IInteriorReposito
             }
             else
             {
-                baseQuery = baseQuery.Where(p => p.Category != null && (p.Category.Slug == cat || p.Category.Name.Contains(cat) || p.Category.Code == cat || p.Name.Contains(cat)));
+                var matchingCategoryIds = await db.Categories
+                    .AsNoTracking()
+                    .Where(c => c.Slug == cat || c.Code == cat || c.Name.Contains(cat))
+                    .Select(c => c.Id)
+                    .ToListAsync(cancellationToken);
+
+                if (matchingCategoryIds.Count > 0)
+                {
+                    baseQuery = baseQuery.Where(p => matchingCategoryIds.Contains(p.CategoryId) || p.Name.Contains(cat));
+                }
+                else
+                {
+                    baseQuery = baseQuery.Where(p => p.Name.Contains(cat));
+                }
             }
         }
 
@@ -127,24 +143,7 @@ public sealed class InteriorRepository(InteriorDbContext db) : IInteriorReposito
             baseQuery = baseQuery.Where(p => p.Status == status.Value);
         }
 
-        if (!string.IsNullOrWhiteSpace(branch) && !string.Equals(branch, "all", StringComparison.OrdinalIgnoreCase))
-        {
-            var dbBranches = await db.Branches.AsNoTracking().Where(b => !b.IsDeleted).ToListAsync(cancellationToken);
-            var dbWarehouses = await db.Warehouses.AsNoTracking().Where(w => !w.IsDeleted).ToListAsync(cancellationToken);
-            var matchedBranch = BranchMatcher.FindMatchingBranch(dbBranches, branch, dbWarehouses);
-
-            var targetName = matchedBranch != null ? matchedBranch.Name : branch.Trim();
-            var targetRaw = targetName;
-            var targetJsonEscaped = System.Text.Json.JsonSerializer.Serialize(targetName).Trim('"');
-
-            baseQuery = baseQuery.Where(p =>
-                string.IsNullOrEmpty(p.BranchStocksJson) ||
-                p.BranchStocksJson == "{}" ||
-                p.BranchStocksJson.Contains(targetRaw) ||
-                p.BranchStocksJson.Contains(targetJsonEscaped) ||
-                p.BranchStocksJson.Contains(branch));
-        }
-
+        // Note: Branch stock quantity mapping is performed in memory by the controller to avoid expensive LOB table scans on BranchStocksJson.
         cancellationToken.ThrowIfCancellationRequested();
 
         var total = await baseQuery.CountAsync(cancellationToken);
@@ -155,13 +154,12 @@ public sealed class InteriorRepository(InteriorDbContext db) : IInteriorReposito
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var items = await baseQuery
-            .OrderByDescending(p => p.CreatedAt)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync(cancellationToken);
+        var query = baseQuery.OrderByDescending(p => p.CreatedAt);
+        var items = pageSize <= 0
+            ? await query.Include(p => p.Category).ToListAsync(cancellationToken)
+            : await query.Include(p => p.Category).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(cancellationToken);
 
-        return new PagedResult<Product>(items, page, pageSize, total);
+        return new PagedResult<Product>(items, page, pageSize <= 0 ? total : pageSize, total);
     }
 
     public async Task<IReadOnlyList<Branch>> GetBranchesAsync(CancellationToken cancellationToken)
@@ -319,12 +317,14 @@ public sealed class InteriorRepository(InteriorDbContext db) : IInteriorReposito
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var items = await query.OrderByDescending(o => o.CreatedAt)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync(cancellationToken);
+        var items = pageSize <= 0
+            ? await query.OrderByDescending(o => o.CreatedAt).ToListAsync(cancellationToken)
+            : await query.OrderByDescending(o => o.CreatedAt)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync(cancellationToken);
 
-        return new PagedResult<Order>(items, page, pageSize, total);
+        return new PagedResult<Order>(items, page, pageSize <= 0 ? total : pageSize, total);
     }
 
     public async Task<Order?> GetOrderByIdAsync(Guid id, CancellationToken cancellationToken)
@@ -377,12 +377,14 @@ public sealed class InteriorRepository(InteriorDbContext db) : IInteriorReposito
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var items = await query.OrderByDescending(c => c.CreatedAt)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync(cancellationToken);
+        var items = pageSize <= 0
+            ? await query.OrderByDescending(c => c.CreatedAt).ToListAsync(cancellationToken)
+            : await query.OrderByDescending(c => c.CreatedAt)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync(cancellationToken);
 
-        return new PagedResult<ConsultationBooking>(items, page, pageSize, total);
+        return new PagedResult<ConsultationBooking>(items, page, pageSize <= 0 ? total : pageSize, total);
     }
 
     public async Task<ConsultationBooking?> GetConsultationByIdAsync(Guid id, CancellationToken cancellationToken)

@@ -16,7 +16,8 @@ public sealed record CreateBranchRequest(
     string EstablishedDate,
     string Status,
     bool IsHeadquarter,
-    string? Description
+    bool IsDefault = false,
+    string? Description = null
 );
 
 public sealed record UpdateBranchRequest(
@@ -35,9 +36,15 @@ public sealed record UpdateBranchRequest(
     string EstablishedDate,
     string Status,
     bool IsHeadquarter,
-    string? Description
+    bool IsDefault = false,
+    string? Description = null
 );
 
 public sealed record UpdateBranchStatusRequest(
     string Status
 );
+
+public sealed class SetDefaultBranchRequest
+{
+    public bool IsDefault { get; set; } = true;
+}

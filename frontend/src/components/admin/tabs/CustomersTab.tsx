@@ -38,12 +38,16 @@ import {
   AdminFilterSidebar,
   AdminSidebarSummary,
   AdminSearchInput,
+  AutoCodeButton,
+  getNextCode,
 } from '@/components/admin';
 import type { AdminCustomer, OrderRow, AdminBranch } from '@/types/admin';
 import { customerApi } from '@/api/customerApi';
 import { orderApi, normalizeOrderStatus } from '@/api/orderApi';
 import { branchApi } from '@/api/branchApi';
 import { isMatchBranch } from '@/utils/branchHelper';
+import { ADMIN_STORAGE_KEYS, setStoredAdminData } from '@/utils/adminStorage';
+import { invalidateApiCache } from '@/api/shared/apiCache';
 import { getCleanProductName, getOrderQuantity } from './OrdersTab';
 
 
@@ -115,6 +119,21 @@ export function CustomersTab({
       setBranchFilter(selectedGlobalBranch);
     }
   }, [selectedGlobalBranch]);
+
+  // Load customers if not provided or empty
+  React.useEffect(() => {
+    if (!customersList || customersList.length === 0) {
+      customerApi
+        .getCustomers({ bypassCache: true })
+        .then((data) => {
+          if (Array.isArray(data) && data.length > 0) {
+            setCustomersList(data);
+            try { setStoredAdminData(ADMIN_STORAGE_KEYS.CUSTOMERS, data); } catch {}
+          }
+        })
+        .catch((e) => console.warn('Could not load customers in CustomersTab:', e));
+    }
+  }, [customersList.length, setCustomersList]);
 
 
   // Table Selection & Accordion Expansion States
@@ -219,8 +238,10 @@ export function CustomersTab({
     // 2. Map existing customers from customersList with accurate computed debt & spent
     const list: AdminCustomer[] = customersList.map((c) => {
       const { debt, totalSpent, ordersCount } = calculateOrderDebtAndSpent(c);
+      const cleanCustomerName = c.name || (c as any).fullName || (c as any).FullName || '';
       return {
         ...c,
+        name: cleanCustomerName,
         debt,
         totalSpent,
         totalOrders: ordersCount > 0 ? ordersCount : (c.totalOrders || c.ordersCount || 0),
@@ -230,7 +251,7 @@ export function CustomersTab({
 
     // 3. Find any customers in ordersList who are not yet in customersList
     const existingPhones = new Set(customersList.map((c) => (c.phone || '').replace(/\s+/g, '')));
-    const existingNames = new Set(customersList.map((c) => (c.name || '').trim().toLowerCase()));
+    const existingNames = new Set(customersList.map((c) => (c.name || (c as any).fullName || (c as any).FullName || '').trim().toLowerCase()));
 
     ordersList.forEach((ord) => {
       const cleanPhone = (ord.customerPhone || '').replace(/\s+/g, '');
@@ -301,25 +322,35 @@ export function CustomersTab({
       let matchBranch = true;
       if (branchFilter && branchFilter !== 'all') {
         const custBranch = c.branch || c.branchName;
-        if (custBranch && custBranch !== 'Toàn hệ thống' && custBranch.toLowerCase() !== 'all') {
-          // Khách hàng đã gán chi nhánh cụ thể: bắt buộc phải khớp chi nhánh đang chọn
-          matchBranch = isMatchBranch(custBranch, branchFilter);
+        // Khách hàng toàn hệ thống, trực tuyến, hoặc không thuộc cơ sở cụ thể thì luôn hiển thị cho tất cả chi nhánh
+        if (
+          !custBranch ||
+          custBranch === 'Toàn hệ thống' ||
+          custBranch.toLowerCase() === 'all' ||
+          custBranch.toLowerCase() === 'online' ||
+          custBranch.toLowerCase() === 'website' ||
+          !effectiveBranches.some((b) => isMatchBranch(b.name, custBranch))
+        ) {
+          matchBranch = true;
         } else {
-          // Khách hàng toàn hệ thống hoặc chưa gán chi nhánh: kiểm tra có đơn hàng tại chi nhánh này không
-          const hasOrderInBranch = ordersList.some((o) => {
-            const isSameCustomer =
-              (c.phone && o.customerPhone && o.customerPhone.replace(/\s+/g, '') === c.phone.replace(/\s+/g, '')) ||
-              (c.name && o.customerName && o.customerName.trim().toLowerCase() === c.name.trim().toLowerCase()) ||
-              ((o as any).customerId && (o as any).customerId === c.id);
-            return isSameCustomer && isMatchBranch(o.branch || o.showroom, branchFilter);
-          });
-          matchBranch = hasOrderInBranch || custBranch === 'Toàn hệ thống';
+          matchBranch = isMatchBranch(custBranch, branchFilter);
+          if (!matchBranch) {
+            // Kiểm tra khách hàng có đơn hàng tại chi nhánh này không
+            const hasOrderInBranch = ordersList.some((o) => {
+              const isSameCustomer =
+                (c.phone && o.customerPhone && o.customerPhone.replace(/\s+/g, '') === c.phone.replace(/\s+/g, '')) ||
+                (c.name && o.customerName && o.customerName.trim().toLowerCase() === c.name.trim().toLowerCase()) ||
+                ((o as any).customerId && (o as any).customerId === c.id);
+              return isSameCustomer && isMatchBranch(o.branch || o.showroom, branchFilter);
+            });
+            matchBranch = hasOrderInBranch;
+          }
         }
       }
 
       return matchSearch && matchStatus && matchDebt && matchBranch;
     });
-  }, [allMergedCustomers, ordersList, customerSearchQuery, debtFilter, statusFilter, branchFilter]);
+  }, [allMergedCustomers, ordersList, customerSearchQuery, debtFilter, statusFilter, branchFilter, effectiveBranches]);
 
   // Open Create Customer Drawer
   const handleOpenCreate = () => {
@@ -327,9 +358,17 @@ export function CustomersTab({
       onOpenCreateCustomer();
       return;
     }
-    setEditingCustomer(null);
-    setCustomerTypeChoice('individual');
-    const autoCode = `KH-${(customersList.length + 1).toString().padStart(3, '0')}`;
+    const existingCodes = new Set(
+      customersList
+        .map((c) => (c.code || '').trim().toUpperCase())
+        .filter(Boolean)
+    );
+    let nextNum = 1;
+    let autoCode = `KH-${nextNum.toString().padStart(3, '0')}`;
+    while (existingCodes.has(autoCode)) {
+      nextNum++;
+      autoCode = `KH-${nextNum.toString().padStart(3, '0')}`;
+    }
     setDrawerOpen(true);
 
     setTimeout(() => {
@@ -342,6 +381,13 @@ export function CustomersTab({
         branch: branchFilter !== 'all' ? branchFilter : (selectedGlobalBranch !== 'all' ? selectedGlobalBranch : undefined),
       });
     }, 0);
+  };
+
+  const handleGenerateCustomerCode = () => {
+    const currentCode = form.getFieldValue('code');
+    const autoCode = getNextCode(currentCode, customersList, 'KH-', 3);
+    form.setFieldsValue({ code: autoCode });
+    message.success(`Đã tự động tạo mã khách hàng mới: ${autoCode}`);
   };
 
   // Open Edit Customer Drawer
@@ -386,9 +432,12 @@ export function CustomersTab({
 
   const refreshCustomers = async () => {
     try {
-      const data = await customerApi.getCustomers();
+      invalidateApiCache('customers');
+      const data = await customerApi.getCustomers({ bypassCache: true });
       if (Array.isArray(data)) {
         setCustomersList(data);
+        try { setStoredAdminData(ADMIN_STORAGE_KEYS.CUSTOMERS, data); } catch {}
+        message.success('Đã làm mới danh sách khách hàng từ máy chủ!');
       }
     } catch (err: any) {
       console.warn('Could not refresh customers:', err);
@@ -795,6 +844,32 @@ export function CustomersTab({
           }}
         >
 
+          {/* Cơ sở / Chi nhánh */}
+          {effectiveBranches.length > 0 && (
+            <div className="space-y-1.5 pt-2">
+              <label className="font-semibold text-slate-600 text-xs uppercase tracking-wider block">Cơ sở / Chi nhánh</label>
+              <Select
+                value={branchFilter || 'all'}
+                onChange={(v) => setBranchFilter(v)}
+                className="w-full text-sm font-semibold"
+                options={[
+                  { value: 'all', label: `Toàn bộ chi nhánh (${allMergedCustomers.length})` },
+                  ...effectiveBranches.map((b) => {
+                    const count = allMergedCustomers.filter((c) => {
+                      const custBranch = c.branch || c.branchName;
+                      if (!custBranch || custBranch === 'Toàn hệ thống' || custBranch.toLowerCase() === 'all') return true;
+                      return isMatchBranch(custBranch, b.name);
+                    }).length;
+                    return {
+                      value: b.name,
+                      label: `${b.name} (${count})`,
+                    };
+                  }),
+                ]}
+              />
+            </div>
+          )}
+
           {/* Tình trạng công nợ */}
           <div className="space-y-1.5 pt-2 border-t border-slate-100">
             <label className="font-semibold text-slate-600 text-xs uppercase tracking-wider block">Tình trạng công nợ</label>
@@ -907,22 +982,26 @@ export function CustomersTab({
                 title: 'Khách hàng',
                 key: 'name',
                 width: 230,
-                render: (_, r: AdminCustomer) => (
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-full bg-[#fbf2ee] border border-[#d8c3af] flex items-center justify-center font-bold text-xs text-[#5d371f] shrink-0">
-                      {r.name ? r.name.charAt(0).toUpperCase() : 'K'}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="font-semibold text-slate-900 text-sm truncate">
-                        {r.name}
+                render: (_, r: AdminCustomer) => {
+                  const displayName = r.name || (r as any).fullName || (r as any).FullName || 'Khách hàng';
+                  const displayInitial = displayName ? displayName.charAt(0).toUpperCase() : 'K';
+                  return (
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-full bg-[#fbf2ee] border border-[#d8c3af] flex items-center justify-center font-bold text-xs text-[#5d371f] shrink-0">
+                        {displayInitial}
                       </div>
-                      <div className="text-xs text-slate-500 font-mono flex items-center gap-1.5 flex-wrap mt-0.5">
-                        <span>{r.phone}</span>
-                        {r.customerType === 'organization' && <span>• Doanh nghiệp</span>}
+                      <div className="min-w-0">
+                        <div className="font-semibold text-slate-900 text-sm truncate" title={displayName}>
+                          {displayName}
+                        </div>
+                        <div className="text-xs text-slate-500 font-mono flex items-center gap-1.5 flex-wrap mt-0.5">
+                          <span>{r.phone}</span>
+                          {r.customerType === 'organization' && <span>• Doanh nghiệp</span>}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ),
+                  );
+                },
               },
 
               {
@@ -1100,7 +1179,16 @@ export function CustomersTab({
                 label={<span className="text-xs font-semibold text-slate-700">Mã khách hàng</span>}
                 rules={[{ required: true, message: 'Vui lòng nhập mã KH' }]}
               >
-                <Input placeholder="Tự động (VD: KH-007)" className="h-9 text-xs font-mono" />
+                <Input
+                  placeholder="Tự động (VD: KH-007)"
+                  className="h-9 text-xs font-mono"
+                  suffix={
+                    <AutoCodeButton
+                      onGenerate={handleGenerateCustomerCode}
+                      tooltipTitle="Tự động tạo mã khách hàng mới"
+                    />
+                  }
+                />
               </Form.Item>
 
               <Form.Item

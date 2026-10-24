@@ -325,18 +325,19 @@ function CheckoutContent() {
         const list = await branchApi.getBranches();
         if (list && Array.isArray(list) && list.length > 0) {
           setBranches(list);
+          const defaultB = list.find((b) => b.isDefault) || list.find((b) => b.isHeadquarter) || list[0];
           const savedBranch = localStorage.getItem('d2_selected_branch') || localStorage.getItem('d2_customer_branch') || '';
-          if (savedBranch && list.some((b) => b.name === savedBranch)) {
+          if (savedBranch && savedBranch !== 'all' && list.some((b) => b.name === savedBranch)) {
             setSelectedBranch(savedBranch);
           } else {
-            setSelectedBranch(list[0].name);
+            setSelectedBranch(defaultB?.name || list[0].name);
           }
           return;
         }
       } catch (err) {
         console.warn('Could not load branches for checkout:', err);
       }
-      const fallback = localStorage.getItem('d2_selected_branch') || localStorage.getItem('d2_customer_branch') || 'Chi nhánh Hà Nội';
+      const fallback = localStorage.getItem('d2_selected_branch') || localStorage.getItem('d2_customer_branch') || 'Showroom Flagship Thảo Điền';
       setSelectedBranch(fallback);
     };
     loadBranches();
@@ -635,10 +636,13 @@ function CheckoutContent() {
         }
       }
 
+      const defaultB = branches.find((b) => b.isDefault) || branches.find((b) => b.isHeadquarter) || branches[0];
+      const targetBranchName = selectedBranch && selectedBranch !== 'all' ? selectedBranch : (defaultB?.name || 'Showroom Flagship Thảo Điền');
+
       const created = await orderApi.createOrder({
         orderType: 'retail',
-        branch: undefined,
-        showroom: undefined,
+        branch: targetBranchName,
+        showroom: targetBranchName,
         customerId: user?.id && isGuidRegex.test(user.id) ? user.id : undefined,
         customerName: buyerName,
         customerPhone: buyerPhone,

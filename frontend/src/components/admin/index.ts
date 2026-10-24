@@ -37,4 +37,7 @@ export type { PosEntryItemsCardProps } from './PosEntryItemsCard';
 export { PosEntrySidebar } from './PosEntrySidebar';
 export type { PosEntrySidebarProps } from './PosEntrySidebar';
 
+export { AutoCodeButton, getNextCode } from './AutoCodeButton';
+export type { AutoCodeButtonProps } from './AutoCodeButton';
+
 

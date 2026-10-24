@@ -13,7 +13,7 @@ namespace InteriorDesign.Application.Features.Products;
 // Queries
 public sealed record GetProductsQuery(
     int Page = 1,
-    int PageSize = 20,
+    int PageSize = 0,
     string? Search = null,
     string? Space = null,
     Guid? CategoryId = null,

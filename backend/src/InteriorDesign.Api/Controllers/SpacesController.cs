@@ -22,6 +22,12 @@ public sealed class SpacesController : ApiControllerBase
         _cache = cache;
     }
 
+    private void InvalidateSpacesCache()
+    {
+        _cache.Remove("spaces_all");
+        _cache.Remove("home_data");
+    }
+
     /// <summary>
     /// Lấy danh sách không gian nội thất (hỗ trợ tìm kiếm, lọc trạng thái)
     /// </summary>
@@ -96,7 +102,7 @@ public sealed class SpacesController : ApiControllerBase
         [FromQuery] string? material = null,
         [FromQuery] string? sortBy = null,
         [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 20,
+        [FromQuery] int pageSize = 0,
         CancellationToken cancellationToken = default)
     {
         return await GetSpaceDetailInternal("living", search, categoryId, material, sortBy, page, pageSize, cancellationToken);
@@ -114,7 +120,7 @@ public sealed class SpacesController : ApiControllerBase
         [FromQuery] string? material = null,
         [FromQuery] string? sortBy = null,
         [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 20,
+        [FromQuery] int pageSize = 0,
         CancellationToken cancellationToken = default)
     {
         return await GetSpaceDetailInternal(slug, search, categoryId, material, sortBy, page, pageSize, cancellationToken);
@@ -131,7 +137,7 @@ public sealed class SpacesController : ApiControllerBase
         CancellationToken cancellationToken)
     {
         if (page < 1) page = 1;
-        if (pageSize < 1 || pageSize > 100) pageSize = 20;
+        if (pageSize < 0) pageSize = 0;
 
         var sid = (spaceIdentifier ?? "").Trim().ToLowerInvariant();
 
@@ -260,12 +266,14 @@ public sealed class SpacesController : ApiControllerBase
         };
 
         var totalItems = await filterQuery.CountAsync(cancellationToken);
-        var totalPages = (int)Math.Ceiling((double)totalItems / pageSize);
+        var totalPages = pageSize <= 0 ? 1 : (int)Math.Ceiling((double)totalItems / pageSize);
 
-        var pagedItems = await filterQuery
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync(cancellationToken);
+        var pagedItems = pageSize <= 0
+            ? await filterQuery.ToListAsync(cancellationToken)
+            : await filterQuery
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync(cancellationToken);
 
         var productsDto = pagedItems.Select(p => {
             decimal pr = p.Price;
@@ -332,7 +340,7 @@ public sealed class SpacesController : ApiControllerBase
             Products: productsDto,
             TotalItems: totalItems,
             Page: page,
-            PageSize: pageSize,
+            PageSize: pageSize <= 0 ? totalItems : pageSize,
             TotalPages: totalPages
         );
 
@@ -428,6 +436,7 @@ public sealed class SpacesController : ApiControllerBase
 
         _context.Spaces.Add(space);
         await _context.SaveChangesAsync(cancellationToken);
+        InvalidateSpacesCache();
 
         return Ok(ApiResponse<InteriorSpace>.Ok(space, "Tạo không gian nội thất thành công."));
     }
@@ -558,6 +567,7 @@ public sealed class SpacesController : ApiControllerBase
         }
 
         await _context.SaveChangesAsync(cancellationToken);
+        InvalidateSpacesCache();
 
         return Ok(ApiResponse<int>.Ok(
             insertedCount + updatedCount,
@@ -601,6 +611,7 @@ public sealed class SpacesController : ApiControllerBase
         space.ShowOnHeader = request.ShowOnHeader;
 
         await _context.SaveChangesAsync(cancellationToken);
+        InvalidateSpacesCache();
 
         return Ok(ApiResponse<InteriorSpace>.Ok(space, "Cập nhật không gian nội thất thành công."));
     }
@@ -617,6 +628,7 @@ public sealed class SpacesController : ApiControllerBase
 
         space.Status = string.IsNullOrWhiteSpace(request.Status) ? "active" : request.Status.ToLowerInvariant();
         await _context.SaveChangesAsync(cancellationToken);
+        InvalidateSpacesCache();
 
         return Ok(ApiResponse<InteriorSpace>.Ok(space, $"Đã chuyển trạng thái không gian thành '{space.Status}'."));
     }
@@ -669,6 +681,7 @@ public sealed class SpacesController : ApiControllerBase
         space.IsDeleted = true;
         space.DeletedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync(cancellationToken);
+        InvalidateSpacesCache();
 
         return Ok(ApiResponse<bool>.Ok(true, $"Đã xóa không gian nội thất '{space.Name}'."));
     }
@@ -689,6 +702,7 @@ public sealed class SpacesController : ApiControllerBase
         space.IsDeleted = false;
         space.DeletedAt = null;
         await _context.SaveChangesAsync(cancellationToken);
+        InvalidateSpacesCache();
 
         return Ok(ApiResponse<InteriorSpace>.Ok(space, $"Đã khôi phục không gian nội thất '{space.Name}'."));
     }

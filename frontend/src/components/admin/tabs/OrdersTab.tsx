@@ -278,7 +278,7 @@ export function OrdersTab({
         }
 
         if (catalogList.length === 0) {
-          productApi.getProducts({ pageSize: 500 }).then((res) => {
+          productApi.getProducts({ pageSize: 0 }).then((res) => {
             if (Array.isArray(res) && res.length > 0) setDbProducts(res);
           }).catch(() => {});
         }
@@ -325,10 +325,22 @@ export function OrdersTab({
   // Branch-scoped orders
   const branchScopedOrders = useMemo(() => {
     if (!branchFilter || branchFilter === 'all') return ordersList;
-    return ordersList.filter((item) =>
-      isMatchBranch(item.showroom || item.branch || item.customerAddress, branchFilter)
-    );
-  }, [ordersList, branchFilter]);
+    return ordersList.filter((item) => {
+      if (isMatchBranch(item.showroom || item.branch || item.customerAddress, branchFilter)) {
+        return true;
+      }
+      if (
+        item.orderType === 'retail' &&
+        (!item.showroom ||
+          item.showroom === 'Website' ||
+          item.showroom === 'Toàn hệ thống' ||
+          !effectiveBranches.some((b) => isMatchBranch(b.name, item.showroom)))
+      ) {
+        return true;
+      }
+      return false;
+    });
+  }, [ordersList, branchFilter, effectiveBranches]);
 
   // Filtered orders calculation
   const filteredOrders = useMemo(() => {
@@ -660,7 +672,7 @@ export function OrdersTab({
 
     const defaultBranch = selectedGlobalBranch !== 'all'
       ? selectedGlobalBranch
-      : (effectiveBranches[0]?.name || 'Chi Nhánh Phú Quốc');
+      : (effectiveBranches[0]?.name || '');
 
     const generatedCode = `DH${dayjs().format('YYMMDD')}-${Math.floor(100 + Math.random() * 900)}`;
 
@@ -788,7 +800,7 @@ export function OrdersTab({
 
       const isPaid = (values.depositAmount || 0) >= values.value && values.value > 0;
       const paymentStatus = isPaid ? 'paid' : ((values.depositAmount || 0) > 0 ? 'partial' : 'pending');
-      const targetBranch = values.showroom || (selectedGlobalBranch !== 'all' ? selectedGlobalBranch : (effectiveBranches[0]?.name || 'Chi Nhánh Phú Quốc'));
+      const targetBranch = values.showroom || (selectedGlobalBranch !== 'all' ? selectedGlobalBranch : (effectiveBranches[0]?.name || ''));
 
       const orderItemPayload = {
         productId: values.productId || undefined,
@@ -999,6 +1011,32 @@ export function OrdersTab({
                 }}
               >
 
+                {/* Filter 0: Cơ sở / Chi nhánh */}
+                {effectiveBranches.length > 0 && (
+                  <div>
+                    <div className="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">
+                      Cơ sở / Chi nhánh
+                    </div>
+                    <Select
+                      value={branchFilter || 'all'}
+                      onChange={(val) => setBranchFilter(val)}
+                      className="w-full text-xs font-semibold"
+                      options={[
+                        { value: 'all', label: `Toàn bộ chi nhánh (${ordersList.length})` },
+                        ...effectiveBranches.map((b) => {
+                          const count = ordersList.filter((o) =>
+                            isMatchBranch(o.showroom || o.branch || o.customerAddress, b.name)
+                          ).length;
+                          return {
+                            value: b.name,
+                            label: `${b.name} (${count})`,
+                          };
+                        }),
+                      ]}
+                    />
+                  </div>
+                )}
+
                 {/* Filter 1: Thời gian tạo đơn */}
                 <div>
                   <div className="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">
@@ -1089,7 +1127,7 @@ export function OrdersTab({
               </AdminFilterSidebar>
 
               {/* Right Table Container: Shared AdminDataTable Component */}
-              <div className="flex-1 min-w-0 w-full max-w-full overflow-hidden">
+              <div className="flex-1 min-w-0 w-full max-w-full">
                 <AdminDataTable<OrderRow>
                   titleText="Danh Sách Đơn Hàng Bán Lẻ &amp; Hợp Đồng Dự Án"
                   titleIcon={<span className="w-2.5 h-2.5 rounded-full bg-[#784e34] inline-block" />}

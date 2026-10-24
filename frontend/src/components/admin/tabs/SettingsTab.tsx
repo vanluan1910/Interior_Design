@@ -71,7 +71,7 @@ import {
 } from '@ant-design/icons';
 import { VietQrCard, getBankBin } from '@/components/common/VietQrCard';
 import { useAuth } from '@/context/AuthContext';
-import { AdminSearchInput, AdminFormDrawer } from '@/components/admin';
+import { AdminSearchInput, AdminFormDrawer, AutoCodeButton, getNextCode } from '@/components/admin';
 import { branchApi } from '@/api/branchApi';
 import { roleApi } from '@/api/roleApi';
 import { employeeApi } from '@/api/employeeApi';
@@ -374,7 +374,7 @@ export function SettingsTab({
   const loadEmployeesFromApi = useCallback(async () => {
     try {
       const res = await employeeApi.getEmployees();
-      if (Array.isArray(res) && res.length > 0) {
+      if (Array.isArray(res)) {
         setCurrentEmployees(res);
         setEmployeesList?.(res);
         setStoredAdminData(ADMIN_STORAGE_KEYS.EMPLOYEES, res);
@@ -400,11 +400,11 @@ export function SettingsTab({
 
   // Sync from props
   useEffect(() => {
-    if (branchesList && branchesList.length > 0) setCurrentBranches(branchesList);
+    if (branchesList) setCurrentBranches(branchesList);
   }, [branchesList]);
 
   useEffect(() => {
-    if (employeesList && employeesList.length > 0) setCurrentEmployees(employeesList);
+    if (employeesList) setCurrentEmployees(employeesList);
   }, [employeesList]);
 
   // Persistence hooks for local master data
@@ -440,8 +440,13 @@ export function SettingsTab({
 
   const handleOpenCreateBranch = () => {
     setEditingBranch(null);
-    const nextNum = currentBranches.length + 1;
-    const nextCode = `CN${String(nextNum).padStart(6, '0')}`;
+    const existingCodes = new Set(currentBranches.map((b) => (b.code || '').trim().toUpperCase()));
+    let nextNum = 1;
+    let nextCode = `CN${String(nextNum).padStart(6, '0')}`;
+    while (existingCodes.has(nextCode)) {
+      nextNum++;
+      nextCode = `CN${String(nextNum).padStart(6, '0')}`;
+    }
     setBranchDrawerOpen(true);
 
     setTimeout(() => {
@@ -449,8 +454,16 @@ export function SettingsTab({
       branchForm.setFieldsValue({
         code: nextCode,
         status: true,
+        isDefault: currentBranches.length === 0,
       });
     }, 0);
+  };
+
+  const handleGenerateBranchCode = () => {
+    const currentCode = branchForm.getFieldValue('code');
+    const nextCode = getNextCode(currentCode, currentBranches, 'CN', 6);
+    branchForm.setFieldsValue({ code: nextCode });
+    message.success(`Đã tự động tạo mã chi nhánh mới: ${nextCode}`);
   };
 
   const handleOpenEditBranch = (record: AdminBranch) => {
@@ -465,8 +478,30 @@ export function SettingsTab({
         description: record.description,
         address: record.address,
         status: record.status !== 'inactive',
+        isDefault: Boolean(record.isDefault || record.isHeadquarter),
       });
     }, 0);
+  };
+
+  const handleToggleDefaultBranch = async (record: AdminBranch, checked: boolean) => {
+    if (!checked) {
+      message.info('Hệ thống yêu cầu ít nhất một chi nhánh mặc định.');
+      return;
+    }
+    try {
+      await branchApi.setDefaultBranch(record.id, true);
+      const updatedList = currentBranches.map((b) => ({
+        ...b,
+        isDefault: b.id === record.id,
+        isHeadquarter: b.id === record.id ? true : b.isHeadquarter,
+      }));
+      setCurrentBranches(updatedList);
+      setStoredAdminData(ADMIN_STORAGE_KEYS.BRANCHES, updatedList);
+      if (setBranchesList) setBranchesList(updatedList);
+      message.success(`Đã đặt "${record.name}" làm chi nhánh mặc định thành công!`);
+    } catch (err: any) {
+      message.error(err?.message || 'Không thể cập nhật chi nhánh mặc định.');
+    }
   };
 
   const handleCloseBranchDrawer = () => {
@@ -478,6 +513,7 @@ export function SettingsTab({
   const handleSaveBranchSubmit = async () => {
     try {
       const values = await branchForm.validateFields();
+      const isDefaultVal = Boolean(values.isDefault);
       if (editingBranch) {
         let updatedList: AdminBranch[] = [];
         try {
@@ -488,21 +524,31 @@ export function SettingsTab({
             description: values.description?.trim() || '',
             address: values.address?.trim() || '',
             status: values.status ? 'active' : 'inactive',
+            isDefault: isDefaultVal,
+            isHeadquarter: isDefaultVal ? true : editingBranch.isHeadquarter,
           });
-          updatedList = currentBranches.map((b) => (b.id === editingBranch.id ? updated : b));
+          updatedList = currentBranches.map((b) => {
+            if (b.id === editingBranch.id) return updated;
+            if (isDefaultVal) return { ...b, isDefault: false };
+            return b;
+          });
         } catch {
-          updatedList = currentBranches.map((b) =>
-            b.id === editingBranch.id
-              ? {
-                  ...b,
-                  code: values.code?.trim().toUpperCase(),
-                  name: values.name?.trim(),
-                  description: values.description?.trim() || '',
-                  address: values.address?.trim() || '',
-                  status: values.status ? 'active' : 'inactive',
-                }
-              : b
-          );
+          updatedList = currentBranches.map((b) => {
+            if (b.id === editingBranch.id) {
+              return {
+                ...b,
+                code: values.code?.trim().toUpperCase(),
+                name: values.name?.trim(),
+                description: values.description?.trim() || '',
+                address: values.address?.trim() || '',
+                status: values.status ? 'active' : 'inactive',
+                isDefault: isDefaultVal,
+                isHeadquarter: isDefaultVal ? true : b.isHeadquarter,
+              };
+            }
+            if (isDefaultVal) return { ...b, isDefault: false };
+            return b;
+          });
         }
         setCurrentBranches(updatedList);
         if (setBranchesList) setBranchesList(updatedList);
@@ -524,18 +570,24 @@ export function SettingsTab({
           activeOrdersCount: 0,
           establishedDate: new Date().toLocaleDateString('vi-VN'),
           status: values.status ? 'active' : 'inactive',
+          isDefault: isDefaultVal,
+          isHeadquarter: isDefaultVal,
           description: values.description?.trim() || '',
         };
         let updatedList: AdminBranch[] = [];
         try {
           const created = await branchApi.createBranch(payload);
-          updatedList = [...currentBranches, created];
+          updatedList = isDefaultVal
+            ? [...currentBranches.map(b => ({ ...b, isDefault: false })), created]
+            : [...currentBranches, created];
         } catch {
           const localBranch: AdminBranch = {
             ...payload,
             id: `br_${Date.now()}`,
           } as AdminBranch;
-          updatedList = [...currentBranches, localBranch];
+          updatedList = isDefaultVal
+            ? [...currentBranches.map(b => ({ ...b, isDefault: false })), localBranch]
+            : [...currentBranches, localBranch];
         }
         setCurrentBranches(updatedList);
         if (setBranchesList) setBranchesList(updatedList);
@@ -1205,7 +1257,7 @@ export function SettingsTab({
       <div className="flex flex-col lg:flex-row gap-4 items-start w-full flex-1">
         
         {/* ================= LEFT SIDEBAR MENU (UNIFIED WITH ADMINFILTERBAR WIDTH) ================= */}
-        <aside className="hidden lg:block w-72 bg-white rounded-none shadow-xs border border-slate-200/80 p-3 space-y-3 shrink-0 text-xs">
+        <aside className="hidden lg:block w-72 bg-white rounded-none shadow-xs border border-slate-200/80 p-3 space-y-3 shrink-0 text-xs lg:sticky lg:top-[96px] lg:self-start lg:max-h-[calc(100vh-112px)] lg:overflow-y-auto [scrollbar-width:thin]">
           
           {/* GROUP 1: DOANH NGHIỆP & THANH TOÁN */}
           <div className="space-y-1">
@@ -1677,16 +1729,6 @@ export function SettingsTab({
                           </Form.Item>
                         </Col>
                       </Row>
-                      <div className="pt-4 border-t border-slate-200 flex items-center justify-end">
-                        <Button
-                          type="primary"
-                          htmlType="submit"
-                          icon={<SaveOutlined />}
-                          className="bg-[#5d371f] hover:bg-[#784e34] text-white font-bold text-sm px-6 h-10 rounded-none shadow-sm cursor-pointer"
-                        >
-                          Lưu cấu hình thanh toán &amp; VietQR
-                        </Button>
-                      </div>
                     </div>
                   </Col>
 
@@ -1836,8 +1878,48 @@ export function SettingsTab({
                         ),
                         dataIndex: 'name',
                         key: 'name',
-                        width: 220,
-                        render: (value) => <span className="font-semibold text-slate-900">{value || '—'}</span>,
+                        width: 250,
+                        render: (value, record) => {
+                          const isDef = Boolean(record.isDefault || record.isHeadquarter);
+                          return (
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-semibold text-slate-900">{value || '—'}</span>
+                              {isDef && (
+                                <Tag color="gold" className="text-3xs font-bold border-amber-300 m-0 px-1 py-0 inline-flex items-center gap-1">
+                                  <span>⭐</span> MẶC ĐỊNH
+                                </Tag>
+                              )}
+                            </div>
+                          );
+                        },
+                      },
+                      {
+                        title: (
+                          <div className="flex items-center justify-center gap-1">
+                            <span>Mặc định</span>
+                          </div>
+                        ),
+                        dataIndex: 'isDefault',
+                        key: 'isDefault',
+                        width: 110,
+                        align: 'center',
+                        render: (_value, record) => {
+                          const isDef = Boolean(record.isDefault || record.isHeadquarter);
+                          return (
+                            <div
+                              onClick={(e) => e.stopPropagation()}
+                              className="flex items-center justify-center gap-1.5"
+                            >
+                              <Switch
+                                size="small"
+                                checked={isDef}
+                                checkedChildren="BẬT"
+                                unCheckedChildren="TẮT"
+                                onChange={(checked) => handleToggleDefaultBranch(record, checked)}
+                              />
+                            </div>
+                          );
+                        },
                       },
                       {
                         title: (
@@ -1929,6 +2011,12 @@ export function SettingsTab({
                         <Input
                           className="h-10 rounded-lg text-sm font-mono font-semibold uppercase border !border-slate-300 bg-white hover:!border-[#784e34] focus:!border-[#784e34]"
                           placeholder="CN000001"
+                          suffix={
+                            <AutoCodeButton
+                              onGenerate={handleGenerateBranchCode}
+                              tooltipTitle="Tự động tạo mã chi nhánh mới"
+                            />
+                          }
                         />
                       </Form.Item>
 
@@ -1975,14 +2063,26 @@ export function SettingsTab({
                       />
                     </Form.Item>
 
-                    <Form.Item
-                      name="status"
-                      label={<span className="text-xs font-semibold text-slate-700">Trạng thái hoạt động</span>}
-                      valuePropName="checked"
-                      className="mb-0"
-                    >
-                      <Switch checkedChildren="MỞ" unCheckedChildren="KHÓA" defaultChecked />
-                    </Form.Item>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 pt-1">
+                      <Form.Item
+                        name="isDefault"
+                        label={<span className="text-xs font-semibold text-slate-700">Chi nhánh mặc định</span>}
+                        valuePropName="checked"
+                        className="mb-0"
+                        extra={<span className="text-3xs text-slate-400 block mt-1">Tự động gán cho đơn hàng online & ưu tiên xuất kho trừ tồn</span>}
+                      >
+                        <Switch checkedChildren="MẶC ĐỊNH" unCheckedChildren="PHỤ" />
+                      </Form.Item>
+
+                      <Form.Item
+                        name="status"
+                        label={<span className="text-xs font-semibold text-slate-700">Trạng thái hoạt động</span>}
+                        valuePropName="checked"
+                        className="mb-0"
+                      >
+                        <Switch checkedChildren="MỞ" unCheckedChildren="KHÓA" defaultChecked />
+                      </Form.Item>
+                    </div>
                   </div>
                 </Form>
               </AdminFormDrawer>

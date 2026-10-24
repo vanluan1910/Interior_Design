@@ -71,7 +71,8 @@ public sealed class BranchesController : ApiControllerBase
             }
 
             query = query
-                .OrderByDescending(x => x.IsHeadquarter)
+                .OrderByDescending(x => x.IsDefault)
+                .ThenByDescending(x => x.IsHeadquarter)
                 .ThenByDescending(x => x.CreatedAt);
 
             if (page.HasValue && pageSize.HasValue && pageSize.Value > 0)
@@ -158,6 +159,16 @@ public sealed class BranchesController : ApiControllerBase
             _ => "Chi Nhánh"
         };
 
+        // Nếu chi nhánh này được đánh dấu là mặc định, cập nhật các chi nhánh khác thành false
+        if (request.IsDefault)
+        {
+            var existingDefaults = await _context.Branches.Where(x => x.IsDefault).ToListAsync(cancellationToken);
+            foreach (var d in existingDefaults)
+            {
+                d.IsDefault = false;
+            }
+        }
+
         // Nếu chi nhánh này được đánh dấu là trụ sở chính, cập nhật các chi nhánh khác thành false
         if (request.IsHeadquarter)
         {
@@ -187,6 +198,7 @@ public sealed class BranchesController : ApiControllerBase
             EstablishedDate = string.IsNullOrWhiteSpace(request.EstablishedDate) ? DateTime.Now.ToString("dd/MM/yyyy") : request.EstablishedDate.Trim(),
             Status = string.IsNullOrWhiteSpace(request.Status) ? "active" : request.Status.ToLowerInvariant(),
             IsHeadquarter = request.IsHeadquarter,
+            IsDefault = request.IsDefault,
             Description = request.Description?.Trim() ?? string.Empty,
             CreatedAt = DateTime.UtcNow
         };
@@ -217,6 +229,16 @@ public sealed class BranchesController : ApiControllerBase
             if (exists)
                 return BadRequest(ApiResponse<Branch>.Fail($"Mã chi nhánh '{code}' đã thuộc về chi nhánh khác."));
             branch.Code = code;
+        }
+
+        // Nếu chi nhánh này được đánh dấu là mặc định, cập nhật các chi nhánh khác thành false
+        if (request.IsDefault && !branch.IsDefault)
+        {
+            var existingDefaults = await _context.Branches.Where(x => x.IsDefault && x.Id != id).ToListAsync(cancellationToken);
+            foreach (var d in existingDefaults)
+            {
+                d.IsDefault = false;
+            }
         }
 
         // Nếu chi nhánh này được đánh dấu là trụ sở chính, cập nhật các chi nhánh khác thành false
@@ -253,11 +275,43 @@ public sealed class BranchesController : ApiControllerBase
         }
         branch.Status = string.IsNullOrWhiteSpace(request.Status) ? branch.Status : request.Status.ToLowerInvariant();
         branch.IsHeadquarter = request.IsHeadquarter;
+        branch.IsDefault = request.IsDefault;
         branch.Description = request.Description?.Trim() ?? branch.Description;
 
         await _context.SaveChangesAsync(cancellationToken);
 
         return Ok(ApiResponse<Branch>.Ok(branch, "Cập nhật thông tin chi nhánh thành công."));
+    }
+
+    /// <summary>
+    /// Đặt chi nhánh làm chi nhánh mặc định
+    /// </summary>
+    [HttpPut("{id:guid}/default")]
+    public async Task<IActionResult> SetDefaultBranch(Guid id, [FromBody] SetDefaultBranchRequest? request = null, CancellationToken cancellationToken = default)
+    {
+        var branch = await _context.Branches.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (branch is null)
+            return NotFound(ApiResponse<Branch>.Fail("Không tìm thấy chi nhánh."));
+
+        bool isDefault = request?.IsDefault ?? true;
+
+        if (isDefault)
+        {
+            var otherBranches = await _context.Branches.Where(x => x.Id != id && x.IsDefault).ToListAsync(cancellationToken);
+            foreach (var b in otherBranches)
+            {
+                b.IsDefault = false;
+            }
+            branch.IsDefault = true;
+        }
+        else
+        {
+            branch.IsDefault = false;
+        }
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return Ok(ApiResponse<Branch>.Ok(branch, $"Đã cập nhật chi nhánh '{branch.Name}' làm mặc định."));
     }
 
     /// <summary>

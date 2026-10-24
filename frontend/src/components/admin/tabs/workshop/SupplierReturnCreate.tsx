@@ -140,6 +140,8 @@ export function SupplierReturnCreate({
   const { message } = App.useApp();
 
 
+  const prevRefundRef = React.useRef<number | undefined>(undefined);
+
   // Auto-sync return warehouse to currently available branch warehouses
   useEffect(() => {
     if (availableBranchWarehouses.length > 0) {
@@ -149,6 +151,28 @@ export function SupplierReturnCreate({
       }
     }
   }, [availableBranchWarehouses, returnWarehouse, setReturnWarehouse]);
+
+  // Smart auto-sync refund paid amount whenever return lines, discount, or payment method change
+  useEffect(() => {
+    const currentTotal = returnEntryLines.reduce((sum, item) => sum + ((Number(item.quantity) || 0) * (Number(item.returnPrice) || 0)), 0);
+    const currentRefund = Math.max(0, currentTotal - (returnDiscount || 0));
+
+    if (returnPaymentMethod !== 'Cấn trừ công nợ') {
+      if (returnPaidAmount === undefined || (prevRefundRef.current !== undefined && returnPaidAmount === prevRefundRef.current)) {
+        if (currentRefund > 0) {
+          setReturnPaidAmount(currentRefund);
+        }
+      } else if (returnPaidAmount > currentRefund) {
+        setReturnPaidAmount(currentRefund);
+      }
+    } else {
+      if (returnPaidAmount !== 0) {
+        setReturnPaidAmount(0);
+      }
+    }
+
+    prevRefundRef.current = currentRefund;
+  }, [returnEntryLines, returnDiscount, returnPaymentMethod]);
 
   const currentBranch = React.useMemo(() => {
     if (returnWarehouse) {
@@ -458,7 +482,9 @@ export function SupplierReturnCreate({
 
           <div>
             <div className="flex items-center justify-between mb-1">
-              <label className="text-xs font-semibold text-slate-800">Nhà cung cấp nhận hàng</label>
+              <label className="text-xs font-semibold text-slate-800">
+                Nhà cung cấp nhận hàng <span className="text-red-500 font-bold">*</span>
+              </label>
               {onOpenCreateSupplier && (
                 <button
                   type="button"
@@ -472,7 +498,8 @@ export function SupplierReturnCreate({
             <Select
               value={returnSupplier}
               onChange={(val) => setReturnSupplier(val)}
-              placeholder="Chọn nhà cung cấp..."
+              placeholder="Chọn nhà cung cấp nhận hàng (bắt buộc)..."
+              status={!returnSupplier ? 'warning' : undefined}
               className="w-full h-9 text-xs"
               showSearch
               optionFilterProp="children"
@@ -554,11 +581,20 @@ export function SupplierReturnCreate({
 
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-slate-600 font-medium shrink-0">Giảm giá / Phí hoàn hàng</span>
-                    <Input
-                      value={formatInputMoney(returnDiscount)}
-                      onChange={(e) => setReturnDiscount(parseInputMoney(e.target.value))}
+                    <InputNumber<number>
+                      min={0}
+                      max={totalGoods > 0 ? totalGoods : undefined}
+                      placeholder="0"
+                      value={returnDiscount || undefined}
+                      onChange={(val) => {
+                        const d = val ? Math.max(0, Number(val)) : 0;
+                        setReturnDiscount(totalGoods > 0 ? Math.min(totalGoods, d) : d);
+                      }}
+                      formatter={(val) => (val !== undefined && val !== null ? `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, '.') : '')}
+                      parser={(val) => (val ? Number(val.replace(/\./g, '').replace(/[^\d]/g, '')) : ('' as any))}
+                      controls={false}
                       style={{ width: 190, minWidth: 180 }}
-                      className="w-48 sm:w-52 min-w-[180px] h-8 text-xs font-mono text-right px-2.5 !border-0 !border-b !border-slate-300 hover:!border-slate-500 focus-within:!border-rose-600 !rounded-none !shadow-none !bg-transparent"
+                      className="w-48 sm:w-52 min-w-[180px] h-8 text-xs font-mono text-right px-2.5 !border-0 !border-b !border-slate-300 hover:!border-slate-500 focus-within:!border-rose-600 !rounded-none !shadow-none !bg-transparent [&_.ant-input-number-input]:text-right [&_.ant-input-number-input]:h-8 [&_.ant-input-number-input]:px-0"
                     />
                   </div>
 
@@ -609,15 +645,24 @@ export function SupplierReturnCreate({
                               </button>
                             </div>
                           </div>
-                          <Input
+                          <InputNumber<number>
                             placeholder="Nhập tiền NCC đã trả..."
-                            value={returnPaidAmount !== undefined ? formatInputMoney(returnPaidAmount) : ''}
-                            onChange={(e) => {
-                              const raw = e.target.value.trim();
-                              setReturnPaidAmount(raw ? parseInputMoney(raw) : 0);
+                            value={returnPaidAmount}
+                            min={0}
+                            max={refund > 0 ? refund : 0}
+                            formatter={(val) => (val !== undefined && val !== null ? `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, '.') : '')}
+                            parser={(val) => (val ? Number(val.replace(/\./g, '').replace(/[^\d]/g, '')) : ('' as any))}
+                            onChange={(val) => {
+                              if (val === null || val === undefined) {
+                                setReturnPaidAmount(undefined);
+                              } else {
+                                const num = Math.max(0, Number(val));
+                                setReturnPaidAmount(refund > 0 ? Math.min(refund, num) : num);
+                              }
                             }}
+                            controls={false}
                             style={{ width: 190, minWidth: 180 }}
-                            className="w-48 sm:w-52 min-w-[180px] h-8 text-xs font-mono font-bold text-right px-2.5 !border-0 !border-b !border-slate-300 hover:!border-slate-500 focus-within:!border-emerald-700 !rounded-none !shadow-none !bg-transparent text-emerald-700"
+                            className="w-48 sm:w-52 min-w-[180px] h-8 text-xs font-mono font-bold text-right px-2.5 !border-0 !border-b !border-slate-300 hover:!border-slate-500 focus-within:!border-emerald-700 !rounded-none !shadow-none !bg-transparent [&_.ant-input-number-input]:text-right [&_.ant-input-number-input]:h-8 [&_.ant-input-number-input]:px-0 text-emerald-700"
                           />
                         </div>
                       </div>
@@ -760,10 +805,12 @@ export function SupplierReturnCreate({
                     />
                   </td>
                   <td className="px-3 py-2 text-right w-56 min-w-[200px]">
-                    <Input
-                      value={formatInputMoney(line.returnPrice)}
-                      onChange={(e) => {
-                        const numP = parseInputMoney(e.target.value);
+                    <InputNumber<number>
+                      min={0}
+                      placeholder="0"
+                      value={line.returnPrice || undefined}
+                      onChange={(val) => {
+                        const numP = val ? Math.max(0, Number(val)) : 0;
                         setReturnEntryLines((prev) =>
                           prev.map((l) =>
                             l.id === line.id
@@ -772,8 +819,11 @@ export function SupplierReturnCreate({
                           )
                         );
                       }}
+                      formatter={(val) => (val !== undefined && val !== null ? `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, '.') : '')}
+                      parser={(val) => (val ? Number(val.replace(/\./g, '').replace(/[^\d]/g, '')) : ('' as any))}
+                      controls={false}
                       style={{ width: '100%', minWidth: 180 }}
-                      className="w-full min-w-[180px] h-8 text-xs font-mono font-bold text-right px-2.5 !border-0 !border-b !border-slate-300 hover:!border-slate-500 focus-within:!border-rose-600 !rounded-none !shadow-none !bg-transparent"
+                      className="w-full min-w-[180px] h-8 text-xs font-mono font-bold text-right px-2.5 !border-0 !border-b !border-slate-300 hover:!border-slate-500 focus-within:!border-rose-600 !rounded-none !shadow-none !bg-transparent [&_.ant-input-number-input]:text-right [&_.ant-input-number-input]:h-8 [&_.ant-input-number-input]:px-0"
                     />
                   </td>
                   <td className="px-3 py-2 text-right w-44 min-w-[160px] font-mono font-bold text-rose-700 whitespace-nowrap">

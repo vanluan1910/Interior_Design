@@ -9,61 +9,9 @@ interface LivingSpacesProps {
   spaces?: HomeSpace[];
 }
 
-const DEFAULT_SPACES: HomeSpace[] = [
-  {
-    key: 'living',
-    name: 'Phòng Khách Tĩnh Tại',
-    tagline: 'Không gian chính • Trung tâm sum họp',
-    description: 'Sofa mộc bọc nỉ lanh tự nhiên, bàn trà điêu khắc hữu cơ, hệ kệ TV tinh gọn tôn vinh sự mộc mạc và an yên.',
-    imageUrl: '/uploads/36b2215d-edd6-4316-ad67-da469a07bf12.jpg',
-    countText: 'Xem 206 thiết kế',
-    codeLabel: '01 / PHÒNG KHÁCH',
-    colSpan: 1,
-    linkUrl: '/products?space=living',
-  },
-  {
-    key: 'dining',
-    name: 'Phòng Ăn Sum Vầy',
-    tagline: 'Bữa cơm ấm cúng • Gắn kết gia đình',
-    description: 'Bàn ăn mở rộng thông minh từ gỗ tự nhiên, ghế tựa công thái học ôm sát sống lưng cho phút giây quây quần trọn vẹn.',
-    imageUrl: '/uploads/d8bd58cb-0550-492f-a78f-4d96caf1a9bb.jpg',
-    countText: 'Xem 117 thiết kế',
-    codeLabel: '02 / PHÒNG ĂN',
-    colSpan: 1,
-    linkUrl: '/products?space=dining',
-  },
-  {
-    key: 'office',
-    name: 'Phòng Làm Việc Tĩnh Tại',
-    tagline: 'Tập trung & Sáng tạo vô tận',
-    description: 'Bàn làm việc cạnh cong bo mềm mại, giá sách modul tuỳ biến theo kích thước công trình, mang cảm hứng làm việc mỗi ngày.',
-    imageUrl: '/uploads/68d0d710-7e08-4cf6-89e4-e66e5d156192.png',
-    countText: 'Xem 31 thiết kế',
-    codeLabel: '03 / PHÒNG LÀM VIỆC',
-    colSpan: 1,
-    linkUrl: '/products?space=office',
-  },
-  {
-    key: 'bedroom',
-    name: 'Phòng Ngủ Vỗ Về',
-    tagline: 'Giấc ngủ an lành • Tái tạo năng lượng',
-    description: 'Giường phản thấp giấu chân, tủ áo lam gỗ thanh mảnh và tab đầu giường nguyên khối ru trọn giấc nồng bình yên.',
-    imageUrl: '/uploads/58a80c3d-39cb-4479-aa6f-0855971658b8.jpg',
-    countText: 'Xem 117 thiết kế',
-    codeLabel: '04 / PHÒNG NGỦ',
-    colSpan: 1,
-    linkUrl: '/products?space=bedroom',
-  },
-];
-
 export default function LivingSpaces({ onSelectCategory, spaces }: LivingSpacesProps) {
-  // Desktop active hovered index (default to 0: Living Room)
+  // Desktop active hovered index (default to 0)
   const [activeIndex, setActiveIndex] = useState<number>(0);
-
-  const rawSpaces = spaces && spaces.length > 0 ? spaces : DEFAULT_SPACES;
-  const displaySpaces = rawSpaces
-    .filter((s) => s.key !== 'san-pham-khac' && s.key !== 'other' && s.key !== 'KG06')
-    .slice(0, 4);
 
   const sectionRef = useRef<HTMLElement>(null);
   const { scrollYProgress } = useScroll({
@@ -80,6 +28,14 @@ export default function LivingSpaces({ onSelectCategory, spaces }: LivingSpacesP
   const headerY = useTransform(smoothProgress, [0, 0.8], [35, 0]);
   const rowY = useTransform(smoothProgress, [0, 1], [65, 0]);
   const opacity = useTransform(smoothProgress, [0, 0.8], [0, 1]);
+
+  const displaySpaces = (spaces || []).filter(
+    (s) => s.key !== 'san-pham-khac' && s.key !== 'other' && s.key !== 'KG06'
+  );
+
+  if (displaySpaces.length === 0) {
+    return <div ref={sectionRef as any} className="hidden" aria-hidden="true" />;
+  }
 
   return (
     <section

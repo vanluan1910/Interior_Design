@@ -113,6 +113,10 @@ public sealed class OrdersController : ApiControllerBase
         {
             return StatusCode(499, ApiResponse<List<OrderDto>>.Fail("Yêu cầu đã bị hủy."));
         }
+        catch (Exception ex)
+        {
+            return StatusCode(500, ApiResponse<List<OrderDto>>.Fail($"Lỗi khi tải danh sách đơn hàng: {ex.Message}"));
+        }
     }
 
     /// <summary>
@@ -121,27 +125,38 @@ public sealed class OrdersController : ApiControllerBase
     [HttpGet("stats")]
     public async Task<IActionResult> GetOrderStats(CancellationToken cancellationToken)
     {
-        var total = await _context.Orders.CountAsync(cancellationToken);
-        var pending = await _context.Orders.CountAsync(x => x.Status == OrderStatus.Pending, cancellationToken);
-        var processing = await _context.Orders.CountAsync(x => x.Status == OrderStatus.Processing, cancellationToken);
-        var completed = await _context.Orders.CountAsync(x => x.Status == OrderStatus.Completed, cancellationToken);
-        var totalRevenue = await _context.Orders
-            .Where(x => x.Status != OrderStatus.Cancelled && x.Status != OrderStatus.Returned && x.Status != OrderStatus.ReturnCompleted)
-            .SumAsync(x => (decimal?)(x.TotalAmount > 0 ? x.TotalAmount : x.SubTotal), cancellationToken) ?? 0;
-        var totalDeposit = await _context.Orders
-            .Where(x => x.Status != OrderStatus.Cancelled && x.Status != OrderStatus.Returned && x.Status != OrderStatus.ReturnCompleted)
-            .SumAsync(x => (decimal?)x.DepositAmount, cancellationToken) ?? 0;
+        try
+        {
+            var total = await _context.Orders.CountAsync(cancellationToken);
+            var pending = await _context.Orders.CountAsync(x => x.Status == OrderStatus.Pending, cancellationToken);
+            var processing = await _context.Orders.CountAsync(x => x.Status == OrderStatus.Processing, cancellationToken);
+            var completed = await _context.Orders.CountAsync(x => x.Status == OrderStatus.Completed, cancellationToken);
+            var totalRevenue = await _context.Orders
+                .Where(x => x.Status != OrderStatus.Cancelled && x.Status != OrderStatus.Returned && x.Status != OrderStatus.ReturnCompleted)
+                .SumAsync(x => (decimal?)(x.TotalAmount > 0 ? x.TotalAmount : x.SubTotal), cancellationToken) ?? 0;
+            var totalDeposit = await _context.Orders
+                .Where(x => x.Status != OrderStatus.Cancelled && x.Status != OrderStatus.Returned && x.Status != OrderStatus.ReturnCompleted)
+                .SumAsync(x => (decimal?)x.DepositAmount, cancellationToken) ?? 0;
 
-        var stats = new OrderStatsDto(
-            TotalOrders: total,
-            PendingOrders: pending,
-            ProcessingOrders: processing,
-            CompletedOrders: completed,
-            TotalRevenue: totalRevenue,
-            TotalDeposit: totalDeposit
-        );
+            var stats = new OrderStatsDto(
+                TotalOrders: total,
+                PendingOrders: pending,
+                ProcessingOrders: processing,
+                CompletedOrders: completed,
+                TotalRevenue: totalRevenue,
+                TotalDeposit: totalDeposit
+            );
 
-        return Ok(ApiResponse<OrderStatsDto>.Ok(stats));
+            return Ok(ApiResponse<OrderStatsDto>.Ok(stats));
+        }
+        catch (OperationCanceledException)
+        {
+            return StatusCode(499, ApiResponse<OrderStatsDto>.Fail("Yêu cầu đã bị hủy."));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, ApiResponse<OrderStatsDto>.Fail($"Lỗi khi tải thống kê đơn hàng: {ex.Message}"));
+        }
     }
 
     /// <summary>
@@ -252,19 +267,20 @@ public sealed class OrdersController : ApiControllerBase
         var allBranches = await _context.Branches.AsNoTracking().Where(b => !b.IsDeleted).ToListAsync(cancellationToken);
         var allWarehouses = await _context.Warehouses.AsNoTracking().Where(w => !w.IsDeleted).ToListAsync(cancellationToken);
 
-        var defaultWh = allWarehouses.FirstOrDefault(w => w.IsDefault)
-                     ?? allWarehouses.FirstOrDefault(w => w.Type == "main" || w.Type == "central" || w.Type == "transit")
-                     ?? allWarehouses.FirstOrDefault();
-
-        var defaultBranch = (defaultWh != null && !string.IsNullOrWhiteSpace(defaultWh.Branch)
-                                ? BranchMatcher.FindMatchingBranch(allBranches, defaultWh.Branch, allWarehouses)
-                                : null)
+        var defaultBranch = allBranches.FirstOrDefault(b => b.IsDefault)
                          ?? allBranches.FirstOrDefault(b => b.IsHeadquarter)
                          ?? allBranches.FirstOrDefault();
 
-        string defaultTargetName = (defaultWh != null && !string.IsNullOrWhiteSpace(defaultWh.Branch) ? defaultWh.Branch : defaultWh?.Name)
-                                 ?? defaultBranch?.Name
-                                 ?? "Chi Nhánh Phú Quốc";
+        var defaultWh = (defaultBranch != null
+                            ? allWarehouses.FirstOrDefault(w => BranchMatcher.IsBranchMatch(w.Branch ?? w.Name, defaultBranch.Name, allBranches, allWarehouses))
+                            : null)
+                     ?? allWarehouses.FirstOrDefault(w => w.IsDefault)
+                     ?? allWarehouses.FirstOrDefault(w => w.Type == "main" || w.Type == "central" || w.Type == "transit")
+                     ?? allWarehouses.FirstOrDefault();
+
+        string defaultTargetName = defaultBranch?.Name
+                                 ?? (defaultWh != null && !string.IsNullOrWhiteSpace(defaultWh.Branch) ? defaultWh.Branch : defaultWh?.Name)
+                                 ?? "Toàn hệ thống";
         bool isRetailSale = string.Equals(request.OrderType, "retail", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(request.OrderType);
 
         var targetBranch = !string.IsNullOrWhiteSpace(request.Branch) ? request.Branch.Trim() : (!string.IsNullOrWhiteSpace(request.Showroom) ? request.Showroom.Trim() : null);
@@ -825,13 +841,18 @@ public sealed class OrdersController : ApiControllerBase
                      ?? allWarehouses.FirstOrDefault(w => w.Type == "main" || w.Type == "central" || w.Type == "transit")
                      ?? allWarehouses.FirstOrDefault();
 
-        var defaultBranch = (defaultWh != null && !string.IsNullOrWhiteSpace(defaultWh.Branch)
-                                ? BranchMatcher.FindMatchingBranch(allBranches, defaultWh.Branch, allWarehouses)
-                                : null)
+        var defaultBranch = allBranches.FirstOrDefault(b => b.IsDefault)
                          ?? allBranches.FirstOrDefault(b => b.IsHeadquarter)
+                         ?? (defaultWh != null && !string.IsNullOrWhiteSpace(defaultWh.Branch)
+                                 ? BranchMatcher.FindMatchingBranch(allBranches, defaultWh.Branch, allWarehouses)
+                                 : null)
                          ?? allBranches.FirstOrDefault();
 
-        string defaultTargetName = defaultWh?.Name ?? defaultWh?.Branch ?? defaultBranch?.Name ?? "Tổng Kho Mặc Định";
+        string defaultTargetName = (defaultWh != null && defaultWh.IsDefault ? (defaultWh.Name ?? defaultWh.Branch) : null)
+                                 ?? defaultBranch?.Name
+                                 ?? defaultWh?.Name
+                                 ?? defaultWh?.Branch
+                                 ?? "Kho Mặc Định";
 
         string branchName = targetBranch?.Trim() ?? string.Empty;
         if (preferDefaultWarehouse || string.IsNullOrWhiteSpace(branchName) || string.Equals(branchName, "default", StringComparison.OrdinalIgnoreCase) || string.Equals(branchName, "Mặc định", StringComparison.OrdinalIgnoreCase))
@@ -881,31 +902,40 @@ public sealed class OrdersController : ApiControllerBase
                 catch { }
             }
 
-            // Tìm key đại diện cho Kho Mặc Định trong danh sách tồn kho của sản phẩm
+            // Tìm key đại diện cho Kho / Chi nhánh Mặc Định trong danh sách tồn kho của sản phẩm
             string? primaryDefaultKey = null;
 
-            // a. Ưu tiên cao nhất: Khớp chính xác với defaultWh (Tên kho, Chi nhánh kho, hoặc Mã kho)
-            if (defaultWh != null)
+            // a. Ưu tiên cao nhất: Khớp chính xác với Kho Mặc Định (được cấu hình IsDefault = true)
+            if (defaultWh != null && defaultWh.IsDefault)
             {
                 primaryDefaultKey = branchStocks.Keys.FirstOrDefault(k => string.Equals(k, defaultWh.Name, StringComparison.OrdinalIgnoreCase))
                                  ?? (!string.IsNullOrWhiteSpace(defaultWh.Branch) ? branchStocks.Keys.FirstOrDefault(k => string.Equals(k, defaultWh.Branch, StringComparison.OrdinalIgnoreCase)) : null)
-                                 ?? branchStocks.Keys.FirstOrDefault(k => string.Equals(k, defaultWh.Code, StringComparison.OrdinalIgnoreCase))
                                  ?? branchStocks.Keys.FirstOrDefault(k => BranchMatcher.IsBranchMatch(k, defaultWh.Name, allBranches, allWarehouses))
                                  ?? (!string.IsNullOrWhiteSpace(defaultWh.Branch) ? branchStocks.Keys.FirstOrDefault(k => BranchMatcher.IsBranchMatch(k, defaultWh.Branch, allBranches, allWarehouses)) : null);
             }
 
-            // b. Thử match branchName
+            // b. Khớp với Chi nhánh Mặc Định (defaultBranch)
+            if (primaryDefaultKey == null && defaultBranch != null)
+            {
+                primaryDefaultKey = branchStocks.Keys.FirstOrDefault(k => string.Equals(k, defaultBranch.Name, StringComparison.OrdinalIgnoreCase))
+                                 ?? branchStocks.Keys.FirstOrDefault(k => BranchMatcher.IsBranchMatch(k, defaultBranch.Name, allBranches, allWarehouses));
+            }
+
+            // c. Thử match branchName chỉ định riêng
             if (primaryDefaultKey == null && !string.IsNullOrWhiteSpace(branchName))
             {
                 primaryDefaultKey = branchStocks.Keys.FirstOrDefault(k => string.Equals(k, branchName, StringComparison.OrdinalIgnoreCase))
                                  ?? branchStocks.Keys.FirstOrDefault(k => BranchMatcher.IsBranchMatch(k, branchName, allBranches, allWarehouses));
             }
 
-            // c. Thử match defaultBranch (Trụ sở chính)
-            if (primaryDefaultKey == null && defaultBranch != null)
+            // d. Khớp với defaultWh thông thường
+            if (primaryDefaultKey == null && defaultWh != null)
             {
-                primaryDefaultKey = branchStocks.Keys.FirstOrDefault(k => string.Equals(k, defaultBranch.Name, StringComparison.OrdinalIgnoreCase))
-                                 ?? branchStocks.Keys.FirstOrDefault(k => BranchMatcher.IsBranchMatch(k, defaultBranch.Name, allBranches, allWarehouses));
+                primaryDefaultKey = branchStocks.Keys.FirstOrDefault(k => string.Equals(k, defaultWh.Name, StringComparison.OrdinalIgnoreCase))
+                                 ?? (!string.IsNullOrWhiteSpace(defaultWh.Branch) ? branchStocks.Keys.FirstOrDefault(k => string.Equals(k, defaultWh.Branch, StringComparison.OrdinalIgnoreCase)) : null)
+                                 ?? branchStocks.Keys.FirstOrDefault(k => string.Equals(k, defaultWh.Code, StringComparison.OrdinalIgnoreCase))
+                                 ?? branchStocks.Keys.FirstOrDefault(k => BranchMatcher.IsBranchMatch(k, defaultWh.Name, allBranches, allWarehouses))
+                                 ?? (!string.IsNullOrWhiteSpace(defaultWh.Branch) ? branchStocks.Keys.FirstOrDefault(k => BranchMatcher.IsBranchMatch(k, defaultWh.Branch, allBranches, allWarehouses)) : null);
             }
 
             // d. Tìm kho có chứa từ khóa Mặc Định, Tổng Kho, Trụ Sở, Phú Quốc
@@ -921,7 +951,7 @@ public sealed class OrdersController : ApiControllerBase
             // e. Nếu trong danh sách tồn kho chưa có key cho kho mặc định, tạo key trực tiếp cho kho mặc định
             if (primaryDefaultKey == null)
             {
-                primaryDefaultKey = defaultWh?.Name ?? defaultWh?.Branch ?? defaultTargetName;
+                primaryDefaultKey = defaultBranch?.Name ?? defaultWh?.Name ?? defaultWh?.Branch ?? defaultTargetName;
                 if (!branchStocks.ContainsKey(primaryDefaultKey))
                 {
                     if (branchStocks.Count == 0 && product.InStock > 0)

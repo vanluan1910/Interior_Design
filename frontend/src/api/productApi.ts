@@ -61,7 +61,7 @@ function mapDtoToCatalogProduct(dto: any, branchParam?: string): FeaturedCatalog
     id: dto.id || `prod_${Date.now()}`,
     code: dto.sku || dto.code || 'SP0000',
     name: dto.name || '',
-    collection: dto.shortDescription || dto.collection || 'Bộ sưu tập gỗ tự nhiên',
+    collection: dto.collection || '',
     price: price,
     originalPrice: originalPrice,
     costPrice: originalPrice,
@@ -104,8 +104,11 @@ export const productApi = {
     pageSize?: number;
   }): Promise<FeaturedCatalogProduct[]> {
     const query = new URLSearchParams();
-    if (params?.page !== undefined) query.append('page', String(params.page));
-    query.append('pageSize', String(params?.pageSize ?? 100));
+    if (params?.pageSize !== undefined) {
+      query.append('pageSize', String(params.pageSize));
+    } else {
+      query.append('pageSize', '0');
+    }
     if (params?.search) query.append('search', params.search);
     if (params?.space && params.space !== 'all') query.append('space', params.space);
     if (params?.categoryId && params.categoryId !== 'all') query.append('categoryId', params.categoryId);
@@ -464,7 +467,14 @@ export const productApi = {
 
     if (!res.ok) {
       const err = await res.json().catch(() => null);
-      throw new Error(err?.message || `Nhập sản phẩm từ Excel thất bại (${res.status})`);
+      let errorMsg = err?.message || err?.title || `Nhập sản phẩm từ Excel thất bại (${res.status})`;
+      if (err?.errors) {
+        const errorList = Object.values(err.errors).flat().filter(Boolean);
+        if (errorList.length > 0) {
+          errorMsg = `${errorMsg}: ${errorList.slice(0, 3).join(', ')}`;
+        }
+      }
+      throw new Error(errorMsg);
     }
 
     const json = await res.json();
@@ -473,6 +483,8 @@ export const productApi = {
     }
 
     invalidateApiCache('products');
+    invalidateApiCache('categories');
+    invalidateApiCache('spaces');
     return {
       count: json.data || products.length,
       message: json.message || `Đã nhập thành công ${json.data || products.length} sản phẩm!`,

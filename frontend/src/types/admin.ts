@@ -380,6 +380,7 @@ export interface AdminBranch {
   establishedDate: string;
   status: 'active' | 'inactive';
   isHeadquarter?: boolean;
+  isDefault?: boolean;
   description?: string;
 }
 

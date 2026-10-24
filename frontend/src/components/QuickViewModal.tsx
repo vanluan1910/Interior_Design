@@ -56,37 +56,21 @@ export default function QuickViewModal({
         <div className="md:w-1/2 aspect-square rounded-none bg-[#eae1dd] overflow-hidden relative shadow-inner">
           <img
             alt={product.name}
-            className={`w-full h-full object-cover ${isOutOfStock ? 'grayscale-[40%] opacity-80' : ''}`}
+            className="w-full h-full object-cover"
             src={product.image}
           />
           <div className="absolute top-3 left-3 flex flex-col gap-1 items-start z-10 pointer-events-none">
-            {isOutOfStock ? (
-              <Tag color="#ba1a1a" className="px-3 py-1 rounded-none font-bold text-xs border-0 shadow text-white m-0">
-                Hết hàng
+            {product.originalPrice && product.originalPrice > product.price && (
+              <span className="px-2.5 py-1 bg-[#ba1a1a] text-white font-bold text-xs shadow">
+                -{product.discountPercent || Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)}%
+              </span>
+            )}
+            {product.tag && (
+              <Tag color="#5d371f" className="px-3 py-1 rounded-none font-bold text-xs border-0 shadow m-0">
+                {product.tag}
               </Tag>
-            ) : (
-              <>
-                {product.originalPrice && product.originalPrice > product.price && (
-                  <span className="px-2.5 py-1 bg-[#ba1a1a] text-white font-bold text-xs shadow">
-                    -{product.discountPercent || Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)}%
-                  </span>
-                )}
-                {product.tag && (
-                  <Tag color="#5d371f" className="px-3 py-1 rounded-none font-bold text-xs border-0 shadow m-0">
-                    {product.tag}
-                  </Tag>
-                )}
-              </>
             )}
           </div>
-
-          {isOutOfStock && (
-            <div className="absolute inset-0 bg-black/20 flex items-center justify-center pointer-events-none">
-              <span className="px-3 py-1 bg-[#ba1a1a] text-white text-xs font-bold uppercase tracking-wider shadow-md">
-                Tạm hết hàng
-              </span>
-            </div>
-          )}
         </div>
 
         {/* Product Details */}
@@ -96,10 +80,8 @@ export default function QuickViewModal({
               <span className="font-label-sm text-xs uppercase tracking-wider text-[#5d371f] font-bold">
                 Xem nhanh sản phẩm • {product.categoryName}
               </span>
-              <span className={`text-[11px] font-bold px-2 py-0.5 ${
-                isOutOfStock ? 'bg-[#ffdad6] text-[#ba1a1a]' : 'bg-[#e1e5ce]/60 text-[#3f4332]'
-              }`}>
-                {isOutOfStock ? 'Hết hàng' : (product.stockStatus || 'Còn hàng')}
+              <span className="text-[11px] font-bold px-2 py-0.5 bg-[#e1e5ce]/60 text-[#3f4332]">
+                {product.stockStatus && product.stockStatus !== 'Hết hàng' ? product.stockStatus : 'Còn hàng'}
               </span>
             </div>
 

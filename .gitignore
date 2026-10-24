@@ -52,5 +52,22 @@ next-env.d.ts
 *.dtbcache*
 *.futdcache*
 ProjectEvaluation/
+
 # Database backups
 *.bak
+
+# Images, Uploads & Bulk Media
+/image/
+image/
+frontend/public/products/
+frontend/public/uploads/
+**/wwwroot/uploads/*
+!**/wwwroot/uploads/.gitkeep
+**/.tempmediaStorage/
+**/.user_uploaded/
+
+# Excel reports & spreadsheets
+*.xlsx
+*.xls
+*.csv
+

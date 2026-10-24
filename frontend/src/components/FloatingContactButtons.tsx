@@ -1,10 +1,16 @@
 'use client';
 
 import React from 'react';
+import { usePathname } from 'next/navigation';
 import { useCompanyInfo } from '@/hooks/useCompanyInfo';
 
 export default function FloatingContactButtons() {
+  const pathname = usePathname();
   const { rawPhone, displayPhone, zaloUrl } = useCompanyInfo();
+
+  if (pathname?.startsWith('/admin')) {
+    return null;
+  }
 
   return (
     <div className="fixed bottom-6 right-5 sm:right-7 z-50 flex flex-col items-end gap-3.5 select-none pointer-events-auto">

@@ -142,14 +142,13 @@ public sealed class SuppliersController : ApiControllerBase
         if (string.IsNullOrWhiteSpace(request.Name))
             return BadRequest(ApiResponse<Supplier>.Fail("Tên nhà cung cấp không được để trống."));
 
-        var existingCodesList = await _context.Suppliers
-            .IgnoreQueryFilters()
+        var activeCodesList = await _context.Suppliers
             .AsNoTracking()
             .Select(s => s.Code)
             .ToListAsync(cancellationToken);
 
         var existingCodes = new HashSet<string>(
-            existingCodesList.Where(c => !string.IsNullOrWhiteSpace(c)).Select(c => c.Trim().ToUpperInvariant()),
+            activeCodesList.Where(c => !string.IsNullOrWhiteSpace(c)).Select(c => c.Trim().ToUpperInvariant()),
             StringComparer.OrdinalIgnoreCase
         );
 
@@ -166,13 +165,19 @@ public sealed class SuppliersController : ApiControllerBase
         var code = request.Code?.Trim().ToUpperInvariant();
         if (!string.IsNullOrWhiteSpace(code) && existingCodes.Contains(code))
         {
-            var suggestedCode = $"NCC{(maxNum + 1):D2}";
+            var nextNum = 1;
+            var suggestedCode = $"NCC{nextNum:D2}";
+            while (existingCodes.Contains(suggestedCode))
+            {
+                nextNum++;
+                suggestedCode = $"NCC{nextNum:D2}";
+            }
             return BadRequest(ApiResponse<Supplier>.Fail($"Mã nhà cung cấp '{code}' đã tồn tại trong hệ thống. Vui lòng sử dụng mã gợi ý: '{suggestedCode}' hoặc mã khác."));
         }
 
         if (string.IsNullOrWhiteSpace(code))
         {
-            var nextNum = maxNum + 1;
+            var nextNum = 1;
             var autoCode = $"NCC{nextNum:D2}";
             while (existingCodes.Contains(autoCode))
             {
@@ -180,6 +185,16 @@ public sealed class SuppliersController : ApiControllerBase
                 autoCode = $"NCC{nextNum:D2}";
             }
             code = autoCode;
+        }
+
+        // Nếu trong DB có bản ghi cũ đã bị xóa (soft-deleted) mang cùng mã code này, dọn sạch bản ghi cũ để giải phóng mã
+        var oldDeletedSupplier = await _context.Suppliers
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(s => s.Code == code && s.IsDeleted, cancellationToken);
+        if (oldDeletedSupplier != null)
+        {
+            _context.Suppliers.Remove(oldDeletedSupplier);
+            await _context.SaveChangesAsync(cancellationToken);
         }
 
         var supplier = new Supplier

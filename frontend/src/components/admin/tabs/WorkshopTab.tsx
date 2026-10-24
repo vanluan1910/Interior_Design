@@ -107,7 +107,6 @@ import {
   MenuFoldOutlined,
   FolderOpenOutlined,
   UpOutlined,
-  ThunderboltOutlined,
   CrownOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -126,6 +125,8 @@ import {
   PosEntryHeader,
   PosEntryItemsCard,
   PosEntrySidebar,
+  AutoCodeButton,
+  getNextCode,
 } from '@/components/admin';
 import {
   AdminWarehouse,
@@ -321,7 +322,7 @@ export function WorkshopTab({
       const targetBranch = selectedGlobalBranch !== 'all' ? selectedGlobalBranch : undefined;
       const prods = await productApi.getProducts({
         branch: targetBranch,
-        pageSize: 100,
+        pageSize: 0,
       });
       if (prods && Array.isArray(prods)) {
         const filtered = targetBranch
@@ -816,7 +817,7 @@ export function WorkshopTab({
         const res = await productApi.getProducts({
           search: term,
           branch: targetBranch,
-          pageSize: 50,
+          pageSize: 0,
         });
         if (res && res.length > 0) {
           const filtered = targetBranch
@@ -838,9 +839,8 @@ export function WorkshopTab({
     return () => clearTimeout(timer);
   }, [importSearchProduct, returnSearchProduct, stocktakeSearchProduct, activeBranch, warehousesList]);
 
-  useEffect(() => {
-    refreshCatalogProducts();
-  }, [refreshCatalogProducts]);
+  // refreshCatalogProducts được gọi có chủ đích sau khi tạo/cập nhật phiếu nhập/trả kho, không kích hoạt tự động theo loop
+
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1059,49 +1059,54 @@ export function WorkshopTab({
   const handleOpenCreateWarehouse = () => {
     setEditingWarehouse(null);
     const existingCodes = new Set(warehousesList.map((w) => (w.code || '').toUpperCase()));
-    let nextNum = warehousesList.length + 1;
+    let nextNum = 1;
     let autoCode = `KHO${nextNum.toString().padStart(4, '0')}`;
     while (existingCodes.has(autoCode)) {
       nextNum++;
       autoCode = `KHO${nextNum.toString().padStart(4, '0')}`;
     }
-    const defaultBranch = selectedGlobalBranch !== 'all' ? selectedGlobalBranch : (branchesList[0]?.name || 'Chi nhánh trung tâm');
-    warehouseForm.resetFields();
-    warehouseForm.setFieldsValue({
-      code: autoCode,
-      name: '',
-      branch: defaultBranch,
-      description: '',
-      streetAddress: '',
-      ward: undefined,
-      district: undefined,
-      province: undefined,
-      isDefault: false,
-      status: true,
-    });
+    const defaultBranch = selectedGlobalBranch !== 'all' ? selectedGlobalBranch : (branchesList[0]?.name || '');
     setShowWarehouseModal(true);
+    setTimeout(() => {
+      warehouseForm.resetFields();
+      warehouseForm.setFieldsValue({
+        code: autoCode,
+        name: '',
+        branch: defaultBranch,
+        description: '',
+        streetAddress: '',
+        ward: undefined,
+        district: undefined,
+        province: undefined,
+        isDefault: false,
+        status: true,
+      });
+    }, 0);
   };
 
   const handleOpenEditWarehouse = (wh: AdminWarehouse) => {
     setEditingWarehouse(wh);
-    warehouseForm.setFieldsValue({
-      code: wh.code,
-      name: wh.name,
-      branch: wh.branch || branchesList[0]?.name || 'Chi nhánh trung tâm',
-      description: wh.description || '',
-      streetAddress: wh.streetAddress || wh.address || '',
-      ward: wh.ward || undefined,
-      district: wh.district || undefined,
-      province: wh.province || undefined,
-      isDefault: Boolean(wh.isDefault),
-      status: wh.status !== 'inactive',
-    });
     setShowWarehouseModal(true);
+    setTimeout(() => {
+      warehouseForm.resetFields();
+      warehouseForm.setFieldsValue({
+        code: wh.code,
+        name: wh.name,
+        branch: wh.branch || branchesList[0]?.name || '',
+        description: wh.description || '',
+        streetAddress: wh.streetAddress || wh.address || '',
+        ward: wh.ward || undefined,
+        district: wh.district || undefined,
+        province: wh.province || undefined,
+        isDefault: Boolean(wh.isDefault),
+        status: wh.status !== 'inactive',
+      });
+    }, 0);
   };
 
   const handleCopyWarehouse = async (wh: AdminWarehouse) => {
     const existingCodes = new Set(warehousesList.map((w) => (w.code || '').toUpperCase()));
-    let nextNum = warehousesList.length + 1;
+    let nextNum = 1;
     let autoCode = `KHO${nextNum.toString().padStart(4, '0')}`;
     while (existingCodes.has(autoCode)) {
       nextNum++;
@@ -1125,7 +1130,7 @@ export function WorkshopTab({
   const handleWarehouseFormSubmit = async (values: any) => {
     const trimmedCode = (values.code || '').trim().toUpperCase();
     const trimmedName = (values.name || '').trim();
-    const defaultBranch = selectedGlobalBranch !== 'all' ? selectedGlobalBranch : (branchesList[0]?.name || 'Chi nhánh trung tâm');
+    const defaultBranch = selectedGlobalBranch !== 'all' ? selectedGlobalBranch : (branchesList[0]?.name || '');
     const isDef = Boolean(values.isDefault);
     const itemStatus: 'active' | 'inactive' = typeof values.status === 'boolean'
       ? (values.status ? 'active' : 'inactive')
@@ -1226,15 +1231,10 @@ export function WorkshopTab({
   };
 
   const handleGenerateWarehouseCode = () => {
-    const existingCodes = new Set(warehousesList.map((w) => (w.code || '').toUpperCase()));
-    let nextNum = warehousesList.length + 1;
-    let genCode = `KHO${nextNum.toString().padStart(4, '0')}`;
-    while (existingCodes.has(genCode)) {
-      nextNum++;
-      genCode = `KHO${nextNum.toString().padStart(4, '0')}`;
-    }
+    const currentCode = warehouseForm.getFieldValue('code');
+    const genCode = getNextCode(currentCode, warehousesList, 'KHO', 4);
     warehouseForm.setFieldsValue({ code: genCode });
-    message.success(`Đã tự động tạo mã kho: ${genCode}`);
+    message.success(`Đã tự động tạo mã kho mới: ${genCode}`);
   };
 
 
@@ -1258,6 +1258,10 @@ export function WorkshopTab({
   };
 
   const handleSaveImportSlip = async (targetStatus: 'completed' | 'draft') => {
+    if (!importSupplier || !importSupplier.trim()) {
+      message.error('Vui lòng chọn Nhà cung cấp trước khi lập phiếu nhập hàng để ghi nhận công nợ chính xác!');
+      return;
+    }
     if (importEntryLines.length === 0) {
       message.error('Vui lòng thêm ít nhất 1 mặt hàng vào phiếu nhập!');
       return;
@@ -1265,7 +1269,7 @@ export function WorkshopTab({
     const totalGoods = importEntryLines.reduce((sum, item) => sum + (item.total || (item.quantity * item.unitPrice)), 0);
     const payable = Math.max(0, totalGoods - (importDiscount || 0));
     const isUnpaid = importPaymentMethod === 'Chưa thanh toán';
-    const paid = isUnpaid ? 0 : (importPaidAmount !== undefined ? Math.max(0, Number(importPaidAmount)) : 0);
+    const paid = isUnpaid ? 0 : Math.min(payable, Math.max(0, Number(importPaidAmount !== undefined ? importPaidAmount : payable)));
     const debt = Math.max(0, payable - paid);
     const currentCode = importCode || `#PN-2026-${(importsList.length + 91).toString().padStart(3, '0')}`;
     const firstItem = importEntryLines[0];
@@ -1276,7 +1280,7 @@ export function WorkshopTab({
 
     const payload = {
       code: currentCode,
-      supplier: matchedSupplier?.name || importSupplier || suppliersList[0]?.name || 'Nhà cung cấp',
+      supplier: matchedSupplier?.name || importSupplier,
       supplierId: matchedSupplier?.id && matchedSupplier.id.includes('-') ? matchedSupplier.id : undefined,
       warehouseName: matchedWarehouse?.name || importWarehouse || warehousesList[0]?.name || 'Tổng kho',
       warehouseId: matchedWarehouse?.id && matchedWarehouse.id.includes('-') ? matchedWarehouse.id : undefined,
@@ -1863,6 +1867,10 @@ export function WorkshopTab({
   };
 
   const handleSaveReturnSlip = async (targetStatus: 'completed' | 'draft') => {
+    if (!returnSupplier || !returnSupplier.trim()) {
+      message.error('Vui lòng chọn Nhà cung cấp nhận hàng trước khi lập phiếu trả hàng để cấn trừ công nợ chính xác!');
+      return;
+    }
     if (returnEntryLines.length === 0) {
       message.error('Vui lòng thêm ít nhất 1 mặt hàng vào phiếu trả hàng!');
       return;
@@ -1870,7 +1878,7 @@ export function WorkshopTab({
     const totalGoods = returnEntryLines.reduce((sum, item) => sum + (item.total || (item.quantity * item.returnPrice)), 0);
     const refund = Math.max(0, totalGoods - (returnDiscount || 0));
     const isOffset = returnPaymentMethod === 'Cấn trừ công nợ';
-    const paid = isOffset ? 0 : (returnPaidAmount !== undefined ? Math.max(0, Number(returnPaidAmount)) : 0);
+    const paid = isOffset ? 0 : Math.min(refund, Math.max(0, Number(returnPaidAmount !== undefined ? returnPaidAmount : refund)));
     const currentCode = returnCode || `#TH-2026-${(supplierReturnsList.length + 9).toString().padStart(3, '0')}`;
     const firstItem = returnEntryLines[0];
 
@@ -1880,7 +1888,7 @@ export function WorkshopTab({
     const payload = {
       code: currentCode,
       sourceImportCode: returnSourceCode || '',
-      supplierName: matchedSupplier?.name || returnSupplier || suppliersList[0]?.name || 'Nhà cung cấp',
+      supplierName: matchedSupplier?.name || returnSupplier,
       supplierId: matchedSupplier?.id && matchedSupplier.id.includes('-') ? matchedSupplier.id : undefined,
       warehouseName: matchedWarehouse?.name || returnWarehouse || warehousesList[0]?.name || 'Tổng kho',
       warehouseId: matchedWarehouse?.id && matchedWarehouse.id.includes('-') ? matchedWarehouse.id : undefined,
@@ -2107,7 +2115,8 @@ export function WorkshopTab({
     }
     const totalGoods = importEntryLines.reduce((sum, item) => sum + (item.total || item.quantity * item.unitPrice), 0);
     const payable = Math.max(0, totalGoods - (importDiscount || 0));
-    const paid = importPaidAmount !== undefined ? Number(importPaidAmount) : payable;
+    const isUnpaid = importPaymentMethod === 'Chưa thanh toán';
+    const paid = isUnpaid ? 0 : Math.min(payable, Math.max(0, Number(importPaidAmount !== undefined ? importPaidAmount : payable)));
     const debt = Math.max(0, payable - paid);
 
     const exportData = importEntryLines.map((line, idx) => ({
@@ -2202,7 +2211,8 @@ export function WorkshopTab({
     }
     const totalGoods = returnEntryLines.reduce((sum, item) => sum + (item.total || item.quantity * item.returnPrice), 0);
     const refund = Math.max(0, totalGoods - (returnDiscount || 0));
-    const paid = returnPaidAmount !== undefined ? returnPaidAmount : refund;
+    const isOffset = returnPaymentMethod === 'Cấn trừ công nợ';
+    const paid = isOffset ? 0 : Math.min(refund, Math.max(0, Number(returnPaidAmount !== undefined ? returnPaidAmount : refund)));
     const remaining = Math.max(0, refund - paid);
 
     const exportData = returnEntryLines.map((line, idx) => ({
@@ -5053,14 +5063,10 @@ export function WorkshopTab({
               className="h-9 rounded-lg text-xs sm:text-sm font-mono uppercase font-semibold"
               placeholder="Tự động hoặc nhập tay"
               suffix={
-                <button
-                  type="button"
-                  onClick={handleGenerateWarehouseCode}
-                  className="text-[#784e34] hover:text-[#5d371f] border-none bg-transparent cursor-pointer p-0.5 inline-flex items-center"
-                  title="Tự động tạo mã"
-                >
-                  <ThunderboltOutlined className="text-sm" />
-                </button>
+                <AutoCodeButton
+                  onGenerate={handleGenerateWarehouseCode}
+                  tooltipTitle="Tự động tạo mã kho lưu trữ mới"
+                />
               }
             />
           </Form.Item>

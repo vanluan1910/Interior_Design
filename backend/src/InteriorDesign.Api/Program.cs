@@ -9,10 +9,17 @@ using InteriorDesign.Infrastructure.Settings;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 
+using InteriorDesign.Api.Converters;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add Controllers, MemoryCache and Swagger/OpenApi
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new SafeGuidConverter());
+        options.JsonSerializerOptions.Converters.Add(new SafeNullableGuidConverter());
+    });
 builder.Services.AddMemoryCache();
 builder.Services.AddOpenApi();
 

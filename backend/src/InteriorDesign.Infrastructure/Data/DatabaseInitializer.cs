@@ -54,6 +54,11 @@ public static class DatabaseInitializer
                 BEGIN
                     CREATE UNIQUE NONCLUSTERED INDEX [IX_warehouses_Code] ON [dbo].[warehouses] ([Code]) WHERE [IsDeleted] = 0;
                 END
+
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_products_Status_CategoryId' AND object_id = OBJECT_ID('products'))
+                BEGIN
+                    CREATE NONCLUSTERED INDEX [IX_products_Status_CategoryId] ON [dbo].[products] ([Status], [CategoryId]) INCLUDE ([Space], [Name], [Price], [OriginalPrice], [DiscountPercent], [MainImageUrl], [CreatedAt]);
+                END
             ");
 
             await ExecuteSafeSqlAsync(context, "Clean Spaces ShowOnHome and Descriptions", @"
@@ -71,6 +76,88 @@ public static class DatabaseInitializer
                     UPDATE [dbo].[spaces] SET [Image] = 'https://images.unsplash.com/photo-1524758631624-e2822e304c36?w=800&auto=format&fit=crop&q=80' WHERE ([Slug] = 'office' OR [Code] = 'KG04') AND ([Image] IS NULL OR [Image] = '' OR [Image] LIKE '%aida-public%');
                     UPDATE [dbo].[spaces] SET [Image] = 'https://images.unsplash.com/photo-1595526114035-0d45ed16cfbf?w=800&auto=format&fit=crop&q=80' WHERE ([Slug] = 'bedroom' OR [Code] = 'KG03') AND ([Image] IS NULL OR [Image] = '' OR [Image] LIKE '%aida-public%');
                     UPDATE [dbo].[spaces] SET [Image] = 'https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=800&auto=format&fit=crop&q=80' WHERE ([Slug] = 'san-pham-khac' OR [Code] IN ('KG05', 'KG06')) AND ([Image] IS NULL OR [Image] = '');
+                END
+            ");
+
+            await ExecuteSafeSqlAsync(context, "Fix Tap Dau Giuong Category Mapping", @"
+                SET QUOTED_IDENTIFIER ON;
+                SET ANSI_NULLS ON;
+                IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'categories') AND EXISTS (SELECT 1 FROM sys.tables WHERE name = 'products')
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM [dbo].[categories] WHERE [Id] = '2FDD4407-CA9A-4B64-8C48-FC8AD2F976BB')
+                    BEGIN
+                        UPDATE [dbo].[products]
+                        SET [CategoryId] = '2FDD4407-CA9A-4B64-8C48-FC8AD2F976BB'
+                        WHERE ([Name] LIKE N'%Táp%' OR [Sku] LIKE 'TAP-%') AND [CategoryId] <> '2FDD4407-CA9A-4B64-8C48-FC8AD2F976BB';
+
+                        UPDATE [dbo].[categories]
+                        SET [ImageUrl] = '/products/Táp Gỗ – G09_Tap12.png'
+                        WHERE [Id] = '2FDD4407-CA9A-4B64-8C48-FC8AD2F976BB' AND ([ImageUrl] IS NULL OR [ImageUrl] = '');
+                    END
+
+                    UPDATE c
+                    SET c.ProductCount = (SELECT COUNT(*) FROM [dbo].[products] p WHERE p.CategoryId = c.Id AND p.Status = 'Active')
+                    FROM [dbo].[categories] c;
+                END
+            ");
+
+            await ExecuteSafeSqlAsync(context, "Fix Ke Trang Tri Category Mapping", @"
+                SET QUOTED_IDENTIFIER ON;
+                SET ANSI_NULLS ON;
+                IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'categories') AND EXISTS (SELECT 1 FROM sys.tables WHERE name = 'products')
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM [dbo].[categories] WHERE [Id] = 'CC817F74-D557-43E2-955E-1AF0F7677E3B')
+                    BEGIN
+                        UPDATE [dbo].[products]
+                        SET [CategoryId] = 'CC817F74-D557-43E2-955E-1AF0F7677E3B',
+                            [Space] = N'Phòng khách'
+                        WHERE ([Sku] LIKE 'KTT%' OR [Name] LIKE N'%Tủ Lưu Trữ KTT%')
+                          AND [CategoryId] <> 'CC817F74-D557-43E2-955E-1AF0F7677E3B';
+
+                        UPDATE [dbo].[categories]
+                        SET [ImageUrl] = (SELECT TOP 1 [MainImageUrl] FROM [dbo].[products] WHERE [Sku] = 'KTT-G01')
+                        WHERE [Id] = 'CC817F74-D557-43E2-955E-1AF0F7677E3B' AND ([ImageUrl] IS NULL OR [ImageUrl] = '' OR [ImageUrl] LIKE '%?%');
+
+                        UPDATE [dbo].[categories]
+                        SET [Status] = 'hidden', [ShowOnMenu] = 0, [ShowOnHome] = 0
+                        WHERE [Id] = '611F139E-9E1A-4DB4-BC72-0C0EAD6CD3E1';
+                    END
+
+                    UPDATE c
+                    SET c.ProductCount = (SELECT COUNT(*) FROM [dbo].[products] p WHERE p.CategoryId = c.Id AND p.Status = 'Active')
+                    FROM [dbo].[categories] c;
+                END
+            ");
+
+            await ExecuteSafeSqlAsync(context, "Fix Ghe May and San Pham Khac Mapping", @"
+                SET QUOTED_IDENTIFIER ON;
+                SET ANSI_NULLS ON;
+                IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'spaces')
+                BEGIN
+                    UPDATE [dbo].[spaces]
+                    SET [Slug] = 'san-pham-khac', [Status] = 'active', [ShowOnHeader] = 1, [IsDeleted] = 0
+                    WHERE [Code] = 'KG05';
+
+                    UPDATE [dbo].[spaces]
+                    SET [ShowOnHeader] = 0, [ShowOnHome] = 0, [IsDeleted] = 1
+                    WHERE [Code] = 'KG06';
+                END
+
+                IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'categories')
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM [dbo].[categories] WHERE [Code] = 'NH13')
+                    BEGIN
+                        UPDATE [dbo].[categories]
+                        SET [Space] = (SELECT TOP 1 [Space] FROM [dbo].[products] WHERE [Sku] = 'GM-02'),
+                            [SpaceId] = (SELECT TOP 1 [Id] FROM [dbo].[spaces] WHERE [Code] = 'KG05'),
+                            [Slug] = 'ghe-may',
+                            [ImageUrl] = (SELECT TOP 1 [MainImageUrl] FROM [dbo].[products] WHERE [Sku] = 'GM-02')
+                        WHERE [Code] = 'NH13';
+                    END
+
+                    UPDATE c
+                    SET c.ProductCount = (SELECT COUNT(*) FROM [dbo].[products] p WHERE p.CategoryId = c.Id AND p.Status = 'Active')
+                    FROM [dbo].[categories] c;
                 END
             ");
 
@@ -402,19 +489,20 @@ public static class DatabaseInitializer
 
         try
         {
-            var adminEmail = "vanluan1910@d2luxury.vn";
-            var existingAdmin = await context.Users.FirstOrDefaultAsync(u => u.Email == adminEmail || u.PhoneNumber == "0918 345 678" || u.PhoneNumber == "0918345678");
+            var adminUsername = "admin";
+            var existingAdmin = await context.Users.FirstOrDefaultAsync(u => u.Username == adminUsername || u.Email == "admin@d2luxury.vn");
             if (existingAdmin == null)
             {
                 await context.Users.AddAsync(new User
                 {
                     Id = Guid.NewGuid(),
-                    FullName = "Văn Luận",
-                    Email = adminEmail,
-                    PhoneNumber = "0918 345 678",
-                    PasswordHash = BCrypt.Net.BCrypt.HashPassword("Admin@123456"),
+                    FullName = "Quản trị viên",
+                    Username = adminUsername,
+                    Email = "admin@d2luxury.vn",
+                    PhoneNumber = "0900000000",
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword("Admin@123"),
                     Role = "Admin",
-                    AvatarUrl = "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=800&auto=format&fit=crop&q=80",
+                    AvatarUrl = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80",
                     IsActive = true,
                     CreatedAt = DateTimeOffset.UtcNow,
                     UpdatedAt = DateTimeOffset.UtcNow
@@ -440,31 +528,8 @@ public static class DatabaseInitializer
             }
         }
 
-        if (!await context.Branches.IgnoreQueryFilters().AnyAsync())
-        {
-            try
-            {
-                await context.Branches.AddRangeAsync(InteriorSeedData.GetBranches());
-                await context.SaveChangesAsync();
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[Seed Branches Warning]: {ex.Message}");
-            }
-        }
-
-        if (!await context.Warehouses.IgnoreQueryFilters().AnyAsync())
-        {
-            try
-            {
-                await context.Warehouses.AddRangeAsync(InteriorSeedData.GetWarehouses());
-                await context.SaveChangesAsync();
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[Seed Warehouses Warning]: {ex.Message}");
-            }
-        }
+        // Branches and Warehouses initial seeding disabled to allow user full custom management
+        // (Previously seeded InteriorSeedData.GetBranches() and InteriorSeedData.GetWarehouses())
 
         try
         {

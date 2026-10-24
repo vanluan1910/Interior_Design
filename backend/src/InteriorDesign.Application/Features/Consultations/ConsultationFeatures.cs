@@ -10,7 +10,7 @@ namespace InteriorDesign.Application.Features.Consultations;
 
 public sealed record GetConsultationsQuery(
     int Page = 1,
-    int PageSize = 20,
+    int PageSize = 0,
     string? Search = null,
     string? Status = null
 ) : IRequest<ApiResponse<PagedResult<ConsultationDto>>>;

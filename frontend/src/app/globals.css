@@ -961,6 +961,59 @@ th.font-mono,
   font-weight: 600 !important;
 }
 
+/* ================= ADMIN SMOOTH & RESPONSIVE SCROLLBAR SYSTEM ================= */
+html:has(.admin-underline-mode),
+body:has(.admin-underline-mode),
+.admin-underline-mode {
+  scroll-behavior: auto !important;
+}
+
+/* Custom sleek scrollbars for admin tables and containers */
+.admin-underline-mode ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.admin-underline-mode ::-webkit-scrollbar-track {
+  background: #f8fafc;
+  border-radius: 4px;
+}
+
+.admin-underline-mode ::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.admin-underline-mode ::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Sticky Table Header alignment with 80px Admin Header */
+.admin-underline-mode .ant-table-sticky-holder {
+  top: 80px !important;
+  z-index: 35 !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+/* Ant Table Sticky Horizontal Scrollbar pinned to viewport bottom */
+.admin-underline-mode .ant-table-sticky-scroll {
+  opacity: 0.95;
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.08);
+  z-index: 38 !important;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(4px);
+}
+
+.admin-underline-mode .ant-table-sticky-scroll-bar {
+  background-color: #94a3b8 !important;
+  border-radius: 4px !important;
+  height: 7px !important;
+}
+
+.admin-underline-mode .ant-table-sticky-scroll-bar:hover {
+  background-color: #64748b !important;
+}
+
 /* ================= PRINT ISOLATION RULES ================= */
 @media print {
   body {
