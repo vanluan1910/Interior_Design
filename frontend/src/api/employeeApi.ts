@@ -32,7 +32,11 @@ export const employeeApi = {
     if (params?.role && params.role !== 'all') sp.append('role', params.role);
     if (params?.status && params.status !== 'all') sp.append('status', params.status);
     if (params?.page) sp.append('page', params.page.toString());
-    if (params?.pageSize) sp.append('pageSize', params.pageSize.toString());
+    if (params?.pageSize !== undefined) {
+      sp.append('pageSize', params.pageSize.toString());
+    } else {
+      sp.append('pageSize', '0');
+    }
     if (params?.includeDeleted) sp.append('includeDeleted', 'true');
 
     const queryString = sp.toString();

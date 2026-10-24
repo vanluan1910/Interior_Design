@@ -500,7 +500,7 @@ function AuthPageContent() {
                             setLoginErrors((prev) => ({ ...prev, identifier: undefined }));
                           }
                         }}
-                        placeholder="vanluan1910@d2luxury.vn hoặc 0918345678"
+                        placeholder="admin hoặc email / số điện thoại"
                         prefix={<MailOutlined className="text-[#83746c] mr-1.5" />}
                         status={loginErrors.identifier ? 'error' : ''}
                         className="!bg-[#faf6f4] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-normal hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2 !px-3"

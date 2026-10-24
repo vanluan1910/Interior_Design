@@ -1,8 +1,10 @@
 using InteriorDesign.Domain.Entities;
+using InteriorDesign.Domain.Enums;
 using InteriorDesign.Infrastructure.Data;
 using InteriorDesign.Integration.Common;
 using InteriorDesign.Integration.Requests;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 
@@ -33,16 +35,6 @@ public sealed class CategoriesController : ApiControllerBase
     {
         try
         {
-            var isDefaultQuery = string.IsNullOrWhiteSpace(search) &&
-                                 (string.IsNullOrWhiteSpace(space) || space == "all") &&
-                                 (string.IsNullOrWhiteSpace(status) || status == "all") &&
-                                 !includeDeleted;
-
-            if (isDefaultQuery && _cache.TryGetValue("categories_all", out List<Category>? cached) && cached != null)
-            {
-                return Ok(ApiResponse<List<Category>>.Ok(cached));
-            }
-
             var query = includeDeleted
                 ? _context.Categories.IgnoreQueryFilters().AsNoTracking().AsQueryable()
                 : _context.Categories.AsNoTracking().AsQueryable();
@@ -76,27 +68,45 @@ public sealed class CategoriesController : ApiControllerBase
                 .ThenByDescending(c => c.CreatedAt)
                 .ToListAsync(cancellationToken);
 
-            var productCounts = await _context.Products
-                .AsNoTracking()
-                .GroupBy(p => p.CategoryId)
-                .Select(g => new { CategoryId = g.Key, Count = g.Count() })
-                .ToDictionaryAsync(g => g.CategoryId, g => g.Count, cancellationToken);
-
-            foreach (var cat in list)
+            // Populate fresh product counts if available, otherwise fallback to existing cat.ProductCount from DB
+            try
             {
-                cat.ProductCount = productCounts.GetValueOrDefault(cat.Id, 0);
+                var productCounts = await _context.Products
+                    .AsNoTracking()
+                    .Where(p => p.Status == ProductStatus.Active)
+                    .GroupBy(p => p.CategoryId)
+                    .Select(g => new { CategoryId = g.Key, Count = g.Count() })
+                    .ToDictionaryAsync(g => g.CategoryId, g => g.Count, cancellationToken);
+
+                foreach (var cat in list)
+                {
+                    cat.ProductCount = productCounts.GetValueOrDefault(cat.Id, cat.ProductCount);
+                }
             }
-
-            if (isDefaultQuery)
+            catch (Exception ex) when (ex is OperationCanceledException ||
+                cancellationToken.IsCancellationRequested ||
+                HttpContext.RequestAborted.IsCancellationRequested ||
+                (ex is SqlException sqlEx && (sqlEx.Number == 0 || sqlEx.Message.Contains("Operation cancelled by user", StringComparison.OrdinalIgnoreCase))))
             {
-                _cache.Set("categories_all", list, TimeSpan.FromMinutes(5));
+                return Ok(ApiResponse<List<Category>>.Ok(list));
+            }
+            catch
+            {
+                // Fallback to cat.ProductCount from database column
             }
 
             return Ok(ApiResponse<List<Category>>.Ok(list));
         }
-        catch (OperationCanceledException)
+        catch (Exception ex) when (ex is OperationCanceledException ||
+            cancellationToken.IsCancellationRequested ||
+            HttpContext.RequestAborted.IsCancellationRequested ||
+            (ex is SqlException sqlEx && (sqlEx.Number == 0 || sqlEx.Message.Contains("Operation cancelled by user", StringComparison.OrdinalIgnoreCase))))
         {
-            return StatusCode(499, ApiResponse<List<Category>>.Fail("Yêu cầu đã bị hủy."));
+            return StatusCode(499, ApiResponse<List<Category>>.Fail("Yêu cầu đã bị hủy bởi phía client."));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, ApiResponse<List<Category>>.Fail($"Lỗi khi lấy danh mục: {ex.Message}"));
         }
     }
 
@@ -106,15 +116,29 @@ public sealed class CategoriesController : ApiControllerBase
     [HttpGet("slug/{slug}")]
     public async Task<IActionResult> GetCategoryBySlug(string slug, CancellationToken cancellationToken)
     {
-        var category = await _context.Categories
-            .AsNoTracking()
-            .FirstOrDefaultAsync(c => c.Slug == slug.Trim().ToLower(), cancellationToken);
+        try
+        {
+            var category = await _context.Categories
+                .AsNoTracking()
+                .FirstOrDefaultAsync(c => c.Slug == slug.Trim().ToLower(), cancellationToken);
 
-        if (category is null)
-            return NotFound(ApiResponse<Category>.Fail("Không tìm thấy danh mục nhóm hàng."));
+            if (category is null)
+                return NotFound(ApiResponse<Category>.Fail("Không tìm thấy danh mục nhóm hàng."));
 
-        category.ProductCount = await _context.Products.CountAsync(p => p.CategoryId == category.Id, cancellationToken);
-        return Ok(ApiResponse<Category>.Ok(category));
+            category.ProductCount = await _context.Products.CountAsync(p => p.CategoryId == category.Id, cancellationToken);
+            return Ok(ApiResponse<Category>.Ok(category));
+        }
+        catch (Exception ex) when (ex is OperationCanceledException ||
+            cancellationToken.IsCancellationRequested ||
+            HttpContext.RequestAborted.IsCancellationRequested ||
+            (ex is SqlException sqlEx && (sqlEx.Number == 0 || sqlEx.Message.Contains("Operation cancelled by user", StringComparison.OrdinalIgnoreCase))))
+        {
+            return StatusCode(499, ApiResponse<Category>.Fail("Yêu cầu đã bị hủy bởi phía client."));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, ApiResponse<Category>.Fail($"Lỗi khi lấy chi tiết danh mục: {ex.Message}"));
+        }
     }
 
     /// <summary>
@@ -123,19 +147,33 @@ public sealed class CategoriesController : ApiControllerBase
     [HttpGet("stats")]
     public async Task<IActionResult> GetCategoryStats(CancellationToken cancellationToken)
     {
-        var total = await _context.Categories.CountAsync(cancellationToken);
-        var active = await _context.Categories.CountAsync(c => c.Status == "active", cancellationToken);
-        var hidden = await _context.Categories.CountAsync(c => c.Status == "hidden", cancellationToken);
-        var products = await _context.Products.CountAsync(cancellationToken);
+        try
+        {
+            var total = await _context.Categories.CountAsync(cancellationToken);
+            var active = await _context.Categories.CountAsync(c => c.Status == "active", cancellationToken);
+            var hidden = await _context.Categories.CountAsync(c => c.Status == "hidden", cancellationToken);
+            var products = await _context.Products.CountAsync(cancellationToken);
 
-        var stats = new CategoryStatsResponse(
-            TotalCategories: total,
-            ActiveCategories: active,
-            HiddenCategories: hidden,
-            TotalProductsAssigned: products
-        );
+            var stats = new CategoryStatsResponse(
+                TotalCategories: total,
+                ActiveCategories: active,
+                HiddenCategories: hidden,
+                TotalProductsAssigned: products
+            );
 
-        return Ok(ApiResponse<CategoryStatsResponse>.Ok(stats));
+            return Ok(ApiResponse<CategoryStatsResponse>.Ok(stats));
+        }
+        catch (Exception ex) when (ex is OperationCanceledException ||
+            cancellationToken.IsCancellationRequested ||
+            HttpContext.RequestAborted.IsCancellationRequested ||
+            (ex is SqlException sqlEx && (sqlEx.Number == 0 || sqlEx.Message.Contains("Operation cancelled by user", StringComparison.OrdinalIgnoreCase))))
+        {
+            return StatusCode(499, ApiResponse<CategoryStatsResponse>.Fail("Yêu cầu đã bị hủy bởi phía client."));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, ApiResponse<CategoryStatsResponse>.Fail($"Lỗi khi lấy thống kê danh mục: {ex.Message}"));
+        }
     }
 
     /// <summary>
@@ -144,15 +182,29 @@ public sealed class CategoriesController : ApiControllerBase
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetCategoryById(Guid id, CancellationToken cancellationToken)
     {
-        var category = await _context.Categories
-            .AsNoTracking()
-            .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
+        try
+        {
+            var category = await _context.Categories
+                .AsNoTracking()
+                .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
 
-        if (category is null)
-            return NotFound(ApiResponse<Category>.Fail("Không tìm thấy danh mục nhóm hàng."));
+            if (category is null)
+                return NotFound(ApiResponse<Category>.Fail("Không tìm thấy danh mục nhóm hàng."));
 
-        category.ProductCount = await _context.Products.CountAsync(p => p.CategoryId == category.Id, cancellationToken);
-        return Ok(ApiResponse<Category>.Ok(category));
+            category.ProductCount = await _context.Products.CountAsync(p => p.CategoryId == category.Id, cancellationToken);
+            return Ok(ApiResponse<Category>.Ok(category));
+        }
+        catch (Exception ex) when (ex is OperationCanceledException ||
+            cancellationToken.IsCancellationRequested ||
+            HttpContext.RequestAborted.IsCancellationRequested ||
+            (ex is SqlException sqlEx && (sqlEx.Number == 0 || sqlEx.Message.Contains("Operation cancelled by user", StringComparison.OrdinalIgnoreCase))))
+        {
+            return StatusCode(499, ApiResponse<Category>.Fail("Yêu cầu đã bị hủy bởi phía client."));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, ApiResponse<Category>.Fail($"Lỗi khi lấy danh mục: {ex.Message}"));
+        }
     }
 
     /// <summary>
@@ -305,6 +357,10 @@ public sealed class CategoriesController : ApiControllerBase
         int insertedCount = 0;
         int updatedCount = 0;
 
+        var activeSpaces = await _context.Spaces
+            .Where(s => !s.IsDeleted && s.Status == "active")
+            .ToListAsync(cancellationToken);
+
         foreach (var req in uniqueRequests)
         {
             var nameTrimmed = req.Name.Trim();
@@ -320,6 +376,48 @@ public sealed class CategoriesController : ApiControllerBase
                 : nameTrimmed.ToLower().Replace(" ", "-").Replace("&", "va");
 
             var spaceName = !string.IsNullOrWhiteSpace(req.Space) ? req.Space.Trim() : "Phòng Khách";
+            var lowerCatName = nameTrimmed.ToLowerInvariant();
+            if (lowerCatName.Contains("bàn trà") || lowerCatName.Contains("bàn nước") || lowerCatName.Contains("sofa") || lowerCatName.Contains("kệ tivi") || lowerCatName.Contains("tủ giày"))
+            {
+                spaceName = "Phòng Khách";
+            }
+            else if (lowerCatName.Contains("bàn ăn") || lowerCatName.Contains("ghế ăn") || lowerCatName.Contains("chạn ly") || lowerCatName.Contains("tủ bếp"))
+            {
+                spaceName = "Phòng Ăn";
+            }
+            else if (lowerCatName.Contains("giường") || lowerCatName.Contains("táp") || lowerCatName.Contains("tủ áo") || lowerCatName.Contains("quần áo") || lowerCatName.Contains("trang điểm"))
+            {
+                spaceName = "Phòng Ngủ";
+            }
+            else if (lowerCatName.Contains("làm việc") || lowerCatName.Contains("giá sách") || lowerCatName.Contains("kệ sách"))
+            {
+                spaceName = "Phòng Làm Việc";
+            }
+
+            Guid? targetSpaceId = req.SpaceId;
+            if (!targetSpaceId.HasValue || targetSpaceId == Guid.Empty)
+            {
+                var normSpaceName = spaceName.ToLowerInvariant();
+                var sMatch = activeSpaces.FirstOrDefault(s =>
+                    s.Name.ToLowerInvariant() == normSpaceName ||
+                    s.Code.ToLowerInvariant() == normSpaceName ||
+                    (normSpaceName.Contains("khách") && s.Code == "KG01") ||
+                    (normSpaceName.Contains("ăn") && s.Code == "KG02") ||
+                    (normSpaceName.Contains("việc") && s.Code == "KG03") ||
+                    (normSpaceName.Contains("ngủ") && s.Code == "KG04") ||
+                    (normSpaceName.Contains("khác") && s.Code == "KG05"));
+
+                if (sMatch != null)
+                {
+                    targetSpaceId = sMatch.Id;
+                    spaceName = sMatch.Name;
+                }
+            }
+            else
+            {
+                var sById = activeSpaces.FirstOrDefault(s => s.Id == targetSpaceId.Value);
+                if (sById != null) spaceName = sById.Name;
+            }
 
             if (matched != null)
             {
@@ -329,6 +427,10 @@ public sealed class CategoriesController : ApiControllerBase
                 if (!string.IsNullOrWhiteSpace(req.Description)) matched.Description = req.Description.Trim();
                 if (!string.IsNullOrWhiteSpace(req.Icon)) matched.Icon = req.Icon.Trim();
                 matched.Space = spaceName;
+                if (targetSpaceId.HasValue && targetSpaceId != Guid.Empty)
+                {
+                    matched.SpaceId = targetSpaceId.Value;
+                }
                 if (req.DisplayOrder > 0) matched.DisplayOrder = req.DisplayOrder;
                 if (!string.IsNullOrWhiteSpace(req.Badge)) matched.Badge = req.Badge.Trim();
                 if (!string.IsNullOrWhiteSpace(req.FeaturedProduct)) matched.FeaturedProduct = req.FeaturedProduct.Trim();
@@ -359,6 +461,7 @@ public sealed class CategoriesController : ApiControllerBase
                     ImageUrl = req.ImageUrl?.Trim() ?? string.Empty,
                     Icon = req.Icon?.Trim() ?? "folder",
                     Space = spaceName,
+                    SpaceId = targetSpaceId,
                     DisplayOrder = req.DisplayOrder > 0 ? req.DisplayOrder : 1,
                     ProductCount = 0,
                     FeaturedProduct = req.FeaturedProduct?.Trim() ?? string.Empty,

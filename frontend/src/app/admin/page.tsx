@@ -298,13 +298,15 @@ function AdminPageContent({
     setCustomersList(getStoredAdminData(ADMIN_STORAGE_KEYS.CUSTOMERS, []));
     setSuppliersList(getStoredAdminData(ADMIN_STORAGE_KEYS.SUPPLIERS, []));
     setRolesList(getStoredAdminData(ADMIN_STORAGE_KEYS.ROLES, INITIAL_ROLES));
-    const storedBranch = getStoredAdminData(ADMIN_STORAGE_KEYS.SELECTED_BRANCH, '');
-    if (storedBranch && storedBranch !== 'all') {
+    const storedBranch = getStoredAdminData(ADMIN_STORAGE_KEYS.SELECTED_BRANCH, 'all');
+    if (storedBranch) {
       setSelectedGlobalBranch(storedBranch);
+    } else {
+      setSelectedGlobalBranch('all');
     }
 
     customerApi.getCustomers().then((res) => {
-      if (Array.isArray(res) && res.length > 0) {
+      if (Array.isArray(res)) {
         setCustomersList(res);
         setStoredAdminData(ADMIN_STORAGE_KEYS.CUSTOMERS, res);
       }
@@ -324,7 +326,7 @@ function AdminPageContent({
     try {
       const products = await productApi.getProducts({
         branch: selectedGlobalBranch !== 'all' ? selectedGlobalBranch : undefined,
-        pageSize: 500,
+        pageSize: 0, // 0 = lấy toàn bộ sản phẩm thực tế từ DB, không gán số cứng 500 hay 1000
       });
       if (products && Array.isArray(products)) {
         setCatalogList(products);
@@ -338,7 +340,9 @@ function AdminPageContent({
 
   // Load real product catalog from DB whenever branch changes or tab is active
   useEffect(() => {
-    if (activeNav === 'workshop' || activeNav === 'inventory' || activeNav === 'overview' || activeNav === 'orders') {
+    // Tab 'inventory' tự phân trang riêng theo trang thật từ bảng (10, 20, 50, 100)
+    // Chỉ tải danh mục dùng chung khi vào workshop hoặc orders (để chọn sản phẩm tạo đơn/nhập kho)
+    if (activeNav === 'workshop' || activeNav === 'orders') {
       loadProducts();
     }
   }, [selectedGlobalBranch, activeNav, loadProducts]);
@@ -358,12 +362,13 @@ function AdminPageContent({
               setStoredAdminData(ADMIN_STORAGE_KEYS.SELECTED_BRANCH, assigned);
               return assigned;
             }
-            if (prev && prev !== 'all' && branches.some((b) => b.name === prev)) {
+            if (prev === 'all' || !prev) {
+              return 'all';
+            }
+            if (branches.some((b) => b.name === prev)) {
               return prev;
             }
-            const fallbackBranch = branches[0]?.name || '';
-            setStoredAdminData(ADMIN_STORAGE_KEYS.SELECTED_BRANCH, fallbackBranch);
-            return fallbackBranch;
+            return 'all';
           });
           return;
         }
@@ -382,12 +387,13 @@ function AdminPageContent({
             setStoredAdminData(ADMIN_STORAGE_KEYS.SELECTED_BRANCH, assigned);
             return assigned;
           }
-          if (prev && prev !== 'all' && cleaned.some((b: AdminBranch) => b.name === prev)) {
+          if (prev === 'all' || !prev) {
+            return 'all';
+          }
+          if (cleaned.some((b: AdminBranch) => b.name === prev)) {
             return prev;
           }
-          const fallbackBranch = cleaned[0]?.name || '';
-          setStoredAdminData(ADMIN_STORAGE_KEYS.SELECTED_BRANCH, fallbackBranch);
-          return fallbackBranch;
+          return 'all';
         });
       }
     };
@@ -395,7 +401,7 @@ function AdminPageContent({
     // Fetch categories directly from Backend API (Real Data)
     const loadCategories = async () => {
       try {
-        const categories = await categoryApi.getCategories();
+        const categories = await categoryApi.getCategories({ forceRefresh: true });
         if (categories && Array.isArray(categories)) {
           setCategoriesList(categories);
           return;
@@ -424,7 +430,7 @@ function AdminPageContent({
     const loadSuppliers = async () => {
       try {
         const suppliers = await supplierApi.getSuppliers();
-        if (suppliers && Array.isArray(suppliers) && suppliers.length > 0) {
+        if (suppliers && Array.isArray(suppliers)) {
           setSuppliersList(suppliers);
           setStoredAdminData(ADMIN_STORAGE_KEYS.SUPPLIERS, suppliers);
           return;
@@ -439,7 +445,7 @@ function AdminPageContent({
     // Fetch Customers directly from Backend API (Real Data)
     const loadCustomers = async () => {
       try {
-        const customers = await customerApi.getCustomers();
+        const customers = await customerApi.getCustomers({ bypassCache: true });
         if (customers && Array.isArray(customers)) {
           setCustomersList(customers);
           setStoredAdminData(ADMIN_STORAGE_KEYS.CUSTOMERS, customers);
@@ -454,7 +460,7 @@ function AdminPageContent({
     // Fetch Orders directly from Backend API (Real Data)
     const loadOrders = async () => {
       try {
-        const orders = await orderApi.getOrders();
+        const orders = await orderApi.getOrders({ bypassCache: true });
         if (orders && Array.isArray(orders)) {
           const normalized = orders.map(normalizeOrderRow);
           if (isInitialOrderLoadRef.current) {
@@ -485,7 +491,7 @@ function AdminPageContent({
     const loadRoles = async () => {
       try {
         const roles = await roleApi.getRoles();
-        if (roles && Array.isArray(roles) && roles.length > 0) {
+        if (roles && Array.isArray(roles)) {
           setRolesList(roles);
           setStoredAdminData(ADMIN_STORAGE_KEYS.ROLES, roles);
           return;
@@ -500,7 +506,7 @@ function AdminPageContent({
     const loadEmployees = async () => {
       try {
         const emps = await employeeApi.getEmployees();
-        if (emps && Array.isArray(emps) && emps.length > 0) {
+        if (emps && Array.isArray(emps)) {
           setEmployeesList(emps);
           setStoredAdminData(ADMIN_STORAGE_KEYS.EMPLOYEES, emps);
           return;
@@ -535,6 +541,14 @@ function AdminPageContent({
       loadRoles();
       loadEmployees();
     }
+
+    const handleCategoriesChanged = () => {
+      loadCategories();
+    };
+    window.addEventListener('categories_changed', handleCategoriesChanged);
+    return () => {
+      window.removeEventListener('categories_changed', handleCategoriesChanged);
+    };
   }, [activeNav]);
 
   // Hàm phát thông báo đơn hàng mới: Âm thanh chuông + Thông báo Desktop Windows + Popup nổi
@@ -575,7 +589,7 @@ function AdminPageContent({
       ),
       placement: 'bottomRight',
       duration: 10,
-      btn: (
+      actions: (
         <Button
           type="primary"
           size="small"
@@ -743,15 +757,17 @@ function AdminPageContent({
     }
   };
 
+  const cleanAdminName = user?.name && !user.name.includes('Quá') && !user.name.includes('trá»') && !user.name.includes('viÃªn') ? user.name : 'Quản trị viên';
+
   const profileMenuItems: MenuProps['items'] = [
     {
       key: 'user-info',
       label: (
         <div className="py-1">
-          <div className="font-bold text-slate-800">{user?.name || 'Nguyễn Văn Luân'}</div>
-          <div className="text-xs text-slate-500">{user?.email || 'admin@mocgia.vn'}</div>
+          <div className="font-bold text-slate-800">{cleanAdminName}</div>
+          <div className="text-xs text-slate-500">{user?.email || 'admin@d2luxury.vn'}</div>
           <Tag color="gold" className="mt-1 text-[10px]">
-            {user?.role || 'Quản trị viên'}
+            {user?.roleCode === 'SUPER_ADMIN' || user?.role === 'admin' ? 'Quản trị viên tối cao' : (user?.roleName || 'Nhân viên')}
           </Tag>
         </div>
       ),
@@ -900,7 +916,7 @@ function AdminPageContent({
             {/* Global Branch Selector Dropdown */}
             <div className="flex items-center shrink-0">
               <Select
-                value={selectedGlobalBranch && selectedGlobalBranch !== 'all' ? selectedGlobalBranch : (displayBranches[0]?.name || undefined)}
+                value={selectedGlobalBranch || 'all'}
                 onChange={(val) => {
                   setSelectedGlobalBranch(val);
                   setStoredAdminData(ADMIN_STORAGE_KEYS.SELECTED_BRANCH, val);
@@ -908,15 +924,18 @@ function AdminPageContent({
                     localStorage.setItem('d2_selected_branch', val);
                     window.dispatchEvent(new CustomEvent('branch_changed', { detail: { branchName: val } }));
                   } catch {}
-                  message.success(`Đã chuyển cơ sở: ${val}`);
+                  message.success(`Đã chuyển cơ sở: ${val === 'all' ? 'Tất cả chi nhánh' : val}`);
                 }}
                 className="w-48 sm:w-60 xl:w-72 text-xs font-semibold"
                 popupMatchSelectWidth={false}
                 placeholder="Chọn chi nhánh"
-                options={displayBranches.map((b) => ({
-                  value: b.name,
-                  label: b.name,
-                }))}
+                options={[
+                  ...(canSwitchBranch ? [{ value: 'all', label: '🏢 Tất cả chi nhánh (Toàn bộ)' }] : []),
+                  ...displayBranches.map((b) => ({
+                    value: b.name,
+                    label: b.name,
+                  })),
+                ]}
               />
             </div>
 
@@ -938,7 +957,7 @@ function AdminPageContent({
                   className="border border-[#784e34] shrink-0"
                 />
                 <div className="flex flex-col justify-center text-left leading-none shrink-0">
-                  <div className="text-xs font-bold text-[#1f1b19] leading-tight max-w-[110px] truncate">{user?.name || 'Quản trị viên'}</div>
+                  <div className="text-xs font-bold text-[#1f1b19] leading-tight max-w-[110px] truncate">{cleanAdminName}</div>
                   <div className="text-[10px] text-[#83746c] leading-tight mt-0.5 truncate max-w-[110px]">{user?.roleName || user?.roleCode || (user?.role === 'admin' ? 'Quản trị viên' : 'Nhân viên')}</div>
                 </div>
               </div>
@@ -948,7 +967,7 @@ function AdminPageContent({
       </Header>
 
       {/* 2. MAIN CONTENT */}
-      <Content className="p-4 sm:p-5 lg:p-6 w-full max-w-full overflow-x-hidden flex-1 flex flex-col min-h-[calc(100vh-80px)]">
+      <Content className="p-4 sm:p-5 lg:p-6 w-full max-w-full flex-1 flex flex-col min-h-[calc(100vh-80px)]">
         {activeNav === 'overview' && (
           <OverviewTab
             ordersList={ordersList}

@@ -49,6 +49,8 @@ import {
   AdminSidebarSummary,
   AdminFormDrawer,
   AdminStatusBadge,
+  AutoCodeButton,
+  getNextCode,
 } from '@/components/admin';
 import { VietQrCard } from '@/components/common/VietQrCard';
 import { exportToExcel } from '@/utils/exportExcel';
@@ -57,6 +59,7 @@ import { INITIAL_SUPPLIERS } from '@/data/admin/mockData';
 import { supplierApi } from '@/api/supplierApi';
 import { stockImportApi } from '@/api/stockImportApi';
 import { isMatchBranch } from '@/utils/branchHelper';
+import { ADMIN_STORAGE_KEYS, setStoredAdminData } from '@/utils/adminStorage';
 
 export interface SuppliersTabProps {
   suppliersList?: AdminSupplier[];
@@ -274,22 +277,34 @@ export function SuppliersTab({
       return;
     }
     setEditingSupplier(null);
-    form.resetFields();
-    const existingNums = suppliersList
-      .map((s) => {
-        const match = (s.code || '').match(/\d+/);
-        return match ? parseInt(match[0], 10) : 0;
-      })
-      .filter((n) => !isNaN(n));
-    const maxNum = existingNums.length > 0 ? Math.max(...existingNums, 0) : 0;
-    const autoCode = `NCC${(maxNum + 1).toString().padStart(2, '0')}`;
-    form.setFieldsValue({
-      code: autoCode,
-      status: 'active',
-      bankName: 'Vietcombank',
-      branch: selectedGlobalBranch !== 'all' ? selectedGlobalBranch : undefined,
-    });
+    const existingCodes = new Set(
+      suppliersList
+        .map((s) => (s.code || '').trim().toUpperCase())
+        .filter(Boolean)
+    );
+    let nextNum = 1;
+    let autoCode = `NCC${nextNum.toString().padStart(2, '0')}`;
+    while (existingCodes.has(autoCode)) {
+      nextNum++;
+      autoCode = `NCC${nextNum.toString().padStart(2, '0')}`;
+    }
     setDrawerOpen(true);
+    setTimeout(() => {
+      form.resetFields();
+      form.setFieldsValue({
+        code: autoCode,
+        status: 'active',
+        bankName: 'Vietcombank',
+        branch: selectedGlobalBranch !== 'all' ? selectedGlobalBranch : undefined,
+      });
+    }, 0);
+  };
+
+  const handleGenerateSupplierCode = () => {
+    const currentCode = form.getFieldValue('code');
+    const autoCode = getNextCode(currentCode, suppliersList, 'NCC', 2);
+    form.setFieldsValue({ code: autoCode });
+    message.success(`Đã tự động tạo mã nhà cung cấp mới: ${autoCode}`);
   };
 
   // Open Edit Supplier Drawer
@@ -299,53 +314,60 @@ export function SuppliersTab({
       return;
     }
     setEditingSupplier(supplier);
-    form.resetFields();
-    form.setFieldsValue({
-      code: supplier.code,
-      name: supplier.name,
-      taxCode: supplier.taxCode || '',
-      contactPerson: supplier.contactPerson,
-      phone: supplier.phone,
-      email: supplier.email,
-      address: supplier.address,
-      branch: supplier.branch || (selectedGlobalBranch !== 'all' ? selectedGlobalBranch : undefined),
-      company: supplier.company || supplier.name,
-      bankName: supplier.bankName || '',
-      bankAccount: supplier.bankAccount || '',
-      status: supplier.status || 'active',
-      note: supplier.note || '',
-    });
     setDrawerOpen(true);
+    setTimeout(() => {
+      form.resetFields();
+      form.setFieldsValue({
+        code: supplier.code,
+        name: supplier.name,
+        taxCode: supplier.taxCode || '',
+        contactPerson: supplier.contactPerson,
+        phone: supplier.phone,
+        email: supplier.email,
+        address: supplier.address,
+        branch: supplier.branch || (selectedGlobalBranch !== 'all' ? selectedGlobalBranch : undefined),
+        company: supplier.company || supplier.name,
+        bankName: supplier.bankName || '',
+        bankAccount: supplier.bankAccount || '',
+        status: supplier.status || 'active',
+        note: supplier.note || '',
+      });
+    }, 0);
   };
 
   // Handle Copy Supplier
   const handleCopySupplier = (sup: AdminSupplier) => {
     setEditingSupplier(null);
-    form.resetFields();
-    const existingNums = suppliersList
-      .map((s) => {
-        const match = (s.code || '').match(/\d+/);
-        return match ? parseInt(match[0], 10) : 0;
-      })
-      .filter((n) => !isNaN(n));
-    const maxNum = existingNums.length > 0 ? Math.max(...existingNums, 0) : 0;
-    const autoCode = `NCC${(maxNum + 1).toString().padStart(2, '0')}`;
-    form.setFieldsValue({
-      code: autoCode,
-      name: `${sup.name} (Bản sao)`,
-      taxCode: sup.taxCode || '',
-      contactPerson: sup.contactPerson,
-      phone: sup.phone,
-      email: sup.email,
-      address: sup.address,
-      branch: sup.branch || (selectedGlobalBranch !== 'all' ? selectedGlobalBranch : undefined),
-      company: sup.company || sup.name,
-      bankName: sup.bankName || '',
-      bankAccount: sup.bankAccount || '',
-      status: sup.status || 'active',
-      note: sup.note || '',
-    });
+    const existingCodes = new Set(
+      suppliersList
+        .map((s) => (s.code || '').trim().toUpperCase())
+        .filter(Boolean)
+    );
+    let nextNum = 1;
+    let autoCode = `NCC${nextNum.toString().padStart(2, '0')}`;
+    while (existingCodes.has(autoCode)) {
+      nextNum++;
+      autoCode = `NCC${nextNum.toString().padStart(2, '0')}`;
+    }
     setDrawerOpen(true);
+    setTimeout(() => {
+      form.resetFields();
+      form.setFieldsValue({
+        code: autoCode,
+        name: `${sup.name} (Bản sao)`,
+        taxCode: sup.taxCode || '',
+        contactPerson: sup.contactPerson,
+        phone: sup.phone,
+        email: sup.email,
+        address: sup.address,
+        branch: sup.branch || (selectedGlobalBranch !== 'all' ? selectedGlobalBranch : undefined),
+        company: sup.company || sup.name,
+        bankName: sup.bankName || '',
+        bankAccount: sup.bankAccount || '',
+        status: sup.status || 'active',
+        note: sup.note || '',
+      });
+    }, 0);
   };
 
   // Handle Save Supplier (Create or Update)
@@ -383,6 +405,7 @@ export function SuppliersTab({
           s.id === editingSupplier.id ? { ...s, ...updated } : s
         );
         setSuppliersList(updatedList);
+        setStoredAdminData(ADMIN_STORAGE_KEYS.SUPPLIERS, updatedList);
         message.success(`Đã cập nhật thông tin nhà cung cấp "${trimmedName}" thành công!`);
         setDrawerOpen(false);
       } else {
@@ -406,7 +429,9 @@ export function SuppliersTab({
           createdBy: 'Quản trị viên',
         };
         const created = await supplierApi.createSupplier(payload);
-        setSuppliersList([created, ...suppliersList]);
+        const nextList = [created, ...suppliersList];
+        setSuppliersList(nextList);
+        setStoredAdminData(ADMIN_STORAGE_KEYS.SUPPLIERS, nextList);
         message.success(`Đã thêm nhà cung cấp "${created.name}" thành công!`);
         setDrawerOpen(false);
       }
@@ -421,7 +446,9 @@ export function SuppliersTab({
   const handleDeleteSupplier = async (id: string, name: string) => {
     try {
       await supplierApi.deleteSupplier(id);
-      setSuppliersList((prev) => prev.filter((s) => s.id !== id));
+      const nextList = suppliersList.filter((s) => s.id !== id);
+      setSuppliersList(nextList);
+      setStoredAdminData(ADMIN_STORAGE_KEYS.SUPPLIERS, nextList);
       setSelectedRowKeys((prev) => prev.filter((k) => k !== id));
       if (expandedSupplierId === id) {
         setExpandedSupplierId(null);
@@ -438,7 +465,9 @@ export function SuppliersTab({
     const keysToDelete = [...selectedRowKeys];
     try {
       const count = await supplierApi.bulkDeleteSuppliers(keysToDelete as string[]);
-      setSuppliersList((prev) => prev.filter((s) => !keysToDelete.includes(s.id)));
+      const nextList = suppliersList.filter((s) => !keysToDelete.includes(s.id));
+      setSuppliersList(nextList);
+      setStoredAdminData(ADMIN_STORAGE_KEYS.SUPPLIERS, nextList);
       setSelectedRowKeys([]);
       if (expandedSupplierId && keysToDelete.includes(expandedSupplierId)) {
         setExpandedSupplierId(null);
@@ -968,7 +997,16 @@ export function SuppliersTab({
                   label={<span className="text-xs font-semibold text-slate-800">Mã nhà cung cấp</span>}
                   name="code"
                 >
-                  <Input placeholder="Tự động hoặc NCC01" className="h-10 rounded-lg font-mono text-sm uppercase" />
+                  <Input
+                    placeholder="Tự động hoặc NCC01"
+                    className="h-10 rounded-lg font-mono text-sm uppercase"
+                    suffix={
+                      <AutoCodeButton
+                        onGenerate={handleGenerateSupplierCode}
+                        tooltipTitle="Tự động tạo mã nhà cung cấp mới"
+                      />
+                    }
+                  />
                 </Form.Item>
               </Col>
               <Col span={12}>

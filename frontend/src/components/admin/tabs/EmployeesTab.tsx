@@ -54,6 +54,8 @@ import {
   AdminFilterSidebar,
   AdminSidebarSummary,
   AdminSearchInput,
+  AutoCodeButton,
+  getNextCode,
 } from '@/components/admin';
 import { exportToExcel } from '@/utils/exportExcel';
 import { employeeApi } from '@/api/employeeApi';
@@ -298,9 +300,14 @@ export function EmployeesTab({
   const handleOpenCreate = () => {
     setEditingEmployee(null);
     setIsUsernameCustom(false);
-    let nextNum = employeesList.length + 1;
+    const existingCodes = new Set(
+      employeesList
+        .map((e) => (e.code || '').trim().toUpperCase())
+        .filter(Boolean)
+    );
+    let nextNum = 1;
     let nextCode = `NV${String(nextNum).padStart(3, '0')}`;
-    while (employeesList.some((e) => e.code && e.code.trim().toUpperCase() === nextCode)) {
+    while (existingCodes.has(nextCode)) {
       nextNum++;
       nextCode = `NV${String(nextNum).padStart(3, '0')}`;
     }
@@ -332,6 +339,13 @@ export function EmployeesTab({
         skills: [],
       });
     }, 0);
+  };
+
+  const handleGenerateEmployeeCode = () => {
+    const currentCode = form.getFieldValue('code');
+    const nextCode = getNextCode(currentCode, employeesList, 'NV', 3);
+    form.setFieldsValue({ code: nextCode });
+    message.success(`Đã tự động tạo mã nhân viên mới: ${nextCode}`);
   };
 
   // Open Edit Employee Drawer
@@ -424,9 +438,14 @@ export function EmployeesTab({
 
     // 4. Validation & auto-generation: Mã nhân viên
     if (!trimmedCode && !editingEmployee) {
-      let nextNum = employeesList.length + 1;
+      const existingCodes = new Set(
+        employeesList
+          .map((e) => (e.code || '').trim().toUpperCase())
+          .filter(Boolean)
+      );
+      let nextNum = 1;
       trimmedCode = `NV${String(nextNum).padStart(3, '0')}`;
-      while (employeesList.some((e) => e.code && e.code.trim().toUpperCase() === trimmedCode)) {
+      while (existingCodes.has(trimmedCode)) {
         nextNum++;
         trimmedCode = `NV${String(nextNum).padStart(3, '0')}`;
       }
@@ -1224,7 +1243,16 @@ export function EmployeesTab({
                   name="code"
                   rules={[{ required: true, message: 'Nhập mã NV' }]}
                 >
-                  <Input placeholder="NV001" className="h-10 rounded-lg font-mono text-sm uppercase" />
+                  <Input
+                    placeholder="NV001"
+                    className="h-10 rounded-lg font-mono text-sm uppercase"
+                    suffix={
+                      <AutoCodeButton
+                        onGenerate={handleGenerateEmployeeCode}
+                        tooltipTitle="Tự động tạo mã nhân viên mới"
+                      />
+                    }
+                  />
                 </Form.Item>
               </Col>
               <Col span={10}>

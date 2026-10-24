@@ -15,7 +15,7 @@ public sealed class ConsultationsController : ApiControllerBase
     [Authorize(Roles = "Admin,Staff")]
     public async Task<IActionResult> GetConsultations(
         [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 20,
+        [FromQuery] int pageSize = 0,
         [FromQuery] string? search = null,
         [FromQuery] string? status = null,
         CancellationToken cancellationToken = default)

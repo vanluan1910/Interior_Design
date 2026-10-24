@@ -26,7 +26,6 @@ import {
   FilterOutlined,
   AppstoreOutlined,
   HomeOutlined,
-  ThunderboltOutlined,
   FileExcelOutlined,
   ReloadOutlined,
   UploadOutlined,
@@ -40,6 +39,8 @@ import * as XLSX from 'xlsx';
 import {
   AdminDataTable,
   AdminFormDrawer,
+  AutoCodeButton,
+  getNextCode,
 } from '@/components/admin';
 import type { AdminCategory, AdminSpace } from '@/types/admin';
 import { categoryApi } from '@/api/categoryApi';
@@ -137,6 +138,9 @@ export function CategoriesTab({
     } else {
       setLocalSpacesList(updater);
     }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('spaces_changed'));
+    }
   };
 
   // --- CATEGORIES STATE ---
@@ -202,7 +206,7 @@ export function CategoriesTab({
 
   const handleRefreshCategories = async () => {
     try {
-      const refreshed = await categoryApi.getCategories();
+      const refreshed = await categoryApi.getCategories({ forceRefresh: true });
       setCategoriesList(refreshed);
       message.success('Đã làm mới danh mục nhóm hàng thành công!');
     } catch (err: any) {
@@ -229,8 +233,18 @@ export function CategoriesTab({
         throw new Error('File Excel không có dữ liệu danh mục.');
       }
 
-      // Nhóm duy nhất theo Tên danh mục và gán không gian tương ứng
-      const categoryMap = new Map<string, any>();
+      // Thu thập thông tin và đếm số lần xuất hiện của không gian cho từng danh mục
+      const categoryMap = new Map<string, {
+        name: string;
+        code?: string;
+        spaceCounts: Record<string, number>;
+        description?: string;
+        slug?: string;
+        status: string;
+        displayOrder: number;
+        badge?: string;
+        featuredProduct?: string;
+      }>();
 
       rawRows.forEach((row: any, idx: number) => {
         const rawName = String(
@@ -250,7 +264,7 @@ export function CategoriesTab({
         // Tách các tên danh mục nếu có dấu phẩy
         const names = rawName.split(',').map((n) => n.trim()).filter(Boolean);
         const explicitCode = String(row['Mã danh mục'] || row['Mã nhóm'] || row['Mã nhóm hàng'] || row['code'] || '').trim();
-        const space = String(row['Không gian'] || row['Không gian nội thất'] || row['space'] || row['Space'] || '').trim();
+        const rawSpace = String(row['Không gian'] || row['Không gian nội thất'] || row['space'] || row['Space'] || '').trim();
         const description = String(row['Mô tả'] || row['Mô tả chi tiết'] || row['description'] || '').trim();
         const slug = String(row['Đường dẫn'] || row['Slug'] || row['slug'] || '').trim();
         const rawStatus = String(row['Trạng thái'] || row['status'] || 'active').trim().toLowerCase();
@@ -261,26 +275,81 @@ export function CategoriesTab({
 
         names.forEach((name) => {
           const key = name.toLowerCase();
-          const cleanSpace = (space ? space.split(',')[0].trim() : '') || 'Phòng Khách';
           if (!categoryMap.has(key)) {
             categoryMap.set(key, {
               name,
               code: explicitCode && (explicitCode.startsWith('NH') || explicitCode.startsWith('DM')) ? explicitCode : undefined,
-              space: cleanSpace,
+              spaceCounts: {},
               description: description || `Danh mục sản phẩm ${name}`,
               slug: slug || undefined,
               status,
               displayOrder: displayOrder,
               badge,
               featuredProduct,
-              showOnHome: true,
-              showOnMenu: true,
             });
+          }
+
+          const entry = categoryMap.get(key)!;
+          if (rawSpace) {
+            const firstSpace = rawSpace.split(',')[0].trim();
+            if (firstSpace) {
+              entry.spaceCounts[firstSpace] = (entry.spaceCounts[firstSpace] || 0) + 1;
+            }
           }
         });
       });
 
-      const categoriesToImport = Array.from(categoryMap.values());
+      const categoriesToImport = Array.from(categoryMap.values()).map((entry) => {
+        const lowerName = entry.name.toLowerCase();
+        let determinedSpace = '';
+
+        // 1. Quy tắc chuyên ngành nội thất để tránh lỗi nhãn lẫn lộn từ file Excel
+        if (lowerName.includes('bàn trà') || lowerName.includes('bàn nước') || lowerName.includes('sofa') || lowerName.includes('kệ tivi') || lowerName.includes('tủ giày')) {
+          determinedSpace = 'Phòng khách';
+        } else if (lowerName.includes('bàn ăn') || lowerName.includes('ghế ăn') || lowerName.includes('chạn ly') || lowerName.includes('tủ bếp')) {
+          determinedSpace = 'Phòng ăn';
+        } else if (lowerName.includes('giường') || lowerName.includes('táp') || lowerName.includes('tủ áo') || lowerName.includes('quần áo') || lowerName.includes('trang điểm')) {
+          determinedSpace = 'Phòng ngủ';
+        } else if (lowerName.includes('làm việc') || lowerName.includes('giá sách') || lowerName.includes('kệ sách')) {
+          determinedSpace = 'Phòng làm việc';
+        }
+
+        // 2. Nếu không thuộc từ khóa đặc trưng, lấy không gian chiếm đa số từ các dòng dữ liệu
+        if (!determinedSpace) {
+          const spaces = Object.entries(entry.spaceCounts);
+          if (spaces.length > 0) {
+            spaces.sort((a, b) => b[1] - a[1]);
+            determinedSpace = spaces[0][0];
+          }
+        }
+
+        if (!determinedSpace) {
+          determinedSpace = 'Phòng khách';
+        }
+
+        // 3. Chuẩn hóa SpaceId khớp với danh sách không gian thực tế trong hệ thống
+        const matchedSpace = currentSpacesList.find((s) =>
+          s.name.toLowerCase() === determinedSpace.toLowerCase() ||
+          s.name.toLowerCase().includes(determinedSpace.toLowerCase()) ||
+          determinedSpace.toLowerCase().includes(s.name.toLowerCase()) ||
+          (s.code && s.code.toLowerCase() === determinedSpace.toLowerCase())
+        );
+
+        return {
+          name: entry.name,
+          code: entry.code,
+          space: matchedSpace ? matchedSpace.name : determinedSpace,
+          spaceId: matchedSpace ? matchedSpace.id : undefined,
+          description: entry.description,
+          slug: entry.slug,
+          status: entry.status,
+          displayOrder: entry.displayOrder,
+          badge: entry.badge,
+          featuredProduct: entry.featuredProduct,
+          showOnHome: true,
+          showOnMenu: true,
+        };
+      });
 
       if (categoriesToImport.length === 0) {
         throw new Error('Không tìm thấy dòng danh mục hợp lệ trong file Excel.');
@@ -304,15 +373,10 @@ export function CategoriesTab({
   const handleExportCategoriesExcel = onExportCategoriesExcel || (() => message.success('Đã xuất danh mục ra Excel!'));
 
   const handleGenerateCategoryCode = () => {
-    const existingCodes = new Set(categoriesList.map((c) => (c.code || '').toUpperCase()));
-    let nextNum = categoriesList.length + 1;
-    let genCode = `NH${nextNum.toString().padStart(2, '0')}`;
-    while (existingCodes.has(genCode)) {
-      nextNum++;
-      genCode = `NH${nextNum.toString().padStart(2, '0')}`;
-    }
+    const currentCode = categoryForm.getFieldValue('code');
+    const genCode = getNextCode(currentCode, categoriesList, 'NH', 2);
     categoryForm.setFieldsValue({ code: genCode });
-    message.success(`Đã tự động tạo mã danh mục: ${genCode}`);
+    message.success(`Đã tự động tạo mã danh mục mới: ${genCode}`);
   };
   
   const handleOpenCreateCategory = () => {
@@ -322,24 +386,26 @@ export function CategoriesTab({
     }
     setEditingCategory(null);
     const existingCodes = new Set(categoriesList.map((c) => (c.code || '').toUpperCase()));
-    let nextNum = categoriesList.length + 1;
+    let nextNum = 1;
     let autoCode = `NH${nextNum.toString().padStart(2, '0')}`;
     while (existingCodes.has(autoCode)) {
       nextNum++;
       autoCode = `NH${nextNum.toString().padStart(2, '0')}`;
     }
-    categoryForm.resetFields();
-    categoryForm.setFieldsValue({
-      name: '',
-      code: autoCode,
-      space: currentSpacesList[0]?.name || 'Phòng Khách',
-      description: '',
-      displayOrder: categoriesList.length + 1,
-      status: 'active',
-      showOnHome: true,
-      showOnMenu: true,
-    });
     setShowCategoryDrawer(true);
+    setTimeout(() => {
+      categoryForm.resetFields();
+      categoryForm.setFieldsValue({
+        name: '',
+        code: autoCode,
+        space: currentSpacesList[0]?.name || 'Phòng Khách',
+        description: '',
+        displayOrder: categoriesList.length + 1,
+        status: 'active',
+        showOnHome: true,
+        showOnMenu: true,
+      });
+    }, 0);
   };
 
   const handleOpenEditCategory = (cat: AdminCategory) => {
@@ -348,22 +414,25 @@ export function CategoriesTab({
       return;
     }
     setEditingCategory(cat);
-    categoryForm.setFieldsValue({
-      name: cat.name,
-      code: cat.code,
-      space: cat.space || currentSpacesList[0]?.name || 'Phòng Khách',
-      description: cat.description,
-      displayOrder: cat.displayOrder ?? 1,
-      status: cat.status,
-      showOnHome: cat.showOnHome ?? true,
-      showOnMenu: cat.showOnMenu ?? true,
-    });
     setShowCategoryDrawer(true);
+    setTimeout(() => {
+      categoryForm.resetFields();
+      categoryForm.setFieldsValue({
+        name: cat.name,
+        code: cat.code,
+        space: cat.space || currentSpacesList[0]?.name || 'Phòng Khách',
+        description: cat.description,
+        displayOrder: cat.displayOrder ?? 1,
+        status: cat.status,
+        showOnHome: cat.showOnHome ?? true,
+        showOnMenu: cat.showOnMenu ?? true,
+      });
+    }, 0);
   };
 
   const handleCopyCategory = async (cat: AdminCategory) => {
     const existingCodes = new Set(categoriesList.map((c) => (c.code || '').toUpperCase()));
-    let nextNum = categoriesList.length + 1;
+    let nextNum = 1;
     let genCode = `NH${nextNum.toString().padStart(2, '0')}`;
     while (existingCodes.has(genCode)) {
       nextNum++;
@@ -479,6 +548,10 @@ export function CategoriesTab({
   const handleCategoryFormSubmit = async (values: any) => {
     const autoSlug = (values.name || '').toLowerCase().trim().replace(/\s+/g, '-').replace(/[^\w-]/g, '');
     const spaceVal = values.space || currentSpacesList[0]?.name || 'Phòng Khách';
+    const foundSpace = currentSpacesList.find(
+      (s) => s.name.toLowerCase() === spaceVal.toLowerCase() || s.code.toLowerCase() === spaceVal.toLowerCase()
+    );
+    const spaceIdVal = foundSpace?.id;
 
     if (editingCategory) {
       const payload: Partial<AdminCategory> = {
@@ -486,6 +559,7 @@ export function CategoriesTab({
         code: values.code || editingCategory.code,
         slug: autoSlug || editingCategory.slug,
         space: spaceVal,
+        spaceId: spaceIdVal || editingCategory.spaceId,
         image: editingCategory.image || '',
         description: values.description || '',
         status: values.status || editingCategory.status,
@@ -500,6 +574,9 @@ export function CategoriesTab({
         setCategoriesList((prev) =>
           prev.map((c) => (c.id === editingCategory.id ? { ...c, ...updatedCat } : c))
         );
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('categories_changed'));
+        }
         message.success(`Đã cập nhật danh mục "${values.name}"!`);
         setShowCategoryDrawer(false);
       } catch (err: any) {
@@ -511,6 +588,7 @@ export function CategoriesTab({
         code: values.code || 'NH' + (categoriesList.length + 1).toString().padStart(2, '0'),
         slug: autoSlug || 'nhom-hang-moi',
         space: spaceVal,
+        spaceId: spaceIdVal,
         displayOrder: values.displayOrder !== undefined ? values.displayOrder : (categoriesList.length + 1),
         productCount: 0,
         status: values.status || 'active',
@@ -523,6 +601,9 @@ export function CategoriesTab({
       try {
         const createdCat = await categoryApi.createCategory(newCatPayload);
         setCategoriesList((prev) => [...prev, createdCat]);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('categories_changed'));
+        }
         message.success(`Đã thêm mới danh mục "${values.name}"!`);
         setShowCategoryDrawer(false);
       } catch (err: any) {
@@ -549,6 +630,9 @@ export function CategoriesTab({
     try {
       await categoryApi.deleteCategory(id);
       setCategoriesList((prev) => prev.filter((c) => c.id !== id));
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('categories_changed'));
+      }
       message.success(`Đã xóa danh mục ${name ? `"${name}"` : ''} thành công!`);
     } catch (err: any) {
       modal.error({
@@ -604,60 +688,60 @@ export function CategoriesTab({
   };
 
   const handleGenerateSpaceCode = () => {
-    const existingCodes = new Set(currentSpacesList.map((s) => (s.code || '').toUpperCase()));
-    let nextNum = currentSpacesList.length + 1;
-    let genCode = `KG${nextNum.toString().padStart(2, '0')}`;
-    while (existingCodes.has(genCode)) {
-      nextNum++;
-      genCode = `KG${nextNum.toString().padStart(2, '0')}`;
-    }
+    const currentCode = spaceForm.getFieldValue('code');
+    const genCode = getNextCode(currentCode, currentSpacesList, 'KG', 2);
     spaceForm.setFieldsValue({ code: genCode });
-    message.success(`Đã tự động tạo mã không gian: ${genCode}`);
+    message.success(`Đã tự động tạo mã không gian mới: ${genCode}`);
   };
 
   const handleOpenCreateSpace = () => {
     setEditingSpace(null);
     const existingCodes = new Set(currentSpacesList.map((s) => (s.code || '').toUpperCase()));
-    let nextNum = currentSpacesList.length + 1;
+    let nextNum = 1;
     let autoCode = `KG${nextNum.toString().padStart(2, '0')}`;
     while (existingCodes.has(autoCode)) {
       nextNum++;
       autoCode = `KG${nextNum.toString().padStart(2, '0')}`;
     }
-    spaceForm.resetFields();
-    spaceForm.setFieldsValue({
-      code: autoCode,
-      name: '',
-      tagline: '',
-      image: '',
-      description: '',
-      displayOrder: currentSpacesList.length + 1,
-      status: 'active',
-      showOnHeader: true,
-      showOnHome: true,
-    });
     setShowSpaceDrawer(true);
+    setTimeout(() => {
+      spaceForm.resetFields();
+      spaceForm.setFieldsValue({
+        code: autoCode,
+        name: '',
+        tagline: '',
+        image: '',
+        description: '',
+        displayOrder: currentSpacesList.length + 1,
+        status: 'active',
+        showOnHeader: true,
+        showOnHome: true,
+      });
+    }, 0);
   };
 
   const handleOpenEditSpace = (space: AdminSpace) => {
     setEditingSpace(space);
-    spaceForm.setFieldsValue({
-      code: space.code,
-      name: space.name,
-      tagline: space.tagline || '',
-      image: space.image || '',
-      description: space.description || '',
-      displayOrder: space.displayOrder ?? 1,
-      status: space.status || 'active',
-      showOnHeader: space.showOnHeader ?? true,
-      showOnHome: space.showOnHome ?? true,
-    });
     setShowSpaceDrawer(true);
+    setTimeout(() => {
+      spaceForm.resetFields();
+      spaceForm.setFieldsValue({
+        code: space.code,
+        name: space.name,
+        tagline: space.tagline || '',
+        image: space.image || '',
+        description: space.description || '',
+        displayOrder: space.displayOrder ?? 1,
+        status: space.status || 'active',
+        showOnHeader: space.showOnHeader ?? true,
+        showOnHome: space.showOnHome ?? true,
+      });
+    }, 0);
   };
 
   const handleCopySpace = async (space: AdminSpace) => {
     const existingCodes = new Set(currentSpacesList.map((s) => (s.code || '').toUpperCase()));
-    let nextNum = currentSpacesList.length + 1;
+    let nextNum = 1;
     let autoCode = `KG${nextNum.toString().padStart(2, '0')}`;
     while (existingCodes.has(autoCode)) {
       nextNum++;
@@ -970,7 +1054,7 @@ export function CategoriesTab({
         <div className="flex flex-col lg:flex-row gap-4 items-start flex-1">
           {/* DESKTOP FILTER SIDEBAR */}
           <aside className="hidden lg:block w-64 shrink-0">
-            <div className="bg-white rounded-xl shadow-xs p-4 sticky top-4 space-y-4 text-xs text-slate-700">
+            <div className="bg-white rounded-xl shadow-xs p-4 sticky top-[96px] max-h-[calc(100vh-112px)] overflow-y-auto [scrollbar-width:thin] space-y-4 text-xs text-slate-700">
               <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                 <span className="font-bold text-xs text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
                   <FilterOutlined className="text-[#784e34]" /> Bộ lọc danh mục
@@ -1232,7 +1316,7 @@ export function CategoriesTab({
         <div className="flex flex-col lg:flex-row gap-4 items-start flex-1">
           {/* DESKTOP SPACES FILTER SIDEBAR */}
           <aside className="hidden lg:block w-64 shrink-0">
-            <div className="bg-white rounded-xl shadow-xs p-4 sticky top-4 space-y-4 text-xs text-slate-700">
+            <div className="bg-white rounded-xl shadow-xs p-4 sticky top-[96px] max-h-[calc(100vh-112px)] overflow-y-auto [scrollbar-width:thin] space-y-4 text-xs text-slate-700">
               <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                 <span className="font-bold text-xs text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
                   <FilterOutlined className="text-[#784e34]" /> Bộ lọc không gian
@@ -1508,14 +1592,10 @@ export function CategoriesTab({
                   placeholder="Tự động hoặc nhập tay"
                   className="h-10 text-sm font-mono uppercase font-semibold rounded-lg"
                   suffix={
-                    <button
-                      type="button"
-                      onClick={handleGenerateCategoryCode}
-                      className="text-[#784e34] hover:text-[#5d371f] border-none bg-transparent cursor-pointer p-0.5 inline-flex items-center"
-                      title="Tự động tạo mã"
-                    >
-                      <ThunderboltOutlined className="text-sm" />
-                    </button>
+                    <AutoCodeButton
+                      onGenerate={handleGenerateCategoryCode}
+                      tooltipTitle="Tự động tạo mã danh mục mới"
+                    />
                   }
                 />
               </Form.Item>
@@ -1658,14 +1738,10 @@ export function CategoriesTab({
                   placeholder="Tự động hoặc nhập tay"
                   className="h-10 text-sm font-mono uppercase font-semibold rounded-lg"
                   suffix={
-                    <button
-                      type="button"
-                      onClick={handleGenerateSpaceCode}
-                      className="text-[#784e34] hover:text-[#5d371f] border-none bg-transparent cursor-pointer p-0.5 inline-flex items-center"
-                      title="Tự động tạo mã"
-                    >
-                      <ThunderboltOutlined className="text-sm" />
-                    </button>
+                    <AutoCodeButton
+                      onGenerate={handleGenerateSpaceCode}
+                      tooltipTitle="Tự động tạo mã không gian mới"
+                    />
                   }
                 />
               </Form.Item>

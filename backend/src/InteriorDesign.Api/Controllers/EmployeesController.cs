@@ -89,7 +89,7 @@ public sealed class EmployeesController : ApiControllerBase
         [FromQuery] string? status = null,
         [FromQuery] bool includeDeleted = false,
         [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 50,
+        [FromQuery] int pageSize = 0,
         CancellationToken cancellationToken = default)
     {
         try
@@ -137,14 +137,13 @@ public sealed class EmployeesController : ApiControllerBase
 
             var totalCount = await query.CountAsync(cancellationToken);
 
-            var takeCount = pageSize > 0 ? pageSize : (totalCount > 0 ? totalCount : 50);
-
-            var items = await query
+            var itemsQuery = query
                 .OrderBy(x => x.Code)
-                .ThenBy(x => x.Name)
-                .Skip((page - 1) * takeCount)
-                .Take(takeCount)
-                .ToListAsync(cancellationToken);
+                .ThenBy(x => x.Name);
+
+            var items = pageSize > 0
+                ? await itemsQuery.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(cancellationToken)
+                : await itemsQuery.ToListAsync(cancellationToken);
 
             // Map skills JSON to List<string> for clean frontend consumption
             var mapped = items.Select(e => new

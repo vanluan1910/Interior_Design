@@ -32,6 +32,7 @@ export const customerApi = {
     includeDeleted?: boolean;
     page?: number;
     pageSize?: number;
+    bypassCache?: boolean;
   }): Promise<AdminCustomer[]> {
     const query = new URLSearchParams();
     if (params?.page !== undefined) query.append('page', String(params.page));
@@ -43,18 +44,41 @@ export const customerApi = {
     if (params?.customerType && params.customerType !== 'all') query.append('customerType', params.customerType);
     if (params?.includeDeleted) query.append('includeDeleted', 'true');
 
+    if (params?.bypassCache) {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/customers?${query.toString()}`, {
+          headers: { Accept: 'application/json' },
+        });
+        if (!res.ok) {
+          console.warn(`Backend returned status ${res.status} for customers`);
+          return [];
+        }
+        const json: CustomerApiResponse<AdminCustomer[]> = await res.json();
+        return json.data || [];
+      } catch (err) {
+        console.warn('Network error fetching customers:', err);
+        return [];
+      }
+    }
+
     const cacheKey = `customers:${query.toString()}`;
     return cachedFetch(cacheKey, async () => {
-      const res = await fetch(`${API_BASE_URL}/api/customers?${query.toString()}`, {
-        headers: { Accept: 'application/json' },
-      });
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/customers?${query.toString()}`, {
+          headers: { Accept: 'application/json' },
+        });
 
-      if (!res.ok) {
-        throw new Error(`Failed to fetch customers (${res.status})`);
+        if (!res.ok) {
+          console.warn(`Backend returned status ${res.status} for customers`);
+          return [];
+        }
+
+        const json: CustomerApiResponse<AdminCustomer[]> = await res.json();
+        return json.data || [];
+      } catch (err) {
+        console.warn('Network error fetching customers:', err);
+        return [];
       }
-
-      const json: CustomerApiResponse<AdminCustomer[]> = await res.json();
-      return json.data || [];
     }, 15000);
   },
 

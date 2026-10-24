@@ -104,23 +104,20 @@ function HeaderContent({
   useEffect(() => {
     let isMounted = true;
     const now = Date.now();
-    if (cachedHeaderSpaces && cachedHeaderCategories && (now - lastHeaderFetchTime < CACHE_DURATION_MS)) {
-      return;
-    }
 
-    const fetchMenuData = async () => {
+    const fetchMenuData = async (force = false) => {
       try {
         const [spacesData, categoriesData] = await Promise.all([
-          spaceApi.getSpaces({ status: 'active' }).catch(() => []),
-          categoryApi.getCategories({ status: 'active' }).catch(() => []),
+          spaceApi.getSpaces({ status: 'active', forceRefresh: force }).catch(() => []),
+          categoryApi.getCategories({ status: 'active', forceRefresh: force }).catch(() => []),
         ]);
         if (isMounted) {
-          if (Array.isArray(spacesData) && spacesData.length > 0) {
+          if (Array.isArray(spacesData)) {
             const filtered = spacesData.filter((s) => s.status !== 'hidden' && s.showOnHeader !== false);
             cachedHeaderSpaces = filtered;
             setSpaces(filtered);
           }
-          if (Array.isArray(categoriesData) && categoriesData.length > 0) {
+          if (Array.isArray(categoriesData)) {
             const filtered = categoriesData.filter((c) => c.status !== 'hidden' && c.showOnMenu !== false);
             cachedHeaderCategories = filtered;
             setCategories(filtered);
@@ -131,9 +128,25 @@ function HeaderContent({
         console.error('Error loading header navigation:', err);
       }
     };
-    fetchMenuData();
+
+    if (!cachedHeaderSpaces || !cachedHeaderCategories || (now - lastHeaderFetchTime >= CACHE_DURATION_MS)) {
+      fetchMenuData();
+    }
+
+    const handleMenuChanged = () => {
+      cachedHeaderSpaces = null;
+      cachedHeaderCategories = null;
+      lastHeaderFetchTime = 0;
+      fetchMenuData(true);
+    };
+
+    window.addEventListener('categories_changed', handleMenuChanged);
+    window.addEventListener('spaces_changed', handleMenuChanged);
+
     return () => {
       isMounted = false;
+      window.removeEventListener('categories_changed', handleMenuChanged);
+      window.removeEventListener('spaces_changed', handleMenuChanged);
     };
   }, []);
 
@@ -160,73 +173,8 @@ function HeaderContent({
   // Determine active navigation item
   const isHomeActive = pathname === '/' && !spaceParam;
 
-
-
-  // Fallback spaces in case API is loading or empty (core spaces only, no "Sản phẩm khác")
-  const defaultSpaces: AdminSpace[] = [
-    {
-      id: 'living',
-      code: 'KG01',
-      name: 'Phòng khách',
-      slug: 'living',
-      tagline: 'Không gian phòng khách',
-      description: 'Nội thất phòng khách sang trọng',
-      image: '',
-      icon: '',
-      displayOrder: 1,
-      categoryCount: 0,
-      status: 'active',
-      showOnHome: true,
-      showOnHeader: true,
-    },
-    {
-      id: 'dining',
-      code: 'KG02',
-      name: 'Phòng ăn',
-      slug: 'dining',
-      tagline: 'Không gian phòng ăn',
-      description: 'Nội thất phòng ăn ấm cúng',
-      image: '',
-      icon: '',
-      displayOrder: 2,
-      categoryCount: 0,
-      status: 'active',
-      showOnHome: true,
-      showOnHeader: true,
-    },
-    {
-      id: 'bedroom',
-      code: 'KG03',
-      name: 'Phòng ngủ',
-      slug: 'bedroom',
-      tagline: 'Không gian phòng ngủ',
-      description: 'Nội thất phòng ngủ thanh lịch',
-      image: '',
-      icon: '',
-      displayOrder: 3,
-      categoryCount: 0,
-      status: 'active',
-      showOnHome: true,
-      showOnHeader: true,
-    },
-    {
-      id: 'office',
-      code: 'KG04',
-      name: 'Phòng làm việc',
-      slug: 'office',
-      tagline: 'Không gian phòng làm việc',
-      description: 'Nội thất phòng làm việc đẳng cấp',
-      image: '',
-      icon: '',
-      displayOrder: 4,
-      categoryCount: 0,
-      status: 'active',
-      showOnHome: true,
-      showOnHeader: true,
-    },
-  ];
-
-  const currentSpaces = spaces.length > 0 ? spaces : defaultSpaces;
+  // Dynamic spaces from Database only - no hardcoded fallbacks
+  const currentSpaces = spaces.filter((s) => s.status !== 'hidden' && s.showOnHeader !== false);
 
   const navItems: HeaderNavItem[] = [
     {
@@ -239,38 +187,30 @@ function HeaderContent({
       .slice()
       .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0))
       .map((s) => {
-        const code = (s.code || '').toUpperCase();
-        let spaceParamKey = 'living';
-        if (code === 'KG01') spaceParamKey = 'living';
-        else if (code === 'KG02') spaceParamKey = 'dining';
-        else if (code === 'KG03') spaceParamKey = 'bedroom';
-        else if (code === 'KG04') spaceParamKey = 'office';
-        else {
-          const normName = (s.name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
-          if (normName.includes('khach')) spaceParamKey = 'living';
-          else if (normName.includes('ngu')) spaceParamKey = 'bedroom';
-          else if (normName.includes('an')) spaceParamKey = 'dining';
-          else if (normName.includes('lam viec')) spaceParamKey = 'office';
-          else spaceParamKey = (s.slug || s.code.toLowerCase()).replace(/^phong-/, '').replace(/^phong/, '');
-        }
+        const spaceParamKey = s.slug || s.code?.toLowerCase() || s.id;
+        const sNameLower = (s.name || '').toLowerCase().trim();
+        const sCodeLower = (s.code || '').toLowerCase().trim();
+        const sSlugLower = (s.slug || '').toLowerCase().trim();
+        const curSpaceLower = (spaceParam || '').toLowerCase().trim();
 
         const isCurrentSpaceActive =
-          (pathname === '/products' &&
-            (spaceParam === spaceParamKey ||
-              spaceParam === s.slug ||
-              spaceParam === s.code ||
-              spaceParam?.toLowerCase() === s.name.toLowerCase())) ||
-          pathname === `/${spaceParamKey}` ||
-          pathname === `/${spaceParamKey}-room`;
+          pathname === '/products' &&
+          (curSpaceLower === spaceParamKey.toLowerCase() ||
+            curSpaceLower === sSlugLower ||
+            curSpaceLower === sCodeLower ||
+            curSpaceLower === sNameLower);
 
         // Submenu categories
         const spaceCategories = categories.filter((c) => {
-          if (c.spaceId && c.spaceId === s.id) return true;
+          if (c.spaceId && s.id && c.spaceId.toLowerCase() === s.id.toLowerCase()) return true;
           const cSpace = (c.space || '').toLowerCase().trim();
-          const sName = (s.name || '').toLowerCase().trim();
-          const sCode = (s.code || '').toLowerCase().trim();
-          const sSlug = (s.slug || '').toLowerCase().trim();
-          return cSpace === sName || cSpace === sCode || cSpace === sSlug || cSpace.includes(sName);
+          return (
+            cSpace === sNameLower ||
+            cSpace === sCodeLower ||
+            cSpace === sSlugLower ||
+            cSpace.includes(sNameLower) ||
+            sNameLower.includes(cSpace)
+          );
         });
 
         const submenu =

@@ -93,19 +93,9 @@ function mapCatalogToDetailProduct(item: FeaturedCatalogProduct, currentBranch?:
     subtitle: item.collection || item.material || 'Chế tác mộng mộc truyền thống',
     description: item.description || `Sản phẩm ${item.name} chế tác tỉ mỉ từ gỗ tự nhiên tuyển chọn bởi nghệ nhân D2 LUXURY.`,
     dimensions: item.dimensions || 'Theo thiết kế tiêu chuẩn',
-    stockStatus: (() => {
-      const stockQty = getProductStockForBranch(item, currentBranch);
-      if (stockQty > 0) return `Còn hàng (${stockQty} sản phẩm)`;
-      if (item.stockType === 'custom') return 'Đặt may đo (7-14 ngày)';
-      return 'Hết hàng (Nhận đặt may đo)';
-    })(),
-    inStock: (() => {
-      const stockQty = getProductStockForBranch(item, currentBranch);
-      return stockQty > 0;
-    })(),
-    inStockQty: (() => {
-      return getProductStockForBranch(item, currentBranch);
-    })(),
+    stockStatus: item.stockType === 'custom' ? 'Đặt may đo (7-14 ngày)' : '',
+    inStock: true,
+    inStockQty: getProductStockForBranch(item, currentBranch),
     materialDetails: item.material || item.metaInfo || 'Gỗ tự nhiên sấy chân không đạt chuẩn',
     material: item.material || item.metaInfo,
     color: item.color || 'Nâu hạt dẻ / tự nhiên (Đa dạng)',
@@ -419,7 +409,11 @@ export default function ProductDetailPage({
                 <img
                   alt={galleryImages[selectedImgIdx]?.title || currentProduct.name}
                   className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-                  src={galleryImages[selectedImgIdx]?.src || currentProduct.image}
+                  src={galleryImages[selectedImgIdx]?.src || currentProduct.image || '/logo.png'}
+                  onError={(e) => {
+                    const target = e.currentTarget as HTMLImageElement;
+                    if (!target.src.includes('logo.png')) target.src = '/logo.png';
+                  }}
                 />
 
                 {/* Badges */}
@@ -456,6 +450,10 @@ export default function ProductDetailPage({
                         alt={thumb.title}
                         className="w-full h-full object-cover"
                         src={thumb.src}
+                        onError={(e) => {
+                          const target = e.currentTarget as HTMLImageElement;
+                          if (!target.src.includes('logo.png')) target.src = '/logo.png';
+                        }}
                       />
                       <span className="absolute bottom-0 inset-x-0 bg-black/60 text-white text-[10px] font-medium py-0.5 text-center truncate px-1">
                         {thumb.tag}
@@ -473,10 +471,12 @@ export default function ProductDetailPage({
               <div className="flex flex-col gap-1.5">
                 <div className="flex items-center justify-between text-xs text-[#83746c] font-medium">
                   <span className="font-mono">{currentProduct.sku}</span>
-                  <span className={`inline-flex items-center gap-1.5 font-semibold ${!currentProduct.inStock ? 'text-[#ba1a1a]' : 'text-[#3f4332]'}`}>
-                    <span className={`w-2 h-2 rounded-full ${!currentProduct.inStock ? 'bg-[#ba1a1a]' : 'bg-emerald-600'}`}></span>
-                    {currentProduct.stockStatus}
-                  </span>
+                  {currentProduct.stockStatus && (
+                    <span className={`inline-flex items-center gap-1.5 font-semibold ${!currentProduct.inStock ? 'text-[#ba1a1a]' : 'text-[#3f4332]'}`}>
+                      <span className={`w-2 h-2 rounded-full ${!currentProduct.inStock ? 'bg-[#ba1a1a]' : 'bg-emerald-600'}`}></span>
+                      {currentProduct.stockStatus}
+                    </span>
+                  )}
                 </div>
 
                 <h1 className="font-headline-lg text-2xl sm:text-3xl text-[#1f1b19] font-normal tracking-tight">
@@ -498,11 +498,6 @@ export default function ProductDetailPage({
                   {calculatedStrike && calculatedStrike > calculatedPrice && (
                     <span className="px-2 py-0.5 bg-red-600 text-white text-xs font-bold uppercase tracking-wide rounded-none shadow-sm">
                       -{Math.round(((calculatedStrike - calculatedPrice) / calculatedStrike) * 100)}%
-                    </span>
-                  )}
-                  {!currentProduct.inStock && (
-                    <span className="px-2.5 py-0.5 bg-[#ba1a1a] text-white text-xs font-bold uppercase tracking-wide">
-                      Hết hàng
                     </span>
                   )}
                 </div>

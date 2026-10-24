@@ -27,7 +27,7 @@ public sealed class Product
     public int ReviewCount { get; set; } = 0;
     public bool IsFeatured { get; set; } = false;
     public bool IsNew { get; set; } = false;
-    public int InStock { get; set; } = 10;
+    public int InStock { get; set; } = 0;
     public string Unit { get; set; } = "Bộ";
     public string BranchStocksJson { get; set; } = "{}";
     public string ShortDescription { get; set; } = string.Empty;

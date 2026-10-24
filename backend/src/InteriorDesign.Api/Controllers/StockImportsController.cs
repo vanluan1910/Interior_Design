@@ -174,6 +174,11 @@ public sealed class StockImportsController : ApiControllerBase
             return BadRequest(ApiResponse<StockImportSlip>.Fail("Dữ liệu phiếu nhập không hợp lệ."));
         }
 
+        if (string.IsNullOrWhiteSpace(request.Supplier) || string.Equals(request.Supplier.Trim(), "Nhà cung cấp", StringComparison.OrdinalIgnoreCase))
+        {
+            return BadRequest(ApiResponse<StockImportSlip>.Fail("Vui lòng chọn hoặc nhập Nhà cung cấp trước khi lập phiếu nhập để ghi nhận công nợ chính xác."));
+        }
+
         var code = string.IsNullOrWhiteSpace(request.Code)
             ? $"PN{DateTime.Now:yyyyMMddHHmmss}"
             : request.Code.Trim().ToUpper();
@@ -361,7 +366,7 @@ public sealed class StockImportsController : ApiControllerBase
             if (string.IsNullOrWhiteSpace(targetBranch))
             {
                 var defBr = allBranches.FirstOrDefault(b => b.Status == "active");
-                targetBranch = defBr?.Name ?? "Chi nhánh Hà Nội";
+                targetBranch = defBr?.Name ?? allBranches.FirstOrDefault()?.Name ?? "Mặc định";
             }
 
             var matchedBranch = BranchMatcher.FindMatchingBranch(allBranches, targetBranch, allWarehouses);

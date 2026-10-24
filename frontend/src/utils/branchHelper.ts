@@ -21,13 +21,23 @@ export function isMatchBranch(
   fallbackWarehouses?: { name: string; branch: string }[]
 ): boolean {
   if (!selectedBranch || selectedBranch === 'all') return true;
-  if (!target) return false;
+  if (!target) return true;
 
   const targetNorm = normalizeBranchName(target);
   const selectedNorm = normalizeBranchName(selectedBranch);
 
   if (targetNorm === selectedNorm) return true;
   if (targetNorm.includes(selectedNorm) || selectedNorm.includes(targetNorm)) return true;
+
+  // Universal online / global orders or headquarters match all branches
+  if (
+    targetNorm.includes('toan he thong') ||
+    targetNorm.includes('tat ca') ||
+    targetNorm.includes('online') ||
+    targetNorm.includes('website')
+  ) {
+    return true;
+  }
 
   // Check if target is a warehouse name that belongs to the selected branch
   if (fallbackWarehouses && fallbackWarehouses.length > 0) {

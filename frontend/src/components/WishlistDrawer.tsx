@@ -23,7 +23,7 @@ function mapCatalogToWishlistProduct(item: FeaturedCatalogProduct): Product {
   else if (rawSpace.includes('off') || rawSpace.includes('việc')) space = 'office';
   else space = 'living';
 
-  const isOutOfStock = item.stockType === 'out_of_stock' || (item.inStockQty !== undefined && item.inStockQty <= 0);
+  const isOutOfStock = false;
 
   return {
     id: item.id,
@@ -41,8 +41,8 @@ function mapCatalogToWishlistProduct(item: FeaturedCatalogProduct): Product {
     subtitle: item.collection || 'Chế tác thủ công',
     description: item.description || '',
     dimensions: item.dimensions || 'Tiêu chuẩn',
-    stockStatus: isOutOfStock ? 'Hết hàng' : (item.stockType === 'custom' ? 'Đặt may đo' : 'Sẵn hàng'),
-    inStock: !isOutOfStock && item.stockType !== 'custom',
+    stockStatus: item.stockType === 'custom' ? 'Đặt may đo' : 'Sẵn hàng',
+    inStock: true,
     materialDetails: item.material || 'Gỗ tự nhiên cao cấp',
   };
 }
@@ -91,10 +91,6 @@ export default function WishlistDrawer({ isOpen, onClose }: WishlistDrawerProps)
 
 
   const handleAddToCart = (item: Product) => {
-    if (!item.inStock || item.stockStatus === 'Hết hàng') {
-      message.warning('Sản phẩm đã hết hàng, không thể thêm vào giỏ!');
-      return;
-    }
     addToCart({
       id: item.id,
       sku: item.sku,
@@ -186,7 +182,7 @@ export default function WishlistDrawer({ isOpen, onClose }: WishlistDrawerProps)
           </div>
         ) : (
           favoritedProducts.map((item) => {
-            const isOutOfStock = !item.inStock || item.stockStatus === 'Hết hàng';
+            const isOutOfStock = false;
             return (
               <div
                 key={item.id}
@@ -201,15 +197,9 @@ export default function WishlistDrawer({ isOpen, onClose }: WishlistDrawerProps)
                   <img
                     src={item.image}
                     alt={item.name}
-                    className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ${
-                      isOutOfStock ? 'grayscale-[40%] opacity-80' : ''
-                    }`}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   />
-                  {isOutOfStock ? (
-                    <span className="absolute top-1 left-1 bg-[#ba1a1a] text-white text-[9px] font-bold px-1.5 py-0.5">
-                      Hết hàng
-                    </span>
-                  ) : item.tag ? (
+                  {item.tag ? (
                     <span className="absolute top-1 left-1 bg-[#784e34] text-white text-[9px] font-bold px-1.5 py-0.5">
                       {item.tag}
                     </span>
@@ -241,11 +231,6 @@ export default function WishlistDrawer({ isOpen, onClose }: WishlistDrawerProps)
                       <p className="text-[11px] text-[#83746c] truncate">
                         {item.woodType}
                       </p>
-                      {isOutOfStock && (
-                        <span className="text-[10px] font-bold text-[#ba1a1a] bg-[#ffdad6] px-1.5 py-0.2 shrink-0">
-                          Hết hàng
-                        </span>
-                      )}
                     </div>
                   </div>
 
@@ -270,16 +255,11 @@ export default function WishlistDrawer({ isOpen, onClose }: WishlistDrawerProps)
 
                     <button
                       onClick={() => handleAddToCart(item)}
-                      disabled={isOutOfStock}
                       type="button"
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold transition-colors shadow-sm ${
-                        isOutOfStock
-                          ? 'bg-[#eae1dd] text-[#83746c] cursor-not-allowed border border-[#eae1dd]'
-                          : 'bg-[#5d371f] text-white hover:bg-[#784e34] cursor-pointer'
-                      }`}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold transition-colors shadow-sm bg-[#5d371f] text-white hover:bg-[#784e34] cursor-pointer"
                     >
                       <ShoppingCartOutlined />
-                      <span>{isOutOfStock ? 'Hết hàng' : 'Thêm giỏ'}</span>
+                      <span>Thêm giỏ</span>
                     </button>
                   </div>
                 </div>

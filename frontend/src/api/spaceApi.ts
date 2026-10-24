@@ -42,6 +42,15 @@ export interface SpaceDetailResponse {
   totalPages: number;
 }
 
+function notifySpacesChanged() {
+  invalidateApiCache('spaces');
+  invalidateApiCache('space:');
+  invalidateApiCache('home');
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('spaces_changed'));
+  }
+}
+
 export const spaceApi = {
   /**
    * Lấy chi tiết và danh mục, sản phẩm Không Gian Phòng Khách
@@ -59,8 +68,8 @@ export const spaceApi = {
     if (params?.categoryId) query.append('categoryId', params.categoryId);
     if (params?.material) query.append('material', params.material);
     if (params?.sortBy) query.append('sortBy', params.sortBy);
-    if (params?.page) query.append('page', params.page.toString());
-    if (params?.pageSize) query.append('pageSize', params.pageSize.toString());
+    if (params?.page !== undefined) query.append('page', params.page.toString());
+    if (params?.pageSize !== undefined) query.append('pageSize', params.pageSize.toString());
 
     const cacheKey = `space:living-room:${query.toString()}`;
     return cachedFetch(cacheKey, async () => {
@@ -96,8 +105,8 @@ export const spaceApi = {
     if (params?.categoryId) query.append('categoryId', params.categoryId);
     if (params?.material) query.append('material', params.material);
     if (params?.sortBy) query.append('sortBy', params.sortBy);
-    if (params?.page) query.append('page', params.page.toString());
-    if (params?.pageSize) query.append('pageSize', params.pageSize.toString());
+    if (params?.page !== undefined) query.append('page', params.page.toString());
+    if (params?.pageSize !== undefined) query.append('pageSize', params.pageSize.toString());
 
     const cacheKey = `space:slug:${slug}:${query.toString()}`;
     return cachedFetch(cacheKey, async () => {
@@ -120,7 +129,11 @@ export const spaceApi = {
     search?: string;
     status?: string;
     includeDeleted?: boolean;
+    forceRefresh?: boolean;
   }): Promise<AdminSpace[]> {
+    if (params?.forceRefresh) {
+      invalidateApiCache('spaces');
+    }
     const query = new URLSearchParams();
     if (params?.search) query.append('search', params.search);
     if (params?.status && params.status !== 'all') query.append('status', params.status);
@@ -203,7 +216,7 @@ export const spaceApi = {
       throw new Error(err?.message || `Failed to create space (${res.status})`);
     }
 
-    invalidateApiCache('spaces');
+    notifySpacesChanged();
     const json = await res.json();
     return json.data;
   },
@@ -226,7 +239,7 @@ export const spaceApi = {
       throw new Error(err?.message || `Failed to bulk import spaces (${res.status})`);
     }
 
-    invalidateApiCache('spaces');
+    notifySpacesChanged();
     const json = await res.json();
     return {
       count: json.data,
@@ -264,7 +277,7 @@ export const spaceApi = {
       throw new Error(err?.message || `Failed to update space (${res.status})`);
     }
 
-    invalidateApiCache('spaces');
+    notifySpacesChanged();
     const json = await res.json();
     return json.data;
   },
@@ -287,7 +300,7 @@ export const spaceApi = {
       throw new Error(err?.message || `Failed to update space status (${res.status})`);
     }
 
-    invalidateApiCache('spaces');
+    notifySpacesChanged();
     const json = await res.json();
     return json.data;
   },
@@ -306,7 +319,7 @@ export const spaceApi = {
       throw new Error(err?.message || `Failed to delete space (${res.status})`);
     }
 
-    invalidateApiCache('spaces');
+    notifySpacesChanged();
     const json = await res.json();
     return json.data ?? true;
   },
@@ -325,7 +338,7 @@ export const spaceApi = {
       throw new Error(err?.message || `Failed to restore space (${res.status})`);
     }
 
-    invalidateApiCache('spaces');
+    notifySpacesChanged();
     const json = await res.json();
     return json.data;
   },

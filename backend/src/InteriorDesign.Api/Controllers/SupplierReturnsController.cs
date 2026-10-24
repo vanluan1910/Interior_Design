@@ -129,6 +129,11 @@ public sealed class SupplierReturnsController : ApiControllerBase
             return BadRequest(ApiResponse<SupplierReturnSlip>.Fail("Dữ liệu phiếu trả hàng không hợp lệ."));
         }
 
+        if (string.IsNullOrWhiteSpace(request.SupplierName) || string.Equals(request.SupplierName.Trim(), "Nhà cung cấp", StringComparison.OrdinalIgnoreCase))
+        {
+            return BadRequest(ApiResponse<SupplierReturnSlip>.Fail("Vui lòng chọn hoặc nhập Nhà cung cấp nhận hàng trước khi lập phiếu trả để cấn trừ công nợ chính xác."));
+        }
+
         var code = string.IsNullOrWhiteSpace(request.Code)
             ? $"TH{DateTime.Now:yyyyMMddHHmmss}"
             : request.Code.Trim().ToUpper();
@@ -258,7 +263,7 @@ public sealed class SupplierReturnsController : ApiControllerBase
             if (string.IsNullOrWhiteSpace(targetBranch))
             {
                 var defBr = allBranches.FirstOrDefault(b => b.Status == "active");
-                targetBranch = defBr?.Name ?? "Chi nhánh Hà Nội";
+                targetBranch = defBr?.Name ?? allBranches.FirstOrDefault()?.Name ?? "Mặc định";
             }
 
             var matchedBranch = BranchMatcher.FindMatchingBranch(allBranches, targetBranch, allWarehouses);

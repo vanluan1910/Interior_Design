@@ -432,6 +432,7 @@ public static class InteriorSeedData
             EstablishedDate = "20/11/2021",
             Status = "active",
             IsHeadquarter = true,
+            IsDefault = true,
             Description = "Không gian trưng bày nội thất cao cấp trải nghiệm thực tế cho biệt thự & penthouse.",
             CreatedAt = DateTime.UtcNow
         },

@@ -67,6 +67,7 @@ export function AdminDataTable<T extends object = any>({
   onRow,
   className = '',
   scroll = { x: 'max-content' },
+  sticky = { offsetHeader: 80 },
   ...restProps
 }: AdminDataTableProps<T>) {
   const isSelectionToolbarActive = enableSelectionToolbar || Boolean(selectedRowKeys !== undefined && onSelectionChange);
@@ -130,10 +131,10 @@ export function AdminDataTable<T extends object = any>({
   };
 
   return (
-    <div className={`w-full min-w-0 max-w-full bg-white rounded-xl shadow-xs border border-slate-200 overflow-hidden flex flex-col ${className}`}>
+    <div className={`w-full min-w-0 max-w-full bg-white rounded-xl shadow-xs border border-slate-200 flex flex-col ${className}`}>
       {/* 1. Branch-style Standard Selection & Action Toolbar */}
       {isSelectionToolbarActive && (
-        <div className="shrink-0 flex flex-col gap-3 border-b border-slate-200 bg-white p-3.5 sm:p-4">
+        <div className="shrink-0 flex flex-col gap-3 border-b border-slate-200 bg-white p-3.5 sm:p-4 rounded-t-xl">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-slate-900">
               {titleIcon && <span className="text-base shrink-0">{titleIcon}</span>}
@@ -219,7 +220,7 @@ export function AdminDataTable<T extends object = any>({
 
       {/* 2. Classic Header Bar (optional fallback if selection toolbar not active) */}
       {!isSelectionToolbarActive && !hideHeader && (titleText || extraHeaderActions) && (
-        <div className="px-4 py-3 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 bg-white">
+        <div className="px-4 py-3 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 bg-white rounded-t-xl">
           <div className="flex items-center gap-2 flex-wrap">
             {titleIcon && <span className="text-base shrink-0">{titleIcon}</span>}
             {titleText && (
@@ -246,7 +247,7 @@ export function AdminDataTable<T extends object = any>({
       )}
 
       {/* 3. Table Body */}
-      <div className="w-full max-w-full overflow-x-auto flex-1 min-h-0">
+      <div className="w-full max-w-full flex-1 min-h-0">
         <Table<T>
           dataSource={paginatedData}
           columns={columns}
@@ -255,6 +256,7 @@ export function AdminDataTable<T extends object = any>({
           rowSelection={computedRowSelection}
           onRow={computedOnRow}
           scroll={scroll}
+          sticky={sticky}
           size="small"
           className="w-full [&_.ant-table-thead>tr>th]:!bg-white [&_.ant-table-thead>tr>th]:!font-semibold [&_.ant-table-thead>tr>th]:!text-slate-800 [&_.ant-table-thead>tr>th]:!py-2.5 [&_.ant-table-tbody>tr>td]:!py-2.5 [&_.ant-table-row-selected>td]:!bg-amber-50/40"
           {...restProps}
@@ -264,7 +266,7 @@ export function AdminDataTable<T extends object = any>({
       {/* 4. Domaco POS Standard ERP High-Density Pagination Footer */}
       {pagination !== false && (
         <div
-          className="px-3 sm:px-4 py-2 border-t border-slate-200 bg-white flex flex-col sm:flex-row sm:items-center sm:justify-between shrink-0 gap-2"
+          className="px-3 sm:px-4 py-2 border-t border-slate-200 bg-white flex flex-col sm:flex-row sm:items-center sm:justify-between shrink-0 gap-2 rounded-b-xl"
           data-table-guide="pagination"
         >
           {/* Total data summary */}

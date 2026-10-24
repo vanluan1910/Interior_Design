@@ -221,4 +221,30 @@ export const branchApi = {
 
     return json.data;
   },
+
+  /**
+   * Đặt chi nhánh làm chi nhánh mặc định
+   */
+  async setDefaultBranch(id: string, isDefault: boolean = true): Promise<AdminBranch> {
+    const res = await fetch(`${API_BASE_URL}/api/branches/${id}/default`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ isDefault }),
+    });
+
+    if (!res.ok) {
+      const errJson = await res.json().catch(() => null);
+      throw new Error(errJson?.message || `Cập nhật chi nhánh mặc định thất bại: ${res.statusText}`);
+    }
+
+    invalidateApiCache('branches');
+    const json: BranchApiResponse<AdminBranch> = await res.json();
+    if (!json.success || !json.data) {
+      throw new Error(json.message || 'Cập nhật chi nhánh mặc định thất bại.');
+    }
+
+    return json.data;
+  },
 };

@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useEffect, Suspense } from 'react';
 import Link from 'next/link';
-import { useSearchParams, usePathname } from 'next/navigation';
+import { useSearchParams, usePathname, useRouter } from 'next/navigation';
 import { Slider, Select, Pagination, Tag, Button, Checkbox, Tooltip, App } from 'antd';
 import {
   EyeOutlined,
@@ -20,15 +20,19 @@ import { type CategoryProduct } from '@/data/categoryProducts';
 import { Product, CartItem } from '@/types';
 import { useCart } from '@/context/CartContext';
 import { productApi, FeaturedCatalogProduct } from '@/api/productApi';
+import { categoryApi } from '@/api/categoryApi';
+import { spaceApi } from '@/api/spaceApi';
+import { AdminCategory, AdminSpace } from '@/types/admin';
 import { WoodMaterialItem, groupDbMaterials, extractPrimaryWood, getMaterialQueryKey } from '@/data/woodMaterials';
 import { getProductStockForBranch } from '@/utils/branchHelper';
 
 function mapCatalogToCategoryProduct(item: FeaturedCatalogProduct, currentBranch?: string): CategoryProduct {
   const rawSpace = (item.space || '').toLowerCase();
-  let space: 'living' | 'bedroom' | 'dining' | 'office' = 'living';
+  let space: string = 'living';
   if (rawSpace.includes('bed') || rawSpace.includes('ngủ') || rawSpace === 'kg03') space = 'bedroom';
   else if (rawSpace.includes('din') || rawSpace.includes('ăn') || rawSpace === 'kg02') space = 'dining';
   else if (rawSpace.includes('off') || rawSpace.includes('việc') || rawSpace === 'kg04') space = 'office';
+  else if (item.space && item.space.trim()) space = item.space.trim();
   else space = 'living';
 
   const spaceNames: Record<string, string> = {
@@ -48,9 +52,9 @@ function mapCatalogToCategoryProduct(item: FeaturedCatalogProduct, currentBranch
   const woodMaterialName = item.material || item.metaInfo || (woodMaterial === 'walnut' ? 'Gỗ óc chó Bắc Mỹ' : woodMaterial === 'oak' ? 'Gỗ sồi tự nhiên' : woodMaterial === 'ash' ? 'Gỗ tần bì tự nhiên' : 'Khung gỗ bọc da bò Ý');
 
   const branchStock = getProductStockForBranch(item, currentBranch);
-  const isOutOfStock = branchStock <= 0 || item.stockType === 'out_of_stock';
-  const stockStatus = isOutOfStock ? 'out_of_stock' : (item.stockType === 'custom' ? 'custom' : 'showroom');
-  const stockLabel = isOutOfStock ? 'Hết hàng' : (item.stockType === 'custom' ? 'Đặt may đo' : '');
+  const isOutOfStock = false;
+  const stockStatus = item.stockType === 'custom' ? 'custom' : 'showroom';
+  const stockLabel = item.stockType === 'custom' ? 'Đặt may đo' : '';
 
   return {
     id: item.id,
@@ -71,11 +75,11 @@ function mapCatalogToCategoryProduct(item: FeaturedCatalogProduct, currentBranch
           : undefined),
     stockStatus,
     stockLabel,
-    inStock: !isOutOfStock,
+    inStock: true,
     inStockQty: branchStock,
     image: item.image || '/logo.png',
     macroImage: item.images?.[1] || item.image || '/logo.png',
-    tag: isOutOfStock ? 'Hết hàng' : (item.collection || 'Tuyệt tác mộc'),
+    tag: item.collection || 'Tuyệt tác mộc',
     description: item.description || item.collection || `Sản phẩm ${item.name} chế tác tinh xảo từ gỗ tự nhiên`,
     dimensions: item.dimensions || 'Theo thiết kế',
     warranty: item.warranty || 'Bảo hành 5 năm',
@@ -248,6 +252,16 @@ const SPACE_SUBCATEGORIES: Record<string, { title: string; options: SubcategoryO
       },
     ],
   },
+  other: {
+    title: 'Danh Mục Sản Phẩm Khác',
+    options: [
+      {
+        id: 'rattan',
+        label: 'Ghế Mây Tự Nhiên',
+        matcher: (item) => matchesCategoryFilter(item, 'may') || matchesCategoryFilter(item, 'ghe may'),
+      },
+    ],
+  },
 };
 
 const CATEGORY_NAMES: Record<string, string> = {
@@ -262,26 +276,40 @@ const CATEGORY_NAMES: Record<string, string> = {
   dining: 'Bàn ăn tự nhiên',
   island: 'Tủ rượu & Đảo bếp',
   desk: 'Bàn làm việc',
+  rattan: 'Ghế Mây',
 };
 
 export function normalizeSpace(spaceStr: string | null | undefined): { key: string; name: string } | null {
   if (!spaceStr || spaceStr === 'all') return null;
-  const s = decodeURIComponent(spaceStr).toLowerCase().trim();
+  const raw = decodeURIComponent(spaceStr).trim();
+  const s = raw.toLowerCase();
   const norm = s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/-/g, ' ');
 
+  if (norm.includes('khac') || norm === 'other' || norm === 'kg05' || norm === 'kg06' || norm.includes('san pham khac')) {
+    return { key: 'other', name: 'Sản Phẩm Khác' };
+  }
   if (norm.includes('khach') || norm === 'living' || norm === 'kg01') {
     return { key: 'living', name: 'Phòng Khách' };
   }
   if (norm.includes('ngu') || norm === 'bedroom' || norm === 'kg03') {
     return { key: 'bedroom', name: 'Phòng Ngủ' };
   }
-  if (norm.includes('an') || norm === 'dining' || norm === 'kg02') {
+  if (norm.includes('phong an') || norm === 'dining' || norm === 'kg02' || norm.includes('bep') || norm === 'an') {
     return { key: 'dining', name: 'Phòng Ăn' };
   }
   if (norm.includes('lam viec') || norm === 'office' || norm === 'kg04') {
     return { key: 'office', name: 'Phòng Làm Việc' };
   }
-  return null;
+
+  // Support any custom dynamic space created by user
+  const formattedName = raw
+    .replace(/-/g, ' ')
+    .split(' ')
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+
+  return { key: s, name: formattedName };
 }
 
 export function resolveCategoryInfo(
@@ -348,12 +376,18 @@ export function resolveCategoryInfo(
   if (norm.includes('sach') || norm.includes('ho so') || norm === 'bookcase') {
     return { name: 'Tủ Sách & Kệ Hồ Sơ', spaceKey: 'office', spaceName: 'Phòng Làm Việc' };
   }
+
+  // Other Room Categories (Sản Phẩm Khác)
+  if (norm.includes('may') || norm.includes('ghe may') || norm === 'rattan') {
+    return { name: 'Ghế Mây', spaceKey: 'other', spaceName: 'Sản Phẩm Khác' };
+  }
+
   if (norm.includes('ghe') || norm === 'chair') {
     const sKey = currentSpaceKey || 'living';
     return {
       name: 'Ghế Thư Giãn & Đôn',
       spaceKey: sKey,
-      spaceName: sKey === 'dining' ? 'Phòng Ăn' : sKey === 'office' ? 'Phòng Làm Việc' : 'Phòng Khách',
+      spaceName: sKey === 'dining' ? 'Phòng Ăn' : sKey === 'office' ? 'Phòng Làm Việc' : sKey === 'other' ? 'Sản Phẩm Khác' : 'Phòng Khách',
     };
   }
 
@@ -369,12 +403,13 @@ export function resolveCategoryInfo(
   return {
     name: formattedTitle,
     spaceKey: sKey,
-    spaceName: sKey === 'bedroom' ? 'Phòng Ngủ' : sKey === 'dining' ? 'Phòng Ăn' : sKey === 'office' ? 'Phòng Làm Việc' : 'Phòng Khách',
+    spaceName: sKey === 'bedroom' ? 'Phòng Ngủ' : sKey === 'dining' ? 'Phòng Ăn' : sKey === 'office' ? 'Phòng Làm Việc' : sKey === 'other' ? 'Sản Phẩm Khác' : 'Phòng Khách',
   };
 }
 
 
 function ProductsContent() {
+  const router = useRouter();
   const { message } = App.useApp();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -385,9 +420,66 @@ function ProductsContent() {
   const categoryParam = searchParams.get('category');
   const queryParam = searchParams.get('q');
 
+  // Real categories and spaces from Database API
+  const [dbCategories, setDbCategories] = useState<AdminCategory[]>([]);
+  const [dbSpaces, setDbSpaces] = useState<AdminSpace[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadCategories() {
+      try {
+        const cats = await categoryApi.getCategories({ status: 'active' });
+        if (isMounted && cats && cats.length > 0) {
+          setDbCategories(cats);
+        }
+      } catch (err) {
+        console.warn('Could not load categories for customer filter:', err);
+      }
+    }
+    loadCategories();
+
+    async function loadSpaces() {
+      try {
+        const sp = await spaceApi.getSpaces({ status: 'active' });
+        if (isMounted && Array.isArray(sp)) {
+          setDbSpaces(sp);
+        }
+      } catch (err) {
+        console.warn('Could not load spaces for customer filter:', err);
+      }
+    }
+    loadSpaces();
+
+    const handleDataChanged = () => {
+      loadCategories();
+      loadSpaces();
+    };
+    window.addEventListener('categories_changed', handleDataChanged);
+    window.addEventListener('spaces_changed', handleDataChanged);
+    return () => {
+      isMounted = false;
+      window.removeEventListener('categories_changed', handleDataChanged);
+      window.removeEventListener('spaces_changed', handleDataChanged);
+    };
+  }, []);
+
   // Identify active room or deduce from category if space not in URL
   const resolvedSpace = useMemo(() => {
     if (spaceParam && spaceParam !== 'all') {
+      const matchDb = dbSpaces.find(
+        (s) =>
+          s.slug?.toLowerCase() === spaceParam.toLowerCase() ||
+          s.code?.toLowerCase() === spaceParam.toLowerCase() ||
+          s.id?.toLowerCase() === spaceParam.toLowerCase() ||
+          s.name?.toLowerCase() === spaceParam.toLowerCase()
+      );
+      if (matchDb) {
+        return {
+          key: matchDb.slug || matchDb.code.toLowerCase(),
+          name: matchDb.name,
+          id: matchDb.id,
+        };
+      }
       const normalized = normalizeSpace(spaceParam);
       if (normalized) return normalized;
     }
@@ -402,12 +494,52 @@ function ProductsContent() {
       }
     }
     return null;
-  }, [spaceParam, pathname, categoryParam]);
+  }, [spaceParam, pathname, categoryParam, dbSpaces]);
 
   const activeSpecificRoom = resolvedSpace?.key || null;
 
+  // Categories belonging to the active space (or all if browsing all spaces)
+  const activeSpaceCategories = useMemo(() => {
+    if (!dbCategories || dbCategories.length === 0) return [];
+    if (!activeSpecificRoom || activeSpecificRoom === 'all') {
+      return dbCategories.filter((c) => c.status !== 'hidden');
+    }
+
+    const targetSpaceNorm = activeSpecificRoom.toLowerCase();
+    const matchedSpace = dbSpaces.find(
+      (s) => (s.slug || s.code.toLowerCase()) === targetSpaceNorm || s.name.toLowerCase() === targetSpaceNorm
+    );
+    const spaceId = matchedSpace?.id?.toLowerCase();
+    const spaceName = matchedSpace?.name?.toLowerCase();
+
+    return dbCategories.filter((cat) => {
+      if (cat.status === 'hidden') return false;
+      if (spaceId && cat.spaceId && cat.spaceId.toLowerCase() === spaceId) return true;
+      const cSpace = (cat.space || '').toLowerCase().trim();
+      if (spaceName && (cSpace === spaceName || cSpace.includes(spaceName) || spaceName.includes(cSpace))) return true;
+
+      const normC = cSpace.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
+      if (targetSpaceNorm === 'living') {
+        return normC.includes('khach') || cSpace.includes('living');
+      }
+      if (targetSpaceNorm === 'bedroom') {
+        return normC.includes('ngu') || cSpace.includes('bed');
+      }
+      if (targetSpaceNorm === 'dining') {
+        return normC.includes('an') || normC.includes('bep') || cSpace.includes('dining');
+      }
+      if (targetSpaceNorm === 'office') {
+        return normC.includes('viec') || normC.includes('sach') || cSpace.includes('office');
+      }
+      if (targetSpaceNorm === 'other') {
+        return normC.includes('khac') || cSpace.includes('other');
+      }
+      return cSpace === targetSpaceNorm || normC.includes(targetSpaceNorm);
+    });
+  }, [dbCategories, dbSpaces, activeSpecificRoom]);
+
   // Filters State
-  const [selectedSpaces, setSelectedSpaces] = useState<string[]>(['living', 'bedroom', 'dining', 'office']);
+  const [selectedSpaces, setSelectedSpaces] = useState<string[]>(['living', 'bedroom', 'dining', 'office', 'other']);
   const [selectedSubcategories, setSelectedSubcategories] = useState<string[]>([]);
   const [selectedMaterials, setSelectedMaterials] = useState<string[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -563,7 +695,7 @@ function ProductsContent() {
         setSelectedSubcategories(SPACE_SUBCATEGORIES[activeRoom].options.map((o) => o.id));
       }
     } else {
-      setSelectedSpaces(['living', 'bedroom', 'dining', 'office']);
+      setSelectedSpaces(['living', 'bedroom', 'dining', 'office', 'other']);
       setSelectedSubcategories([]);
     }
 
@@ -621,7 +753,7 @@ function ProductsContent() {
       setSelectedSpaces([activeSpecificRoom]);
       setSelectedSubcategories(SPACE_SUBCATEGORIES[activeSpecificRoom].options.map((o) => o.id));
     } else {
-      setSelectedSpaces(['living', 'bedroom', 'dining', 'office']);
+      setSelectedSpaces(['living', 'bedroom', 'dining', 'office', 'other']);
       setSelectedSubcategories([]);
     }
     setSelectedMaterials(availableMaterials.map((m) => m.id));
@@ -635,10 +767,6 @@ function ProductsContent() {
 
   // Cart & Wishlist Handlers
   const handleAddToCart = (product: Product, quantity = 1) => {
-    if (!product.inStock || product.stockStatus === 'Hết hàng') {
-      message.warning(`Sản phẩm "${product.name}" hiện đang hết hàng, không thể thêm vào giỏ!`);
-      return;
-    }
     addToCart({
       id: product.id,
       sku: product.sku,
@@ -654,10 +782,6 @@ function ProductsContent() {
   };
 
   const handleAddCategoryProductToCart = (item: CategoryProduct) => {
-    if (item.stockStatus === 'out_of_stock' || item.inStock === false) {
-      message.warning(`Sản phẩm "${item.name}" hiện đang hết hàng, không thể thêm vào giỏ!`);
-      return;
-    }
     addToCart({
       id: item.id,
       sku: item.sku,
@@ -673,7 +797,6 @@ function ProductsContent() {
   };
 
   const handleOpenQuickViewFromCategory = (item: CategoryProduct) => {
-    const isOutOfStock = item.stockStatus === 'out_of_stock' || item.inStock === false;
     const p: Product = {
       id: item.id,
       sku: item.sku,
@@ -689,8 +812,8 @@ function ProductsContent() {
       subtitle: item.woodMaterialName,
       description: item.description,
       dimensions: item.dimensions,
-      stockStatus: isOutOfStock ? 'Hết hàng' : item.stockLabel,
-      inStock: !isOutOfStock,
+      stockStatus: item.stockLabel || 'Còn hàng',
+      inStock: true,
       materialDetails: item.woodMaterialName,
     };
     setQuickViewProduct(p);
@@ -751,6 +874,7 @@ function ProductsContent() {
     if (activeSpecificRoom === 'bedroom') return 'Phòng ngủ';
     if (activeSpecificRoom === 'dining') return 'Phòng ăn';
     if (activeSpecificRoom === 'office') return 'Phòng làm việc';
+    if (activeSpecificRoom === 'other') return 'Sản phẩm khác';
     return 'Tất cả sản phẩm';
   }, [activeSpecificRoom]);
 
@@ -849,6 +973,64 @@ function ProductsContent() {
                 </Button>
               </div>
 
+              {/* Filter 1: Categories (Danh mục thuộc không gian) */}
+              {activeSpaceCategories.length > 0 && (
+                <div className="flex flex-col gap-2.5 pb-3 border-b border-[#eae1dd]">
+                  <div className="flex items-center justify-between">
+                    <span className="font-label-md text-xs text-[#1f1b19] uppercase tracking-wider font-bold">
+                      Danh Mục Sản Phẩm
+                    </span>
+                    {(selectedCategory || categoryParam) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedCategory(null);
+                          const params = new URLSearchParams(searchParams.toString());
+                          params.delete('category');
+                          router.push(`${pathname}?${params.toString()}`);
+                        }}
+                        className="text-[11px] text-[#83746c] hover:text-[#5d371f] cursor-pointer bg-transparent border-0 p-0 underline"
+                      >
+                        Bỏ chọn
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-2 max-h-64 overflow-y-auto pr-1">
+                    {activeSpaceCategories.map((cat) => {
+                      const isChecked = Boolean(
+                        (selectedCategory && (selectedCategory === cat.slug || selectedCategory === cat.id || selectedCategory === cat.name)) ||
+                        (categoryParam && (categoryParam === cat.slug || categoryParam === cat.id || categoryParam === cat.name))
+                      );
+                      return (
+                        <Checkbox
+                          key={cat.id}
+                          checked={isChecked}
+                          onChange={() => {
+                            const nextVal = isChecked ? null : (cat.slug || cat.id);
+                            setSelectedCategory(nextVal);
+                            const params = new URLSearchParams(searchParams.toString());
+                            if (nextVal) {
+                              params.set('category', nextVal);
+                            } else {
+                              params.delete('category');
+                            }
+                            router.push(`${pathname}?${params.toString()}`);
+                          }}
+                          className="text-xs font-medium text-[#51443d]"
+                        >
+                          <span>{cat.name}</span>
+                          {typeof cat.productCount === 'number' && cat.productCount > 0 && (
+                            <span className="text-[11px] text-[#83746c] ml-1 font-normal font-mono">
+                              ({cat.productCount})
+                            </span>
+                          )}
+                        </Checkbox>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Filter: Materials */}
               {availableMaterials.length > 0 && (
                 <div className="flex flex-col gap-2.5">
@@ -943,6 +1125,47 @@ function ProductsContent() {
 
             {/* Right Products Grid Container (9 cols) */}
             <div className="lg:col-span-9 flex flex-col gap-6 animate-slide-in-right">
+              {/* Category Pills Bar for Current Space */}
+              {activeSpaceCategories.length > 0 && (
+                <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+                  {activeSpaceCategories.map((cat) => {
+                    const isSelected = Boolean(
+                      (selectedCategory && (selectedCategory === cat.slug || selectedCategory === cat.id || selectedCategory === cat.name)) ||
+                      (categoryParam && (categoryParam === cat.slug || categoryParam === cat.id || categoryParam === cat.name))
+                    );
+                    return (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => {
+                          const nextVal = isSelected ? null : (cat.slug || cat.id);
+                          setSelectedCategory(nextVal);
+                          const params = new URLSearchParams(searchParams.toString());
+                          if (nextVal) {
+                            params.set('category', nextVal);
+                          } else {
+                            params.delete('category');
+                          }
+                          router.push(`${pathname}?${params.toString()}`);
+                        }}
+                        className={`px-3.5 py-1.5 text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+                          isSelected
+                            ? 'bg-[#5d371f] text-white shadow-xs font-bold'
+                            : 'bg-white text-slate-700 hover:bg-[#fbf2ee] hover:text-[#5d371f] border border-[#eae1dd]'
+                        }`}
+                      >
+                        <span>{cat.name}</span>
+                        {typeof cat.productCount === 'number' && cat.productCount > 0 && (
+                          <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                            {cat.productCount}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
               {/* Controls & Sorters Bar */}
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white p-3.5 px-5 rounded-none shadow-sm border border-[#eae1dd]">
                 <div className="flex items-center gap-2 font-body-sm text-xs sm:text-sm text-[#51443d]">
@@ -1014,11 +1237,17 @@ function ProductsContent() {
                         className="group flex flex-col bg-white rounded-none overflow-hidden shadow-xs hover:border-[#5d371f]/50 transition-colors duration-300 border border-[#eae1dd] cursor-pointer text-inherit no-underline"
                       >
                         {/* Image & Macro Preview */}
-                        <div className="relative aspect-[4/3] bg-[#eae1dd] overflow-hidden">
+                        <div className="relative aspect-[4/3] bg-white overflow-hidden">
                           <img
                             alt={p.name}
                             className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ${isOutOfStock ? 'grayscale-[40%] opacity-80' : ''}`}
-                            src={p.image}
+                            src={p.image || '/logo.png'}
+                            onError={(e) => {
+                              const target = e.currentTarget as HTMLImageElement;
+                              if (!target.src.includes('logo.png')) {
+                                target.src = '/logo.png';
+                              }
+                            }}
                           />
 
                           {/* Detail thumbnail cutout */}
@@ -1026,34 +1255,32 @@ function ProductsContent() {
                             <img
                               alt="Texture macro"
                               className="w-full h-full object-cover"
-                              src={p.macroImage}
+                              src={p.macroImage || p.image || '/logo.png'}
+                              onError={(e) => {
+                                const target = e.currentTarget as HTMLImageElement;
+                                if (!target.src.includes('logo.png')) {
+                                  target.src = '/logo.png';
+                                }
+                              }}
                             />
                           </div>
 
                           {/* Badges */}
                           <div className="absolute top-3 left-3 flex flex-col gap-1 items-start z-10 pointer-events-none">
-                            {p.originalPrice && p.originalPrice > p.price && !isOutOfStock && (
+                            {p.originalPrice && p.originalPrice > p.price && (
                               <span className="px-2.5 py-0.5 bg-[#ba1a1a] text-white text-[11px] font-bold shadow-md">
                                 -{Math.round(((p.originalPrice - p.price) / p.originalPrice) * 100)}%
                               </span>
                             )}
-                            {Boolean(isOutOfStock || p.stockLabel) && (
+                            {Boolean(p.stockLabel) && (
                               <Tag
-                                color={isOutOfStock ? "#ba1a1a" : "rgba(255,255,255,0.9)"}
-                                className={`${isOutOfStock ? '!text-white !bg-[#ba1a1a] !border-[#ba1a1a]' : '!text-[#5d371f] !border-[#d5c3ba]/60'} font-bold text-xs rounded-none px-2.5 py-0.5 backdrop-blur-sm shadow-sm m-0`}
+                                color="rgba(255,255,255,0.9)"
+                                className="!text-[#5d371f] !border-[#d5c3ba]/60 font-bold text-xs rounded-none px-2.5 py-0.5 backdrop-blur-sm shadow-sm m-0"
                               >
-                                {isOutOfStock ? 'Hết hàng' : p.stockLabel}
+                                {p.stockLabel}
                               </Tag>
                             )}
                           </div>
-
-                          {isOutOfStock && (
-                            <div className="absolute inset-0 bg-black/30 flex items-center justify-center pointer-events-none">
-                              <span className="px-3 py-1 bg-[#ba1a1a] text-white text-xs font-bold uppercase tracking-wider shadow-lg">
-                                Hết hàng
-                              </span>
-                            </div>
-                          )}
                         </div>
 
                         {/* Card Info */}
@@ -1090,16 +1317,14 @@ function ProductsContent() {
                               <Button
                                 type="primary"
                                 size="middle"
-                                disabled={isOutOfStock}
                                 onClick={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
-                                  if (isOutOfStock) return;
                                   handleAddCategoryProductToCart(p);
                                 }}
-                                className={`${isOutOfStock ? '!bg-[#f0ebe8] !text-[#a89b93] !border-[#eae1dd] !cursor-not-allowed' : 'bg-[#5d371f] hover:!bg-[#784e34] shadow-md'} rounded-none flex items-center justify-center`}
+                                className="bg-[#5d371f] hover:!bg-[#784e34] shadow-md rounded-none flex items-center justify-center"
                                 icon={<ShoppingCartOutlined className="text-[16px]" />}
-                                title={isOutOfStock ? "Sản phẩm hiện đang hết hàng" : "Thêm vào giỏ hàng"}
+                                title="Thêm vào giỏ hàng"
                               />
                             </div>
                           </div>

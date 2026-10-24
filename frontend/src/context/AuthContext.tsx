@@ -23,19 +23,19 @@ export interface User {
 }
 
 export const DEFAULT_ADMIN_USER: User = {
-  id: 'usr_admin_01',
-  name: 'Văn Luận',
-  email: 'vanluan1910@d2luxury.vn',
-  phone: '0918 345 678',
+  id: 'A1111111-1111-1111-1111-111111111111',
+  name: 'Admin',
+  email: 'admin@d2luxury.vn',
+  phone: '0900 000 000',
   avatar:
-    'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=800&auto=format&fit=crop&q=80',
+    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80',
   role: 'admin',
   roleCode: 'SUPER_ADMIN',
-  roleName: 'Quản trị viên tối cao',
+  roleName: 'Quản trị viên',
   permissions: ['*'],
-  address: 'Văn phòng Điều hành D2 LUXURY, 68 Nguyễn Cơ Thạch, P. An Lợi Đông, TP. Thủ Đức, TP. HCM',
-  joinDate: '10/2024',
-  bio: 'Quản trị viên hệ sinh thái Nội thất Tinh hoa D2 LUXURY. Chuyên gia cố vấn chế tác gỗ óc chó & sồi Bắc Mỹ FAS.',
+  address: 'Văn phòng Điều hành D2 LUXURY',
+  joinDate: '10/2026',
+  bio: 'Quản trị viên hệ sinh thái D2 LUXURY.',
 };
 
 interface AuthContextType {
@@ -56,6 +56,21 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+function sanitizeMojibake(str?: string): string {
+  if (!str) return '';
+  if (
+    str.includes('Quá') ||
+    str.includes('trá»') ||
+    str.includes('viÃªn') ||
+    str.includes('viA*n') ||
+    str.includes('Quá*') ||
+    str.includes('trá»<')
+  ) {
+    return 'Quản trị viên';
+  }
+  return str;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -64,6 +79,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const stored = authStorage.getUser<User>();
       if (stored && stored.id) {
+        let changed = false;
+        const cleanedName = sanitizeMojibake(stored.name);
+        if (cleanedName !== stored.name) {
+          stored.name = cleanedName;
+          changed = true;
+        }
+        const cleanedRole = sanitizeMojibake(stored.roleName);
+        if (cleanedRole !== stored.roleName) {
+          stored.roleName = cleanedRole;
+          changed = true;
+        }
+        if (changed) {
+          authStorage.setUser(stored);
+        }
+
         if (stored.role === 'admin' && (!stored.permissions || stored.permissions.length === 0)) {
           if (stored.roleCode === 'SUPER_ADMIN' || !stored.roleCode) {
             stored.permissions = ['*'];
@@ -73,7 +103,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         // Ensure real JWT token is present for admin
         if (stored.role === 'admin' && !authStorage.getToken()) {
-          authApi.login({ email: 'vanluan1910@d2luxury.vn', password: 'Admin@123456' })
+          authApi.login({ email: 'admin', password: 'Admin@123' })
             .then((res) => { if (res?.token) authStorage.setToken(res.token); })
             .catch(() => {});
         }
@@ -194,13 +224,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         const mappedUser: User = {
           id: u.id,
-          name: u.fullName || u.email.split('@')[0],
+          name: sanitizeMojibake(u.fullName) || u.email.split('@')[0],
           email: u.email,
           phone: u.phoneNumber || '',
           avatar: u.avatarUrl || 'https://images.unsplash.com/photo-1533090161767-e6ffed986b88?w=800&auto=format&fit=crop&q=80',
           role: (isUserAdmin || u.role?.toLowerCase() === 'staff' || (userPermissions && userPermissions.length > 0) || (roleCode && roleCode !== 'Customer') ? 'admin' : 'customer'),
           roleCode,
-          roleName,
+          roleName: sanitizeMojibake(roleName),
           branch: userBranch,
           branchId: userBranchId,
           permissions: userPermissions,
@@ -214,8 +244,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (err: any) {
       // If admin master account
       if (
-        (trimmed === 'vanluan1910@d2luxury.vn' || trimmed === '0918 345 678' || trimmed === 'admin') &&
-        (password === 'Admin@123456' || password === 'admin' || !password)
+        (trimmed === 'admin' || trimmed === 'admin@d2luxury.vn') &&
+        (password === 'Admin@123' || password === 'admin' || !password)
       ) {
         setUser(DEFAULT_ADMIN_USER);
         authStorage.setUser(DEFAULT_ADMIN_USER);
@@ -326,7 +356,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(DEFAULT_ADMIN_USER);
     authStorage.setUser(DEFAULT_ADMIN_USER);
     try {
-      const res = await authApi.login({ email: 'vanluan1910@d2luxury.vn', password: 'Admin@123456' });
+      const res = await authApi.login({ email: 'admin', password: 'Admin@123' });
       if (res?.token) authStorage.setToken(res.token);
     } catch {}
   };

@@ -21,7 +21,7 @@ public sealed record CreateProductRequest
     public string? ShippingNote { get; init; }
     public bool IsFeatured { get; init; } = false;
     public bool IsNew { get; init; } = false;
-    public int InStock { get; init; } = 10;
+    public int InStock { get; init; } = 0;
     public string? Unit { get; init; } = "Bộ";
     public string? StockType { get; init; }
     public string? ShortDescription { get; init; }
@@ -53,7 +53,7 @@ public sealed record UpdateProductRequest
     public string? ShippingNote { get; init; }
     public bool IsFeatured { get; init; } = false;
     public bool IsNew { get; init; } = false;
-    public int InStock { get; init; } = 10;
+    public int InStock { get; init; } = 0;
     public string? Unit { get; init; } = "Bộ";
     public string? StockType { get; init; }
     public string? ShortDescription { get; init; }

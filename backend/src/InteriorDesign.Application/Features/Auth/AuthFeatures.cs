@@ -242,7 +242,17 @@ public sealed class LoginCommandHandler(IAuthRepository authRepo, ITokenService 
     public async Task<ApiResponse<AuthResponse>> Handle(LoginCommand command, CancellationToken cancellationToken)
     {
         var user = await authRepo.GetUserByIdentifierAsync(command.Request.Email, cancellationToken);
-        if (user is null || !BCrypt.Net.BCrypt.Verify(command.Request.Password, user.PasswordHash))
+        bool isPasswordValid = false;
+        try
+        {
+            isPasswordValid = user != null && !string.IsNullOrWhiteSpace(user.PasswordHash) && BCrypt.Net.BCrypt.Verify(command.Request.Password, user.PasswordHash);
+        }
+        catch
+        {
+            isPasswordValid = false;
+        }
+
+        if (user is null || !isPasswordValid)
         {
             return ApiResponse<AuthResponse>.Fail("Tài khoản hoặc mật khẩu không chính xác.");
         }

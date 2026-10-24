@@ -577,7 +577,7 @@ function CartContent() {
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {crossSellProducts.map((item) => {
-                const isCrossOut = item.stockType === 'out_of_stock' || (item.inStockQty !== undefined && item.inStockQty <= 0);
+                const isCrossOut = false;
                 return (
                   <div
                     key={item.id}
@@ -587,18 +587,11 @@ function CartContent() {
                       <img
                         src={item.image}
                         alt={item.name}
-                        className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ${
-                          isCrossOut ? 'grayscale-[40%] opacity-80' : ''
-                        }`}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                       />
                       <div className="absolute top-3 right-3 bg-white/90 backdrop-blur px-2.5 py-1 text-[10px] font-bold text-[#1f1b19] border border-[#eae1dd]">
                         {item.categoryName || 'D2 LUXURY'}
                       </div>
-                      {isCrossOut && (
-                        <div className="absolute top-3 left-3 bg-[#ba1a1a] text-white text-[10px] font-bold px-2 py-0.5">
-                          Hết hàng
-                        </div>
-                      )}
                     </Link>
 
                     <div className="p-5 flex flex-col gap-3">
@@ -617,16 +610,11 @@ function CartContent() {
                         </span>
                         <button
                           onClick={() => handleAddCrossSell(item)}
-                          disabled={isCrossOut}
                           type="button"
-                          className={`flex items-center gap-1.5 px-3 py-1.5 border text-xs font-semibold transition-colors ${
-                            isCrossOut
-                              ? 'bg-[#eae1dd] text-[#83746c] border-[#eae1dd] cursor-not-allowed'
-                              : 'bg-[#f5ece8] border-[#eae1dd] text-[#1f1b19] hover:bg-[#5d371f] hover:text-white cursor-pointer'
-                          }`}
+                          className="flex items-center gap-1.5 px-3 py-1.5 border text-xs font-semibold transition-colors bg-[#f5ece8] border-[#eae1dd] text-[#1f1b19] hover:bg-[#5d371f] hover:text-white cursor-pointer"
                         >
                           <PlusOutlined className="text-[10px]" />
-                          <span>{isCrossOut ? 'Hết hàng' : 'Thêm nhanh'}</span>
+                          <span>Thêm nhanh</span>
                         </button>
                       </div>
                     </div>

@@ -19,12 +19,26 @@ export const categoryApi = {
     space?: string;
     status?: string;
     includeDeleted?: boolean;
+    forceRefresh?: boolean;
   }): Promise<AdminCategory[]> {
+    if (params?.forceRefresh) {
+      invalidateApiCache('categories');
+    }
+
     const query = new URLSearchParams();
     if (params?.search) query.append('search', params.search);
     if (params?.space && params.space !== 'all') query.append('space', params.space);
     if (params?.status && params.status !== 'all') query.append('status', params.status);
     if (params?.includeDeleted) query.append('includeDeleted', 'true');
+
+    if (params?.forceRefresh) {
+      const res = await fetch(`${API_BASE_URL}/api/categories?${query.toString()}`, {
+        headers: { Accept: 'application/json' },
+      });
+      if (!res.ok) throw new Error(`Failed to fetch categories (${res.status})`);
+      const json = await res.json();
+      return json.data || [];
+    }
 
     const cacheKey = `categories:${query.toString()}`;
     return cachedFetch(cacheKey, async () => {

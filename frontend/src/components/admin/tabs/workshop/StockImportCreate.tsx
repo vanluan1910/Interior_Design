@@ -126,6 +126,8 @@ export function StockImportCreate({
   const { message } = App.useApp();
 
 
+  const prevPayableRef = React.useRef<number | undefined>(undefined);
+
   // Auto-sync import warehouse to currently available branch warehouses
   useEffect(() => {
     if (availableBranchWarehouses.length > 0) {
@@ -135,6 +137,28 @@ export function StockImportCreate({
       }
     }
   }, [availableBranchWarehouses, importWarehouse, setImportWarehouse]);
+
+  // Smart auto-sync paid amount whenever items, discount, or payment method change
+  useEffect(() => {
+    const currentTotal = importEntryLines.reduce((sum, item) => sum + ((Number(item.quantity) || 0) * (Number(item.unitPrice) || 0)), 0);
+    const currentPayable = Math.max(0, currentTotal - (importDiscount || 0));
+
+    if (importPaymentMethod !== 'Chưa thanh toán') {
+      if (importPaidAmount === undefined || (prevPayableRef.current !== undefined && importPaidAmount === prevPayableRef.current)) {
+        if (currentPayable > 0) {
+          setImportPaidAmount(currentPayable);
+        }
+      } else if (importPaidAmount > currentPayable) {
+        setImportPaidAmount(currentPayable);
+      }
+    } else {
+      if (importPaidAmount !== 0) {
+        setImportPaidAmount(0);
+      }
+    }
+
+    prevPayableRef.current = currentPayable;
+  }, [importEntryLines, importDiscount, importPaymentMethod]);
 
   return (
     <PosEntryLayout
@@ -160,20 +184,18 @@ export function StockImportCreate({
                 : product.price || 0;
             if (!alreadyLine) {
               const defaultUnit = (product as any).unit || 'Bộ';
-            setImportEntryLines((prev) => [
-                ...prev,
-                {
-                  id: `line_${Date.now()}_${product.id}`,
-                  code: product.code,
-                  name: product.name,
-                  spec: product.collection || '',
-                  unit: defaultUnit,
-                  quantity: 1,
-                  unitPrice: itemCostPrice,
-                  discount: 0,
-                  total: itemCostPrice,
-                },
-              ]);
+              const newLine = {
+                id: `line_${Date.now()}_${product.id}`,
+                code: product.code,
+                name: product.name,
+                spec: product.collection || '',
+                unit: defaultUnit,
+                quantity: 1,
+                unitPrice: itemCostPrice,
+                discount: 0,
+                total: itemCostPrice,
+              };
+              setImportEntryLines((prev) => [...prev, newLine]);
               message.success(`Đã thêm "${product.name}" vào phiếu nhập với giá gốc ${itemCostPrice.toLocaleString('vi-VN')} đ!`);
             } else {
               setImportEntryLines((prev) =>
@@ -236,7 +258,9 @@ export function StockImportCreate({
         >
           <div>
             <div className="flex items-center justify-between mb-1">
-              <label className="text-xs font-semibold text-slate-800">Nhà cung cấp đối tác</label>
+              <label className="text-xs font-semibold text-slate-800">
+                Nhà cung cấp đối tác <span className="text-red-500 font-bold">*</span>
+              </label>
               {onOpenCreateSupplier && (
                 <button
                   type="button"
@@ -250,7 +274,8 @@ export function StockImportCreate({
             <Select
               value={importSupplier}
               onChange={(val) => setImportSupplier(val)}
-              placeholder="Chọn nhà cung cấp..."
+              placeholder="Chọn nhà cung cấp (bắt buộc)..."
+              status={!importSupplier ? 'warning' : undefined}
               className="w-full h-9 text-xs"
               showSearch
               optionFilterProp="children"
@@ -310,7 +335,7 @@ export function StockImportCreate({
               const totalGoods = importEntryLines.reduce((sum, item) => sum + ((Number(item.quantity) || 0) * (Number(item.unitPrice) || 0)), 0);
               const payable = Math.max(0, totalGoods - (importDiscount || 0));
               const isUnpaid = importPaymentMethod === 'Chưa thanh toán';
-              const paid = isUnpaid ? 0 : (importPaidAmount !== undefined ? Number(importPaidAmount) : 0);
+              const paid = isUnpaid ? 0 : Math.min(payable, Math.max(0, Number(importPaidAmount ?? 0)));
               const debt = Math.max(0, payable - paid);
 
               return (
@@ -322,11 +347,20 @@ export function StockImportCreate({
 
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-slate-600 font-medium shrink-0">Giảm giá / Chiết khấu</span>
-                    <Input
-                      value={formatInputMoney(importDiscount)}
-                      onChange={(e) => setImportDiscount(parseInputMoney(e.target.value))}
+                    <InputNumber<number>
+                      min={0}
+                      max={totalGoods > 0 ? totalGoods : undefined}
+                      placeholder="0"
+                      value={importDiscount || undefined}
+                      onChange={(val) => {
+                        const d = val ? Math.max(0, Number(val)) : 0;
+                        setImportDiscount(totalGoods > 0 ? Math.min(totalGoods, d) : d);
+                      }}
+                      formatter={(val) => (val !== undefined && val !== null ? `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, '.') : '')}
+                      parser={(val) => (val ? Number(val.replace(/\./g, '').replace(/[^\d]/g, '')) : ('' as any))}
+                      controls={false}
                       style={{ width: 190, minWidth: 180 }}
-                      className="w-48 sm:w-52 min-w-[180px] h-8 text-xs font-mono text-right px-2.5 !border-0 !border-b !border-slate-300 hover:!border-slate-500 focus-within:!border-[#784e34] !rounded-none !shadow-none !bg-transparent"
+                      className="w-48 sm:w-52 min-w-[180px] h-8 text-xs font-mono text-right px-2.5 !border-0 !border-b !border-slate-300 hover:!border-slate-500 focus-within:!border-[#784e34] !rounded-none !shadow-none !bg-transparent [&_.ant-input-number-input]:text-right [&_.ant-input-number-input]:h-8 [&_.ant-input-number-input]:px-0"
                     />
                   </div>
 
@@ -360,16 +394,25 @@ export function StockImportCreate({
                           </div>
                         )}
                       </div>
-                      <Input
+                      <InputNumber<number>
                         disabled={isUnpaid}
-                        placeholder={isUnpaid ? '0 đ (Chưa thanh toán)' : 'Nhập số tiền đã trả...'}
-                        value={isUnpaid ? '0' : (importPaidAmount !== undefined ? formatInputMoney(importPaidAmount) : '')}
-                        onChange={(e) => {
-                          const raw = e.target.value.trim();
-                          setImportPaidAmount(raw ? parseInputMoney(raw) : 0);
+                        placeholder={isUnpaid ? '0 đ (Chưa thanh toán)' : 'Nhập tiền đã trả...'}
+                        value={isUnpaid ? 0 : importPaidAmount}
+                        min={0}
+                        max={payable > 0 ? payable : 0}
+                        formatter={(val) => (val !== undefined && val !== null ? `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, '.') : '')}
+                        parser={(val) => (val ? Number(val.replace(/\./g, '').replace(/[^\d]/g, '')) : ('' as any))}
+                        onChange={(val) => {
+                          if (val === null || val === undefined) {
+                            setImportPaidAmount(undefined);
+                          } else {
+                            const num = Math.max(0, Number(val));
+                            setImportPaidAmount(payable > 0 ? Math.min(payable, num) : num);
+                          }
                         }}
+                        controls={false}
                         style={{ width: 190, minWidth: 180 }}
-                        className={`w-48 sm:w-52 min-w-[180px] h-8 text-xs font-mono font-bold text-right px-2.5 !border-0 !border-b !border-slate-300 hover:!border-slate-500 focus-within:!border-emerald-700 !rounded-none !shadow-none !bg-transparent ${isUnpaid ? 'text-slate-400 italic' : 'text-emerald-700'}`}
+                        className={`w-48 sm:w-52 min-w-[180px] h-8 text-xs font-mono font-bold text-right px-2.5 !border-0 !border-b !border-slate-300 hover:!border-slate-500 focus-within:!border-emerald-700 !rounded-none !shadow-none !bg-transparent [&_.ant-input-number-input]:text-right [&_.ant-input-number-input]:h-8 [&_.ant-input-number-input]:px-0 ${isUnpaid ? 'text-slate-400 italic' : 'text-emerald-700'}`}
                       />
                     </div>
                   </div>
@@ -503,10 +546,12 @@ export function StockImportCreate({
                     />
                   </td>
                   <td className="px-3 py-2 text-right w-56 min-w-[200px]">
-                    <Input
-                      value={formatInputMoney(line.unitPrice)}
-                      onChange={(e) => {
-                        const numP = parseInputMoney(e.target.value);
+                    <InputNumber<number>
+                      min={0}
+                      placeholder="0"
+                      value={line.unitPrice || undefined}
+                      onChange={(val) => {
+                        const numP = val ? Math.max(0, Number(val)) : 0;
                         setImportEntryLines((prev) =>
                           prev.map((l) =>
                             l.id === line.id
@@ -515,8 +560,11 @@ export function StockImportCreate({
                           )
                         );
                       }}
+                      formatter={(val) => (val !== undefined && val !== null ? `${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, '.') : '')}
+                      parser={(val) => (val ? Number(val.replace(/\./g, '').replace(/[^\d]/g, '')) : ('' as any))}
+                      controls={false}
                       style={{ width: '100%', minWidth: 180 }}
-                      className="w-full min-w-[180px] h-8 text-xs font-mono font-bold text-right px-2.5 !border-0 !border-b !border-slate-300 hover:!border-slate-500 focus-within:!border-[#784e34] !rounded-none !shadow-none !bg-transparent"
+                      className="w-full min-w-[180px] h-8 text-xs font-mono font-bold text-right px-2.5 !border-0 !border-b !border-slate-300 hover:!border-slate-500 focus-within:!border-[#784e34] !rounded-none !shadow-none !bg-transparent [&_.ant-input-number-input]:text-right [&_.ant-input-number-input]:h-8 [&_.ant-input-number-input]:px-0"
                     />
                   </td>
                   <td className="px-3 py-2 text-right w-44 min-w-[160px] font-mono font-bold text-[#784e34] whitespace-nowrap">

@@ -20,7 +20,7 @@ export function AdminFilterSidebar({
 }: AdminFilterSidebarProps) {
   return (
     <aside
-      className={`w-full lg:w-64 bg-white rounded-none shadow-xs border border-slate-200/80 p-4 shrink-0 space-y-4 text-sm text-slate-700 ${className}`}
+      className={`w-full lg:w-64 bg-white rounded-none shadow-xs border border-slate-200/80 p-4 shrink-0 space-y-4 text-sm text-slate-700 lg:sticky lg:top-[96px] lg:self-start lg:max-h-[calc(100vh-112px)] lg:overflow-y-auto [scrollbar-width:thin] ${className}`}
     >
       {/* Sidebar Header */}
       <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">

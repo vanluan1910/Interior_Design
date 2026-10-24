@@ -132,21 +132,13 @@ public sealed class HomeController : ApiControllerBase
             }).ToList();
 
 
-            // 3. Lấy danh sách Không gian sống từ DB (Spaces Table) - Đảm bảo đúng 4 không gian chính
-            var targetSlugs = new[] { "living", "dining", "office", "bedroom" };
-            var targetCodes = new[] { "KG01", "KG02", "KG03", "KG04" };
-
-            var allActiveSpaces = await _context.Spaces
+            // 3. Lấy danh sách Không gian sống từ DB (Spaces Table) - Hoàn toàn động theo cấu hình người dùng
+            var spacesDb = await _context.Spaces
                 .AsNoTracking()
-                .Where(s => !s.IsDeleted && s.Status == "active")
-                .Where(s => s.Slug != "san-pham-khac" && s.Code != "KG06")
+                .Where(s => !s.IsDeleted && s.Status == "active" && s.ShowOnHome)
                 .OrderBy(s => s.DisplayOrder)
+                .ThenBy(s => s.CreatedAt)
                 .ToListAsync(cancellationToken);
-
-            var spacesDb = allActiveSpaces
-                .Where(s => (s.Slug != null && targetSlugs.Contains(s.Slug.ToLower())) || (s.Code != null && targetCodes.Contains(s.Code.ToUpper())) || s.ShowOnHome)
-                .Take(4)
-                .ToList();
 
             var productCountRaw = await _context.Products
                 .AsNoTracking()
@@ -164,75 +156,48 @@ public sealed class HomeController : ApiControllerBase
                 }
             }
 
-            List<HomeSpaceDto> livingSpaces;
-            if (spacesDb.Count > 0)
+            var livingSpaces = spacesDb.Select((s, idx) =>
             {
-                livingSpaces = spacesDb.Select((s, idx) =>
+                var spaceKey = !string.IsNullOrWhiteSpace(s.Slug)
+                    ? s.Slug.Trim()
+                    : (!string.IsNullOrWhiteSpace(s.Code) ? s.Code.Trim().ToLower() : s.Id.ToString());
+
+                var normName = (s.Name ?? "").Trim().ToLower();
+                var normCode = (s.Code ?? "").Trim().ToLower();
+
+                var pCount = productCountBySpace.GetValueOrDefault(normName, 0);
+                if (pCount == 0 && !string.IsNullOrWhiteSpace(normCode))
                 {
-                    var spaceKey = MapSpaceToCategoryKey(s.Code, s.Name, s.Slug);
-                    var pCount = spaceKey switch
-                    {
-                        "living" => productCountBySpace.GetValueOrDefault("phòng khách", 206),
-                        "dining" => productCountBySpace.GetValueOrDefault("phòng ăn", 117),
-                        "office" => productCountBySpace.GetValueOrDefault("phòng làm việc", 31),
-                        "bedroom" => productCountBySpace.GetValueOrDefault("phòng ngủ", 117),
-                        _ => 15
-                    };
-                    var countText = $"Xem {pCount} thiết kế";
-                    var colSpan = (idx == 0 || idx == 3) ? 7 : 5;
-                    var codeLabel = $"0{idx + 1} / {s.Name.ToUpper()}";
+                    pCount = productCountBySpace.GetValueOrDefault(normCode, 0);
+                }
+                if (pCount == 0 && !string.IsNullOrWhiteSpace(s.Slug))
+                {
+                    pCount = productCountBySpace.GetValueOrDefault(s.Slug.Trim().ToLower(), 0);
+                }
 
-                    var desc = s.Description;
-                    if (string.IsNullOrWhiteSpace(desc) || desc.Contains("#") || desc.Length > 180)
-                    {
-                        desc = spaceKey switch
-                        {
-                            "living" => "Sofa mộc bọc nỉ lanh tự nhiên, bàn trà điêu khắc hữu cơ, hệ kệ TV tinh gọn tôn vinh sự mộc mạc.",
-                            "bedroom" => "Giường phản thấp giấu chân, tủ áo lam gỗ thanh mảnh và tab đầu giường nguyên khối.",
-                            "dining" => "Bàn ăn mở rộng thông minh, ghế tựa công thái học ôm sát sống lưng.",
-                            "office" => "Bàn làm việc cạnh cong bo mềm, giá sách modul tuỳ biến theo kích thước căn hộ.",
-                            _ => "Nội thất gỗ mộc thủ công tinh tế cho không gian sống hiện đại."
-                        };
-                    }
+                var countText = pCount > 0 ? $"Xem {pCount} thiết kế" : "Xem thiết kế";
+                var colSpan = (idx % 4 == 0 || idx % 4 == 3) ? 7 : 5;
+                var codeLabel = !string.IsNullOrWhiteSpace(s.Code) ? s.Code : $"0{idx + 1}";
 
-                    var tagline = !string.IsNullOrWhiteSpace(s.Tagline) ? s.Tagline : spaceKey switch
-                    {
-                        "living" => "Không gian chính",
-                        "dining" => "Bữa cơm ấm cúng",
-                        "office" => "Tập trung & sáng tạo",
-                        "bedroom" => "Giấc ngủ thư thái",
-                        _ => "Không gian sống"
-                    };
+                var desc = !string.IsNullOrWhiteSpace(s.Description)
+                    ? s.Description
+                    : (!string.IsNullOrWhiteSpace(s.Tagline) ? s.Tagline : $"Bộ sưu tập nội thất {s.Name}");
+                var tagline = !string.IsNullOrWhiteSpace(s.Tagline) ? s.Tagline : s.Name;
+                var imageUrl = !string.IsNullOrWhiteSpace(s.Image) ? s.Image : "/logo.png";
 
-                    var displayName = s.Name.Contains("Tĩnh Tại") || s.Name.Contains("Sum Vầy") || s.Name.Contains("Vỗ Về")
-                        ? s.Name
-                        : spaceKey switch
-                        {
-                            "living" => "Phòng Khách Tĩnh Tại",
-                            "dining" => "Phòng Ăn Sum Vầy",
-                            "office" => "Phòng Làm Việc Tĩnh Tại",
-                            "bedroom" => "Phòng Ngủ Vỗ Về",
-                            _ => s.Name
-                        };
-
-                    return new HomeSpaceDto(
-                        Key: spaceKey,
-                        Name: displayName,
-                        Tagline: tagline,
-                        Description: desc,
-                        ImageUrl: !string.IsNullOrWhiteSpace(s.Image) ? s.Image : GetDefaultSpaceImage(spaceKey),
-                        CountText: countText,
-                        CodeLabel: codeLabel,
-                        ColSpan: colSpan,
-                        LinkUrl: $"/products?space={spaceKey}",
-                        Id: s.Id
-                    );
-                }).ToList();
-            }
-            else
-            {
-                livingSpaces = GetDefaultSpaces();
-            }
+                return new HomeSpaceDto(
+                    Key: spaceKey,
+                    Name: s.Name,
+                    Tagline: tagline,
+                    Description: desc,
+                    ImageUrl: imageUrl,
+                    CountText: countText,
+                    CodeLabel: codeLabel,
+                    ColSpan: colSpan,
+                    LinkUrl: $"/products?space={Uri.EscapeDataString(spaceKey)}",
+                    Id: s.Id
+                );
+            }).ToList();
 
             // 4. Lấy danh sách Showroom & Chi nhánh từ DB (Branches Table)
             var branchesDb = await _context.Branches
@@ -400,10 +365,11 @@ public sealed class HomeController : ApiControllerBase
                 }
             }
 
-            var rawProducts = await query
+            var orderedQuery = query
                 .OrderByDescending(p => p.IsFeatured)
-                .ThenByDescending(p => p.CreatedAt)
-                .Take(limit)
+                .ThenByDescending(p => p.CreatedAt);
+
+            var rawProducts = await (limit > 0 ? orderedQuery.Take(limit) : orderedQuery)
                 .Select(p => new
                 {
                     p.Id,

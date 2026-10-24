@@ -23,7 +23,6 @@ import {
   EditOutlined,
   DeleteOutlined,
   CopyOutlined,
-  ThunderboltOutlined,
   EnvironmentOutlined,
   ReloadOutlined,
   ShopOutlined,
@@ -36,6 +35,8 @@ import {
   AdminFilterSidebar,
   AdminSidebarSummary,
   AdminFormDrawer,
+  AutoCodeButton,
+  getNextCode,
 } from '@/components/admin';
 import type { AdminWarehouse, AdminBranch } from '@/types/admin';
 import { warehouseApi } from '@/api/warehouseApi';
@@ -180,7 +181,7 @@ export function WarehousesSettings({
   const handleOpenCreateWarehouse = () => {
     setEditingWarehouse(null);
     const existingCodes = new Set(warehousesList.map((w) => (w.code || '').toUpperCase()));
-    let nextNum = warehousesList.length + 1;
+    let nextNum = 1;
     let autoCode = `KHO${nextNum.toString().padStart(4, '0')}`;
     while (existingCodes.has(autoCode)) {
       nextNum++;
@@ -188,44 +189,49 @@ export function WarehousesSettings({
     }
     const defaultBranch =
       (selectedGlobalBranch !== 'all' && selectedGlobalBranch) ||
-      (branchesList[0]?.name || 'Chi nhánh trung tâm');
+      (branchesList[0]?.name || '');
 
-    warehouseForm.resetFields();
-    warehouseForm.setFieldsValue({
-      code: autoCode,
-      name: '',
-      branch: defaultBranch,
-      description: '',
-      streetAddress: '',
-      ward: undefined,
-      district: undefined,
-      province: undefined,
-      isDefault: warehousesList.length === 0,
-      status: true,
-    });
     setShowWarehouseDrawer(true);
+    setTimeout(() => {
+      warehouseForm.resetFields();
+      warehouseForm.setFieldsValue({
+        code: autoCode,
+        name: '',
+        branch: defaultBranch,
+        description: '',
+        streetAddress: '',
+        ward: undefined,
+        district: undefined,
+        province: undefined,
+        isDefault: warehousesList.length === 0,
+        status: true,
+      });
+    }, 0);
   };
 
   const handleOpenEditWarehouse = (wh: AdminWarehouse) => {
     setEditingWarehouse(wh);
-    warehouseForm.setFieldsValue({
-      code: wh.code,
-      name: wh.name,
-      branch: wh.branch || branchesList[0]?.name || 'Chi nhánh trung tâm',
-      description: wh.description || '',
-      streetAddress: wh.streetAddress || wh.address || '',
-      ward: wh.ward || undefined,
-      district: wh.district || undefined,
-      province: wh.province || undefined,
-      isDefault: Boolean(wh.isDefault),
-      status: wh.status !== 'inactive',
-    });
     setShowWarehouseDrawer(true);
+    setTimeout(() => {
+      warehouseForm.resetFields();
+      warehouseForm.setFieldsValue({
+        code: wh.code,
+        name: wh.name,
+        branch: wh.branch || branchesList[0]?.name || '',
+        description: wh.description || '',
+        streetAddress: wh.streetAddress || wh.address || '',
+        ward: wh.ward || undefined,
+        district: wh.district || undefined,
+        province: wh.province || undefined,
+        isDefault: Boolean(wh.isDefault),
+        status: wh.status !== 'inactive',
+      });
+    }, 0);
   };
 
   const handleCopyWarehouse = async (wh: AdminWarehouse) => {
     const existingCodes = new Set(warehousesList.map((w) => (w.code || '').toUpperCase()));
-    let nextNum = warehousesList.length + 1;
+    let nextNum = 1;
     let autoCode = `KHO${nextNum.toString().padStart(4, '0')}`;
     while (existingCodes.has(autoCode)) {
       nextNum++;
@@ -274,7 +280,7 @@ export function WarehousesSettings({
     const trimmedName = (values.name || '').trim();
     const defaultBranch =
       (selectedGlobalBranch !== 'all' && selectedGlobalBranch) ||
-      (branchesList[0]?.name || 'Chi nhánh trung tâm');
+      (branchesList[0]?.name || '');
     const isDef = Boolean(values.isDefault);
     const itemStatus: 'active' | 'inactive' =
       typeof values.status === 'boolean'
@@ -417,15 +423,10 @@ export function WarehousesSettings({
   };
 
   const handleGenerateWarehouseCode = () => {
-    const existingCodes = new Set(warehousesList.map((w) => (w.code || '').toUpperCase()));
-    let nextNum = warehousesList.length + 1;
-    let genCode = `KHO${nextNum.toString().padStart(4, '0')}`;
-    while (existingCodes.has(genCode)) {
-      nextNum++;
-      genCode = `KHO${nextNum.toString().padStart(4, '0')}`;
-    }
+    const currentCode = warehouseForm.getFieldValue('code');
+    const genCode = getNextCode(currentCode, warehousesList, 'KHO', 4);
     warehouseForm.setFieldsValue({ code: genCode });
-    message.success(`Đã tự động tạo mã kho: ${genCode}`);
+    message.success(`Đã tự động tạo mã kho mới: ${genCode}`);
   };
 
   const handleExportWarehousesExcel = () => {
@@ -791,14 +792,10 @@ export function WarehousesSettings({
               className="h-9 rounded-lg text-xs sm:text-sm font-mono uppercase font-semibold"
               placeholder="Tự động hoặc nhập tay"
               suffix={
-                <button
-                  type="button"
-                  onClick={handleGenerateWarehouseCode}
-                  className="text-[#784e34] hover:text-[#5d371f] border-none bg-transparent cursor-pointer p-0.5 inline-flex items-center"
-                  title="Tự động tạo mã"
-                >
-                  <ThunderboltOutlined className="text-sm" />
-                </button>
+                <AutoCodeButton
+                  onGenerate={handleGenerateWarehouseCode}
+                  tooltipTitle="Tự động tạo mã kho lưu trữ mới"
+                />
               }
             />
           </Form.Item>

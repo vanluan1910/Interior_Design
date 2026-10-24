@@ -6,7 +6,6 @@ import { motion, useScroll, useTransform, useSpring } from 'framer-motion';
 import {
   ShoppingCartOutlined,
   CheckOutlined,
-  StarFilled,
   ArrowRightOutlined,
 } from '@ant-design/icons';
 import { Product } from '@/types';
@@ -96,9 +95,6 @@ export default function FeaturedProducts({
   }, [filteredProducts]);
 
   const handleAdd = (p: Product) => {
-    if (!p.inStock || p.stockStatus === 'Hết hàng') {
-      return;
-    }
     onAddToCart(p);
     setAddedId(p.id);
     setTimeout(() => setAddedId(null), 1500);
@@ -343,7 +339,7 @@ export default function FeaturedProducts({
             >
               {displayList.items.map((p, idx) => {
                 const isJustAdded = addedId === p.id;
-                const isOutOfStock = !p.inStock || p.stockStatus === 'Hết hàng';
+                const isOutOfStock = false;
 
                 return (
                   <div
@@ -359,56 +355,31 @@ export default function FeaturedProducts({
                       <div className="relative aspect-[16/10] bg-[#f7f0ea] overflow-hidden rounded-none border-b border-[#f0e3d9]">
                         <img
                           alt={p.name}
-                          className={`w-full h-full object-cover object-center transition-transform duration-700 ease-out group-hover/card:scale-108 ${
-                            isOutOfStock ? 'grayscale-[40%] opacity-80' : ''
-                          }`}
+                          className="w-full h-full object-cover object-center transition-transform duration-700 ease-out group-hover/card:scale-108"
                           src={p.image}
                         />
 
-                        {/* Badges: Wood Type & Out of Stock */}
+                        {/* Badges: Wood Type */}
                         <div className="absolute top-3 left-3 flex flex-col gap-1 items-start z-10 pointer-events-none">
-                          {isOutOfStock ? (
+                          {p.originalPrice && p.originalPrice > p.price && (
                             <span className="px-2.5 py-0.5 rounded-none bg-[#ba1a1a] text-white text-[10px] font-bold shadow-xs">
-                              Hết hàng
+                              -{p.discountPercent && p.discountPercent > 0 ? p.discountPercent : Math.round(((p.originalPrice - p.price) / p.originalPrice) * 100)}%
                             </span>
-                          ) : (
-                            <>
-                              {p.originalPrice && p.originalPrice > p.price && (
-                                <span className="px-2.5 py-0.5 rounded-none bg-[#ba1a1a] text-white text-[10px] font-bold shadow-xs">
-                                  -{p.discountPercent && p.discountPercent > 0 ? p.discountPercent : Math.round(((p.originalPrice - p.price) / p.originalPrice) * 100)}%
-                                </span>
-                              )}
-                              {p.woodType ? (
-                                <span className="px-2.5 py-0.5 rounded-none bg-white/95 text-[#1f1b19] text-[10px] backdrop-blur-md border border-white/60 font-medium shadow-xs">
-                                  {p.woodType}
-                                </span>
-                              ) : null}
-                            </>
                           )}
-                        </div>
-
-                        {/* Out of Stock Overlay */}
-                        {isOutOfStock && (
-                          <div className="absolute inset-0 bg-black/35 flex items-center justify-center pointer-events-none z-10">
-                            <span className="px-3.5 py-1.5 bg-[#ba1a1a] text-white text-xs font-bold uppercase tracking-wider shadow-md rounded-none">
-                              Hết hàng
+                          {p.woodType ? (
+                            <span className="px-2.5 py-0.5 rounded-none bg-white/95 text-[#1f1b19] text-[10px] backdrop-blur-md border border-white/60 font-medium shadow-xs">
+                              {p.woodType}
                             </span>
-                          </div>
-                        )}
+                          ) : null}
+                        </div>
                       </div>
 
                       {/* Information Container */}
                       <div className="p-4 sm:p-5 flex flex-col flex-1 justify-between gap-3">
                         <div>
-                          {/* SKU & Rating */}
-                          <div className="flex items-center justify-between text-[#83746c] text-[11px]">
+                          {/* SKU */}
+                          <div className="flex items-center text-[#83746c] text-[11px]">
                             <span className="font-mono text-[#83746c]/80">{p.sku}</span>
-                            <div className="flex items-center gap-1 text-[#5d371f]">
-                              <StarFilled className="text-[#5d371f] text-[11px]" />
-                              <span className="font-mono font-medium">
-                                {p.rating} ({p.reviewCount})
-                              </span>
-                            </div>
                           </div>
 
                           {/* Product Title */}
@@ -435,27 +406,10 @@ export default function FeaturedProducts({
                                 </span>
                               )}
                             </div>
-                            <div className="flex items-center gap-1.5 mt-0.5">
-                              <span
-                                className={`text-[10px] font-medium ${
-                                  isOutOfStock
-                                    ? 'text-[#ba1a1a] font-bold'
-                                    : 'text-[#3f4332]'
-                                }`}
-                              >
-                                {isOutOfStock ? 'Hết hàng' : p.stockStatus || 'Còn hàng'}
-                              </span>
-                              {p.originalPrice && p.originalPrice > p.price && (
-                                <span className="text-[10px] font-bold text-red-600 bg-red-100/80 px-1 py-0.2 rounded-none">
-                                  -{p.discountPercent && p.discountPercent > 0 ? p.discountPercent : Math.round(((p.originalPrice - p.price) / p.originalPrice) * 100)}%
-                                </span>
-                              )}
-                            </div>
                           </div>
 
                           {/* Clean Quick Add Button (Không che khuất hình ảnh) */}
-                          {!isOutOfStock && (
-                            <button
+                          <button
                               type="button"
                               aria-label="Thêm vào giỏ"
                               onClick={(e) => {
@@ -480,7 +434,6 @@ export default function FeaturedProducts({
                                 </>
                               )}
                             </button>
-                          )}
                         </div>
                       </div>
                     </Link>

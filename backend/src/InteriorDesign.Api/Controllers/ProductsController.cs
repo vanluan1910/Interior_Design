@@ -17,7 +17,7 @@ public sealed class ProductsController : ApiControllerBase
     [HttpGet]
     public async Task<IActionResult> GetProducts(
         [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 12,
+        [FromQuery] int pageSize = 0,
         [FromQuery] string? search = null,
         [FromQuery] string? space = null,
         [FromQuery] Guid? categoryId = null,
@@ -30,7 +30,7 @@ public sealed class ProductsController : ApiControllerBase
         try
         {
             var clampedPage = Math.Max(1, page);
-            var clampedPageSize = Math.Max(1, pageSize);
+            var clampedPageSize = pageSize <= 0 ? 0 : pageSize;
             var response = await Sender.Send(new GetProductsQuery(clampedPage, clampedPageSize, search, space, categoryId, category, status, branch, material), cancellationToken);
 
             if (response.Success && response.Data?.Items != null && !string.IsNullOrWhiteSpace(branch) && !string.Equals(branch, "all", StringComparison.OrdinalIgnoreCase))
@@ -75,6 +75,10 @@ public sealed class ProductsController : ApiControllerBase
         {
             return StatusCode(499, ApiResponse<object>.Fail("Yêu cầu đã bị hủy bởi phía client hoặc kết nối bị gián đoạn."));
         }
+        catch (Exception ex)
+        {
+            return StatusCode(500, ApiResponse<object>.Fail($"Lỗi khi lấy danh sách sản phẩm: {ex.Message}"));
+        }
     }
 
     /// <summary>
@@ -98,10 +102,12 @@ public sealed class ProductsController : ApiControllerBase
                     query = query.Where(p => p.Space.Contains("khách") || p.Space.Contains("Living") || p.Space == "KG01");
                 else if (sp == "bedroom" || sp == "bed" || sp.Contains("ngủ") || sp.Contains("ngu") || sp == "kg03")
                     query = query.Where(p => p.Space.Contains("ngủ") || p.Space.Contains("Bed") || p.Space == "KG03");
-                else if (sp == "dining" || sp == "diningroom" || sp == "dining-room" || sp.Contains("ăn") || sp.Contains("an") || sp.Contains("bếp") || sp == "kg02")
-                    query = query.Where(p => p.Space.Contains("ăn") || p.Space.Contains("bếp") || p.Space.Contains("Dining") || p.Space == "KG02");
                 else if (sp == "office" || sp == "work" || sp.Contains("việc") || sp.Contains("viec") || sp.Contains("sách") || sp == "kg04")
                     query = query.Where(p => p.Space.Contains("việc") || p.Space.Contains("sách") || p.Space.Contains("Office") || p.Space == "KG04");
+                else if (sp == "other" || sp.Contains("khác") || sp.Contains("khac") || sp.Contains("san-pham-khac") || sp == "kg05" || sp == "kg06")
+                    query = query.Where(p => p.Space.Contains("khác") || p.Space.Contains("Other") || p.Space == "KG05" || p.Space == "KG06");
+                else if (sp == "dining" || sp == "diningroom" || sp == "dining-room" || sp.Contains("ăn") || sp.Contains("phong an") || sp.Contains("phòng ăn") || sp.Contains("bếp") || sp == "an" || sp == "kg02")
+                    query = query.Where(p => p.Space.Contains("ăn") || p.Space.Contains("bếp") || p.Space.Contains("Dining") || p.Space == "KG02");
                 else
                     query = query.Where(p => p.Space == space || p.Space.Contains(space));
             }
@@ -215,6 +221,7 @@ public sealed class ProductsController : ApiControllerBase
     public async Task<IActionResult> BulkImportProducts(
         [FromBody] List<CreateProductRequest> requests,
         [FromServices] InteriorDbContext context,
+        [FromServices] IMemoryCache? memoryCache,
         CancellationToken cancellationToken)
     {
         if (requests == null || requests.Count == 0)
@@ -260,10 +267,17 @@ public sealed class ProductsController : ApiControllerBase
             if (categoryId == Guid.Empty)
             {
                 var catText = (req.Collection ?? "").Trim();
+                var lowerName = (req.Name ?? "").ToLowerInvariant();
+                var upperSku = (req.Sku ?? "").ToUpperInvariant();
+                if (lowerName.Contains("táp") || upperSku.StartsWith("TAP"))
+                {
+                    catText = "Táp đầu giường";
+                }
                 if (!string.IsNullOrWhiteSpace(catText))
                 {
                     var matched = existingCategories.FirstOrDefault(c =>
-                        c.Name.Equals(catText, StringComparison.OrdinalIgnoreCase) ||
+                        c.Name.Equals(catText, StringComparison.OrdinalIgnoreCase))
+                        ?? existingCategories.OrderByDescending(c => c.Name.Length).FirstOrDefault(c =>
                         catText.Contains(c.Name, StringComparison.OrdinalIgnoreCase) ||
                         c.Name.Contains(catText, StringComparison.OrdinalIgnoreCase));
 
@@ -273,6 +287,17 @@ public sealed class ProductsController : ApiControllerBase
                     }
                     else
                     {
+                        var catSpace = !string.IsNullOrWhiteSpace(req.Space) ? req.Space : "Phòng Khách";
+                        var lowerC = catText.ToLowerInvariant();
+                        if (lowerC.Contains("bàn trà") || lowerC.Contains("bàn nước") || lowerC.Contains("sofa") || lowerC.Contains("kệ tivi") || lowerC.Contains("tủ giày"))
+                            catSpace = "Phòng Khách";
+                        else if (lowerC.Contains("bàn ăn") || lowerC.Contains("ghế ăn") || lowerC.Contains("chạn ly"))
+                            catSpace = "Phòng Ăn";
+                        else if (lowerC.Contains("giường") || lowerC.Contains("táp") || lowerC.Contains("tủ áo") || lowerC.Contains("quần áo") || lowerC.Contains("trang điểm"))
+                            catSpace = "Phòng Ngủ";
+                        else if (lowerC.Contains("làm việc") || lowerC.Contains("giá sách"))
+                            catSpace = "Phòng Làm Việc";
+
                         var newCatCode = GenerateCategoryCode();
                         var newCat = new Category
                         {
@@ -280,7 +305,7 @@ public sealed class ProductsController : ApiControllerBase
                             Code = newCatCode,
                             Name = catText,
                             Slug = catText.ToLowerInvariant().Replace(" ", "-").Replace("/", "-"),
-                            Space = !string.IsNullOrWhiteSpace(req.Space) ? req.Space : "Phòng Khách",
+                            Space = catSpace,
                             Status = "active",
                             IsActive = true,
                             DisplayOrder = existingCategories.Count + 1,
@@ -295,6 +320,30 @@ public sealed class ProductsController : ApiControllerBase
                 {
                     categoryId = existingCategories.FirstOrDefault()?.Id ?? Guid.Empty;
                 }
+            }
+
+            if (categoryId == Guid.Empty)
+            {
+                var defaultCat = existingCategories.FirstOrDefault();
+                if (defaultCat == null)
+                {
+                    var newCatCode = GenerateCategoryCode();
+                    defaultCat = new Category
+                    {
+                        Id = Guid.NewGuid(),
+                        Code = newCatCode,
+                        Name = "Sản phẩm nội thất",
+                        Slug = "san-pham-noi-that",
+                        Space = !string.IsNullOrWhiteSpace(req.Space) ? req.Space : "Phòng Khách",
+                        Status = "active",
+                        IsActive = true,
+                        DisplayOrder = 1,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    context.Categories.Add(defaultCat);
+                    existingCategories.Add(defaultCat);
+                }
+                categoryId = defaultCat.Id;
             }
 
             if (productMapBySku.TryGetValue(skuKey, out var existingProduct))
@@ -319,7 +368,7 @@ public sealed class ProductsController : ApiControllerBase
                 if (!string.IsNullOrWhiteSpace(req.ShortDescription) || !string.IsNullOrWhiteSpace(req.Collection))
                     existingProduct.ShortDescription = req.ShortDescription ?? req.Collection ?? "";
 
-                if (req.InStock > 0) existingProduct.InStock = req.InStock;
+                if (req.InStock >= 0) existingProduct.InStock = req.InStock;
                 if (!string.IsNullOrWhiteSpace(req.Unit)) existingProduct.Unit = req.Unit.Trim();
                 existingProduct.UpdatedAt = DateTimeOffset.UtcNow;
                 updatedCount++;
@@ -352,7 +401,7 @@ public sealed class ProductsController : ApiControllerBase
                     ShippingNote = req.ShippingNote ?? "Miễn phí giao hàng và lắp đặt toàn quốc.",
                     IsFeatured = req.IsFeatured,
                     IsNew = true,
-                    InStock = req.InStock > 0 ? req.InStock : 10,
+                    InStock = req.InStock >= 0 ? req.InStock : 0,
                     Unit = !string.IsNullOrWhiteSpace(req.Unit) ? req.Unit.Trim() : "Bộ",
                     ShortDescription = req.ShortDescription ?? req.Collection ?? "",
                     Description = req.Description ?? req.Name,
@@ -373,6 +422,9 @@ public sealed class ProductsController : ApiControllerBase
         }
 
         await context.SaveChangesAsync(cancellationToken);
+
+        memoryCache?.Remove("categories_all");
+        memoryCache?.Remove("home_data");
 
         int totalProcessed = insertedCount + updatedCount;
         return Ok(ApiResponse<int>.Ok(totalProcessed, $"Đã xử lý {totalProcessed} sản phẩm (Thêm mới: {insertedCount}, Cập nhật: {updatedCount})!"));

@@ -94,33 +94,38 @@ public sealed class CustomersController : ApiControllerBase
 
             // Tự động đồng bộ số công nợ và chi tiêu thực tế từ các đơn hàng hiệu lực (loại bỏ đơn hủy & hoàn hàng)
             var customerIds = entities.Select(x => x.Id).ToList();
-            var customerPhones = entities.Where(x => !string.IsNullOrWhiteSpace(x.Phone)).Select(x => x.Phone.Trim()).ToList();
+            var customerPhones = entities.Where(x => !string.IsNullOrWhiteSpace(x.Phone)).Select(x => x.Phone.Trim()).Distinct().ToList();
 
-            var customerOrders = await _context.Orders
-                .Where(o => (o.CustomerId != null && customerIds.Contains(o.CustomerId.Value)) || customerPhones.Contains(o.CustomerPhone))
-                .Select(o => new
-                {
-                    o.CustomerId,
-                    CustomerPhone = o.CustomerPhone.Trim(),
-                    o.Status,
-                    o.PaymentStatus,
-                    Amount = o.TotalAmount > 0 ? o.TotalAmount : o.SubTotal,
-                    Debt = Math.Max(0, o.TotalAmount - o.DepositAmount)
-                })
-                .ToListAsync(cancellationToken);
-
-            foreach (var c in entities)
+            if (customerIds.Count > 0 || customerPhones.Count > 0)
             {
-                var cleanPhone = c.Phone?.Trim() ?? string.Empty;
-                var matched = customerOrders
-                    .Where(o => (o.CustomerId.HasValue && o.CustomerId.Value == c.Id) || (!string.IsNullOrEmpty(cleanPhone) && o.CustomerPhone == cleanPhone))
-                    .ToList();
+                var customerOrders = await _context.Orders
+                    .AsNoTracking()
+                    .Where(o => (o.CustomerId != null && customerIds.Contains(o.CustomerId.Value)) || (o.CustomerPhone != null && customerPhones.Contains(o.CustomerPhone)))
+                    .Select(o => new
+                    {
+                        o.CustomerId,
+                        CustomerPhone = o.CustomerPhone,
+                        o.Status,
+                        o.PaymentStatus,
+                        o.TotalAmount,
+                        o.SubTotal,
+                        o.DepositAmount
+                    })
+                    .ToListAsync(cancellationToken);
 
-                if (matched.Count > 0)
+                foreach (var c in entities)
                 {
-                    var validOrders = matched.Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Returned && o.Status != OrderStatus.ReturnCompleted).ToList();
-                    c.Debt = validOrders.Where(o => o.PaymentStatus != PaymentStatus.Paid).Sum(o => o.Debt);
-                    c.TotalSpent = validOrders.Sum(o => o.Amount);
+                    var cleanPhone = c.Phone?.Trim() ?? string.Empty;
+                    var matched = customerOrders
+                        .Where(o => (o.CustomerId.HasValue && o.CustomerId.Value == c.Id) || (!string.IsNullOrEmpty(cleanPhone) && !string.IsNullOrEmpty(o.CustomerPhone) && o.CustomerPhone.Trim() == cleanPhone))
+                        .ToList();
+
+                    if (matched.Count > 0)
+                    {
+                        var validOrders = matched.Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Returned && o.Status != OrderStatus.ReturnCompleted).ToList();
+                        c.Debt = validOrders.Where(o => o.PaymentStatus != PaymentStatus.Paid).Sum(o => Math.Max(0, o.TotalAmount - o.DepositAmount));
+                        c.TotalSpent = validOrders.Sum(o => o.TotalAmount > 0 ? o.TotalAmount : o.SubTotal);
+                    }
                 }
             }
 
@@ -128,9 +133,17 @@ public sealed class CustomersController : ApiControllerBase
 
             return Ok(ApiResponse<List<CustomerDto>>.Ok(dtos));
         }
-        catch (OperationCanceledException)
+        catch (Exception ex) when (ex is OperationCanceledException ||
+            cancellationToken.IsCancellationRequested ||
+            HttpContext.RequestAborted.IsCancellationRequested ||
+            (ex is Microsoft.Data.SqlClient.SqlException sqlEx && (sqlEx.Number == 0 || sqlEx.Message.Contains("Operation cancelled by user", StringComparison.OrdinalIgnoreCase))) ||
+            (ex is InvalidOperationException && ex.Message.Contains("The connection is closed", StringComparison.OrdinalIgnoreCase)))
         {
-            return StatusCode(499, ApiResponse<List<CustomerDto>>.Fail("Yêu cầu đã bị hủy."));
+            return StatusCode(499, ApiResponse<List<CustomerDto>>.Fail("Yêu cầu đã bị hủy bởi phía client hoặc kết nối bị gián đoạn."));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, ApiResponse<List<CustomerDto>>.Fail($"Lỗi khi lấy danh sách khách hàng: {ex.Message}"));
         }
     }
 
@@ -140,30 +153,50 @@ public sealed class CustomersController : ApiControllerBase
     [HttpGet("stats")]
     public async Task<IActionResult> GetCustomerStats(CancellationToken cancellationToken)
     {
-        var total = await _context.Customers.CountAsync(cancellationToken);
-        var active = await _context.Customers.CountAsync(x => x.Status == "active", cancellationToken);
-        var individual = await _context.Customers.CountAsync(x => x.CustomerType == "individual" || string.IsNullOrWhiteSpace(x.CustomerType), cancellationToken);
-        var organization = await _context.Customers.CountAsync(x => x.CustomerType == "organization", cancellationToken);
+        try
+        {
+            var total = await _context.Customers.CountAsync(cancellationToken);
+            var active = await _context.Customers.CountAsync(x => x.Status == "active", cancellationToken);
+            var individual = await _context.Customers.CountAsync(x => x.CustomerType == "individual" || string.IsNullOrWhiteSpace(x.CustomerType), cancellationToken);
+            var organization = await _context.Customers.CountAsync(x => x.CustomerType == "organization", cancellationToken);
 
-        // Doanh thu và công nợ thực tế đồng bộ từ đơn hàng hiệu lực (đã loại bỏ đơn hủy & hoàn hàng)
-        var totalDebt = await _context.Orders
-            .Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Returned && o.Status != OrderStatus.ReturnCompleted && o.PaymentStatus != PaymentStatus.Paid)
-            .SumAsync(o => (decimal?)Math.Max(0, o.TotalAmount - o.DepositAmount), cancellationToken) ?? 0;
+            // Doanh thu và công nợ thực tế đồng bộ từ đơn hàng hiệu lực (đã loại bỏ đơn hủy & hoàn hàng)
+            var unpaidOrders = await _context.Orders
+                .AsNoTracking()
+                .Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Returned && o.Status != OrderStatus.ReturnCompleted && o.PaymentStatus != PaymentStatus.Paid)
+                .Select(o => new { o.TotalAmount, o.DepositAmount })
+                .ToListAsync(cancellationToken);
 
-        var totalRevenue = await _context.Orders
-            .Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Returned && o.Status != OrderStatus.ReturnCompleted)
-            .SumAsync(o => (decimal?)(o.TotalAmount > 0 ? o.TotalAmount : o.SubTotal), cancellationToken) ?? 0;
+            var totalDebt = unpaidOrders.Sum(o => Math.Max(0, o.TotalAmount - o.DepositAmount));
 
-        var stats = new CustomerStatsDto(
-            TotalCustomers: total,
-            ActiveCustomers: active,
-            IndivualCount: individual,
-            OrganizationCount: organization,
-            TotalDebt: totalDebt,
-            TotalRevenue: totalRevenue
-        );
+            var totalRevenue = await _context.Orders
+                .AsNoTracking()
+                .Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Returned && o.Status != OrderStatus.ReturnCompleted)
+                .SumAsync(o => (decimal?)(o.TotalAmount > 0 ? o.TotalAmount : o.SubTotal), cancellationToken) ?? 0;
 
-        return Ok(ApiResponse<CustomerStatsDto>.Ok(stats));
+            var stats = new CustomerStatsDto(
+                TotalCustomers: total,
+                ActiveCustomers: active,
+                IndivualCount: individual,
+                OrganizationCount: organization,
+                TotalDebt: totalDebt,
+                TotalRevenue: totalRevenue
+            );
+
+            return Ok(ApiResponse<CustomerStatsDto>.Ok(stats));
+        }
+        catch (Exception ex) when (ex is OperationCanceledException ||
+            cancellationToken.IsCancellationRequested ||
+            HttpContext.RequestAborted.IsCancellationRequested ||
+            (ex is Microsoft.Data.SqlClient.SqlException sqlEx && (sqlEx.Number == 0 || sqlEx.Message.Contains("Operation cancelled by user", StringComparison.OrdinalIgnoreCase))) ||
+            (ex is InvalidOperationException && ex.Message.Contains("The connection is closed", StringComparison.OrdinalIgnoreCase)))
+        {
+            return StatusCode(499, ApiResponse<CustomerStatsDto>.Fail("Yêu cầu đã bị hủy."));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, ApiResponse<CustomerStatsDto>.Fail($"Lỗi khi lấy thống kê khách hàng: {ex.Message}"));
+        }
     }
 
     /// <summary>
@@ -172,29 +205,47 @@ public sealed class CustomersController : ApiControllerBase
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetCustomerById(Guid id, CancellationToken cancellationToken)
     {
-        var customer = await _context.Customers.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
-        if (customer is null)
-            return NotFound(ApiResponse<CustomerDto>.Fail("Không tìm thấy khách hàng."));
-
-        var customerOrders = await _context.Orders
-            .Where(o => o.CustomerId == id || (!string.IsNullOrEmpty(customer.Phone) && o.CustomerPhone == customer.Phone.Trim()))
-            .Select(o => new
-            {
-                o.Status,
-                o.PaymentStatus,
-                Amount = o.TotalAmount > 0 ? o.TotalAmount : o.SubTotal,
-                Debt = Math.Max(0, o.TotalAmount - o.DepositAmount)
-            })
-            .ToListAsync(cancellationToken);
-
-        if (customerOrders.Count > 0)
+        try
         {
-            var validOrders = customerOrders.Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Returned && o.Status != OrderStatus.ReturnCompleted).ToList();
-            customer.Debt = validOrders.Where(o => o.PaymentStatus != PaymentStatus.Paid).Sum(o => o.Debt);
-            customer.TotalSpent = validOrders.Sum(o => o.Amount);
-        }
+            var customer = await _context.Customers.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+            if (customer is null)
+                return NotFound(ApiResponse<CustomerDto>.Fail("Không tìm thấy khách hàng."));
 
-        return Ok(ApiResponse<CustomerDto>.Ok(MapToDto(customer)));
+            var cleanPhone = customer.Phone?.Trim();
+            var customerOrders = await _context.Orders
+                .AsNoTracking()
+                .Where(o => o.CustomerId == id || (!string.IsNullOrEmpty(cleanPhone) && o.CustomerPhone != null && o.CustomerPhone == cleanPhone))
+                .Select(o => new
+                {
+                    o.Status,
+                    o.PaymentStatus,
+                    o.TotalAmount,
+                    o.SubTotal,
+                    o.DepositAmount
+                })
+                .ToListAsync(cancellationToken);
+
+            if (customerOrders.Count > 0)
+            {
+                var validOrders = customerOrders.Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Returned && o.Status != OrderStatus.ReturnCompleted).ToList();
+                customer.Debt = validOrders.Where(o => o.PaymentStatus != PaymentStatus.Paid).Sum(o => Math.Max(0, o.TotalAmount - o.DepositAmount));
+                customer.TotalSpent = validOrders.Sum(o => o.TotalAmount > 0 ? o.TotalAmount : o.SubTotal);
+            }
+
+            return Ok(ApiResponse<CustomerDto>.Ok(MapToDto(customer)));
+        }
+        catch (Exception ex) when (ex is OperationCanceledException ||
+            cancellationToken.IsCancellationRequested ||
+            HttpContext.RequestAborted.IsCancellationRequested ||
+            (ex is Microsoft.Data.SqlClient.SqlException sqlEx && (sqlEx.Number == 0 || sqlEx.Message.Contains("Operation cancelled by user", StringComparison.OrdinalIgnoreCase))) ||
+            (ex is InvalidOperationException && ex.Message.Contains("The connection is closed", StringComparison.OrdinalIgnoreCase)))
+        {
+            return StatusCode(499, ApiResponse<CustomerDto>.Fail("Yêu cầu đã bị hủy."));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, ApiResponse<CustomerDto>.Fail($"Lỗi khi lấy thông tin khách hàng: {ex.Message}"));
+        }
     }
 
     /// <summary>

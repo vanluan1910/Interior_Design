@@ -162,7 +162,7 @@ export default function HomePage() {
       try {
         const [homeRes, catalogRes] = await Promise.allSettled([
           homeApi.getHomeData(),
-          productApi.getProducts({ pageSize: 40 }),
+          productApi.getProducts({ pageSize: 0 }),
         ]);
 
         if (isMounted) {
@@ -268,7 +268,9 @@ export default function HomePage() {
         />
 
         {/* Bento Living Space Categories */}
-        <LivingSpaces onSelectCategory={handleCategorySelect} spaces={homeData?.livingSpaces} />
+        {homeData?.livingSpaces && homeData.livingSpaces.length > 0 && (
+          <LivingSpaces onSelectCategory={handleCategorySelect} spaces={homeData.livingSpaces} />
+        )}
 
         {/* Featured Villa & Penthouse Real Projects Lookbook */}
         <ProjectLookbook onOpenBooking={() => {}} />
