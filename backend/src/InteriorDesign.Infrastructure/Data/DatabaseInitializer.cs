@@ -61,24 +61,6 @@ public static class DatabaseInitializer
                 END
             ");
 
-            await ExecuteSafeSqlAsync(context, "Clean Spaces ShowOnHome and Descriptions", @"
-                IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'spaces')
-                BEGIN
-                    UPDATE [dbo].[spaces] SET [ShowOnHome] = 1, [IsDeleted] = 0, [Status] = 'active' WHERE [Slug] IN ('living', 'bedroom', 'dining', 'office') OR [Code] IN ('KG01', 'KG02', 'KG03', 'KG04');
-                    UPDATE [dbo].[spaces] SET [ShowOnHome] = 0 WHERE [Slug] = 'san-pham-khac' OR [Code] IN ('KG05', 'KG06');
-                    UPDATE [dbo].[spaces] SET [Description] = N'Sofa mộc bọc nỉ lanh tự nhiên, bàn trà điêu khắc hữu cơ, hệ kệ TV tinh gọn tôn vinh sự mộc mạc.' WHERE [Slug] = 'living' AND ([Description] LIKE '%#%' OR LEN([Description]) > 180);
-                    UPDATE [dbo].[spaces] SET [Description] = N'Giường phản thấp giấu chân, tủ áo lam gỗ thanh mảnh và tab đầu giường nguyên khối.' WHERE [Slug] = 'bedroom' AND ([Description] LIKE '%#%' OR LEN([Description]) > 180);
-                    UPDATE [dbo].[spaces] SET [Description] = N'Bàn ăn mở rộng thông minh, ghế tựa công thái học ôm sát sống lưng.' WHERE [Slug] = 'dining' AND ([Description] LIKE '%#%' OR LEN([Description]) > 180);
-                    UPDATE [dbo].[spaces] SET [Description] = N'Bàn làm việc cạnh cong bo mềm, giá sách modul tuỳ biến theo kích thước căn hộ.' WHERE [Slug] = 'office' AND ([Description] LIKE '%#%' OR LEN([Description]) > 180);
-
-                    UPDATE [dbo].[spaces] SET [Image] = 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?w=800&auto=format&fit=crop&q=80' WHERE ([Slug] = 'living' OR [Code] = 'KG01') AND ([Image] IS NULL OR [Image] = '' OR [Image] LIKE '%aida-public%');
-                    UPDATE [dbo].[spaces] SET [Image] = 'https://images.unsplash.com/photo-1617806118233-18e1de247200?w=800&auto=format&fit=crop&q=80' WHERE ([Slug] = 'dining' OR [Code] = 'KG02') AND ([Image] IS NULL OR [Image] = '' OR [Image] LIKE '%aida-public%');
-                    UPDATE [dbo].[spaces] SET [Image] = 'https://images.unsplash.com/photo-1524758631624-e2822e304c36?w=800&auto=format&fit=crop&q=80' WHERE ([Slug] = 'office' OR [Code] = 'KG04') AND ([Image] IS NULL OR [Image] = '' OR [Image] LIKE '%aida-public%');
-                    UPDATE [dbo].[spaces] SET [Image] = 'https://images.unsplash.com/photo-1595526114035-0d45ed16cfbf?w=800&auto=format&fit=crop&q=80' WHERE ([Slug] = 'bedroom' OR [Code] = 'KG03') AND ([Image] IS NULL OR [Image] = '' OR [Image] LIKE '%aida-public%');
-                    UPDATE [dbo].[spaces] SET [Image] = 'https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=800&auto=format&fit=crop&q=80' WHERE ([Slug] = 'san-pham-khac' OR [Code] IN ('KG05', 'KG06')) AND ([Image] IS NULL OR [Image] = '');
-                END
-            ");
-
             await ExecuteSafeSqlAsync(context, "Fix Tap Dau Giuong Category Mapping", @"
                 SET QUOTED_IDENTIFIER ON;
                 SET ANSI_NULLS ON;

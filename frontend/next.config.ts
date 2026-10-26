@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  experimental: {
+    optimizePackageImports: ["@ant-design/icons", "antd", "dayjs", "lucide-react"],
+  },
   images: {
     remotePatterns: [
       {
@@ -63,22 +66,24 @@ const nextConfig: NextConfig = {
     ];
   },
   async rewrites() {
+    const backendUrl = process.env.BACKEND_INTERNAL_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+    const cleanBackendUrl = backendUrl.replace(/\/api\/?$/, "").replace(/\/$/, "");
     return [
       {
         source: "/api/:path*",
-        destination: "http://localhost:5000/api/:path*",
+        destination: `${cleanBackendUrl}/api/:path*`,
       },
       {
         source: "/uploads/:path*",
-        destination: "http://localhost:5000/uploads/:path*",
+        destination: `${cleanBackendUrl}/uploads/:path*`,
       },
       {
         source: "/swagger/:path*",
-        destination: "http://localhost:5000/swagger/:path*",
+        destination: `${cleanBackendUrl}/swagger/:path*`,
       },
       {
         source: "/openapi/:path*",
-        destination: "http://localhost:5000/openapi/:path*",
+        destination: `${cleanBackendUrl}/openapi/:path*`,
       },
     ];
   },

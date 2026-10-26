@@ -42,7 +42,6 @@ import {
   SwapOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import * as XLSX from 'xlsx';
 import {
   AdminDataTable,
   AdminFilterSidebar,
@@ -573,6 +572,7 @@ export function SuppliersTab({
   const handleImportExcel = async (file: File) => {
     const hideLoading = message.loading(`Đang đọc và nhập file ${file.name}...`, 0);
     try {
+      const XLSX = await import('xlsx');
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: 'array' });
       const sheetName = workbook.SheetNames[0];

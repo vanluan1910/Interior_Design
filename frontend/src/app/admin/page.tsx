@@ -30,16 +30,54 @@ import {
   PrinterOutlined,
   ShopOutlined,
 } from '@ant-design/icons';
-import {
-  OverviewTab,
-  OrdersTab,
-  InventoryTab,
-  CategoriesTab,
-  WorkshopTab,
-  CustomersTab,
-  SuppliersTab,
-  SettingsTab,
-} from '@/components/admin/tabs';
+const TabLoadingSkeleton = () => (
+  <div className="w-full min-h-[420px] flex items-center justify-center bg-white/40 backdrop-blur-sm rounded-xl border border-[#eae1dd]/60 p-8 shadow-sm">
+    <div className="flex flex-col items-center gap-3">
+      <div className="w-7 h-7 border-2 border-[#5d371f] border-t-transparent rounded-full animate-spin" />
+      <span className="text-xs text-[#83746c] font-medium tracking-wide">Đang tải phân hệ quản trị...</span>
+    </div>
+  </div>
+);
+
+const OverviewTab = dynamic(() => import('@/components/admin/tabs/OverviewTab').then((m) => m.OverviewTab), {
+  ssr: false,
+  loading: () => <TabLoadingSkeleton />,
+});
+
+const OrdersTab = dynamic(() => import('@/components/admin/tabs/OrdersTab').then((m) => m.OrdersTab), {
+  ssr: false,
+  loading: () => <TabLoadingSkeleton />,
+});
+
+const InventoryTab = dynamic(() => import('@/components/admin/tabs/InventoryTab').then((m) => m.InventoryTab), {
+  ssr: false,
+  loading: () => <TabLoadingSkeleton />,
+});
+
+const CategoriesTab = dynamic(() => import('@/components/admin/tabs/CategoriesTab').then((m) => m.CategoriesTab), {
+  ssr: false,
+  loading: () => <TabLoadingSkeleton />,
+});
+
+const WorkshopTab = dynamic(() => import('@/components/admin/tabs/WorkshopTab').then((m) => m.WorkshopTab), {
+  ssr: false,
+  loading: () => <TabLoadingSkeleton />,
+});
+
+const CustomersTab = dynamic(() => import('@/components/admin/tabs/CustomersTab').then((m) => m.CustomersTab), {
+  ssr: false,
+  loading: () => <TabLoadingSkeleton />,
+});
+
+const SuppliersTab = dynamic(() => import('@/components/admin/tabs/SuppliersTab').then((m) => m.SuppliersTab), {
+  ssr: false,
+  loading: () => <TabLoadingSkeleton />,
+});
+
+const SettingsTab = dynamic(() => import('@/components/admin/tabs/SettingsTab').then((m) => m.SettingsTab), {
+  ssr: false,
+  loading: () => <TabLoadingSkeleton />,
+});
 import { NotificationPopover } from '@/components/admin/NotificationPopover';
 import { triggerDesktopNotification, playChimeSound } from '@/utils/desktopNotification';
 import { branchApi } from '@/api/branchApi';
@@ -88,6 +126,7 @@ function AdminPageContent({
   const [mounted, setMounted] = useState(false);
   const knownOrderCodesRef = React.useRef<Set<string>>(new Set());
   const isInitialOrderLoadRef = React.useRef(true);
+  const loadedTabsRef = React.useRef<Set<string>>(new Set());
 
   useEffect(() => {
     setMounted(true);
@@ -517,32 +556,32 @@ function AdminPageContent({
       setEmployeesList(getStoredAdminData(ADMIN_STORAGE_KEYS.EMPLOYEES, INITIAL_EMPLOYEES));
     };
 
-    // 1. Luôn tải danh sách đơn hàng & sản phẩm ngay khi vào trang Admin để chuông thông báo & cảnh báo kho có dữ liệu
-    loadBranches();
-    loadOrders();
-    loadProducts();
+    // 1. Chỉ tải danh sách chi nhánh & đơn hàng 1 lần duy nhất khi vừa vào trang Admin
+    if (!loadedTabsRef.current.has('initial_mount')) {
+      loadedTabsRef.current.add('initial_mount');
+      loadBranches();
+      loadOrders();
+    }
 
-    // 2. Load tab-specific datasets lazily based on active tab
-    if (activeNav === 'inventory' || activeNav === 'categories') {
+    // 2. Tải dữ liệu đặc thù theo từng tab lười (lazy) - chỉ tải 1 lần khi người dùng lần đầu mở tab đó
+    if ((activeNav === 'inventory' || activeNav === 'categories' || activeNav === 'overview') && !loadedTabsRef.current.has('categories_spaces')) {
+      loadedTabsRef.current.add('categories_spaces');
       loadCategories();
       loadSpaces();
-    } else if (activeNav === 'overview') {
-      loadCategories();
-      loadSpaces();
-    } else if (activeNav === 'workshop') {
+    } else if ((activeNav === 'workshop' || activeNav === 'suppliers') && !loadedTabsRef.current.has('suppliers')) {
+      loadedTabsRef.current.add('suppliers');
       loadSuppliers();
-    } else if (activeNav === 'orders') {
+    } else if ((activeNav === 'orders' || activeNav === 'customers') && !loadedTabsRef.current.has('customers')) {
+      loadedTabsRef.current.add('customers');
       loadCustomers();
-    } else if (activeNav === 'customers') {
-      loadCustomers();
-    } else if (activeNav === 'suppliers') {
-      loadSuppliers();
-    } else if (activeNav === 'settings') {
+    } else if (activeNav === 'settings' && !loadedTabsRef.current.has('settings')) {
+      loadedTabsRef.current.add('settings');
       loadRoles();
       loadEmployees();
     }
 
     const handleCategoriesChanged = () => {
+      loadedTabsRef.current.delete('categories_spaces');
       loadCategories();
     };
     window.addEventListener('categories_changed', handleCategoriesChanged);
@@ -636,7 +675,7 @@ function AdminPageContent({
     };
   }, [mounted, notifyNewOrderArrival]);
 
-  // Realtime Polling: Kiểm tra đơn hàng mới từ máy khác định kỳ mỗi 10 giây (bỏ qua cache)
+  // Realtime Polling: Kiểm tra đơn hàng mới từ máy khác định kỳ mỗi 15 giây (bỏ qua cache)
   useEffect(() => {
     if (!mounted || !user || user.role !== 'admin') return;
 
@@ -663,12 +702,22 @@ function AdminPageContent({
             isInitialOrderLoadRef.current = false;
           }
 
-          setOrdersList(normalized);
+          setOrdersList((prev) => {
+            // Ngăn chặn re-render thác nước nếu danh sách đơn không có thay đổi
+            if (
+              prev.length === normalized.length &&
+              prev[0]?.orderCode === normalized[0]?.orderCode &&
+              prev[0]?.status === normalized[0]?.status
+            ) {
+              return prev;
+            }
+            return normalized;
+          });
         }
       } catch (e) {
         // silent polling catch
       }
-    }, 10000);
+    }, 15000);
 
     return () => clearInterval(interval);
   }, [mounted, user, notifyNewOrderArrival]);

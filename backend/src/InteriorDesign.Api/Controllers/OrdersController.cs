@@ -8,6 +8,7 @@ using InteriorDesign.Integration.Responses;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace InteriorDesign.Api.Controllers;
 
@@ -80,9 +81,30 @@ public sealed class OrdersController : ApiControllerBase
             List<Order> entities;
             if (!string.IsNullOrWhiteSpace(branch) && branch != "all")
             {
+                var cache = HttpContext.RequestServices.GetService<IMemoryCache>();
+                List<Branch> allBranches;
+                List<Warehouse> allWarehouses;
+                if (cache != null)
+                {
+                    allBranches = await cache.GetOrCreateAsync("master:branches:all", async entry =>
+                    {
+                        entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5);
+                        return await _context.Branches.AsNoTracking().Where(b => !b.IsDeleted).ToListAsync(cancellationToken) ?? new List<Branch>();
+                    }) ?? new List<Branch>();
+
+                    allWarehouses = await cache.GetOrCreateAsync("master:warehouses:all", async entry =>
+                    {
+                        entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5);
+                        return await _context.Warehouses.AsNoTracking().Where(w => !w.IsDeleted).ToListAsync(cancellationToken) ?? new List<Warehouse>();
+                    }) ?? new List<Warehouse>();
+                }
+                else
+                {
+                    allBranches = await _context.Branches.AsNoTracking().Where(b => !b.IsDeleted).ToListAsync(cancellationToken);
+                    allWarehouses = await _context.Warehouses.AsNoTracking().Where(w => !w.IsDeleted).ToListAsync(cancellationToken);
+                }
+
                 var rawEntities = await query.ToListAsync(cancellationToken);
-                var allBranches = await _context.Branches.AsNoTracking().Where(b => !b.IsDeleted).ToListAsync(cancellationToken);
-                var allWarehouses = await _context.Warehouses.AsNoTracking().Where(w => !w.IsDeleted).ToListAsync(cancellationToken);
                 var filtered = rawEntities.Where(x => BranchMatcher.IsBranchMatch(x.Branch, branch, allBranches, allWarehouses) || BranchMatcher.IsBranchMatch(x.Showroom, branch, allBranches, allWarehouses)).ToList();
                 if (pageSize.HasValue && pageSize.Value > 0)
                 {

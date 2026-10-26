@@ -1,8 +1,16 @@
 import type { Metadata } from "next";
+import { Be_Vietnam_Pro } from "next/font/google";
 import { AntdRegistry } from "@ant-design/nextjs-registry";
 import { ConfigProvider, App } from "antd";
 import viVN from "antd/locale/vi_VN";
 import "./globals.css";
+
+const beVietnamPro = Be_Vietnam_Pro({
+  weight: ["300", "400", "500", "600", "700", "800"],
+  subsets: ["vietnamese", "latin"],
+  display: "swap",
+  variable: "--font-be-vietnam-pro",
+});
 
 export const metadata: Metadata = {
   title: "D2 LUXURY DESIGN | Nội Thất Gỗ Tự Nhiên Cao Cấp",
@@ -30,20 +38,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="vi" data-scroll-behavior="smooth">
+    <html lang="vi" data-scroll-behavior="smooth" className={beVietnamPro.variable}>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
-          href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,300;1,400;1,500;1,600;1,700&family=Inter:wght@300;400;500;600;700&display=swap"
-          rel="stylesheet"
-        />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200"
+          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap"
           rel="stylesheet"
         />
       </head>
-      <body className="bg-surface font-sans text-on-surface antialiased selection:bg-primary-fixed-dim selection:text-on-primary-fixed overflow-x-hidden min-h-screen">
+      <body className={`${beVietnamPro.className} bg-surface font-sans text-on-surface antialiased selection:bg-primary-fixed-dim selection:text-on-primary-fixed overflow-x-hidden min-h-screen`}>
         <AntdRegistry>
           <ConfigProvider
             locale={viVN}
@@ -56,7 +60,7 @@ export default function RootLayout({
                 colorWarning: "#c5a880",
                 colorError: "#ba1a1a",
                 fontSize: 14,
-                fontFamily: "'Be Vietnam Pro', var(--font-be-vietnam-pro), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+                fontFamily: "var(--font-be-vietnam-pro), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
                 colorBgBase: "#fff8f5",
                 colorTextBase: "#1f1b19",
                 borderRadius: 0,

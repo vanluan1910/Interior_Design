@@ -59,8 +59,6 @@ ProjectEvaluation/
 # Images, Uploads & Bulk Media
 /image/
 image/
-frontend/public/products/
-frontend/public/uploads/
 **/wwwroot/uploads/*
 !**/wwwroot/uploads/.gitkeep
 **/.tempmediaStorage/

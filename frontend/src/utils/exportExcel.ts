@@ -1,6 +1,4 @@
-import * as XLSX from 'xlsx';
-
-export function exportToExcel<T extends Record<string, any>>(
+export async function exportToExcel<T extends Record<string, any>>(
   data: T[],
   filename: string,
   sheetName: string = 'Sheet1'
@@ -8,6 +6,8 @@ export function exportToExcel<T extends Record<string, any>>(
   if (!data || data.length === 0) {
     return false;
   }
+
+  const XLSX = await import('xlsx');
 
   // Create worksheet
   const worksheet = XLSX.utils.json_to_sheet(data);
