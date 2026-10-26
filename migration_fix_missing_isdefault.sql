@@ -1,4 +1,4 @@
--- ====================================================================
+﻿-- ====================================================================
 -- SCRIPT MIGRATION: BỔ SUNG CỘT IsDefault CHO CÁC BẢNG TRÊN SERVER PRODUCTION
 -- Dự án: D2 LUXURY Interior Design Platform
 -- Ngày: 26/10/2026
