@@ -203,6 +203,13 @@ public sealed class HomeController : ApiControllerBase
             var branchesDb = await _context.Branches
                 .AsNoTracking()
                 .Where(b => !b.IsDeleted && b.Status == "active")
+                .Select(b => new {
+                    b.Id,
+                    b.Name,
+                    b.Address,
+                    b.ManagerPhone,
+                    b.IsHeadquarter
+                })
                 .OrderByDescending(b => b.IsHeadquarter)
                 .ThenBy(b => b.Name)
                 .ToListAsync(cancellationToken);

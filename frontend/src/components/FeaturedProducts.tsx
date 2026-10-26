@@ -81,12 +81,13 @@ export default function FeaturedProducts({
     return list;
   }, [shuffledProducts, products, activeCategory, searchQuery]);
 
-  // Danh sách sản phẩm lặp vô tận liền mạch (seamless infinite loop)
+  // Danh sách sản phẩm lặp vô tận liền mạch (seamless infinite loop) - tối đa 8-10 sản phẩm để mượt mà 60fps
   const displayList = useMemo(() => {
-    if (filteredProducts.length === 0) return { items: [] as Product[], baseLength: 0 };
-    let base = [...filteredProducts];
-    while (base.length < 8) {
-      base = [...base, ...filteredProducts];
+    const topFeatured = filteredProducts.slice(0, 10);
+    if (topFeatured.length === 0) return { items: [] as Product[], baseLength: 0 };
+    let base = [...topFeatured];
+    while (base.length < 6) {
+      base = [...base, ...topFeatured];
     }
     return {
       items: [...base, ...base],
@@ -355,8 +356,13 @@ export default function FeaturedProducts({
                       <div className="relative aspect-[16/10] bg-[#f7f0ea] overflow-hidden rounded-none border-b border-[#f0e3d9]">
                         <img
                           alt={p.name}
+                          loading="lazy"
+                          decoding="async"
                           className="w-full h-full object-cover object-center transition-transform duration-700 ease-out group-hover/card:scale-108"
                           src={p.image}
+                          onError={(e) => {
+                            (e.currentTarget as HTMLImageElement).src = '/logo.png';
+                          }}
                         />
 
                         {/* Badges: Wood Type */}

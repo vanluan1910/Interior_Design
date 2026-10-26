@@ -162,7 +162,7 @@ export default function HomePage() {
       try {
         const [homeRes, catalogRes] = await Promise.allSettled([
           homeApi.getHomeData(),
-          productApi.getProducts({ pageSize: 0 }),
+          productApi.getProducts({ pageSize: 12 }),
         ]);
 
         if (isMounted) {

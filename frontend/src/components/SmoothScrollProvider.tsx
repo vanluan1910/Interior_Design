@@ -23,13 +23,14 @@ export default function SmoothScrollProvider({
       return;
     }
 
-    // Khởi tạo Lenis Smooth Scroll cho trải nghiệm cuộn mượt mà như tạp chí kiến trúc (chậm rãi, êm dịu theo độ lăn chuột)
+    // Khởi tạo Lenis Smooth Scroll nhạy bén, phản hồi tức thì theo tay cuộn, không gây độ trễ (input lag)
     const lenis = new Lenis({
-      duration: 1.35,
+      duration: 0.6,
       easing: (t: number) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
       smoothWheel: true,
-      wheelMultiplier: 0.88,
-      touchMultiplier: 1.3,
+      wheelMultiplier: 1.0,
+      touchMultiplier: 1.0,
+      syncTouch: false,
     });
     lenisRef.current = lenis;
 
