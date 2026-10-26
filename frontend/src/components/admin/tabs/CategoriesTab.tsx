@@ -42,6 +42,7 @@ import {
   getNextCode,
 } from '@/components/admin';
 import type { AdminCategory, AdminSpace } from '@/types/admin';
+import { exportToExcel } from '@/utils/exportExcel';
 import { categoryApi } from '@/api/categoryApi';
 import { spaceApi } from '@/api/spaceApi';
 import { uploadApi } from '@/api/uploadApi';
@@ -679,11 +680,7 @@ export function CategoriesTab({
         'Hiện trên Trang chủ': s.showOnHome ? 'Có' : 'Không',
       }));
 
-      const XLSX = await import('xlsx');
-      const worksheet = XLSX.utils.json_to_sheet(exportData);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'KhongGianNoiThat');
-      XLSX.writeFile(workbook, `danh_sach_khong_gian_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      await exportToExcel(exportData, `danh_sach_khong_gian_${new Date().toISOString().slice(0, 10)}`, 'KhongGianNoiThat');
       message.success('Đã xuất file Excel danh sách không gian!');
     } catch (err: any) {
       message.error(err?.message || 'Xuất Excel không gian thất bại.');
