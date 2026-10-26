@@ -38,7 +38,3 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# Large product images and runtime uploads
-public/products/
-public/uploads/
-
