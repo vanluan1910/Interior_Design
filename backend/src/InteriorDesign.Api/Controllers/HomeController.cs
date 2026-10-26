@@ -49,90 +49,7 @@ public sealed class HomeController : ApiControllerBase
                 Website: "https://d2luxury.vn"
             );
 
-            // 2. Lấy sản phẩm nổi bật từ DB với Projection nhẹ (không load Description, Images, BranchStocksJson...)
-            var activeProductsProjection = _context.Products
-                .AsNoTracking()
-                .Where(p => p.Status == ProductStatus.Active)
-                .Select(p => new
-                {
-                    p.Id,
-                    p.Name,
-                    p.Slug,
-                    p.Sku,
-                    p.Space,
-                    CategoryName = p.Category != null ? p.Category.Name : "Tuyệt tác gỗ tự nhiên",
-                    p.Price,
-                    p.OriginalPrice,
-                    p.DiscountPercent,
-                    p.MainImageUrl,
-                    p.WoodType,
-                    p.Dimensions,
-                    p.Rating,
-                    p.ReviewCount,
-                    p.InStock,
-                    p.IsFeatured,
-                    p.CreatedAt
-                });
-
-            var livingProducts = await activeProductsProjection
-                .Where(p => p.Space.Contains("khách") || p.Space.Contains("Living") || p.Space == "KG01")
-                .OrderByDescending(p => p.IsFeatured).ThenByDescending(p => p.CreatedAt)
-                .Take(8)
-                .ToListAsync(cancellationToken);
-
-            var bedroomProducts = await activeProductsProjection
-                .Where(p => p.Space.Contains("ngủ") || p.Space.Contains("Bed") || p.Space == "KG02" || p.Space == "KG03")
-                .OrderByDescending(p => p.IsFeatured).ThenByDescending(p => p.CreatedAt)
-                .Take(8)
-                .ToListAsync(cancellationToken);
-
-            var diningProducts = await activeProductsProjection
-                .Where(p => p.Space.Contains("ăn") || p.Space.Contains("bếp") || p.Space.Contains("Dining"))
-                .OrderByDescending(p => p.IsFeatured).ThenByDescending(p => p.CreatedAt)
-                .Take(8)
-                .ToListAsync(cancellationToken);
-
-            var officeProducts = await activeProductsProjection
-                .Where(p => p.Space.Contains("việc") || p.Space.Contains("sách") || p.Space.Contains("Office") || p.Space == "KG04")
-                .OrderByDescending(p => p.IsFeatured).ThenByDescending(p => p.CreatedAt)
-                .Take(8)
-                .ToListAsync(cancellationToken);
-
-            var combinedFeatured = new List<dynamic>();
-            combinedFeatured.AddRange(livingProducts);
-            combinedFeatured.AddRange(bedroomProducts);
-            combinedFeatured.AddRange(diningProducts);
-            combinedFeatured.AddRange(officeProducts);
-
-            var featuredProducts = combinedFeatured.Select(p => {
-                decimal pr = (decimal)p.Price;
-                decimal origRaw = (decimal)p.OriginalPrice;
-                int discRaw = (int)p.DiscountPercent;
-                decimal orig = origRaw > pr ? origRaw : (discRaw > 0 && pr > 0 ? Math.Round(pr / (1 - (decimal)discRaw / 100m)) : pr);
-                int disc = discRaw > 0 ? discRaw : (orig > pr && orig > 0 ? (int)Math.Round(((orig - pr) / orig) * 100m) : 0);
-
-                return new HomeProductDto(
-                    Id: (Guid)p.Id,
-                    Name: (string)p.Name,
-                    Slug: (string)p.Slug,
-                    Sku: (string)p.Sku,
-                    Category: MapSpaceToCategoryKey((string)p.Space, (string)p.Name, (string)p.Sku),
-                    CategoryName: (string)p.CategoryName,
-                    Price: pr,
-                    OriginalPrice: orig > pr ? orig : null,
-                    Image: !string.IsNullOrWhiteSpace((string?)p.MainImageUrl) ? (string)p.MainImageUrl : "/images/placeholder.jpg",
-                    WoodType: !string.IsNullOrWhiteSpace((string?)p.WoodType) ? (string)p.WoodType : "Gỗ tự nhiên",
-                    Dimensions: !string.IsNullOrWhiteSpace((string?)p.Dimensions) ? (string)p.Dimensions : "Theo thiết kế",
-                    Tag: disc > 0 ? $"-{disc}%" : "",
-                    Rating: (decimal)p.Rating > 0 ? (decimal)p.Rating : 5.0m,
-                    ReviewCount: (int)p.ReviewCount > 0 ? (int)p.ReviewCount : 24,
-                    InStock: (bool)((int)p.InStock > 0),
-                    DiscountPercent: disc
-                );
-            }).ToList();
-
-
-            // 3. Lấy danh sách Không gian sống từ DB (Spaces Table) - Hoàn toàn động theo cấu hình người dùng
+            // 2. Lấy danh sách Không gian sống từ DB (Spaces Table) - Hoàn toàn động theo cấu hình người dùng
             var spacesDb = await _context.Spaces
                 .AsNoTracking()
                 .Where(s => !s.IsDeleted && s.Status == "active" && s.ShowOnHome)
@@ -156,6 +73,15 @@ public sealed class HomeController : ApiControllerBase
                 }
             }
 
+            var categorySpaceCounts = await _context.Products
+                .AsNoTracking()
+                .Where(p => p.Status == ProductStatus.Active && p.Category != null && p.Category.SpaceId != null)
+                .GroupBy(p => p.Category!.SpaceId!.Value)
+                .Select(g => new { SpaceId = g.Key, Count = g.Count() })
+                .ToListAsync(cancellationToken);
+
+            var productCountBySpaceId = categorySpaceCounts.ToDictionary(x => x.SpaceId, x => x.Count);
+
             var livingSpaces = spacesDb.Select((s, idx) =>
             {
                 var spaceKey = !string.IsNullOrWhiteSpace(s.Slug)
@@ -174,6 +100,8 @@ public sealed class HomeController : ApiControllerBase
                 {
                     pCount = productCountBySpace.GetValueOrDefault(s.Slug.Trim().ToLower(), 0);
                 }
+                var pCountFromCat = productCountBySpaceId.GetValueOrDefault(s.Id, 0);
+                pCount = Math.Max(pCount, pCountFromCat);
 
                 var countText = pCount > 0 ? $"Xem {pCount} thiết kế" : "Xem thiết kế";
                 var colSpan = (idx % 4 == 0 || idx % 4 == 3) ? 7 : 5;
@@ -187,15 +115,79 @@ public sealed class HomeController : ApiControllerBase
 
                 return new HomeSpaceDto(
                     Key: spaceKey,
-                    Name: s.Name,
-                    Tagline: tagline,
-                    Description: desc,
+                    Name: s.Name ?? "",
+                    Tagline: tagline ?? "",
+                    Description: desc ?? "",
                     ImageUrl: imageUrl,
                     CountText: countText,
                     CodeLabel: codeLabel,
                     ColSpan: colSpan,
                     LinkUrl: $"/products?space={Uri.EscapeDataString(spaceKey)}",
                     Id: s.Id
+                );
+            }).ToList();
+
+            // 3. Lấy sản phẩm nổi bật từ DB với Projection nhẹ, gán động theo không gian thực tế
+            var allActiveProducts = await _context.Products
+                .AsNoTracking()
+                .Where(p => p.Status == ProductStatus.Active)
+                .Include(p => p.Category)
+                .OrderByDescending(p => p.IsFeatured)
+                .ThenByDescending(p => p.CreatedAt)
+                .Take(40)
+                .ToListAsync(cancellationToken);
+
+            var featuredProducts = allActiveProducts.Select(p => {
+                decimal pr = p.Price;
+                decimal origRaw = p.OriginalPrice;
+                int discRaw = p.DiscountPercent;
+                decimal orig = origRaw > pr ? origRaw : (discRaw > 0 && pr > 0 ? Math.Round(pr / (1 - (decimal)discRaw / 100m)) : pr);
+                int disc = discRaw > 0 ? discRaw : (orig > pr && orig > 0 ? (int)Math.Round(((orig - pr) / orig) * 100m) : 0);
+
+                string spaceKey = "all";
+                if (p.Category?.SpaceId != null)
+                {
+                    var spMatch = spacesDb.FirstOrDefault(s => s.Id == p.Category.SpaceId.Value);
+                    if (spMatch != null)
+                    {
+                        spaceKey = !string.IsNullOrWhiteSpace(spMatch.Slug) ? spMatch.Slug.Trim() : (!string.IsNullOrWhiteSpace(spMatch.Code) ? spMatch.Code.Trim().ToLower() : spMatch.Id.ToString());
+                    }
+                }
+
+                if (spaceKey == "all" && !string.IsNullOrWhiteSpace(p.Space))
+                {
+                    var pSpaceLower = p.Space.Trim().ToLower();
+                    var spMatch = spacesDb.FirstOrDefault(s =>
+                        (s.Name != null && s.Name.ToLower() == pSpaceLower) ||
+                        (s.Slug != null && s.Slug.ToLower() == pSpaceLower) ||
+                        (s.Code != null && s.Code.ToLower() == pSpaceLower));
+                    if (spMatch != null)
+                    {
+                        spaceKey = !string.IsNullOrWhiteSpace(spMatch.Slug) ? spMatch.Slug.Trim() : (!string.IsNullOrWhiteSpace(spMatch.Code) ? spMatch.Code.Trim().ToLower() : spMatch.Id.ToString());
+                    }
+                    else
+                    {
+                        spaceKey = pSpaceLower;
+                    }
+                }
+
+                return new HomeProductDto(
+                    Id: p.Id,
+                    Name: p.Name,
+                    Slug: p.Slug,
+                    Sku: p.Sku,
+                    Category: spaceKey,
+                    CategoryName: p.Category?.Name ?? "Tuyệt tác gỗ tự nhiên",
+                    Price: pr,
+                    OriginalPrice: orig > pr ? orig : null,
+                    Image: !string.IsNullOrWhiteSpace(p.MainImageUrl) ? p.MainImageUrl : "/images/placeholder.jpg",
+                    WoodType: !string.IsNullOrWhiteSpace(p.WoodType) ? p.WoodType : "Gỗ tự nhiên",
+                    Dimensions: !string.IsNullOrWhiteSpace(p.Dimensions) ? p.Dimensions : "Theo thiết kế",
+                    Tag: disc > 0 ? $"-{disc}%" : "",
+                    Rating: p.Rating > 0 ? p.Rating : 5.0m,
+                    ReviewCount: p.ReviewCount > 0 ? p.ReviewCount : 24,
+                    InStock: p.InStock > 0,
+                    DiscountPercent: disc
                 );
             }).ToList();
 

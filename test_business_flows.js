@@ -19,7 +19,7 @@ async function runTests() {
   const loginRes = await fetch(`${BASE_URL}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: 'vanluan1910@d2luxury.vn', password: 'Admin@123456' })
+    body: JSON.stringify({ email: 'admin@d2luxury.vn', password: 'Admin@123' })
   });
   const loginJson = await loginRes.json();
   if (!loginJson.success || !loginJson.data?.token) {

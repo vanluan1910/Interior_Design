@@ -48,7 +48,6 @@ import {
   CarOutlined,
   EllipsisOutlined,
 } from '@ant-design/icons';
-import * as XLSX from 'xlsx';
 import {
   AdminDataTable,
   AdminFormDrawer,
@@ -249,6 +248,7 @@ export function InventoryTab({
     setImportingExcel(true);
     const hideLoading = message.loading('Đang xử lý đọc file Excel và nhập sản phẩm...', 0);
     try {
+      const XLSX = await import('xlsx');
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: 'array' });
 
@@ -859,6 +859,8 @@ export function InventoryTab({
                   <img
                     src={prod.image}
                     alt={prod.name}
+                    loading="lazy"
+                    decoding="async"
                     className="w-24 h-24 sm:w-28 sm:h-28 rounded-md object-cover border border-slate-200 shrink-0 bg-slate-50"
                     onError={(e) => {
                       (e.target as HTMLElement).style.display = 'none';
@@ -1264,6 +1266,8 @@ export function InventoryTab({
                         <img
                           src={prod.image}
                           alt={text}
+                          loading="lazy"
+                          decoding="async"
                           className="w-10 h-10 rounded-lg object-cover border border-slate-200 shrink-0 bg-slate-50"
                           onError={(e) => {
                             (e.target as HTMLElement).style.display = 'none';

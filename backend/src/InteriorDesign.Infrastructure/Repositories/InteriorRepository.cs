@@ -17,7 +17,30 @@ public sealed class InteriorRepository(InteriorDbContext db) : IInteriorReposito
         if (!string.IsNullOrWhiteSpace(search))
         {
             var s = search.Trim();
-            baseQuery = baseQuery.Where(p => p.Name.Contains(s) || p.Sku.Contains(s) || p.WoodType.Contains(s) || p.Material.Contains(s) || p.Description.Contains(s));
+            var hasAccents = HasVietnameseAccents(s);
+            var collation = hasAccents ? "Vietnamese_CI_AS" : "Vietnamese_CI_AI";
+
+            if (s.Length >= 4)
+            {
+                baseQuery = baseQuery.Where(p =>
+                    p.Sku.Contains(s) ||
+                    EF.Functions.Collate(p.Name, collation).Contains(s) ||
+                    (p.Category != null && EF.Functions.Collate(p.Category.Name, collation).Contains(s)) ||
+                    (p.ShortDescription != null && EF.Functions.Collate(p.ShortDescription, collation).Contains(s)) ||
+                    (p.Space != null && EF.Functions.Collate(p.Space, collation).Contains(s)) ||
+                    (p.WoodType != null && EF.Functions.Collate(p.WoodType, collation).Contains(s)) ||
+                    (p.Material != null && EF.Functions.Collate(p.Material, collation).Contains(s))
+                );
+            }
+            else
+            {
+                baseQuery = baseQuery.Where(p =>
+                    p.Sku.Contains(s) ||
+                    EF.Functions.Collate(p.Name, collation).Contains(s) ||
+                    (p.Category != null && EF.Functions.Collate(p.Category.Name, collation).Contains(s)) ||
+                    (p.ShortDescription != null && EF.Functions.Collate(p.ShortDescription, collation).Contains(s))
+                );
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(material) && !material.Equals("all", StringComparison.OrdinalIgnoreCase))
@@ -81,29 +104,32 @@ public sealed class InteriorRepository(InteriorDbContext db) : IInteriorReposito
 
         if (!hasSpecificCategoryFilter && !string.IsNullOrWhiteSpace(space) && !space.Equals("all", StringComparison.OrdinalIgnoreCase))
         {
-            var sp = space.Trim().ToLower();
-            if (sp == "living" || sp == "livingroom" || sp == "living-room" || sp.Contains("khách") || sp.Contains("khach") || sp == "kg01")
+            var sp = space.Trim();
+            var spLower = sp.ToLower();
+
+            // Tìm không gian trong bảng spaces theo slug, code, id hoặc tên
+            var matchedDbSpace = await db.Spaces.AsNoTracking().FirstOrDefaultAsync(s => !s.IsDeleted &&
+                (s.Slug == spLower || (s.Code != null && s.Code.ToLower() == spLower) || s.Id.ToString() == spLower || (s.Name != null && s.Name.ToLower() == spLower)), cancellationToken);
+
+            if (matchedDbSpace != null)
             {
-                baseQuery = baseQuery.Where(p => p.Space.Contains("khách") || p.Space.Contains("Living") || p.Space == "KG01");
-            }
-            else if (sp == "bedroom" || sp == "bed" || sp.Contains("ngủ") || sp.Contains("ngu") || sp == "kg03")
-            {
-                baseQuery = baseQuery.Where(p => p.Space.Contains("ngủ") || p.Space.Contains("Bed") || p.Space == "KG03");
-            }
-            else if (sp == "office" || sp == "work" || sp.Contains("việc") || sp.Contains("viec") || sp.Contains("sách") || sp == "kg04")
-            {
-                baseQuery = baseQuery.Where(p => p.Space.Contains("việc") || p.Space.Contains("sách") || p.Space.Contains("Office") || p.Space == "KG04");
-            }
-            else if (sp == "other" || sp.Contains("khác") || sp.Contains("khac") || sp.Contains("san-pham-khac") || sp == "kg05" || sp == "kg06")
-            {
-                baseQuery = baseQuery.Where(p => p.Space.Contains("khác") || p.Space.Contains("Other") || p.Space == "KG05" || p.Space == "KG06");
-            }
-            else if (sp == "dining" || sp == "diningroom" || sp == "dining-room" || sp.Contains("ăn") || sp.Contains("phong an") || sp.Contains("phòng ăn") || sp.Contains("bếp") || sp == "an" || sp == "kg02")
-            {
-                baseQuery = baseQuery.Where(p => p.Space.Contains("ăn") || p.Space.Contains("bếp") || p.Space.Contains("Dining") || p.Space == "KG02");
+                var sId = matchedDbSpace.Id;
+                var sName = matchedDbSpace.Name;
+                var sCode = matchedDbSpace.Code;
+                var sSlug = matchedDbSpace.Slug;
+
+                baseQuery = baseQuery.Where(p =>
+                    (p.Category != null && p.Category.SpaceId == sId) ||
+                    (!string.IsNullOrEmpty(p.Space) && (
+                        p.Space == sName || p.Space.Contains(sName) ||
+                        (!string.IsNullOrEmpty(sCode) && p.Space.Contains(sCode)) ||
+                        (!string.IsNullOrEmpty(sSlug) && p.Space.Contains(sSlug))
+                    ))
+                );
             }
             else
             {
+                // Fallback tìm trực tiếp theo tên hoặc mã chuỗi
                 baseQuery = baseQuery.Where(p => p.Space == space || p.Space.Contains(space));
             }
         }
@@ -154,7 +180,11 @@ public sealed class InteriorRepository(InteriorDbContext db) : IInteriorReposito
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var query = baseQuery.OrderByDescending(p => p.CreatedAt);
+        var sTrim = search?.Trim();
+        var query = !string.IsNullOrWhiteSpace(sTrim)
+            ? baseQuery.OrderByDescending(p => p.Sku.Contains(sTrim) || EF.Functions.Collate(p.Name, HasVietnameseAccents(sTrim) ? "Vietnamese_CI_AS" : "Vietnamese_CI_AI").Contains(sTrim))
+                       .ThenByDescending(p => p.CreatedAt)
+            : baseQuery.OrderByDescending(p => p.CreatedAt);
         var items = pageSize <= 0
             ? await query.Include(p => p.Category).ToListAsync(cancellationToken)
             : await query.Include(p => p.Category).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(cancellationToken);
@@ -418,4 +448,24 @@ public sealed class InteriorRepository(InteriorDbContext db) : IInteriorReposito
 
         return (totalRevenue, totalOrders, pendingOrders, totalProducts, totalConsultations, totalCustomers);
     }
+
+    private static readonly HashSet<char> VietnameseAccents =
+    [
+        'à','á','ả','ã','ạ','ă','ằ','ắ','ẳ','ẵ','ặ','â','ầ','ấ','ẩ','ẫ','ậ',
+        'è','é','ẻ','ẽ','ẹ','ê','ề','ế','ể','ễ','ệ',
+        'ì','í','ỉ','ĩ','ị',
+        'ò','ó','ỏ','õ','ọ','ô','ồ','ố','ổ','ỗ','ộ','ơ','ờ','ớ','ở','ỡ','ợ',
+        'ù','ú','ủ','ũ','ụ','ư','ừ','ứ','ử','ữ','ự',
+        'ỳ','ý','ỷ','ỹ','ỵ',
+        'đ',
+        'À','Á','Ả','Ã','Ạ','Ă','Ằ','Ắ','Ẳ','Ẵ','Ặ','Â','Ầ','Ấ','Ẩ','Ẫ','Ậ',
+        'È','É','Ẻ','Ẽ','Ẹ','Ê','Ề','Ế','Ể','Ễ','Ệ',
+        'Ì','Í','Ỉ','Ĩ','Ị',
+        'Ò','Ó','Ỏ','Õ','Ọ','Ô','Ồ','Ố','Ổ','Ỗ','Ộ','Ơ','Ờ','Ớ','Ở','Ỡ','Ợ',
+        'Ù','Ú','Ủ','Ũ','Ụ','Ư','Ừ','Ứ','Ử','Ữ','Ự',
+        'Ỳ','Ý','Ỷ','Ỹ','Ỵ',
+        'Đ'
+    ];
+
+    private static bool HasVietnameseAccents(string text) => text.Any(VietnameseAccents.Contains);
 }

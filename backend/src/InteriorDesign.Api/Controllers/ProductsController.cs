@@ -97,19 +97,32 @@ public sealed class ProductsController : ApiControllerBase
 
             if (!string.IsNullOrWhiteSpace(space) && !space.Equals("all", StringComparison.OrdinalIgnoreCase))
             {
-                var sp = space.Trim().ToLower();
-                if (sp == "living" || sp == "livingroom" || sp == "living-room" || sp.Contains("khách") || sp.Contains("khach") || sp == "kg01")
-                    query = query.Where(p => p.Space.Contains("khách") || p.Space.Contains("Living") || p.Space == "KG01");
-                else if (sp == "bedroom" || sp == "bed" || sp.Contains("ngủ") || sp.Contains("ngu") || sp == "kg03")
-                    query = query.Where(p => p.Space.Contains("ngủ") || p.Space.Contains("Bed") || p.Space == "KG03");
-                else if (sp == "office" || sp == "work" || sp.Contains("việc") || sp.Contains("viec") || sp.Contains("sách") || sp == "kg04")
-                    query = query.Where(p => p.Space.Contains("việc") || p.Space.Contains("sách") || p.Space.Contains("Office") || p.Space == "KG04");
-                else if (sp == "other" || sp.Contains("khác") || sp.Contains("khac") || sp.Contains("san-pham-khac") || sp == "kg05" || sp == "kg06")
-                    query = query.Where(p => p.Space.Contains("khác") || p.Space.Contains("Other") || p.Space == "KG05" || p.Space == "KG06");
-                else if (sp == "dining" || sp == "diningroom" || sp == "dining-room" || sp.Contains("ăn") || sp.Contains("phong an") || sp.Contains("phòng ăn") || sp.Contains("bếp") || sp == "an" || sp == "kg02")
-                    query = query.Where(p => p.Space.Contains("ăn") || p.Space.Contains("bếp") || p.Space.Contains("Dining") || p.Space == "KG02");
+                var sp = space.Trim();
+                var spLower = sp.ToLower();
+
+                var matchedDbSpace = await db.Spaces.AsNoTracking().FirstOrDefaultAsync(s => !s.IsDeleted &&
+                    (s.Slug == spLower || (s.Code != null && s.Code.ToLower() == spLower) || s.Id.ToString() == spLower || (s.Name != null && s.Name.ToLower() == spLower)), cancellationToken);
+
+                if (matchedDbSpace != null)
+                {
+                    var sId = matchedDbSpace.Id;
+                    var sName = matchedDbSpace.Name;
+                    var sCode = matchedDbSpace.Code;
+                    var sSlug = matchedDbSpace.Slug;
+
+                    query = query.Where(p =>
+                        (p.Category != null && p.Category.SpaceId == sId) ||
+                        (!string.IsNullOrEmpty(p.Space) && (
+                            p.Space == sName || p.Space.Contains(sName) ||
+                            (!string.IsNullOrEmpty(sCode) && p.Space.Contains(sCode)) ||
+                            (!string.IsNullOrEmpty(sSlug) && p.Space.Contains(sSlug))
+                        ))
+                    );
+                }
                 else
+                {
                     query = query.Where(p => p.Space == space || p.Space.Contains(space));
+                }
             }
 
             var rawMaterials = await query

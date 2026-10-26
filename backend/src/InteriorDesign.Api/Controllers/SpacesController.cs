@@ -240,8 +240,30 @@ public sealed class SpacesController : ApiControllerBase
 
         if (!string.IsNullOrWhiteSpace(search))
         {
-            var s = search.Trim().ToLower();
-            filterQuery = filterQuery.Where(p => p.Name.ToLower().Contains(s) || p.Sku.ToLower().Contains(s) || p.Description.ToLower().Contains(s));
+            var s = search.Trim();
+            var hasAccents = s.Any(c => "àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴĐ".Contains(c));
+            var collation = hasAccents ? "Vietnamese_CI_AS" : "Vietnamese_CI_AI";
+
+            if (s.Length >= 4)
+            {
+                filterQuery = filterQuery.Where(p =>
+                    p.Sku.Contains(s) ||
+                    EF.Functions.Collate(p.Name, collation).Contains(s) ||
+                    (p.Category != null && EF.Functions.Collate(p.Category.Name, collation).Contains(s)) ||
+                    (p.ShortDescription != null && EF.Functions.Collate(p.ShortDescription, collation).Contains(s)) ||
+                    (p.WoodType != null && EF.Functions.Collate(p.WoodType, collation).Contains(s)) ||
+                    (p.Material != null && EF.Functions.Collate(p.Material, collation).Contains(s))
+                );
+            }
+            else
+            {
+                filterQuery = filterQuery.Where(p =>
+                    p.Sku.Contains(s) ||
+                    EF.Functions.Collate(p.Name, collation).Contains(s) ||
+                    (p.Category != null && EF.Functions.Collate(p.Category.Name, collation).Contains(s)) ||
+                    (p.ShortDescription != null && EF.Functions.Collate(p.ShortDescription, collation).Contains(s))
+                );
+            }
         }
 
         if (categoryId.HasValue && categoryId != Guid.Empty)

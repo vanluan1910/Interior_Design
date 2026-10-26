@@ -42,11 +42,14 @@ export function getStoredAdminData<T>(key: string, defaultValue: T): T {
 
 export function setStoredAdminData<T>(key: string, value: T): void {
   if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch (err) {
-    console.warn(`[adminStorage] Failed to write ${key} to localStorage:`, err);
-  }
+  // Defer heavy JSON serialization to macrotask queue to prevent UI freezing
+  setTimeout(() => {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch (err) {
+      console.warn(`[adminStorage] Failed to write ${key} to localStorage:`, err);
+    }
+  }, 0);
 }
 
 export function removeStoredAdminData(key: string): void {

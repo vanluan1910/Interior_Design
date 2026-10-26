@@ -35,7 +35,6 @@ import {
 import {
   Upload,
 } from 'antd';
-import * as XLSX from 'xlsx';
 import {
   AdminDataTable,
   AdminFormDrawer,
@@ -91,6 +90,8 @@ const SpaceImageCell = ({
         <img
           src={cleanImage}
           alt={name || 'Không gian'}
+          loading="lazy"
+          decoding="async"
           className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
           onError={() => setImgError(true)}
         />
@@ -218,6 +219,7 @@ export function CategoriesTab({
     setImportingCategoryExcel(true);
     const hideLoading = message.loading('Đang xử lý đọc file Excel và nhập danh mục...', 0);
     try {
+      const XLSX = await import('xlsx');
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: 'array' });
       
@@ -662,7 +664,7 @@ export function CategoriesTab({
     }
   };
 
-  const handleExportSpacesExcel = () => {
+  const handleExportSpacesExcel = async () => {
     try {
       const exportData = currentSpacesList.map((s, idx) => ({
         'STT': idx + 1,
@@ -677,6 +679,7 @@ export function CategoriesTab({
         'Hiện trên Trang chủ': s.showOnHome ? 'Có' : 'Không',
       }));
 
+      const XLSX = await import('xlsx');
       const worksheet = XLSX.utils.json_to_sheet(exportData);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, 'KhongGianNoiThat');
@@ -1660,6 +1663,8 @@ export function CategoriesTab({
                 <img
                   src={currentCategoryImage}
                   alt="Ảnh danh mục"
+                  loading="lazy"
+                  decoding="async"
                   className="w-16 h-16 object-cover rounded-lg border border-slate-200 bg-white shadow-xs"
                   onError={(e) => {
                     (e.target as HTMLElement).style.display = 'none';
@@ -1797,6 +1802,8 @@ export function CategoriesTab({
                 <img
                   src={currentSpaceImage}
                   alt="Ảnh không gian xem trước"
+                  loading="lazy"
+                  decoding="async"
                   className="w-36 h-24 object-cover rounded-lg border border-slate-300 bg-white shadow-xs"
                   onError={(e) => {
                     (e.target as HTMLElement).style.display = 'none';

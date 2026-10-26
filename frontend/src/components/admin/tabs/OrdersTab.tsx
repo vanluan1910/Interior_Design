@@ -1351,7 +1351,7 @@ export function OrdersTab({
                                                 className="block relative w-16 h-16 rounded border border-rose-200 overflow-hidden group shadow-2xs hover:scale-105 transition-transform"
                                                 title="Bấm để xem ảnh kích thước đầy đủ"
                                               >
-                                                <img src={img} alt={`Minh chứng ${idx + 1}`} className="w-full h-full object-cover" />
+                                                <img src={img} alt={`Minh chứng ${idx + 1}`} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                                                 <span className="absolute bottom-0 inset-x-0 bg-black/60 text-white text-[9px] text-center font-mono py-0.5">
                                                   #{idx + 1}
                                                 </span>
@@ -2107,7 +2107,7 @@ export function OrdersTab({
                               <div className="flex justify-between items-center py-1 gap-2">
                                 <div className="flex items-center gap-2 min-w-0">
                                   {p.image ? (
-                                    <img src={p.image} alt="" className="w-8 h-8 rounded object-cover flex-shrink-0 border border-slate-200" />
+                                    <img src={p.image} alt="" loading="lazy" decoding="async" className="w-8 h-8 rounded object-cover flex-shrink-0 border border-slate-200" />
                                   ) : (
                                     <div className="w-8 h-8 rounded bg-slate-100 flex items-center justify-center flex-shrink-0 text-slate-400">
                                       <ShoppingOutlined className="text-xs" />
@@ -2206,6 +2206,8 @@ export function OrdersTab({
                           <img
                             src={selectedProductData.image}
                             alt=""
+                            loading="lazy"
+                            decoding="async"
                             className="w-11 h-11 rounded-lg object-cover border border-amber-200 shadow-sm"
                           />
                         ) : (
