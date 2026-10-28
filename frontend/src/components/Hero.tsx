@@ -47,18 +47,18 @@ export default function Hero({ onOpenBooking, hero }: HeroProps) {
       </div>
 
       {/* HERO CONTENT: ELEGANT EDITORIAL TYPOGRAPHY & BREATHING ROOM */}
-      <div className="relative z-10 w-full max-w-[1720px] mx-auto px-4 sm:px-6 md:px-8 lg:px-12 pt-24 pb-8 sm:pt-28 sm:pb-8 md:pt-32 md:pb-10 lg:pt-36 lg:pb-10 flex flex-col justify-center min-h-auto md:min-h-[540px]">
-        <div className="max-w-2xl lg:max-w-3xl flex flex-col gap-4 sm:gap-5">
+      <div className="relative z-10 w-full max-w-[1720px] mx-auto px-4 sm:px-6 md:px-8 lg:px-12 pt-24 pb-6 sm:pt-28 sm:pb-8 md:pt-32 md:pb-10 lg:pt-36 lg:pb-10 flex flex-col justify-center min-h-auto md:min-h-[540px]">
+        <div className="max-w-2xl lg:max-w-3xl flex flex-col gap-3.5 sm:gap-5">
           
           {/* Refined Badge */}
           <motion.div
             initial={{ opacity: 0, y: 14 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-            className="inline-flex items-center gap-2 self-start px-3.5 py-1.5 rounded-none bg-white/90 backdrop-blur-md shadow-xs border border-[#d5c3ba]/60"
+            className="inline-flex items-center gap-2 self-start px-3 py-1 sm:px-3.5 sm:py-1.5 rounded-none bg-white/90 backdrop-blur-md shadow-xs border border-[#d5c3ba]/60"
           >
             <span className="w-1.5 h-1.5 rounded-none bg-[#5d371f]" />
-            <span className="text-[11px] uppercase tracking-widest text-[#5d371f] font-semibold">
+            <span className="text-[10px] sm:text-[11px] uppercase tracking-widest text-[#5d371f] font-semibold">
               {tagline}
             </span>
           </motion.div>
@@ -68,7 +68,7 @@ export default function Hero({ onOpenBooking, hero }: HeroProps) {
             initial={{ opacity: 0, y: 22 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.75, delay: 0.12, ease: [0.16, 1, 0.3, 1] }}
-            className="font-sans text-3xl sm:text-4xl md:text-5xl lg:text-[52px] xl:text-[56px] text-[#1f1b19] leading-[1.14] font-bold tracking-tight"
+            className="font-sans text-[26px] xs:text-3xl sm:text-4xl md:text-5xl lg:text-[52px] xl:text-[56px] text-[#1f1b19] leading-[1.18] md:leading-[1.14] font-bold tracking-tight"
           >
             {title}
           </motion.h1>
@@ -78,7 +78,7 @@ export default function Hero({ onOpenBooking, hero }: HeroProps) {
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.75, delay: 0.24, ease: [0.16, 1, 0.3, 1] }}
-            className="text-sm sm:text-base md:text-[17px] text-[#51443d] max-w-xl leading-relaxed"
+            className="text-xs sm:text-base md:text-[17px] text-[#51443d] max-w-xl leading-relaxed"
           >
             {subtitle}
           </motion.p>
@@ -88,16 +88,16 @@ export default function Hero({ onOpenBooking, hero }: HeroProps) {
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, delay: 0.36, ease: [0.16, 1, 0.3, 1] }}
-            className="pt-2 flex items-center"
+            className="pt-1 sm:pt-2 flex items-center"
           >
-            <div className="relative group inline-flex">
+            <div className="relative group inline-flex w-full sm:w-auto">
               {/* Soft luxury ambient glow behind the button */}
               <div className="absolute -inset-1 rounded-none bg-gradient-to-r from-[#5d371f]/50 via-[#c5a880]/40 to-[#5d371f]/50 blur-lg opacity-60 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
 
               <button
                 type="button"
                 onClick={onOpenBooking}
-                className="relative inline-flex items-center justify-center gap-3 px-8 sm:px-9 py-3.5 sm:py-4 rounded-none bg-gradient-to-r from-[#5d371f] via-[#754426] to-[#5d371f] text-white font-semibold text-sm sm:text-base shadow-xl hover:shadow-2xl overflow-hidden cursor-pointer transition-all duration-300 hover:-translate-y-1 active:translate-y-0 active:scale-98 border border-[#c5a880]/30"
+                className="relative inline-flex items-center justify-center gap-3 w-full sm:w-auto px-7 sm:px-9 py-3.5 sm:py-4 rounded-none bg-gradient-to-r from-[#5d371f] via-[#754426] to-[#5d371f] text-white font-semibold text-sm sm:text-base shadow-xl hover:shadow-2xl overflow-hidden cursor-pointer transition-all duration-300 hover:-translate-y-1 active:translate-y-0 active:scale-98 border border-[#c5a880]/30"
               >
                 {/* Continuous Shimmer Light Beam Effect */}
                 <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/25 to-transparent -translate-x-full group-hover:translate-x-full duration-1000 transition-transform ease-out pointer-events-none" />
@@ -123,21 +123,21 @@ export default function Hero({ onOpenBooking, hero }: HeroProps) {
             </div>
           </motion.div>
 
-          {/* Metrics & Trust Row (Clean Single Row) */}
+          {/* Metrics & Trust Row (Symmetrical 3-col on Mobile, Single Row on Desktop) */}
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, delay: 0.48, ease: [0.16, 1, 0.3, 1] }}
-            className="flex items-center gap-6 sm:gap-10 pt-5 text-[#51443d] flex-wrap border-t border-[#ecdcd2]/70 mt-2"
+            className="grid grid-cols-3 sm:flex items-center gap-3 sm:gap-10 pt-4 sm:pt-5 text-[#51443d] border-t border-[#ecdcd2]/70 mt-1 sm:mt-2"
           >
             {stats.map((stat, idx) => (
               <React.Fragment key={idx}>
                 {idx > 0 && <div className="hidden sm:block w-px h-8 bg-[#e8ded7]" />}
-                <div className="flex flex-col">
-                  <span className="font-sans text-2xl sm:text-3xl text-[#5d371f] font-bold">
+                <div className="flex flex-col text-left">
+                  <span className="font-sans text-xl xs:text-2xl sm:text-3xl text-[#5d371f] font-bold">
                     {stat.value}
                   </span>
-                  <span className="text-xs sm:text-[13px] text-[#83746c] mt-0.5">
+                  <span className="text-[11px] sm:text-[13px] text-[#83746c] mt-0.5 leading-snug">
                     {stat.label}
                   </span>
                 </div>
@@ -149,46 +149,46 @@ export default function Hero({ onOpenBooking, hero }: HeroProps) {
       </div>
 
       {/* ELEGANT BOTTOM TICKER RIBBON */}
-      <div className="relative z-10 w-full bg-white/85 backdrop-blur-md border-t border-[#ebdcd2] py-3.5 px-4 sm:px-8">
-        <div className="max-w-[1720px] mx-auto grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6 text-[#51443d]">
+      <div className="relative z-10 w-full bg-white/85 backdrop-blur-md border-t border-[#ebdcd2] py-2.5 sm:py-3.5 px-3 sm:px-8">
+        <div className="max-w-[1720px] mx-auto grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-6 text-[#51443d]">
           
-          <div className="flex items-center gap-2.5">
-            <span className="material-symbols-outlined text-[20px] text-[#5d371f] shrink-0">
+          <div className="flex items-center gap-2 sm:gap-2.5">
+            <span className="material-symbols-outlined text-[18px] sm:text-[20px] text-[#5d371f] shrink-0">
               local_shipping
             </span>
             <div className="text-xs">
-              <strong className="block text-[#1f1b19] font-semibold">Vận Chuyển Toàn Quốc</strong>
-              <span className="text-[#83746c] text-[11px]">Lắp đặt trọn gói tại nhà</span>
+              <strong className="block text-[#1f1b19] font-semibold text-[11px] sm:text-xs">Vận Chuyển Toàn Quốc</strong>
+              <span className="text-[#83746c] text-[10px] sm:text-[11px] hidden xs:block sm:block">Lắp đặt trọn gói tại nhà</span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
-            <span className="material-symbols-outlined text-[20px] text-[#5d371f] shrink-0">
+          <div className="flex items-center gap-2 sm:gap-2.5">
+            <span className="material-symbols-outlined text-[18px] sm:text-[20px] text-[#5d371f] shrink-0">
               verified
             </span>
             <div className="text-xs">
-              <strong className="block text-[#1f1b19] font-semibold">100% Gỗ Tự Nhiên</strong>
-              <span className="text-[#83746c] text-[11px]">Chứng nhận canh tác FSC</span>
+              <strong className="block text-[#1f1b19] font-semibold text-[11px] sm:text-xs">100% Gỗ Tự Nhiên</strong>
+              <span className="text-[#83746c] text-[10px] sm:text-[11px] hidden xs:block sm:block">Chứng nhận canh tác FSC</span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
-            <span className="material-symbols-outlined text-[20px] text-[#5d371f] shrink-0">
+          <div className="flex items-center gap-2 sm:gap-2.5">
+            <span className="material-symbols-outlined text-[18px] sm:text-[20px] text-[#5d371f] shrink-0">
               published_with_changes
             </span>
             <div className="text-xs">
-              <strong className="block text-[#1f1b19] font-semibold">Đổi Trả 30 Ngày</strong>
-              <span className="text-[#83746c] text-[11px]">Trải nghiệm an tâm tuyệt đối</span>
+              <strong className="block text-[#1f1b19] font-semibold text-[11px] sm:text-xs">Đổi Trả 30 Ngày</strong>
+              <span className="text-[#83746c] text-[10px] sm:text-[11px] hidden xs:block sm:block">Trải nghiệm an tâm tuyệt đối</span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
-            <span className="material-symbols-outlined text-[20px] text-[#5d371f] shrink-0">
+          <div className="flex items-center gap-2 sm:gap-2.5">
+            <span className="material-symbols-outlined text-[18px] sm:text-[20px] text-[#5d371f] shrink-0">
               handyman
             </span>
             <div className="text-xs">
-              <strong className="block text-[#1f1b19] font-semibold">Bảo Hành 24 Tháng</strong>
-              <span className="text-[#83746c] text-[11px]">Bảo trì mộng gỗ trọn đời</span>
+              <strong className="block text-[#1f1b19] font-semibold text-[11px] sm:text-xs">Bảo Hành 24 Tháng</strong>
+              <span className="text-[#83746c] text-[10px] sm:text-[11px] hidden xs:block sm:block">Bảo trì mộng gỗ trọn đời</span>
             </div>
           </div>
 

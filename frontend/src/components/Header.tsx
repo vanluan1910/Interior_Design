@@ -232,12 +232,12 @@ function HeaderContent({
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-[#fff8f5]/95 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)] border-b border-[#eae1dd]/60">
-      <div className="h-20 w-full px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-14 flex items-center justify-between flex-nowrap whitespace-nowrap gap-2 lg:gap-3 xl:gap-4">
+      <div className="h-16 sm:h-20 w-full px-3.5 sm:px-6 lg:px-8 xl:px-10 2xl:px-14 flex items-center justify-between flex-nowrap whitespace-nowrap gap-2 lg:gap-3 xl:gap-4">
         {/* Logo Thương Hiệu */}
         <Link href="/" className="flex items-center group shrink-0 py-1">
           <img
             alt={storeInfo.brandName || 'D2 LUXURY'}
-            className="h-14 sm:h-16 md:h-[66px] w-auto max-h-[72px] object-contain transition-transform group-hover:scale-105"
+            className="h-11 sm:h-16 md:h-[66px] w-auto max-h-[72px] object-contain transition-transform group-hover:scale-105"
             src={storeInfo.logoUrl || '/logo.png'}
           />
         </Link>

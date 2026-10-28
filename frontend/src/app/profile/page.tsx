@@ -40,6 +40,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useCart } from '@/context/CartContext';
 import { authApi } from '@/api/authApi';
 import { orderApi, normalizeOrderStatus } from '@/api/orderApi';
+import { invalidateApiCache } from '@/api/shared/apiCache';
 import { ADMIN_STORAGE_KEYS, getStoredAdminData, setStoredAdminData } from '@/utils/adminStorage';
 import { VIETNAM_PROVINCES } from '@/data/vietnamAddresses';
 
@@ -242,49 +243,77 @@ function ProfilePageContent() {
     setIsSubmittingReturn(false);
   };
 
-  const handleCancelPendingOrder = async (orderId: string) => {
-    const targetOrder = userOrders.find((o) => o.id === orderId);
-    const orderCode = (targetOrder?.orderCode || '').toUpperCase();
-    try {
-      await orderApi.updateOrderStatus(orderId, 'cancelled', 'Khách hàng chủ động hủy đơn');
-    } catch {}
+  const handleCancelPendingOrder = async (orderId: string, orderCodeParam?: string) => {
+    const cleanOrderId = String(orderId || '').trim();
+    const targetOrder = userOrders.find(
+      (o) =>
+        (cleanOrderId && String(o.id).toLowerCase() === cleanOrderId.toLowerCase()) ||
+        (orderCodeParam && (o.orderCode || '').toUpperCase() === orderCodeParam.toUpperCase())
+    );
+    const orderCode = (orderCodeParam || targetOrder?.orderCode || '').toUpperCase();
+    const cleanId = String(targetOrder?.id || cleanOrderId).trim();
 
+    // 1. Immediately update React state for instant UI reflection
     setUserOrders((prev) =>
-      prev.map((o) =>
-        o.id === orderId || (orderCode && (o.orderCode || '').toUpperCase() === orderCode)
-          ? { ...o, status: 'cancelled', statusLabel: 'Đã hủy' }
-          : o
-      )
+      prev.map((o) => {
+        const isMatch =
+          (cleanId && String(o.id).toLowerCase() === cleanId.toLowerCase()) ||
+          (cleanOrderId && String(o.id).toLowerCase() === cleanOrderId.toLowerCase()) ||
+          (orderCode && (o.orderCode || '').toUpperCase() === orderCode);
+        return isMatch ? { ...o, status: 'cancelled', statusLabel: 'Đã hủy' } : o;
+      })
     );
 
-    // Save to user storage
+    // 2. Immediately update user orders in localStorage
     if (user?.id) {
       try {
         const userOrderKey = `d2_orders_${user.id}`;
         const saved = JSON.parse(localStorage.getItem(userOrderKey) || '[]');
-        const updated = saved.map((o: any) =>
-          o.id === orderId || (orderCode && (o.orderCode || '').toUpperCase() === orderCode)
-            ? { ...o, status: 'cancelled', statusLabel: 'Đã hủy' }
-            : o
-        );
-        localStorage.setItem(userOrderKey, JSON.stringify(updated));
+        if (Array.isArray(saved)) {
+          const updated = saved.map((o: any) => {
+            const isMatch =
+              (cleanId && String(o.id).toLowerCase() === cleanId.toLowerCase()) ||
+              (cleanOrderId && String(o.id).toLowerCase() === cleanOrderId.toLowerCase()) ||
+              (orderCode && (o.orderCode || '').toUpperCase() === orderCode);
+            return isMatch ? { ...o, status: 'cancelled', statusLabel: 'Đã hủy' } : o;
+          });
+          localStorage.setItem(userOrderKey, JSON.stringify(updated));
+        }
       } catch {}
     }
 
-    // Sync to admin orders storage
+    // 3. Immediately update admin orders in localStorage
     try {
       const adminOrders = getStoredAdminData<any[]>(ADMIN_STORAGE_KEYS.ORDERS, []);
-      const updatedAdmin = adminOrders.map((o: any) =>
-        o.id === orderId || (orderCode && (o.orderCode || '').toUpperCase() === orderCode)
-          ? { ...o, status: 'cancelled', statusLabel: 'Đã hủy' }
-          : o
-      );
-      setStoredAdminData(ADMIN_STORAGE_KEYS.ORDERS, updatedAdmin);
+      if (Array.isArray(adminOrders)) {
+        const updatedAdmin = adminOrders.map((o: any) => {
+          const isMatch =
+            (cleanId && String(o.id).toLowerCase() === cleanId.toLowerCase()) ||
+            (cleanOrderId && String(o.id).toLowerCase() === cleanOrderId.toLowerCase()) ||
+            (orderCode && (o.orderCode || '').toUpperCase() === orderCode);
+          return isMatch ? { ...o, status: 'cancelled', statusLabel: 'Đã hủy' } : o;
+        });
+        setStoredAdminData(ADMIN_STORAGE_KEYS.ORDERS, updatedAdmin);
+      }
     } catch {}
 
+    // 4. Invalidate memory cache so subsequent fetches receive fresh status
+    invalidateApiCache('orders');
+
+    // 5. Call Backend API to update status in SQL database
+    try {
+      await orderApi.updateOrderStatus(cleanId || cleanOrderId, 'cancelled', 'Khách hàng chủ động hủy đơn');
+    } catch (apiErr) {
+      console.warn('API updateOrderStatus warning:', apiErr);
+    }
+
+    // 6. Invalidate memory cache again after API update
+    invalidateApiCache('orders');
+
+    // 7. Dispatch real-time sync event across tabs and listeners
     window.dispatchEvent(
       new CustomEvent('d2_orders_updated', {
-        detail: [{ id: orderId, orderCode, status: 'cancelled', statusLabel: 'Đã hủy' }],
+        detail: [{ id: cleanId || cleanOrderId, orderCode, status: 'cancelled', statusLabel: 'Đã hủy' }],
       })
     );
 
@@ -357,29 +386,35 @@ function ProfilePageContent() {
       // Get admin stored orders for real-time synchronization
       const adminOrders = getStoredAdminData<any[]>(ADMIN_STORAGE_KEYS.ORDERS, []);
 
-      // Search API by email and phone in parallel
+      // Search API by email and phone in parallel with fresh non-cached data
       const apiPromises: Promise<any[]>[] = [];
-      if (userEmail) apiPromises.push(orderApi.getOrders({ search: userEmail }).catch(() => []));
-      if (userPhone && userPhone !== userEmail) apiPromises.push(orderApi.getOrders({ search: userPhone }).catch(() => []));
-      if (apiPromises.length === 0 && userName) apiPromises.push(orderApi.getOrders({ search: userName }).catch(() => []));
-      apiPromises.push(orderApi.getOrders().catch(() => []));
+      if (userEmail) apiPromises.push(orderApi.getOrders({ search: userEmail, bypassCache: true }).catch(() => []));
+      if (userPhone && userPhone !== userEmail) apiPromises.push(orderApi.getOrders({ search: userPhone, bypassCache: true }).catch(() => []));
+      if (apiPromises.length === 0 && userName) apiPromises.push(orderApi.getOrders({ search: userName, bypassCache: true }).catch(() => []));
+      apiPromises.push(orderApi.getOrders({ bypassCache: true }).catch(() => []));
 
       const results = await Promise.all(apiPromises);
       const allApiOrders = results.flat();
 
-      // Index of latest statuses from API + adminOrders
+      // Index of statuses: adminOrders first as fallback, then allApiOrders as authoritative database truth!
       const latestOrderMap = new Map<string, any>();
-      for (const ord of allApiOrders) {
-        const normStatus = normalizeOrderStatus(ord.status);
-        const code = (ord.orderCode || ord.id || '').toUpperCase();
-        if (code) latestOrderMap.set(code, { ...ord, status: normStatus });
-        if (ord.id) latestOrderMap.set(String(ord.id), { ...ord, status: normStatus });
-      }
       for (const ord of adminOrders) {
         const normStatus = normalizeOrderStatus(ord.status);
         const code = (ord.orderCode || ord.id || '').toUpperCase();
+        if (code) latestOrderMap.set(code, { ...ord, status: normStatus });
+        if (ord.id) {
+          latestOrderMap.set(String(ord.id).toLowerCase(), { ...ord, status: normStatus });
+          latestOrderMap.set(String(ord.id).toUpperCase(), { ...ord, status: normStatus });
+        }
+      }
+      for (const ord of allApiOrders) {
+        const normStatus = normalizeOrderStatus(ord.status);
+        const code = (ord.orderCode || ord.id || '').toUpperCase();
         if (code) latestOrderMap.set(code, { ...(latestOrderMap.get(code) || {}), ...ord, status: normStatus });
-        if (ord.id) latestOrderMap.set(String(ord.id), { ...(latestOrderMap.get(String(ord.id)) || {}), ...ord, status: normStatus });
+        if (ord.id) {
+          latestOrderMap.set(String(ord.id).toLowerCase(), { ...(latestOrderMap.get(String(ord.id).toLowerCase()) || {}), ...ord, status: normStatus });
+          latestOrderMap.set(String(ord.id).toUpperCase(), { ...(latestOrderMap.get(String(ord.id).toUpperCase()) || {}), ...ord, status: normStatus });
+        }
       }
 
       const codeMap = new Set<string>();
@@ -401,7 +436,7 @@ function ProfilePageContent() {
         const code = (ord.orderCode || ord.id || '').toUpperCase();
         if (code && !codeMap.has(code)) {
           codeMap.add(code);
-          const override = latestOrderMap.get(code) || latestOrderMap.get(String(ord.id)) || ord;
+          const override = latestOrderMap.get(code) || latestOrderMap.get(String(ord.id).toLowerCase()) || latestOrderMap.get(String(ord.id).toUpperCase()) || ord;
           const finalStatus = normalizeOrderStatus(override.status || ord.status);
           merged.push({
             id: ord.id,
@@ -428,7 +463,7 @@ function ProfilePageContent() {
         const code = (ord.orderCode || ord.id || '').toUpperCase();
         if (code && !codeMap.has(code)) {
           codeMap.add(code);
-          const override = latestOrderMap.get(code) || latestOrderMap.get(String(ord.id));
+          const override = latestOrderMap.get(code) || latestOrderMap.get(String(ord.id).toLowerCase()) || latestOrderMap.get(String(ord.id).toUpperCase());
           const finalStatus = normalizeOrderStatus(override?.status || ord.status);
           merged.push({
             ...ord,
@@ -649,33 +684,33 @@ function ProfilePageContent() {
 
       <main className="w-full pt-20 flex-1">
         {/* Subtle Atmospheric Background Accents */}
-        <div className="relative w-full overflow-hidden pb-16">
+        <div className="relative w-full overflow-hidden pb-12 sm:pb-16">
           <div className="absolute -top-40 -right-40 w-96 h-96 rounded-full bg-[#ffdbc8]/20 blur-3xl pointer-events-none" />
           <div className="absolute top-96 -left-32 w-80 h-80 rounded-full bg-[#efe6e3]/50 blur-2xl pointer-events-none" />
 
-          <div className="max-w-[1720px] mx-auto px-4 sm:px-6 lg:px-10 xl:px-14 pt-6">
+          <div className="max-w-[1720px] mx-auto px-3.5 sm:px-6 lg:px-10 xl:px-14 pt-4 sm:pt-6">
             {/* Breadcrumb */}
-            <nav className="flex items-center gap-1.5 text-xs text-[#83746c] mb-6">
-              <Link href="/" className="hover:text-[#5d371f] transition-colors">
+            <nav className="flex items-center gap-1 sm:gap-1.5 text-[11px] sm:text-xs text-[#83746c] mb-4 sm:mb-6 overflow-x-auto no-scrollbar whitespace-nowrap">
+              <Link href="/" className="hover:text-[#5d371f] transition-colors shrink-0">
                 Trang chủ
               </Link>
-              <span className="material-symbols-outlined text-[14px] text-[#d5c3ba]">chevron_right</span>
-              <span className="hover:text-[#5d371f] transition-colors cursor-pointer">
+              <span className="material-symbols-outlined text-[13px] sm:text-[14px] text-[#d5c3ba] shrink-0">chevron_right</span>
+              <span className="hover:text-[#5d371f] transition-colors cursor-pointer shrink-0">
                 Tài khoản của tôi
               </span>
-              <span className="material-symbols-outlined text-[14px] text-[#d5c3ba]">chevron_right</span>
-              <span className="text-[#5d371f] font-bold">Thông tin cá nhân</span>
+              <span className="material-symbols-outlined text-[13px] sm:text-[14px] text-[#d5c3ba] shrink-0">chevron_right</span>
+              <span className="text-[#5d371f] font-bold shrink-0">Thông tin cá nhân</span>
             </nav>
 
             {/* Main Layout 2 Columns */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 lg:gap-8 items-start">
               {/* LEFT COLUMN: Profile Summary & Sidebar Menu */}
-              <aside className="lg:col-span-4 flex flex-col gap-6">
+              <aside className="lg:col-span-4 flex flex-col gap-4 sm:gap-6 lg:sticky lg:top-24">
                 {/* User Summary Card */}
-                <div className="bg-white border border-[#eae1dd] p-6 shadow-sm flex flex-col">
-                  <div className="flex items-center gap-4">
+                <div className="bg-white border border-[#eae1dd] p-4 sm:p-6 shadow-xs sm:shadow-sm flex flex-col">
+                  <div className="flex items-center gap-3.5 sm:gap-4">
                     <div className="relative">
-                      <div className="w-16 h-16 bg-gradient-to-br from-[#5d371f] to-[#382012] text-[#ffdbb5] font-serif font-bold text-2xl flex items-center justify-center ring-2 ring-[#d5c3ba] shadow-sm select-none shrink-0">
+                      <div className="w-14 h-14 sm:w-16 sm:h-16 bg-gradient-to-br from-[#5d371f] to-[#382012] text-[#ffdbb5] font-serif font-bold text-xl sm:text-2xl flex items-center justify-center ring-2 ring-[#d5c3ba] shadow-sm select-none shrink-0">
                         {(user?.name || fullName || 'G').trim().charAt(0).toUpperCase()}
                       </div>
                       <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-[#5d371f] text-[#ffdbb5] flex items-center justify-center border border-white">
@@ -683,7 +718,7 @@ function ProfilePageContent() {
                       </div>
                     </div>
                     <div className="flex flex-col min-w-0">
-                      <h3 className="font-serif text-lg font-bold text-[#1f1b19] truncate">
+                      <h3 className="font-serif text-base sm:text-lg font-bold text-[#1f1b19] truncate">
                         {user?.name || fullName || 'Khách hàng'}
                       </h3>
                       {isAdmin && (
@@ -691,31 +726,31 @@ function ProfilePageContent() {
                           Quản Trị Viên
                         </span>
                       )}
-                      <span className="font-data-mono text-[11px] text-[#83746c] mt-0.5">
+                      <span className="font-data-mono text-[10px] sm:text-[11px] text-[#83746c] mt-0.5">
                         Mã KH: #{user?.id ? (user.id.length > 8 ? user.id.substring(0, 8).toUpperCase() : user.id.replace('usr_', 'MG-')) : 'MG-88910'}
                       </span>
                     </div>
                   </div>
 
-                  <div className="mt-4 pt-4 border-t border-[#eae1dd] flex flex-col gap-2 text-xs">
+                  <div className="mt-3.5 sm:mt-4 pt-3.5 sm:pt-4 border-t border-[#eae1dd] flex flex-col gap-2 text-xs">
                     {email ? (
-                      <div className="flex items-center gap-2.5 text-[#51443d]">
-                        <span className="material-symbols-outlined text-[18px] text-[#83746c]">mail</span>
-                        <span className="truncate font-data-mono">{email}</span>
+                      <div className="flex items-center gap-2 sm:gap-2.5 text-[#51443d]">
+                        <span className="material-symbols-outlined text-[16px] sm:text-[18px] text-[#83746c] shrink-0">mail</span>
+                        <span className="truncate font-data-mono text-[11px] sm:text-xs">{email}</span>
                       </div>
                     ) : (
-                      <div className="flex items-center gap-2.5 text-[#83746c] italic">
-                        <span className="material-symbols-outlined text-[18px]">mail</span>
+                      <div className="flex items-center gap-2 sm:gap-2.5 text-[#83746c] italic text-[11px] sm:text-xs">
+                        <span className="material-symbols-outlined text-[16px] sm:text-[18px] shrink-0">mail</span>
                         <span>Chưa cập nhật email</span>
                       </div>
                     )}
-                    <div className="flex items-center gap-2.5 text-[#51443d]">
-                      <span className="material-symbols-outlined text-[18px] text-[#83746c]">call</span>
-                      <span className="font-data-mono">{phone || 'Chưa có số điện thoại'}</span>
+                    <div className="flex items-center gap-2 sm:gap-2.5 text-[#51443d]">
+                      <span className="material-symbols-outlined text-[16px] sm:text-[18px] text-[#83746c] shrink-0">call</span>
+                      <span className="font-data-mono text-[11px] sm:text-xs">{phone || 'Chưa có số điện thoại'}</span>
                     </div>
-                    <div className="flex items-center gap-2.5 text-[#51443d]">
-                      <span className="material-symbols-outlined text-[18px] text-[#83746c]">verified_user</span>
-                      <span className="text-[#3f4332] font-semibold">Tài khoản đã xác thực quyền lợi FSC</span>
+                    <div className="flex items-center gap-2 sm:gap-2.5 text-[#51443d]">
+                      <span className="material-symbols-outlined text-[16px] sm:text-[18px] text-[#83746c] shrink-0">verified_user</span>
+                      <span className="text-[#3f4332] font-semibold text-[11px] sm:text-xs">Tài khoản đã xác thực quyền lợi FSC</span>
                     </div>
 
                     <div className="mt-2 pt-3 border-t border-[#eae1dd] flex items-center justify-between">
@@ -729,7 +764,7 @@ function ProfilePageContent() {
                             setIsPasswordModalOpen(true);
                           }
                         }}
-                        className="text-xs text-[#5d371f] hover:underline font-semibold cursor-pointer flex items-center gap-1"
+                        className="text-xs text-[#5d371f] hover:underline font-semibold cursor-pointer flex items-center gap-1 py-1"
                       >
                         <span className="material-symbols-outlined text-[14px]">lock</span>
                         <span>Đổi mật khẩu</span>
@@ -737,36 +772,37 @@ function ProfilePageContent() {
                       <button
                         type="button"
                         onClick={handleLogout}
-                        className="text-xs text-red-600 hover:underline font-semibold cursor-pointer"
+                        className="text-xs text-red-600 hover:underline font-semibold cursor-pointer py-1"
                       >
                         Đăng xuất
                       </button>
                     </div>
                   </div>
                 </div>
+
               </aside>
 
               {/* RIGHT COLUMN: Main Content Blocks */}
-              <div className="lg:col-span-8 flex flex-col gap-6 min-w-0">
+              <div className="lg:col-span-8 flex flex-col gap-5 sm:gap-6 min-w-0">
                 {/* SECTION 1: Form Thông tin cá nhân */}
                 {(activeTab === 'profile' || activeTab === 'addresses' || activeTab === 'orders') && (
-                  <section className="bg-white border border-[#eae1dd] p-6 sm:p-7 shadow-sm">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 mb-4 border-b border-[#eae1dd]">
+                  <section id="section-thong-tin" className="bg-white border border-[#eae1dd] p-4 sm:p-6 lg:p-7 shadow-xs sm:shadow-sm scroll-mt-24">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-2 pb-3.5 sm:pb-4 mb-3.5 sm:mb-4 border-b border-[#eae1dd]">
                       <div>
-                        <h2 className="font-serif text-lg sm:text-xl font-bold text-[#5d371f]">
+                        <h2 className="font-serif text-base sm:text-lg lg:text-xl font-bold text-[#5d371f]">
                           Thông Tin Gia Chủ &amp; Liên Hệ
                         </h2>
                       </div>
-                      <span className="font-data-mono text-[11px] text-[#83746c] flex items-center gap-1 shrink-0">
-                        <span className="material-symbols-outlined text-[14px]">schedule</span> Cập nhật: Hôm nay
+                      <span className="font-data-mono text-[10px] sm:text-[11px] text-[#83746c] flex items-center gap-1 shrink-0">
+                        <span className="material-symbols-outlined text-[13px] sm:text-[14px]">schedule</span> Cập nhật: Hôm nay
                       </span>
                     </div>
 
-                    <form onSubmit={handleSaveProfile} className="space-y-4 text-xs">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <form onSubmit={handleSaveProfile} className="space-y-3.5 sm:space-y-4 text-xs">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
                         {/* Full Name */}
-                        <div className="flex flex-col gap-1.5">
-                          <label className="font-semibold text-[#1f1b19] uppercase tracking-wider text-[11px]">
+                        <div className="flex flex-col gap-1 sm:gap-1.5">
+                          <label className="font-semibold text-[#1f1b19] uppercase tracking-wider text-[10px] sm:text-[11px]">
                             Họ và tên gia chủ *
                           </label>
                           <Input
@@ -774,14 +810,14 @@ function ProfilePageContent() {
                             value={fullName}
                             onChange={(e) => setFullName(e.target.value)}
                             placeholder="Nhập họ và tên..."
-                            suffix={<span className="material-symbols-outlined text-[#83746c] text-[18px]">badge</span>}
-                            className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2.5 !px-3.5"
+                            suffix={<span className="material-symbols-outlined text-[#83746c] text-[16px] sm:text-[18px]">badge</span>}
+                            className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2 sm:!py-2.5 !px-3 sm:!px-3.5 text-xs sm:text-sm"
                           />
                         </div>
 
                         {/* Date of Birth */}
-                        <div className="flex flex-col gap-1.5">
-                          <label className="font-semibold text-[#1f1b19] uppercase tracking-wider text-[11px]">
+                        <div className="flex flex-col gap-1 sm:gap-1.5">
+                          <label className="font-semibold text-[#1f1b19] uppercase tracking-wider text-[10px] sm:text-[11px]">
                             Ngày sinh
                           </label>
                           <DatePicker
@@ -792,18 +828,18 @@ function ProfilePageContent() {
                             placeholder="DD/MM/YYYY"
                             allowClear
                             inputReadOnly={false}
-                            className="w-full !bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2.5 !px-3.5"
+                            className="w-full !bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2 sm:!py-2.5 !px-3 sm:!px-3.5 text-xs sm:text-sm"
                           />
                         </div>
 
                         {/* Phone */}
-                        <div className="flex flex-col gap-1.5">
+                        <div className="flex flex-col gap-1 sm:gap-1.5">
                           <div className="flex items-center justify-between">
-                            <label className="font-semibold text-[#1f1b19] uppercase tracking-wider text-[11px]">
+                            <label className="font-semibold text-[#1f1b19] uppercase tracking-wider text-[10px] sm:text-[11px]">
                               Số điện thoại *
                             </label>
-                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-[#3f4332] bg-[#e1e5ce] px-2 py-0.5">
-                              <CheckCircleFilled className="text-[10px]" /> Đã xác thực
+                            <span className="inline-flex items-center gap-1 text-[9px] sm:text-[10px] font-semibold text-[#3f4332] bg-[#e1e5ce] px-1.5 py-0.5 sm:px-2">
+                              <CheckCircleFilled className="text-[9px] sm:text-[10px]" /> Đã xác thực
                             </span>
                           </div>
                           <Input
@@ -812,23 +848,23 @@ function ProfilePageContent() {
                             value={phone}
                             onChange={(e) => setPhone(e.target.value)}
                             placeholder="0918 345 678"
-                            suffix={<span className="material-symbols-outlined text-[#83746c] text-[18px]">smartphone</span>}
-                            className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-data-mono font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2.5 !px-3.5"
+                            suffix={<span className="material-symbols-outlined text-[#83746c] text-[16px] sm:text-[18px]">smartphone</span>}
+                            className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-data-mono font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2 sm:!py-2.5 !px-3 sm:!px-3.5 text-xs sm:text-sm"
                           />
                         </div>
 
                         {/* Email */}
-                        <div className="flex flex-col gap-1.5">
+                        <div className="flex flex-col gap-1 sm:gap-1.5">
                           <div className="flex items-center justify-between">
-                            <label className="font-semibold text-[#1f1b19] uppercase tracking-wider text-[11px]">
+                            <label className="font-semibold text-[#1f1b19] uppercase tracking-wider text-[10px] sm:text-[11px]">
                               Hòm thư điện tử
                             </label>
                             {email ? (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-[#3f4332] bg-[#e1e5ce] px-2 py-0.5">
-                                <CheckCircleFilled className="text-[10px]" /> Đã xác thực
+                              <span className="inline-flex items-center gap-1 text-[9px] sm:text-[10px] font-semibold text-[#3f4332] bg-[#e1e5ce] px-1.5 py-0.5 sm:px-2">
+                                <CheckCircleFilled className="text-[9px] sm:text-[10px]" /> Đã xác thực
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-[#83746c] bg-[#f0eae6] px-2 py-0.5">
+                              <span className="inline-flex items-center gap-1 text-[9px] sm:text-[10px] font-medium text-[#83746c] bg-[#f0eae6] px-1.5 py-0.5 sm:px-2">
                                 Chưa liên kết
                               </span>
                             )}
@@ -839,15 +875,15 @@ function ProfilePageContent() {
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
                             placeholder="email@example.com (Không bắt buộc)"
-                            suffix={<span className="material-symbols-outlined text-[#83746c] text-[18px]">alternate_email</span>}
-                            className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2.5 !px-3.5"
+                            suffix={<span className="material-symbols-outlined text-[#83746c] text-[16px] sm:text-[18px]">alternate_email</span>}
+                            className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2 sm:!py-2.5 !px-3 sm:!px-3.5 text-xs sm:text-sm"
                           />
                         </div>
                       </div>
 
                       {/* Bio / Ghi chú gia chủ */}
-                      <div className="flex flex-col gap-1.5 pt-1">
-                        <label className="font-semibold text-[#1f1b19] uppercase tracking-wider text-[11px]">
+                      <div className="flex flex-col gap-1 sm:gap-1.5 pt-1">
+                        <label className="font-semibold text-[#1f1b19] uppercase tracking-wider text-[10px] sm:text-[11px]">
                           Ghi chú gu thẩm mỹ &amp; phong cách kiến trúc
                         </label>
                         <TextArea
@@ -855,12 +891,12 @@ function ProfilePageContent() {
                           value={bio}
                           onChange={(e) => setBio(e.target.value)}
                           placeholder="Ví dụ: Căn hộ phong cách Japandi tối giản, ưu tiên bàn ghế bo cong hữu cơ..."
-                          className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2.5 !px-3.5 leading-relaxed"
+                          className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2 sm:!py-2.5 !px-3 sm:!px-3.5 text-xs sm:text-sm leading-relaxed"
                         />
                       </div>
 
                       {/* Form Action Buttons */}
-                      <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#eae1dd]">
+                      <div className="flex items-center justify-end gap-2.5 sm:gap-3 pt-3 border-t border-[#eae1dd]">
                         <button
                           type="button"
                           onClick={() => {
@@ -876,14 +912,14 @@ function ProfilePageContent() {
                             }
                             message.info('Đã hoàn tác thay đổi.');
                           }}
-                          className="px-4 py-2 text-[#51443d] hover:bg-[#f5ece8] font-semibold transition-colors cursor-pointer"
+                          className="flex-1 sm:flex-initial text-center px-3.5 py-2 sm:px-4 text-[#51443d] hover:bg-[#f5ece8] border border-[#eae1dd] sm:border-transparent font-semibold transition-colors cursor-pointer text-xs"
                         >
                           Hoàn tác
                         </button>
                         <button
                           type="submit"
                           disabled={isSavingProfile}
-                          className="px-6 py-2 bg-[#5d371f] text-white hover:bg-[#784e34] font-semibold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-70"
+                          className="flex-1 sm:flex-initial text-center px-5 py-2 sm:px-6 bg-[#5d371f] text-white hover:bg-[#784e34] font-semibold transition-all shadow-xs sm:shadow-sm flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-70 text-xs"
                         >
                           <SaveOutlined /> {isSavingProfile ? 'Đang lưu...' : 'Lưu thay đổi'}
                         </button>
@@ -893,43 +929,43 @@ function ProfilePageContent() {
                 )}
 
                 {/* SECTION 2: Sổ Địa Chỉ Công Trình */}
-                <section className="bg-white border border-[#eae1dd] p-6 sm:p-7 shadow-sm">
-                  <div className="flex items-center justify-between pb-4 mb-4 border-b border-[#eae1dd]">
+                <section id="section-so-dia-chi" className="bg-white border border-[#eae1dd] p-4 sm:p-6 lg:p-7 shadow-xs sm:shadow-sm scroll-mt-24">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3.5 sm:pb-4 mb-3.5 sm:mb-4 border-b border-[#eae1dd]">
                     <div>
-                      <h2 className="font-serif text-lg sm:text-xl font-bold text-[#5d371f]">
+                      <h2 className="font-serif text-base sm:text-lg lg:text-xl font-bold text-[#5d371f]">
                         Sổ Địa Chỉ Công Trình &amp; Giao Hàng Mặc Định
                       </h2>
                     </div>
                     <button
                       type="button"
                       onClick={() => setIsAddAddressOpen(true)}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-[#fbf2ee] hover:bg-[#5d371f] hover:text-white border border-[#eae1dd] text-[#5d371f] font-semibold text-xs transition-colors cursor-pointer"
+                      className="self-start sm:self-auto inline-flex items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 bg-[#fbf2ee] hover:bg-[#5d371f] hover:text-white border border-[#eae1dd] text-[#5d371f] font-semibold text-[11px] sm:text-xs transition-colors cursor-pointer"
                     >
                       <PlusOutlined /> Thêm địa chỉ mới
                     </button>
                   </div>
 
                   {addresses.length === 0 ? (
-                    <div className="p-8 text-center bg-[#fbf2ee] border border-[#eae1dd] flex flex-col items-center justify-center">
-                      <span className="material-symbols-outlined text-[36px] text-[#83746c] mb-2">home_pin</span>
-                      <h4 className="font-bold text-sm text-[#1f1b19]">Quý khách chưa lưu địa chỉ công trình nào</h4>
-                      <p className="text-xs text-[#83746c] mt-1 max-w-sm">
+                    <div className="p-6 sm:p-8 text-center bg-[#fbf2ee] border border-[#eae1dd] flex flex-col items-center justify-center">
+                      <span className="material-symbols-outlined text-[32px] sm:text-[36px] text-[#83746c] mb-2">home_pin</span>
+                      <h4 className="font-bold text-xs sm:text-sm text-[#1f1b19]">Quý khách chưa lưu địa chỉ công trình nào</h4>
+                      <p className="text-[11px] sm:text-xs text-[#83746c] mt-1 max-w-sm">
                         Quý khách có thể thêm địa chỉ nhận hàng để tiện cho việc may đo và bàn giao nội thất tận nhà.
                       </p>
                       <button
                         type="button"
                         onClick={() => setIsAddAddressOpen(true)}
-                        className="mt-4 px-4 py-2 bg-[#5d371f] hover:bg-[#784e34] text-white text-xs font-bold transition-colors inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
+                        className="mt-3.5 sm:mt-4 px-4 py-2 bg-[#5d371f] hover:bg-[#784e34] text-white text-xs font-bold transition-colors inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
                       >
                         <PlusOutlined /> Thêm địa chỉ mới
                       </button>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
                       {addresses.map((addr) => (
                         <div
                           key={addr.id}
-                          className={`p-4 border flex flex-col justify-between shadow-sm transition-all ${
+                          className={`p-3.5 sm:p-4 border flex flex-col justify-between shadow-2xs sm:shadow-sm transition-all ${
                             addr.isDefault
                               ? 'bg-[#fbf2ee] border-[#5d371f]'
                               : 'bg-white border-[#eae1dd] hover:border-[#5d371f]/50'
@@ -938,7 +974,7 @@ function ProfilePageContent() {
                           <div>
                             <div className="flex items-center justify-between mb-2">
                               <span
-                                className={`px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider ${
+                                className={`px-2 py-0.5 text-[9px] sm:text-[10px] uppercase font-bold tracking-wider ${
                                   addr.isDefault
                                     ? 'bg-[#5d371f] text-white'
                                     : 'bg-[#f5ece8] text-[#51443d]'
@@ -951,7 +987,7 @@ function ProfilePageContent() {
                                   <button
                                     type="button"
                                     onClick={() => handleSetDefaultAddress(addr.id)}
-                                    className="text-[11px] text-[#5d371f] hover:underline font-semibold cursor-pointer"
+                                    className="text-[10px] sm:text-[11px] text-[#5d371f] hover:underline font-semibold cursor-pointer"
                                   >
                                     Đặt mặc định
                                   </button>
@@ -967,19 +1003,19 @@ function ProfilePageContent() {
                               </div>
                             </div>
 
-                            <h4 className="font-bold text-sm text-[#1f1b19]">{addr.title}</h4>
-                            <p className="text-xs text-[#51443d] mt-1 leading-relaxed">
+                            <h4 className="font-bold text-xs sm:text-sm text-[#1f1b19]">{addr.title}</h4>
+                            <p className="text-[11px] sm:text-xs text-[#51443d] mt-1 leading-relaxed">
                               {addr.address}
                             </p>
-                            <div className="mt-2.5 p-2 bg-white/80 border border-[#eae1dd] text-[11px] text-[#83746c] flex items-center gap-1.5">
-                              <span className="material-symbols-outlined text-[16px] text-[#5d371f]">info</span>
-                              <span>{addr.note}</span>
+                            <div className="mt-2.5 p-2 bg-white/80 border border-[#eae1dd] text-[10px] sm:text-[11px] text-[#83746c] flex items-center gap-1.5">
+                              <span className="material-symbols-outlined text-[15px] sm:text-[16px] text-[#5d371f] shrink-0">info</span>
+                              <span className="truncate sm:whitespace-normal">{addr.note}</span>
                             </div>
                           </div>
 
-                          <div className="pt-3 mt-3 border-t border-[#eae1dd]/60 flex items-center justify-between font-data-mono text-xs text-[#83746c]">
-                            <span>Người nhận: <strong>{addr.recipient}</strong></span>
-                            <span>{addr.phone}</span>
+                          <div className="pt-2.5 sm:pt-3 mt-2.5 sm:mt-3 border-t border-[#eae1dd]/60 flex items-center justify-between font-data-mono text-[11px] sm:text-xs text-[#83746c]">
+                            <span className="truncate mr-2">Người nhận: <strong>{addr.recipient}</strong></span>
+                            <span className="shrink-0">{addr.phone}</span>
                           </div>
                         </div>
                       ))}
@@ -988,14 +1024,14 @@ function ProfilePageContent() {
                 </section>
 
                 {/* SECTION 3: Đơn Hàng Gần Nhất */}
-                <section className="bg-white border border-[#eae1dd] p-6 sm:p-7 shadow-sm">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 mb-4 border-b border-[#eae1dd]">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-9 h-9 bg-[#f5ece8] text-[#5d371f] flex items-center justify-center font-bold">
-                        <span className="material-symbols-outlined text-[22px]">construction</span>
+                <section id="section-don-hang" className="bg-white border border-[#eae1dd] p-4 sm:p-6 lg:p-7 shadow-xs sm:shadow-sm scroll-mt-24">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3.5 sm:pb-4 mb-3.5 sm:mb-4 border-b border-[#eae1dd]">
+                    <div className="flex items-center gap-2 sm:gap-2.5">
+                      <div className="w-8 h-8 sm:w-9 sm:h-9 bg-[#f5ece8] text-[#5d371f] flex items-center justify-center font-bold shrink-0">
+                        <span className="material-symbols-outlined text-[18px] sm:text-[22px]">construction</span>
                       </div>
                       <div>
-                        <h2 className="font-serif text-lg sm:text-xl font-bold text-[#5d371f]">
+                        <h2 className="font-serif text-base sm:text-lg lg:text-xl font-bold text-[#5d371f]">
                           Đơn Hàng Gần Nhất {userOrders.length > 0 && `(${userOrders.length})`}
                         </h2>
                       </div>
@@ -1003,27 +1039,27 @@ function ProfilePageContent() {
                   </div>
 
                   {isLoadingOrders ? (
-                    <div className="p-8 text-center bg-[#fbf2ee] border border-[#eae1dd] flex flex-col items-center justify-center gap-2">
+                    <div className="p-6 sm:p-8 text-center bg-[#fbf2ee] border border-[#eae1dd] flex flex-col items-center justify-center gap-2">
                       <LoadingOutlined className="text-2xl text-[#5d371f] animate-spin" />
                       <span className="text-xs font-semibold text-[#5d371f]">Đang đồng bộ danh sách đơn hàng thực tế...</span>
                     </div>
                   ) : userOrders.length === 0 ? (
-                    <div className="p-8 text-center bg-[#fbf2ee] border border-[#eae1dd] flex flex-col items-center justify-center">
-                      <span className="material-symbols-outlined text-[36px] text-[#83746c] mb-2">shopping_bag</span>
-                      <h4 className="font-bold text-sm text-[#1f1b19]">Quý khách chưa có đơn hàng nào</h4>
-                      <p className="text-xs text-[#83746c] mt-1 max-w-sm">
+                    <div className="p-6 sm:p-8 text-center bg-[#fbf2ee] border border-[#eae1dd] flex flex-col items-center justify-center">
+                      <span className="material-symbols-outlined text-[32px] sm:text-[36px] text-[#83746c] mb-2">shopping_bag</span>
+                      <h4 className="font-bold text-xs sm:text-sm text-[#1f1b19]">Quý khách chưa có đơn hàng nào</h4>
+                      <p className="text-[11px] sm:text-xs text-[#83746c] mt-1 max-w-sm">
                         Các đơn hàng mua sắm và tiến độ may đo gỗ tự nhiên của quý khách sẽ được lưu trữ và cập nhật tại đây.
                       </p>
                       <Link
                         href="/products"
-                        className="mt-4 px-5 py-2 bg-[#5d371f] hover:bg-[#784e34] text-white text-xs font-bold transition-colors inline-flex items-center gap-1.5 shadow-sm"
+                        className="mt-3.5 sm:mt-4 px-4 sm:px-5 py-2 bg-[#5d371f] hover:bg-[#784e34] text-white text-xs font-bold transition-colors inline-flex items-center gap-1.5 shadow-sm"
                       >
                         <span>Khám phá bộ sưu tập</span>
-                        <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+                        <span className="material-symbols-outlined text-[15px] sm:text-[16px]">arrow_forward</span>
                       </Link>
                     </div>
                   ) : (
-                    <div className="flex flex-col gap-4">
+                    <div className="flex flex-col gap-3.5 sm:gap-4">
                       {userOrders.map((ord: any) => {
                         const normStatus = normalizeOrderStatus(ord.status);
                         const statusColors: Record<string, { bg: string; text: string; border: string; label: string; step: number }> = {
@@ -1038,92 +1074,94 @@ function ProfilePageContent() {
                         const currentStatus = statusColors[normStatus] || statusColors.pending;
 
                         return (
-                          <div key={ord.id || ord.orderCode} className="bg-[#fbf2ee] border border-[#eae1dd] p-5 shadow-xs space-y-4">
-                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-[#eae1dd]">
+                          <div key={ord.id || ord.orderCode} className="bg-[#fbf2ee] border border-[#eae1dd] p-3.5 sm:p-5 shadow-2xs sm:shadow-xs space-y-3 sm:space-y-4">
+                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 sm:gap-3 pb-3 border-b border-[#eae1dd]">
                               <div>
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="font-data-mono font-bold text-sm text-[#5d371f]">
+                                <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                                  <span className="font-data-mono font-bold text-xs sm:text-sm text-[#5d371f]">
                                     #{ord.orderCode || 'D2-ORDER'}
                                   </span>
-                                  <span className="text-[11px] text-[#83746c] font-data-mono">
-                                    Ngày đặt: {ord.createdAt || 'Gần đây'}
+                                  <span className="text-[10px] sm:text-[11px] text-[#83746c] font-data-mono">
+                                    • {ord.createdAt || 'Gần đây'}
                                   </span>
-                                  <span className={`px-2.5 py-0.5 text-[10px] font-bold uppercase rounded border ${currentStatus.bg} ${currentStatus.text} ${currentStatus.border}`}>
+                                  <span className={`px-2 py-0.5 text-[9px] sm:text-[10px] font-bold uppercase rounded border ${currentStatus.bg} ${currentStatus.text} ${currentStatus.border}`}>
                                     {currentStatus.label}
                                   </span>
                                   {ord.branch && (
-                                    <span className="text-[11px] text-[#83746c] font-medium hidden sm:inline">
+                                    <span className="text-[10px] sm:text-[11px] text-[#83746c] font-medium hidden sm:inline">
                                       • Cơ sở: {ord.branch}
                                     </span>
                                   )}
                                   {ord.recipientName && ord.recipientName.trim().toLowerCase() !== (user?.name || '').trim().toLowerCase() && (
-                                    <span className="text-[11px] text-[#784e34] bg-[#fbf2ee] px-2 py-0.5 border border-[#eae1dd] font-medium inline-flex items-center gap-1">
-                                      <span className="material-symbols-outlined text-[13px]">local_shipping</span>
+                                    <span className="text-[10px] sm:text-[11px] text-[#784e34] bg-[#fbf2ee] px-1.5 py-0.5 sm:px-2 border border-[#eae1dd] font-medium inline-flex items-center gap-1">
+                                      <span className="material-symbols-outlined text-[12px] sm:text-[13px]">local_shipping</span>
                                       Giao cho: {ord.recipientName} {ord.recipientPhone ? `(${ord.recipientPhone})` : ''}
                                     </span>
                                   )}
                                 </div>
                               </div>
-                              <div className="text-left md:text-right">
+                              <div className="text-left md:text-right flex items-center justify-between md:block pt-1 md:pt-0 border-t md:border-0 border-[#eae1dd]/60">
                                 <span className="text-[10px] text-[#83746c] uppercase tracking-wider block">
                                   Tổng giá trị đơn hàng
                                 </span>
-                                <span className="font-serif text-lg font-bold text-[#5d371f] font-data-mono">
-                                  {Number(ord.value || 0).toLocaleString('vi-VN')}₫
-                                </span>
-                                {ord.depositAmount > 0 && (
-                                  <span className="text-[10px] text-emerald-700 block font-medium">
-                                    Đã cọc: {Number(ord.depositAmount).toLocaleString('vi-VN')}₫
+                                <div>
+                                  <span className="font-serif text-base sm:text-lg font-bold text-[#5d371f] font-data-mono">
+                                    {Number(ord.value || 0).toLocaleString('vi-VN')}₫
                                   </span>
-                                )}
+                                  {ord.depositAmount > 0 && (
+                                    <span className="text-[10px] text-emerald-700 block font-medium">
+                                      Đã cọc: {Number(ord.depositAmount).toLocaleString('vi-VN')}₫
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             </div>
 
                             {/* Order Progress Stepper according to Admin status */}
                             {normStatus === 'cancelled' ? (
-                              <div className="p-3 bg-rose-50/90 border border-rose-200 flex items-center gap-2.5 text-xs text-rose-800">
-                                <span className="material-symbols-outlined text-[18px] text-rose-600 shrink-0">cancel</span>
+                              <div className="p-2.5 sm:p-3 bg-rose-50/90 border border-rose-200 flex items-center gap-2 text-xs text-rose-800">
+                                <span className="material-symbols-outlined text-[16px] sm:text-[18px] text-rose-600 shrink-0">cancel</span>
                                 <div>
                                   <span className="font-semibold">Đơn hàng đã hủy:</span> Đơn hàng đã được ghi nhận hủy trên hệ thống. Nếu có thắc mắc hoặc cần đặt lại, quý khách vui lòng liên hệ CSKH.
                                 </div>
                               </div>
                             ) : normStatus === 'returned' ? (
-                              <div className="p-3 bg-indigo-50/90 border border-indigo-200 flex items-center gap-2.5 text-xs text-indigo-800">
-                                <span className="material-symbols-outlined text-[18px] text-indigo-600 shrink-0">assignment_return</span>
+                              <div className="p-2.5 sm:p-3 bg-indigo-50/90 border border-indigo-200 flex items-center gap-2 text-xs text-indigo-800">
+                                <span className="material-symbols-outlined text-[16px] sm:text-[18px] text-indigo-600 shrink-0">assignment_return</span>
                                 <div>
                                   <span className="font-semibold">Đã ghi nhận yêu cầu hoàn trả:</span> Showroom D2 Luxury đã tiếp nhận yêu cầu đổi trả / hoàn tiền và bộ phận dịch vụ sẽ liên hệ quý khách trong 24h.
                                 </div>
                               </div>
                             ) : normStatus === 'returned_success' ? (
-                              <div className="p-3 bg-teal-50/90 border border-teal-200 flex items-center gap-2.5 text-xs text-teal-800">
-                                <span className="material-symbols-outlined text-[18px] text-teal-600 shrink-0">verified</span>
+                              <div className="p-2.5 sm:p-3 bg-teal-50/90 border border-teal-200 flex items-center gap-2 text-xs text-teal-800">
+                                <span className="material-symbols-outlined text-[16px] sm:text-[18px] text-teal-600 shrink-0">verified</span>
                                 <div>
                                   <span className="font-semibold">Hoàn hàng thành công:</span> Showroom D2 Luxury đã hoàn tất thủ tục thu hồi tác phẩm và hoàn tất đối soát/hoàn trả tiền cho quý khách theo đúng cam kết.
                                 </div>
                               </div>
                             ) : (
-                              <div className="bg-white/80 p-3.5 border border-[#eae1dd]/80">
-                                <div className="text-[11px] font-semibold text-[#83746c] uppercase tracking-wider mb-3 flex items-center justify-between">
+                              <div className="bg-white/80 p-2.5 sm:p-3.5 border border-[#eae1dd]/80">
+                                <div className="text-[10px] sm:text-[11px] font-semibold text-[#83746c] uppercase tracking-wider mb-2.5 sm:mb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
                                   <span>Tiến độ thực hiện đơn hàng</span>
-                                  <span className="text-[#5d371f] font-semibold normal-case text-xs">
-                                    Trạng thái hiện tại: {currentStatus.label}
+                                  <span className="text-[#5d371f] font-semibold normal-case text-[11px] sm:text-xs">
+                                    Trạng thái: {currentStatus.label}
                                   </span>
                                 </div>
-                                <div className="grid grid-cols-4 gap-2 text-center text-xs relative">
+                                <div className="grid grid-cols-4 gap-1 sm:gap-2 text-center text-xs relative">
                                   {[
                                     { stepNum: 1, title: 'Chờ duyệt', desc: 'Đã nhận đơn' },
                                     { stepNum: 2, title: 'Đang gia công', desc: 'Chế tác xưởng' },
                                     { stepNum: 3, title: 'Đang giao hàng', desc: 'Vận chuyển & lắp' },
-                                    { stepNum: 4, title: 'Hoàn tất bàn giao', desc: 'Nghiệm thu & bảo hành' },
+                                    { stepNum: 4, title: 'Hoàn tất', desc: 'Nghiệm thu' },
                                   ].map((st) => {
                                     const isCurrent = currentStatus.step === st.stepNum;
                                     const isPassed = currentStatus.step > st.stepNum;
                                     return (
                                       <div key={st.stepNum} className="flex flex-col items-center">
                                         <div
-                                          className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs transition-all mb-1 ${
+                                          className={`w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center font-bold text-[10px] sm:text-xs transition-all mb-1 ${
                                             isCurrent
-                                              ? 'bg-[#5d371f] text-white shadow-xs ring-4 ring-[#5d371f]/20 scale-105'
+                                              ? 'bg-[#5d371f] text-white shadow-xs ring-2 sm:ring-4 ring-[#5d371f]/20 scale-105'
                                               : isPassed
                                               ? 'bg-emerald-600 text-white'
                                               : 'bg-slate-100 text-slate-400 border border-slate-200'
@@ -1131,10 +1169,10 @@ function ProfilePageContent() {
                                         >
                                           {isPassed ? '✓' : st.stepNum}
                                         </div>
-                                        <span className={`font-semibold text-xs leading-tight ${isCurrent ? 'text-[#5d371f]' : isPassed ? 'text-slate-800' : 'text-slate-400'}`}>
+                                        <span className={`font-semibold text-[10px] sm:text-xs leading-tight ${isCurrent ? 'text-[#5d371f]' : isPassed ? 'text-slate-800' : 'text-slate-400'}`}>
                                           {st.title}
                                         </span>
-                                        <span className="text-[10px] text-slate-500 hidden sm:inline-block mt-0.5">
+                                        <span className="text-[9px] sm:text-[10px] text-slate-500 hidden md:inline-block mt-0.5">
                                           {st.desc}
                                         </span>
                                       </div>
@@ -1144,8 +1182,8 @@ function ProfilePageContent() {
                               </div>
                             )}
 
-                            <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-4">
-                              <div className="flex items-center gap-3.5 w-full sm:w-auto">
+                            <div className="pt-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
+                              <div className="flex items-center gap-3 w-full sm:w-auto">
                                 <img
                                   src={
                                     ord.image ||
@@ -1153,17 +1191,17 @@ function ProfilePageContent() {
                                     'https://images.unsplash.com/photo-1617806118233-18e1de247200?w=800&auto=format&fit=crop&q=80'
                                   }
                                   alt={ord.productName || 'Nội thất D2 Luxury'}
-                                  className="w-16 h-16 object-cover border border-[#eae1dd] shrink-0"
+                                  className="w-14 h-14 sm:w-16 sm:h-16 object-cover border border-[#eae1dd] shrink-0"
                                   onError={(e) => {
                                     (e.target as HTMLImageElement).src =
                                       'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?w=800&auto=format&fit=crop&q=80';
                                   }}
                                 />
-                                <div className="min-w-0">
+                                <div className="min-w-0 flex-1">
                                   <h5 className="font-bold text-xs text-[#1f1b19] truncate">
                                     {ord.productName || 'Đơn hàng may đo D2 Luxury'}
                                   </h5>
-                                  <p className="text-[11px] text-[#51443d] mt-0.5">
+                                  <p className="text-[11px] text-[#51443d] mt-0.5 line-clamp-1">
                                     {ord.productSpec || 'Quy cách: Gỗ tự nhiên Bắc Mỹ cao cấp'}
                                   </p>
                                   {Array.isArray(ord.items) && ord.items.length > 1 && (
@@ -1179,10 +1217,10 @@ function ProfilePageContent() {
                                   <button
                                     type="button"
                                     onClick={() => handleOpenReturnModal(ord)}
-                                    className="w-full sm:w-auto text-center px-3.5 py-2 bg-white hover:bg-rose-50 text-rose-700 border border-rose-300 font-bold text-xs transition-colors shrink-0 flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+                                    className="flex-1 sm:flex-initial text-center px-3 py-2 bg-white hover:bg-rose-50 text-rose-700 border border-rose-300 font-bold text-xs transition-colors shrink-0 flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
                                   >
-                                    <span className="material-symbols-outlined text-[16px]">assignment_return</span>
-                                    <span>Yêu cầu trả hàng / Hoàn tiền</span>
+                                    <span className="material-symbols-outlined text-[15px]">assignment_return</span>
+                                    <span>Yêu cầu hoàn trả</span>
                                   </button>
                                 )}
 
@@ -1190,11 +1228,11 @@ function ProfilePageContent() {
                                   <button
                                     type="button"
                                     onClick={() => handleOpenReturnModal(ord)}
-                                    className="w-full sm:w-auto text-center px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-semibold inline-flex items-center justify-center gap-1 cursor-pointer transition-colors"
+                                    className="flex-1 sm:flex-initial text-center px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-semibold inline-flex items-center justify-center gap-1 cursor-pointer transition-colors"
                                     title="Bấm để xem lại chi tiết yêu cầu hoàn trả & ảnh minh chứng"
                                   >
-                                    <span className="material-symbols-outlined text-[16px]">assignment_return</span>
-                                    <span>Đang hoàn trả (Xem lại)</span>
+                                    <span className="material-symbols-outlined text-[15px]">assignment_return</span>
+                                    <span>Đang hoàn trả</span>
                                   </button>
                                 )}
 
@@ -1202,11 +1240,11 @@ function ProfilePageContent() {
                                   <button
                                     type="button"
                                     onClick={() => handleOpenReturnModal(ord)}
-                                    className="w-full sm:w-auto text-center px-3 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-300 text-xs font-semibold inline-flex items-center justify-center gap-1 cursor-pointer transition-colors"
+                                    className="flex-1 sm:flex-initial text-center px-3 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-300 text-xs font-semibold inline-flex items-center justify-center gap-1 cursor-pointer transition-colors"
                                     title="Showroom đã hoàn tất thu hồi tác phẩm và hoàn tiền cho quý khách"
                                   >
-                                    <span className="material-symbols-outlined text-[16px] text-teal-600">check_circle</span>
-                                    <span>Hoàn hàng thành công (Xem lại)</span>
+                                    <span className="material-symbols-outlined text-[15px] text-teal-600">check_circle</span>
+                                    <span>Đã hoàn thành</span>
                                   </button>
                                 )}
 
@@ -1214,16 +1252,16 @@ function ProfilePageContent() {
                                   <Popconfirm
                                     title="Xác nhận hủy đơn hàng"
                                     description="Quý khách có chắc chắn muốn hủy đơn hàng này không?"
-                                    onConfirm={() => handleCancelPendingOrder(ord.id)}
+                                    onConfirm={() => handleCancelPendingOrder(ord.id, ord.orderCode)}
                                     okText="Hủy đơn"
                                     cancelText="Không"
                                     okButtonProps={{ danger: true }}
                                   >
                                     <button
                                       type="button"
-                                      className="w-full sm:w-auto text-center px-3.5 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold text-xs transition-colors shrink-0 flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+                                      className="flex-1 sm:flex-initial text-center px-3 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold text-xs transition-colors shrink-0 flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
                                     >
-                                      <span className="material-symbols-outlined text-[16px]">close</span>
+                                      <span className="material-symbols-outlined text-[15px]">close</span>
                                       <span>Hủy đơn</span>
                                     </button>
                                   </Popconfirm>
@@ -1231,17 +1269,17 @@ function ProfilePageContent() {
 
                                 <Link
                                   href="/products"
-                                  className="w-full sm:w-auto text-center px-4 py-2 bg-[#5d371f] hover:bg-[#784e34] text-white font-bold text-xs transition-colors shrink-0 flex items-center justify-center gap-1.5 shadow-sm"
+                                  className="flex-1 sm:flex-initial text-center px-4 py-2 bg-[#5d371f] hover:bg-[#784e34] text-white font-bold text-xs transition-colors shrink-0 flex items-center justify-center gap-1.5 shadow-xs"
                                 >
-                                  <span>Khám phá bộ sưu tập</span>
+                                  <span>Xem bộ sưu tập</span>
                                   <ArrowRightOutlined className="text-xs" />
                                 </Link>
                               </div>
                             </div>
 
-                            <div className="pt-3 border-t border-[#eae1dd]/60 flex items-center gap-2 text-xs text-[#51443d]">
-                              <span className="material-symbols-outlined text-[#5d371f] text-[18px]">verified</span>
-                              <span>Bảo hành kết cấu mộng gỗ 5 năm • Bảo trì lớp dầu dưỡng gỗ miễn phí định kỳ hàng năm</span>
+                            <div className="pt-2.5 sm:pt-3 border-t border-[#eae1dd]/60 flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs text-[#51443d]">
+                              <span className="material-symbols-outlined text-[#5d371f] text-[16px] sm:text-[18px] shrink-0">verified</span>
+                              <span className="leading-relaxed">Bảo hành kết cấu mộng gỗ 5 năm • Bảo trì lớp dầu dưỡng gỗ miễn phí định kỳ hàng năm</span>
                             </div>
                           </div>
                         );
@@ -1251,14 +1289,14 @@ function ProfilePageContent() {
                 </section>
 
                 {/* SECTION 4: Đổi Mật Khẩu & Bảo Mật */}
-                <section id="section-doi-mat-khau" className="bg-white border border-[#eae1dd] p-6 sm:p-7 shadow-sm scroll-mt-24">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 mb-5 border-b border-[#eae1dd]">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 bg-[#f5ece8] text-[#5d371f] flex items-center justify-center font-bold">
-                        <span className="material-symbols-outlined text-[20px]">lock_reset</span>
+                <section id="section-doi-mat-khau" className="bg-white border border-[#eae1dd] p-4 sm:p-6 lg:p-7 shadow-xs sm:shadow-sm scroll-mt-24">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3.5 sm:pb-4 mb-4 sm:mb-5 border-b border-[#eae1dd]">
+                    <div className="flex items-center gap-2 sm:gap-2.5">
+                      <div className="w-8 h-8 bg-[#f5ece8] text-[#5d371f] flex items-center justify-center font-bold shrink-0">
+                        <span className="material-symbols-outlined text-[18px] sm:text-[20px]">lock_reset</span>
                       </div>
                       <div>
-                        <h2 className="font-serif text-lg sm:text-xl font-bold text-[#5d371f]">
+                        <h2 className="font-serif text-base sm:text-lg lg:text-xl font-bold text-[#5d371f]">
                           Đổi Mật Khẩu &amp; Bảo Mật Tài Khoản
                         </h2>
                       </div>
@@ -1270,11 +1308,11 @@ function ProfilePageContent() {
                       e.preventDefault();
                       handleChangePassword();
                     }}
-                    className="space-y-4"
+                    className="space-y-3.5 sm:space-y-4"
                   >
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-                      <div className="flex flex-col gap-1.5">
-                        <label className="font-semibold text-[#1f1b19] uppercase tracking-wider text-[11px]">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4 text-xs">
+                      <div className="flex flex-col gap-1 sm:gap-1.5">
+                        <label className="font-semibold text-[#1f1b19] uppercase tracking-wider text-[10px] sm:text-[11px]">
                           Mật khẩu hiện tại *
                         </label>
                         <Input.Password
@@ -1283,12 +1321,12 @@ function ProfilePageContent() {
                           onChange={(e) => setOldPassword(e.target.value)}
                           placeholder="••••••••"
                           prefix={<LockOutlined className="text-[#83746c] mr-1" />}
-                          className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2.5 !px-3.5"
+                          className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2 sm:!py-2.5 !px-3 sm:!px-3.5 text-xs sm:text-sm"
                         />
                       </div>
 
-                      <div className="flex flex-col gap-1.5">
-                        <label className="font-semibold text-[#1f1b19] uppercase tracking-wider text-[11px]">
+                      <div className="flex flex-col gap-1 sm:gap-1.5">
+                        <label className="font-semibold text-[#1f1b19] uppercase tracking-wider text-[10px] sm:text-[11px]">
                           Mật khẩu mới *
                         </label>
                         <Input.Password
@@ -1297,12 +1335,12 @@ function ProfilePageContent() {
                           onChange={(e) => setNewPassword(e.target.value)}
                           placeholder="Tối thiểu 6 ký tự..."
                           prefix={<LockOutlined className="text-[#83746c] mr-1" />}
-                          className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2.5 !px-3.5"
+                          className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2 sm:!py-2.5 !px-3 sm:!px-3.5 text-xs sm:text-sm"
                         />
                       </div>
 
-                      <div className="flex flex-col gap-1.5">
-                        <label className="font-semibold text-[#1f1b19] uppercase tracking-wider text-[11px]">
+                      <div className="flex flex-col gap-1 sm:gap-1.5">
+                        <label className="font-semibold text-[#1f1b19] uppercase tracking-wider text-[10px] sm:text-[11px]">
                           Xác nhận mật khẩu mới *
                         </label>
                         <Input.Password
@@ -1311,13 +1349,13 @@ function ProfilePageContent() {
                           onChange={(e) => setConfirmPassword(e.target.value)}
                           placeholder="Nhập lại mật khẩu mới..."
                           prefix={<LockOutlined className="text-[#83746c] mr-1" />}
-                          className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2.5 !px-3.5"
+                          className="!bg-[#fbf2ee] !border-[#eae1dd] !rounded-none !text-[#1f1b19] font-medium hover:!border-[#5d371f] focus-within:!border-[#5d371f] !py-2 sm:!py-2.5 !px-3 sm:!px-3.5 text-xs sm:text-sm"
                         />
                       </div>
                     </div>
 
-                    <div className="p-3.5 bg-[#fbf2ee] border border-[#eae1dd] flex items-start gap-2.5 text-xs text-[#51443d]">
-                      <span className="material-symbols-outlined text-[#5d371f] text-[18px] shrink-0 mt-0.5">
+                    <div className="p-3 sm:p-3.5 bg-[#fbf2ee] border border-[#eae1dd] flex items-start gap-2.5 text-[11px] sm:text-xs text-[#51443d]">
+                      <span className="material-symbols-outlined text-[#5d371f] text-[16px] sm:text-[18px] shrink-0 mt-0.5">
                         shield
                       </span>
                       <span>
@@ -1333,13 +1371,13 @@ function ProfilePageContent() {
                           setNewPassword('');
                           setConfirmPassword('');
                         }}
-                        className="px-4 py-2 border border-[#eae1dd] text-[#51443d] hover:bg-[#f5ece8] font-semibold transition-colors cursor-pointer"
+                        className="flex-1 sm:flex-initial text-center px-4 py-2 border border-[#eae1dd] text-[#51443d] hover:bg-[#f5ece8] font-semibold transition-colors cursor-pointer text-xs"
                       >
                         Làm lại
                       </button>
                       <button
                         type="submit"
-                        className="px-6 py-2.5 bg-[#5d371f] hover:bg-[#784e34] text-white font-semibold transition-all shadow-sm cursor-pointer flex items-center gap-1.5"
+                        className="flex-1 sm:flex-initial text-center px-6 py-2 sm:py-2.5 bg-[#5d371f] hover:bg-[#784e34] text-white font-semibold transition-all shadow-xs sm:shadow-sm cursor-pointer flex items-center justify-center gap-1.5 text-xs"
                       >
                         <span className="material-symbols-outlined text-[16px]">save</span>
                         <span>Cập Nhật Mật Khẩu</span>
@@ -1378,21 +1416,21 @@ function ProfilePageContent() {
         open={isAddAddressOpen}
         styles={{
           wrapper: {
-            width: 480,
-            maxWidth: '100vw',
+            width: '100%',
+            maxWidth: 480,
           },
           header: {
             borderBottom: '1px solid #eae1dd',
-            padding: '16px 20px',
+            padding: '14px 16px',
             backgroundColor: '#ffffff',
           },
           body: {
-            padding: '24px 20px',
+            padding: '16px',
             backgroundColor: '#fffbf9',
           },
           footer: {
             borderTop: '1px solid #eae1dd',
-            padding: '14px 20px',
+            padding: '12px 16px',
             backgroundColor: '#ffffff',
           },
         }}
@@ -1415,7 +1453,7 @@ function ProfilePageContent() {
           </div>
         }
       >
-        <div className="flex flex-col gap-4 text-xs">
+        <div className="flex flex-col gap-3.5 text-xs">
           <div className="flex flex-col gap-1.5">
             <label className="font-semibold text-[#1f1b19] uppercase tracking-wider text-[11px]">
               Tên gợi nhớ công trình *
@@ -1465,16 +1503,20 @@ function ProfilePageContent() {
               </label>
               <Select
                 showSearch
+                allowClear
                 placeholder="-- Chọn Tỉnh / Thành phố --"
-                optionFilterProp="label"
                 value={newCity || undefined}
-                onChange={(val) => handleNewCityChange(val)}
+                onChange={(val) => handleNewCityChange(val || '')}
+                popupMatchSelectWidth={true}
+                classNames={{ popup: { root: 'checkout-select-dropdown' } }}
+                className="checkout-custom-select w-full"
                 options={VIETNAM_PROVINCES.map((prov) => ({
                   value: prov.name,
                   label: prov.name,
                 }))}
-                className="w-full !rounded-none"
-                style={{ height: 40 }}
+                filterOption={(input, option) =>
+                  (option?.label as string ?? '').toLowerCase().includes(input.toLowerCase())
+                }
               />
             </div>
 
@@ -1490,17 +1532,21 @@ function ProfilePageContent() {
               </div>
               <Select
                 showSearch
+                allowClear
                 disabled={!newCity}
                 placeholder={!newCity ? '-- Chọn Tỉnh/Thành trước --' : '-- Chọn Quận / Huyện --'}
-                optionFilterProp="label"
                 value={newDistrict || undefined}
-                onChange={(val) => setNewDistrict(val)}
+                onChange={(val) => setNewDistrict(val || '')}
+                popupMatchSelectWidth={true}
+                classNames={{ popup: { root: 'checkout-select-dropdown' } }}
+                className="checkout-custom-select w-full"
                 options={newDistricts.map((d) => ({
                   value: d.name,
                   label: d.name,
                 }))}
-                className="w-full !rounded-none"
-                style={{ height: 40 }}
+                filterOption={(input, option) =>
+                  (option?.label as string ?? '').toLowerCase().includes(input.toLowerCase())
+                }
               />
             </div>
           </div>

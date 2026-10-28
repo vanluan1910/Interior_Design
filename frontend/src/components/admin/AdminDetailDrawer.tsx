@@ -39,6 +39,7 @@ export interface AdminDetailDrawerProps {
   statusToggleText?: string;
   statusToggleDanger?: boolean;
   extraFooter?: React.ReactNode;
+  className?: string;
 }
 
 export const AdminDetailDrawer: React.FC<AdminDetailDrawerProps> = ({
@@ -64,7 +65,18 @@ export const AdminDetailDrawer: React.FC<AdminDetailDrawerProps> = ({
   statusToggleText,
   statusToggleDanger = true,
   extraFooter,
+  className = '',
 }) => {
+  const [isMobile, setIsMobile] = React.useState(false);
+
+  React.useEffect(() => {
+    const mql = window.matchMedia('(max-width: 767px)');
+    const onChange = () => setIsMobile(mql.matches);
+    setIsMobile(mql.matches);
+    mql.addEventListener('change', onChange);
+    return () => mql.removeEventListener('change', onChange);
+  }, []);
+
   const currentTabContent = tabs?.find((t) => t.key === activeTab)?.content;
 
   return (
@@ -72,8 +84,9 @@ export const AdminDetailDrawer: React.FC<AdminDetailDrawerProps> = ({
       open={open}
       onClose={onClose}
       closable={false}
+      className={`admin-detail-drawer ${className}`}
       styles={{
-        wrapper: { width: width || 760, maxWidth: '100vw' },
+        wrapper: { width: isMobile ? '100vw' : (width || 580), maxWidth: '100vw' },
         header: { display: 'none' },
         body: { padding: 0, backgroundColor: '#fcfbf9' },
         footer: { padding: '12px 16px', backgroundColor: '#ffffff', borderTop: '1px solid #f1ece7' },

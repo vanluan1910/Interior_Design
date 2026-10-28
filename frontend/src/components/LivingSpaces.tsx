@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef } from 'react';
+import Link from 'next/link';
 import { motion, AnimatePresence, useScroll, useTransform, useSpring } from 'framer-motion';
 import { HomeSpace } from '@/api/homeApi';
 
@@ -51,10 +52,6 @@ export default function LivingSpaces({ onSelectCategory, spaces }: LivingSpacesP
           className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-6 md:mb-7"
         >
           <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-none bg-[#f4ebe3] text-[#5d371f] text-xs uppercase tracking-widest font-semibold mb-2">
-              <span className="w-1.5 h-1.5 rounded-none bg-[#5d371f]" />
-              <span>Bộ Sưu Tập Theo Phòng • Nghệ Thuật Không Gian</span>
-            </div>
             <h2 className="font-sans text-2xl sm:text-3xl md:text-4xl text-[#1f1b19] font-bold tracking-tight">
               Không Gian Trải Nghiệm
             </h2>
@@ -129,7 +126,7 @@ export default function LivingSpaces({ onSelectCategory, spaces }: LivingSpacesP
                 <div className="absolute bottom-0 left-0 right-0 p-5 lg:p-6 flex flex-col justify-end text-white z-10">
 
                   {/* Tagline */}
-                  <span className="text-[10px] sm:text-[11px] uppercase tracking-widest text-[#ffdbc8] font-semibold mb-0.5">
+                  <span className="text-[10px] sm:text-[11px] uppercase tracking-widest text-white font-semibold mb-0.5">
                     {item.tagline}
                   </span>
 
@@ -155,19 +152,19 @@ export default function LivingSpaces({ onSelectCategory, spaces }: LivingSpacesP
                         </p>
 
                         <div className="flex items-center gap-3 mt-3.5">
-                          <button
-                            type="button"
+                          <Link
+                            href={item.linkUrl || `/products?space=${encodeURIComponent(item.key)}`}
                             onClick={(e) => {
                               e.stopPropagation();
-                              onSelectCategory(item.key);
+                              onSelectCategory?.(item.key);
                             }}
-                            className="inline-flex items-center gap-2 px-4 py-2 rounded-none bg-[#5d371f] hover:bg-[#724528] text-white text-xs font-semibold shadow-md hover:shadow-xl transition-all cursor-pointer group"
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded-none bg-gradient-to-r from-[#784e34] via-[#8c4a27] to-[#784e34] hover:from-[#8c4a27] hover:to-[#784e34] text-white !text-white text-xs font-semibold border border-[#a26846] hover:border-white shadow-md hover:shadow-xl transition-all cursor-pointer group no-underline"
                           >
-                            <span>{item.countText || 'Khám phá ngay'}</span>
-                            <span className="material-symbols-outlined text-[15px] transition-transform group-hover:translate-x-1">
+                            <span className="text-white !text-white">{item.countText || 'Xem thiết kế'}</span>
+                            <span className="material-symbols-outlined text-[15px] text-white !text-white transition-transform group-hover:translate-x-1">
                               arrow_forward
                             </span>
-                          </button>
+                          </Link>
 
                           <span className="text-[11px] text-white/60 font-mono">
                             D2 Luxury Bespoke
@@ -195,13 +192,14 @@ export default function LivingSpaces({ onSelectCategory, spaces }: LivingSpacesP
         {/* MOBILE & TABLET: HORIZONTAL SMOOTH SWIPE CAROUSEL (CHIỀU CAO GỌN GÀNG, TRƯỢT THEO ĐỘ LĂN CHUỘT) */}
         <motion.div
           style={{ y: rowY, opacity }}
-          className="flex md:hidden overflow-x-auto snap-x snap-mandatory gap-4 pb-6 pt-2 -mx-4 px-4 no-scrollbar"
+          className="flex md:hidden overflow-x-auto snap-x snap-mandatory gap-3 sm:gap-4 pb-4 pt-1 -mx-4 px-4 no-scrollbar touch-pan-x"
         >
           {displaySpaces.map((item, idx) => (
-            <div
+            <Link
               key={`mob-${item.key}-${idx}`}
-              onClick={() => onSelectCategory(item.key)}
-              className="min-w-[85%] sm:min-w-[55%] h-[320px] relative rounded-none overflow-hidden snap-center shadow-md shrink-0 cursor-pointer"
+              href={item.linkUrl || `/products?space=${encodeURIComponent(item.key)}`}
+              onClick={() => onSelectCategory?.(item.key)}
+              className="min-w-[82%] sm:min-w-[55%] h-[290px] xs:h-[310px] sm:h-[320px] relative rounded-none overflow-hidden snap-center shadow-md shrink-0 cursor-pointer block no-underline text-inherit"
             >
               <div
                 className="absolute inset-0 bg-cover bg-center"
@@ -209,32 +207,42 @@ export default function LivingSpaces({ onSelectCategory, spaces }: LivingSpacesP
               />
               <div className="absolute inset-0 bg-gradient-to-t from-[#1f1b19]/95 via-[#1f1b19]/40 to-transparent" />
 
-              <div className="absolute top-4 left-4 z-10">
-                <span className="font-mono text-[11px] px-2.5 py-1 rounded-none bg-black/40 backdrop-blur-md text-white border border-white/20">
+              <div className="absolute top-3.5 left-3.5 z-10">
+                <span className="font-mono text-[10px] sm:text-[11px] px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-none bg-black/40 backdrop-blur-md text-white border border-white/20">
                   {item.codeLabel || `0${idx + 1}`}
                 </span>
               </div>
 
-              <div className="absolute bottom-0 left-0 right-0 p-5 text-white z-10 flex flex-col">
-                <span className="text-[10px] uppercase tracking-wider text-[#ffdbc8] font-semibold mb-0.5">
+              <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-5 text-white z-10 flex flex-col">
+                <span className="text-[10px] uppercase tracking-wider text-white font-semibold mb-0.5">
                   {item.tagline}
                 </span>
-                <h3 className="font-sans text-xl font-bold text-white">
+                <h3 className="font-sans text-lg sm:text-xl font-bold text-white">
                   {item.name}
                 </h3>
-                <p className="text-xs text-white/80 line-clamp-2 mt-1.5 leading-relaxed">
+                <p className="text-xs text-white/90 line-clamp-2 mt-1 leading-relaxed">
                   {item.description}
                 </p>
-                <div className="mt-4">
-                  <span className="inline-flex items-center gap-1.5 px-4 py-2 rounded-none bg-[#5d371f] text-white text-xs font-semibold shadow-sm">
-                    <span>{item.countText}</span>
-                    <span className="material-symbols-outlined text-[15px]">arrow_forward</span>
+                <div className="mt-3 sm:mt-4">
+                  <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-none bg-gradient-to-r from-[#784e34] via-[#8c4a27] to-[#784e34] text-white !text-white text-xs font-semibold border border-[#a26846] shadow-sm">
+                    <span className="text-white !text-white">{item.countText || 'Xem thiết kế'}</span>
+                    <span className="material-symbols-outlined text-[15px] text-white !text-white">arrow_forward</span>
                   </span>
                 </div>
               </div>
-            </div>
+            </Link>
           ))}
         </motion.div>
+
+        {/* Mobile Swipe Indicators */}
+        <div className="flex md:hidden items-center justify-center gap-1.5 pt-1 pb-1">
+          {displaySpaces.map((_, idx) => (
+            <span
+              key={`dot-${idx}`}
+              className="w-1.5 h-1.5 rounded-none bg-[#d5c3ba]"
+            />
+          ))}
+        </div>
 
       </div>
     </section>

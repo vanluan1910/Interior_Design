@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { App, Modal, Tooltip } from 'antd';
+import { App, Modal, Tooltip, Select } from 'antd';
 import {
   RightOutlined,
   DeleteOutlined,
@@ -808,9 +808,9 @@ function CheckoutContent() {
 
       <main className="w-full pt-20 flex-1">
         {/* Top Breadcrumb & SSL Security Notice */}
-        <section className="w-full bg-[#fbf2ee] py-3.5 border-b border-[#eae1dd]">
-          <div className="w-full max-w-[1720px] mx-auto px-4 sm:px-6 lg:px-10 xl:px-14 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs font-medium text-[#83746c]">
-            <nav aria-label="Breadcrumb" className="flex items-center gap-2 flex-wrap text-xs text-[#83746c]">
+        <section className="w-full bg-[#fbf2ee] py-2 sm:py-3.5 border-b border-[#eae1dd]">
+          <div className="w-full max-w-[1720px] mx-auto px-3.5 sm:px-6 lg:px-10 xl:px-14 flex items-center justify-between gap-2 text-xs font-medium text-[#83746c]">
+            <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 sm:gap-2 flex-wrap text-[11px] sm:text-xs text-[#83746c]">
               <Link href="/" className="hover:text-[#5d371f] transition-colors">
                 Trang chủ
               </Link>
@@ -825,10 +825,11 @@ function CheckoutContent() {
                 </Link>
               )}
               <span className="text-[#d5c3ba]">/</span>
-              <span className="text-[#5d371f] font-bold">Thanh toán &amp; Lập lịch bàn giao</span>
+              <span className="text-[#5d371f] font-bold sm:hidden">Thanh toán</span>
+              <span className="text-[#5d371f] font-bold hidden sm:inline">Thanh toán &amp; Lập lịch bàn giao</span>
             </nav>
 
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#ffffff] border border-[#eae1dd] text-[11px] text-[#3f4332] font-semibold shadow-sm">
+            <div className="hidden sm:inline-flex items-center gap-2 px-3 py-1.5 bg-[#ffffff] border border-[#eae1dd] text-[11px] text-[#3f4332] font-semibold shadow-sm">
               <LockOutlined className="text-[#5d371f]" />
               <span>Thanh toán bảo mật 256-bit SSL · Chứng chỉ FSC 100%</span>
             </div>
@@ -836,57 +837,57 @@ function CheckoutContent() {
         </section>
 
         {/* Main Grid: 7 Cols Left Form / 5 Cols Sticky Summary */}
-        <section className="max-w-[1720px] mx-auto w-full px-4 sm:px-6 lg:px-10 xl:px-14 py-6">
+        <section className="max-w-[1720px] mx-auto w-full px-3.5 sm:px-6 lg:px-10 xl:px-14 py-4 sm:py-6">
           {activeItems.length === 0 ? (
-            <div className="bg-white border border-[#eae1dd] p-12 text-center my-8 shadow-sm">
-              <div className="w-16 h-16 mx-auto mb-4 bg-[#f5ece8] flex items-center justify-center text-[#5d371f] text-2xl">
+            <div className="bg-white border border-[#eae1dd] p-6 sm:p-12 text-center my-6 sm:my-8 shadow-xs sm:shadow-sm">
+              <div className="w-12 h-12 sm:w-16 sm:h-16 mx-auto mb-3 sm:mb-4 bg-[#f5ece8] flex items-center justify-center text-[#5d371f] text-xl sm:text-2xl">
                 <TagOutlined />
               </div>
-              <h3 className="font-serif text-2xl font-bold text-[#1f1b19] mb-2">Không có sản phẩm nào cần thanh toán</h3>
-              <p className="text-sm text-[#83746c] max-w-md mx-auto mb-6">
+              <h3 className="font-serif text-xl sm:text-2xl font-bold text-[#1f1b19] mb-2">Không có sản phẩm nào cần thanh toán</h3>
+              <p className="text-xs sm:text-sm text-[#83746c] max-w-md mx-auto mb-5 sm:mb-6 leading-relaxed">
                 Vui lòng chọn các tác phẩm nội thất vào giỏ hàng hoặc chọn Mua ngay để tiến hành thanh toán và đặt lịch bàn giao.
               </p>
               <Link
                 href="/products"
-                className="inline-flex items-center gap-2 px-6 py-3 bg-[#5d371f] text-white text-xs font-bold hover:bg-[#784e34] transition-colors"
+                className="inline-flex items-center gap-2 px-5 py-2.5 sm:px-6 sm:py-3 bg-[#5d371f] text-white text-xs font-bold hover:bg-[#784e34] transition-colors"
               >
                 <span>Khám phá bộ sưu tập</span>
                 <ArrowRightOutlined />
               </Link>
             </div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start animate-fade-in-up">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-8 items-start animate-fade-in-up">
               {/* LEFT COLUMN: 7 Columns Form Blocks */}
-              <div className="lg:col-span-7 flex flex-col gap-6">
+              <div className="lg:col-span-7 flex flex-col gap-4 sm:gap-6">
                 {/* Block 1: Cart Items List */}
-                <div className="bg-white border border-[#eae1dd] p-6 shadow-sm flex flex-col gap-5">
-                  <div className="flex items-center justify-between pb-3 border-b border-[#eae1dd]">
-                    <div className="flex items-center gap-2.5">
-                      <span className="w-6 h-6 bg-[#5d371f] text-white font-data-mono text-xs font-bold flex items-center justify-center">
+                <div className="bg-white border border-[#eae1dd] p-3.5 sm:p-6 shadow-xs sm:shadow-sm flex flex-col gap-3.5 sm:gap-5">
+                  <div className="flex items-center justify-between pb-2.5 sm:pb-3 border-b border-[#eae1dd]">
+                    <div className="flex items-center gap-2 sm:gap-2.5">
+                      <span className="w-5 h-5 sm:w-6 sm:h-6 bg-[#5d371f] text-white font-data-mono text-[11px] sm:text-xs font-bold flex items-center justify-center shrink-0">
                         1
                       </span>
-                      <h2 className="font-serif text-lg font-bold text-[#1f1b19]">
-                        {isDirectMode ? 'Tác phẩm mua trực tiếp' : 'Tác phẩm tuyển chọn trong đơn hàng'} ({activeItems.length})
+                      <h2 className="font-serif text-sm sm:text-lg font-bold text-[#1f1b19]">
+                        {isDirectMode ? 'Tác phẩm mua trực tiếp' : 'Tác phẩm tuyển chọn trong đơn'} ({activeItems.length})
                       </h2>
                     </div>
                     {!isDirectMode && (
                       <Link
                         href="/cart"
-                        className="text-xs text-[#5d371f] hover:text-[#784e34] font-semibold transition-colors"
+                        className="text-[11px] sm:text-xs text-[#5d371f] hover:text-[#784e34] font-semibold transition-colors shrink-0"
                       >
-                        Chỉnh sửa giỏ hàng
+                        Sửa giỏ hàng
                       </Link>
                     )}
                   </div>
 
-                  <div className="flex flex-col gap-3">
+                  <div className="flex flex-col gap-2.5 sm:gap-3">
                     {activeItems.map((item) => {
                       return (
                         <div
                           key={item.id}
-                          className="flex flex-col sm:flex-row gap-4 p-3.5 border transition-all bg-[#fbf2ee] border-[#eae1dd] hover:border-[#5d371f]/30"
+                          className="flex flex-row gap-2.5 sm:gap-4 p-2.5 sm:p-3.5 border transition-all bg-[#fbf2ee] border-[#eae1dd] hover:border-[#5d371f]/30 items-center sm:items-start"
                         >
-                          <div className="w-20 h-20 bg-[#f5ece8] overflow-hidden shrink-0 border border-[#eae1dd] relative">
+                          <div className="w-16 h-16 sm:w-20 sm:h-20 bg-[#f5ece8] overflow-hidden shrink-0 border border-[#eae1dd] relative">
                             <img
                               src={item.image}
                               alt={item.name}
@@ -894,52 +895,50 @@ function CheckoutContent() {
                             />
                           </div>
 
-                          <div className="flex-1 flex flex-col justify-between">
-                            <div className="flex items-start justify-between gap-2">
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  <h3 className="font-serif text-base font-bold text-[#1f1b19]">
-                                    {item.name}
-                                  </h3>
-                                </div>
-                                <p className="text-xs text-[#83746c] mt-0.5">
+                          <div className="flex-1 min-w-0 flex flex-col justify-between self-stretch">
+                            <div className="flex items-start justify-between gap-1.5">
+                              <div className="min-w-0 flex-1">
+                                <h3 className="font-serif text-xs sm:text-base font-bold text-[#1f1b19] line-clamp-1 leading-snug">
+                                  {item.name}
+                                </h3>
+                                <p className="text-[10px] sm:text-xs text-[#83746c] mt-0.5 truncate">
                                   {item.specs?.[0] || 'Gỗ tự nhiên nguyên khối'}
                                 </p>
                               </div>
                               <button
                                 onClick={() => handleRemoveCheckoutItem(item.id)}
                                 type="button"
-                                className="text-[#83746c] hover:text-[#ba1a1a] transition-colors p-1 cursor-pointer"
+                                className="text-[#83746c] hover:text-[#ba1a1a] transition-colors p-1 cursor-pointer shrink-0"
                                 title="Xóa tác phẩm"
                               >
-                                <DeleteOutlined className="text-sm" />
+                                <DeleteOutlined className="text-xs sm:text-sm" />
                               </button>
                             </div>
 
-                            <div className="flex items-center justify-between pt-2 mt-2 border-t border-[#eae1dd]/60">
+                            <div className="flex items-center justify-between pt-1.5 sm:pt-2 mt-1.5 sm:mt-2 border-t border-[#eae1dd]/60">
                               {/* Quantity Counter */}
-                              <div className="flex items-center bg-white border border-[#eae1dd] p-0.5 shadow-sm">
+                              <div className="flex items-center bg-white border border-[#eae1dd] p-0.5 shadow-xs sm:shadow-sm">
                                 <button
                                   onClick={() => handleUpdateItemQuantity(item.id, -1)}
                                   disabled={item.quantity <= 1}
                                   type="button"
-                                  className="w-6 h-6 flex items-center justify-center text-[#51443d] hover:bg-[#f5ece8] disabled:opacity-30 cursor-pointer"
+                                  className="w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center text-[#51443d] hover:bg-[#f5ece8] disabled:opacity-30 cursor-pointer"
                                 >
-                                  <MinusOutlined className="text-[10px]" />
+                                  <MinusOutlined className="text-[9px] sm:text-[10px]" />
                                 </button>
-                                <span className="w-7 text-center font-data-mono text-xs font-bold text-[#1f1b19]">
+                                <span className="w-5 sm:w-7 text-center font-data-mono text-[11px] sm:text-xs font-bold text-[#1f1b19]">
                                   {item.quantity}
                                 </span>
                                 <button
                                   onClick={() => handleUpdateItemQuantity(item.id, 1)}
                                   type="button"
-                                  className="w-6 h-6 flex items-center justify-center text-[#51443d] hover:bg-[#f5ece8] cursor-pointer"
+                                  className="w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center text-[#51443d] hover:bg-[#f5ece8] cursor-pointer"
                                 >
-                                  <PlusOutlined className="text-[10px]" />
+                                  <PlusOutlined className="text-[9px] sm:text-[10px]" />
                                 </button>
                               </div>
 
-                              <span className="font-data-mono text-sm font-bold text-[#5d371f]">
+                              <span className="font-data-mono text-xs sm:text-sm font-bold text-[#5d371f] truncate">
                                 {(item.price * item.quantity).toLocaleString('vi-VN')}đ
                               </span>
                             </div>
@@ -951,32 +950,32 @@ function CheckoutContent() {
                 </div>
 
                 {/* Block 2: Delivery & Technical Information */}
-                <div className="bg-white border border-[#eae1dd] p-6 shadow-sm flex flex-col gap-5">
-                  <div className="flex items-center gap-2.5 pb-3 border-b border-[#eae1dd]">
-                    <span className="w-6 h-6 bg-[#5d371f] text-white font-data-mono text-xs font-bold flex items-center justify-center">
+                <div className="bg-white border border-[#eae1dd] p-3.5 sm:p-6 shadow-xs sm:shadow-sm flex flex-col gap-3.5 sm:gap-5">
+                  <div className="flex items-center gap-2 sm:gap-2.5 pb-2.5 sm:pb-3 border-b border-[#eae1dd]">
+                    <span className="w-5 h-5 sm:w-6 sm:h-6 bg-[#5d371f] text-white font-data-mono text-[11px] sm:text-xs font-bold flex items-center justify-center shrink-0">
                       2
                     </span>
-                    <h2 className="font-serif text-lg font-bold text-[#1f1b19]">
+                    <h2 className="font-serif text-sm sm:text-lg font-bold text-[#1f1b19]">
                       Thông tin Bàn giao &amp; Kỹ thuật Lắp đặt
                     </h2>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 text-xs">
 
                     {/* Address Source Notification & Selection */}
                     {profileAddresses.length > 0 ? (
-                      <div className="md:col-span-2 p-3.5 bg-[#fbf2ee] border border-[#d2b8aa] flex flex-col gap-2.5">
+                      <div className="md:col-span-2 p-2.5 sm:p-3.5 bg-[#fbf2ee] border border-[#d2b8aa] flex flex-col gap-2 sm:gap-2.5">
                         <div className="flex items-center justify-between flex-wrap gap-2">
-                          <div className="flex items-center gap-2">
-                            <HomeOutlined className="text-[#5d371f] text-sm" />
-                            <span className="font-bold text-xs text-[#5d371f] uppercase tracking-wider">
+                          <div className="flex items-center gap-1.5 sm:gap-2">
+                            <HomeOutlined className="text-[#5d371f] text-xs sm:text-sm" />
+                            <span className="font-bold text-[11px] sm:text-xs text-[#5d371f] uppercase tracking-wider">
                               Địa chỉ từ Sổ Thông Tin Cá Nhân ({profileAddresses.length})
                             </span>
                           </div>
                           <Link
                             href="/profile"
                             target="_blank"
-                            className="text-[11px] text-[#5d371f] hover:underline font-semibold"
+                            className="text-[10px] sm:text-[11px] text-[#5d371f] hover:underline font-semibold"
                           >
                             Quản lý sổ địa chỉ ↗
                           </Link>
@@ -989,9 +988,9 @@ function CheckoutContent() {
                               <div
                                 key={addr.id}
                                 onClick={() => handleSelectProfileAddress(addr.id)}
-                                className={`p-3 border transition-all cursor-pointer flex flex-col justify-between ${
+                                className={`p-2.5 sm:p-3 border transition-all cursor-pointer flex flex-col justify-between ${
                                   isSelected
-                                    ? 'bg-white border-[#5d371f] ring-1 ring-[#5d371f] shadow-sm'
+                                    ? 'bg-white border-[#5d371f] ring-1 ring-[#5d371f] shadow-xs sm:shadow-sm'
                                     : 'bg-white/70 border-[#eae1dd] hover:border-[#5d371f]/50'
                                 }`}
                               >
@@ -1004,7 +1003,7 @@ function CheckoutContent() {
                                       </span>
                                     )}
                                   </div>
-                                  <p className="text-[11px] text-[#51443d] line-clamp-2 leading-relaxed">{addr.address}</p>
+                                  <p className="text-[10px] sm:text-[11px] text-[#51443d] line-clamp-2 leading-relaxed">{addr.address}</p>
                                 </div>
                                 <div className="mt-2 pt-1.5 border-t border-[#eae1dd]/60 flex items-center justify-between text-[10px] text-[#83746c]">
                                   <span>{addr.recipient}</span>
@@ -1016,39 +1015,39 @@ function CheckoutContent() {
 
                           <div
                             onClick={() => handleSelectProfileAddress('manual')}
-                            className={`p-3 border transition-all cursor-pointer flex items-center justify-center text-center ${
+                            className={`p-2.5 sm:p-3 border transition-all cursor-pointer flex items-center justify-center text-center ${
                               selectedAddressId === 'manual'
                                 ? 'bg-white border-[#5d371f] ring-1 ring-[#5d371f]'
                                 : 'bg-white/40 border-dashed border-[#eae1dd] hover:border-[#5d371f]/50'
                             }`}
                           >
-                            <span className="text-xs font-semibold text-[#5d371f]">
+                            <span className="text-[11px] sm:text-xs font-semibold text-[#5d371f]">
                               + Nhập địa chỉ khác cho riêng đơn này
                             </span>
                           </div>
                         </div>
                       </div>
                     ) : addressSource === 'last_order' ? (
-                      <div className="md:col-span-2 p-3 bg-[#f5ece8] border border-[#d2b8aa] flex items-center justify-between gap-3 text-xs text-[#5d371f]">
+                      <div className="md:col-span-2 p-2.5 sm:p-3 bg-[#f5ece8] border border-[#d2b8aa] flex items-center justify-between gap-3 text-xs text-[#5d371f]">
                         <div className="flex items-center gap-2">
-                          <span className="material-symbols-outlined text-[18px]">history</span>
-                          <span>
+                          <span className="material-symbols-outlined text-[16px] sm:text-[18px]">history</span>
+                          <span className="text-[11px] sm:text-xs">
                             Đã tự động điền địa chỉ từ <strong>lần mua hàng trước</strong> của quý khách.
                           </span>
                         </div>
                         <button
                           type="button"
                           onClick={handleClearToManual}
-                          className="text-[11px] font-bold underline hover:text-[#784e34] cursor-pointer shrink-0"
+                          className="text-[10px] sm:text-[11px] font-bold underline hover:text-[#784e34] cursor-pointer shrink-0"
                         >
                           Xóa để nhập mới
                         </button>
                       </div>
                     ) : (
-                      <div className="md:col-span-2 p-3 bg-[#fbf2ee] border border-[#d2b8aa] flex items-center justify-between flex-wrap gap-2 text-xs text-[#5d371f]">
+                      <div className="md:col-span-2 p-2.5 sm:p-3 bg-[#fbf2ee] border border-[#d2b8aa] flex items-center justify-between flex-wrap gap-2 text-[11px] sm:text-xs text-[#5d371f]">
                         <div className="flex items-center gap-2">
-                          <span className="material-symbols-outlined text-[18px] text-[#5d371f]">account_circle</span>
-                          <span>
+                          <span className="material-symbols-outlined text-[16px] sm:text-[18px] text-[#5d371f] shrink-0">account_circle</span>
+                          <span className="leading-relaxed">
                             {!user ? (
                               <>
                                 Quý khách đang đặt hàng với tư cách <strong>Khách vãng lai</strong>. Hãy{' '}
@@ -1079,107 +1078,107 @@ function CheckoutContent() {
 
                     {/* Account Holder Indicator & Recipient Clarification */}
                     {user && (
-                      <div className="md:col-span-2 p-3 bg-amber-50/70 border border-amber-200/80 text-xs text-[#5d371f] flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-2xs">
+                      <div className="md:col-span-2 p-2.5 sm:p-3 bg-amber-50/70 border border-amber-200/80 text-[11px] sm:text-xs text-[#5d371f] flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-2xs">
                         <div className="flex items-center gap-2">
-                          <span className="material-symbols-outlined text-[18px] text-[#5d371f] shrink-0">verified_user</span>
-                          <span>
+                          <span className="material-symbols-outlined text-[16px] sm:text-[18px] text-[#5d371f] shrink-0">verified_user</span>
+                          <span className="leading-relaxed">
                             Đơn hàng đứng tên tài khoản: <strong>{user.name || (user as any).fullName}</strong> {user.phone ? `(${user.phone})` : ''} • Lịch sử mua sắm, điểm thưởng &amp; công nợ sẽ được tính cho tài khoản này.
                           </span>
                         </div>
                         {((fullName.trim() && fullName.trim().toLowerCase() !== ((user.name || (user as any).fullName || '').trim().toLowerCase())) ||
                           (phone.trim() && user.phone && phone.replace(/\s+/g, '') !== user.phone.replace(/\s+/g, ''))) ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold bg-[#5d371f] text-white px-2.5 py-0.5 self-start sm:self-auto shrink-0 shadow-2xs">
-                            <span className="material-symbols-outlined text-[13px]">local_shipping</span>
+                          <span className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-semibold bg-[#5d371f] text-white px-2 py-0.5 sm:px-2.5 sm:py-0.5 self-start sm:self-auto shrink-0 shadow-2xs">
+                            <span className="material-symbols-outlined text-[12px] sm:text-[13px]">local_shipping</span>
                             Giao cho: {fullName.trim() || 'Người nhận hộ'}
                           </span>
                         ) : null}
                       </div>
                     )}
 
-                    <div className="flex flex-col gap-1.5">
-                      <label className="font-semibold text-[#1f1b19] flex items-center justify-between">
+                    <div className="flex flex-col gap-1 sm:gap-1.5">
+                      <label className="font-semibold text-[#1f1b19] flex items-center justify-between text-xs">
                         <span>Họ &amp; Tên người nhận *</span>
-                        <span className="text-[10px] text-[#83746c] font-normal">(Người nhận tại công trình / nhận hộ)</span>
+                        <span className="text-[9px] sm:text-[10px] text-[#83746c] font-normal">(Nhận tại công trình)</span>
                       </label>
                       <input
                         type="text"
                         value={fullName}
                         onChange={(e) => setFullName(e.target.value)}
                         placeholder="VD: Trần Thị Mai"
-                        className="px-3.5 py-2.5 bg-[#fbf2ee] border border-[#eae1dd] text-[#1f1b19] font-medium focus:outline-none focus:border-[#5d371f] transition-colors"
+                        className="px-3 py-2 sm:px-3.5 sm:py-2.5 bg-[#fbf2ee] border border-[#eae1dd] text-[#1f1b19] font-medium text-xs sm:text-sm focus:outline-none focus:border-[#5d371f] transition-colors"
                       />
                     </div>
 
-                    <div className="flex flex-col gap-1.5">
-                      <label className="font-semibold text-[#1f1b19] flex items-center justify-between">
+                    <div className="flex flex-col gap-1 sm:gap-1.5">
+                      <label className="font-semibold text-[#1f1b19] flex items-center justify-between text-xs">
                         <span>Số điện thoại người nhận *</span>
-                        <span className="text-[10px] text-[#83746c] font-normal">(Để tài xế liên hệ khi giao hàng)</span>
+                        <span className="text-[9px] sm:text-[10px] text-[#83746c] font-normal">(Tài xế liên hệ)</span>
                       </label>
                       <input
                         type="tel"
                         value={phone}
                         onChange={(e) => setPhone(e.target.value)}
                         placeholder="VD: 0918 345 678"
-                        className="px-3.5 py-2.5 bg-[#fbf2ee] border border-[#eae1dd] text-[#1f1b19] font-medium focus:outline-none focus:border-[#5d371f] transition-colors"
+                        className="px-3 py-2 sm:px-3.5 sm:py-2.5 bg-[#fbf2ee] border border-[#eae1dd] text-[#1f1b19] font-medium text-xs sm:text-sm focus:outline-none focus:border-[#5d371f] transition-colors"
                       />
                     </div>
 
-                    <div className="flex flex-col gap-1.5">
-                      <label className="font-semibold text-[#1f1b19]">
+                    <div className="flex flex-col gap-1 sm:gap-1.5">
+                      <label className="font-semibold text-[#1f1b19] text-xs">
                         Tỉnh / Thành phố *
                       </label>
-                      <select
-                        value={city}
-                        onChange={(e) => handleCityChange(e.target.value)}
-                        className="px-3.5 py-2.5 bg-[#fbf2ee] border border-[#eae1dd] text-[#1f1b19] font-medium focus:outline-none focus:border-[#5d371f] transition-colors cursor-pointer"
-                      >
-                        <option value="">-- Chọn Tỉnh / Thành phố --</option>
-                        {VIETNAM_PROVINCES.map((prov, idx) => (
-                          <option key={`${prov.code}-${idx}`} value={prov.name}>
-                            {prov.name}
-                          </option>
-                        ))}
-                      </select>
+                      <Select
+                        showSearch
+                        allowClear
+                        value={city || undefined}
+                        placeholder="-- Chọn Tỉnh / Thành phố --"
+                        onChange={(val) => handleCityChange(val || '')}
+                        popupMatchSelectWidth={true}
+                        classNames={{ popup: { root: 'checkout-select-dropdown' } }}
+                        className="checkout-custom-select w-full"
+                        options={VIETNAM_PROVINCES.map((prov) => ({
+                          value: prov.name,
+                          label: prov.name,
+                        }))}
+                        filterOption={(input, option) =>
+                          (option?.label as string ?? '').toLowerCase().includes(input.toLowerCase())
+                        }
+                      />
                     </div>
 
-                    <div className="flex flex-col gap-1.5">
+                    <div className="flex flex-col gap-1 sm:gap-1.5">
                       <div className="flex items-center justify-between">
-                        <label className="font-semibold text-[#1f1b19]">
+                        <label className="font-semibold text-[#1f1b19] text-xs">
                           Quận / Huyện *
                         </label>
                         {!city && (
-                          <span className="text-[11px] text-[#83746c] italic">
+                          <span className="text-[10px] sm:text-[11px] text-[#83746c] italic">
                             (Chọn Tỉnh/Thành trước)
                           </span>
                         )}
                       </div>
-                      <select
-                        value={district}
+                      <Select
+                        showSearch
+                        allowClear
+                        value={district || undefined}
                         disabled={!city}
-                        onChange={(e) => setDistrict(e.target.value)}
-                        className={`px-3.5 py-2.5 border border-[#eae1dd] font-medium transition-colors ${
-                          !city
-                            ? 'bg-[#f3ece8] text-[#a89b93] cursor-not-allowed opacity-80'
-                            : 'bg-[#fbf2ee] text-[#1f1b19] focus:outline-none focus:border-[#5d371f] cursor-pointer'
-                        }`}
-                      >
-                        {!city ? (
-                          <option value="">-- Vui lòng chọn Tỉnh / Thành phố trước --</option>
-                        ) : (
-                          <>
-                            <option value="">-- Chọn Quận / Huyện --</option>
-                            {currentDistricts.map((d, idx) => (
-                              <option key={`${d.code}-${idx}`} value={d.name}>
-                                {d.name}
-                              </option>
-                            ))}
-                          </>
-                        )}
-                      </select>
+                        placeholder={!city ? '-- Chọn Tỉnh / Thành trước --' : '-- Chọn Quận / Huyện --'}
+                        onChange={(val) => setDistrict(val || '')}
+                        popupMatchSelectWidth={true}
+                        classNames={{ popup: { root: 'checkout-select-dropdown' } }}
+                        className="checkout-custom-select w-full"
+                        options={currentDistricts.map((d) => ({
+                          value: d.name,
+                          label: d.name,
+                        }))}
+                        filterOption={(input, option) =>
+                          (option?.label as string ?? '').toLowerCase().includes(input.toLowerCase())
+                        }
+                      />
                     </div>
 
-                    <div className="md:col-span-2 flex flex-col gap-1.5">
-                      <label className="font-semibold text-[#1f1b19]">
+                    <div className="md:col-span-2 flex flex-col gap-1 sm:gap-1.5">
+                      <label className="font-semibold text-[#1f1b19] text-xs">
                         Địa chỉ cụ thể nhận nội thất *
                       </label>
                       <input
@@ -1187,88 +1186,88 @@ function CheckoutContent() {
                         value={address}
                         onChange={(e) => setAddress(e.target.value)}
                         placeholder="Số nhà, tên đường, tên tòa nhà, căn hộ..."
-                        className="px-3.5 py-2.5 bg-[#fbf2ee] border border-[#eae1dd] text-[#1f1b19] font-medium focus:outline-none focus:border-[#5d371f] transition-colors"
+                        className="px-3 py-2 sm:px-3.5 sm:py-2.5 bg-[#fbf2ee] border border-[#eae1dd] text-[#1f1b19] font-medium text-xs sm:text-sm focus:outline-none focus:border-[#5d371f] transition-colors"
                       />
                     </div>
 
-                    <div className="md:col-span-2 flex flex-col gap-1.5">
+                    <div className="md:col-span-2 flex flex-col gap-1 sm:gap-1.5">
                       <div className="flex items-center justify-between">
-                        <label className="font-semibold text-[#1f1b19]">
+                        <label className="font-semibold text-[#1f1b19] text-xs">
                           Ghi chú chuyên biệt cho đội ngũ thợ D2 LUXURY
                         </label>
-                        <span className="text-[11px] text-[#83746c]">Đặc thù thang vận chuyển / căn hộ</span>
+                        <span className="text-[10px] sm:text-[11px] text-[#83746c]">Đặc thù thang vận chuyển</span>
                       </div>
                       <textarea
-                        rows={3}
+                        rows={2}
                         value={specialNote}
                         onChange={(e) => setSpecialNote(e.target.value)}
                         placeholder="Ví dụ: Chung cư cần đăng ký chuyển hàng trước 24h, thang máy tải trọng 1000kg, lót sàn bảo vệ trước khi lắp..."
-                        className="px-3.5 py-2.5 bg-[#fbf2ee] border border-[#eae1dd] text-[#1f1b19] font-medium focus:outline-none focus:border-[#5d371f] transition-colors leading-relaxed"
+                        className="px-3 py-2 sm:px-3.5 sm:py-2.5 bg-[#fbf2ee] border border-[#eae1dd] text-[#1f1b19] font-medium text-xs sm:text-sm focus:outline-none focus:border-[#5d371f] transition-colors leading-relaxed"
                       />
                     </div>
                   </div>
                 </div>
 
                 {/* Block 3: Payment Methods */}
-                <div className="bg-white border border-[#eae1dd] p-6 shadow-sm flex flex-col gap-5">
-                  <div className="flex items-center gap-2.5 pb-3 border-b border-[#eae1dd]">
-                    <span className="w-6 h-6 bg-[#5d371f] text-white font-data-mono text-xs font-bold flex items-center justify-center">
+                <div className="bg-white border border-[#eae1dd] p-3.5 sm:p-6 shadow-xs sm:shadow-sm flex flex-col gap-3.5 sm:gap-5">
+                  <div className="flex items-center gap-2 sm:gap-2.5 pb-2.5 sm:pb-3 border-b border-[#eae1dd]">
+                    <span className="w-5 h-5 sm:w-6 sm:h-6 bg-[#5d371f] text-white font-data-mono text-[11px] sm:text-xs font-bold flex items-center justify-center shrink-0">
                       3
                     </span>
-                    <h2 className="font-serif text-lg font-bold text-[#1f1b19]">
+                    <h2 className="font-serif text-sm sm:text-lg font-bold text-[#1f1b19]">
                       Phương thức Thanh toán Tín nhiệm
                     </h2>
                   </div>
 
-                  <div className="flex flex-col gap-3">
+                  <div className="flex flex-col gap-2.5 sm:gap-3">
                     {/* Option 1: VietQR Transfer */}
                     <div
                       onClick={() => setPaymentMethod('qr')}
-                      className={`p-4 border transition-all cursor-pointer ${
+                      className={`p-3 sm:p-4 border transition-all cursor-pointer ${
                         paymentMethod === 'qr'
                           ? 'border-[#5d371f] bg-[#fbf2ee]'
                           : 'border-[#eae1dd] bg-white hover:border-[#5d371f]/40'
                       }`}
                     >
-                      <div className="flex items-start gap-3">
+                      <div className="flex items-start gap-2.5 sm:gap-3">
                         <input
                           type="radio"
                           name="payment"
                           checked={paymentMethod === 'qr'}
                           onChange={() => setPaymentMethod('qr')}
-                          className="w-4 h-4 mt-1 accent-[#5d371f] cursor-pointer"
+                          className="w-4 h-4 mt-0.5 sm:mt-1 accent-[#5d371f] cursor-pointer shrink-0"
                         />
-                        <div className="flex-1">
-                          <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between flex-wrap gap-1.5 sm:gap-2">
                             <div className="flex items-center gap-2">
-                              <span className="font-bold text-sm text-[#1f1b19]">
+                              <span className="font-bold text-xs sm:text-sm text-[#1f1b19]">
                                 Chuyển khoản Tức thì qua Mã QR VietQR
                               </span>
                             </div>
-                            <QrcodeOutlined className="text-lg text-[#5d371f]" />
+                            <QrcodeOutlined className="text-base sm:text-lg text-[#5d371f]" />
                           </div>
 
-                          <p className="text-xs text-[#51443d] mt-1 leading-relaxed">
+                          <p className="text-[11px] sm:text-xs text-[#51443d] mt-1 leading-relaxed">
                             Hệ thống kích hoạt bảo chứng đơn hàng tự động sau 10 giây qua Napas 24/7.
                           </p>
 
                           {/* VietQR Deposit Selection Toggle */}
                           {paymentMethod === 'qr' && settingDepositPercent < 100 && (
-                            <div className="mt-3.5 p-3.5 bg-white border border-[#eae1dd] flex flex-col gap-2 shadow-2xs">
+                            <div className="mt-2.5 sm:mt-3.5 p-2.5 sm:p-3.5 bg-white border border-[#eae1dd] flex flex-col gap-2 shadow-2xs">
                               <div className="flex items-center justify-between flex-wrap gap-1">
-                                <span className="text-xs font-bold text-[#1f1b19] flex items-center gap-1.5">
+                                <span className="text-[11px] sm:text-xs font-bold text-[#1f1b19] flex items-center gap-1.5">
                                   <span>Mức thanh toán đơn hàng:</span>
                                 </span>
-                                <span className="text-[11px] text-[#784e34] font-semibold bg-[#ffdbc8]/50 px-2 py-0.5 border border-[#784e34]/20">
+                                <span className="text-[10px] sm:text-[11px] text-[#784e34] font-semibold bg-[#ffdbc8]/50 px-2 py-0.5 border border-[#784e34]/20">
                                   Tỷ lệ cọc cài đặt: {settingDepositPercent}%
                                 </span>
                               </div>
 
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-2.5 pt-1">
                                 <button
                                   type="button"
                                   onClick={() => setDepositChoice('deposit')}
-                                  className={`p-3 text-left border transition-all cursor-pointer flex flex-col gap-1 ${
+                                  className={`p-2.5 sm:p-3 text-left border transition-all cursor-pointer flex flex-col gap-0.5 sm:gap-1 ${
                                     depositChoice === 'deposit'
                                       ? 'border-[#5d371f] bg-[#fbf2ee] ring-1 ring-[#5d371f]'
                                       : 'border-[#eae1dd] bg-white hover:border-[#5d371f]/40'
@@ -1282,10 +1281,10 @@ function CheckoutContent() {
                                       Khuyên dùng
                                     </span>
                                   </div>
-                                  <div className="text-sm font-data-mono font-bold text-[#1f1b19]">
+                                  <div className="text-xs sm:text-sm font-data-mono font-bold text-[#1f1b19]">
                                     {Math.round(finalTotal * (settingDepositPercent / 100)).toLocaleString('vi-VN')}₫
                                   </div>
-                                  <span className="text-[10px] text-[#83746c]">
+                                  <span className="text-[9px] sm:text-[10px] text-[#83746c]">
                                     Còn lại {(finalTotal - Math.round(finalTotal * (settingDepositPercent / 100))).toLocaleString('vi-VN')}₫ khi nhận hàng
                                   </span>
                                 </button>
@@ -1293,7 +1292,7 @@ function CheckoutContent() {
                                 <button
                                   type="button"
                                   onClick={() => setDepositChoice('full')}
-                                  className={`p-3 text-left border transition-all cursor-pointer flex flex-col gap-1 ${
+                                  className={`p-2.5 sm:p-3 text-left border transition-all cursor-pointer flex flex-col gap-0.5 sm:gap-1 ${
                                     depositChoice === 'full'
                                       ? 'border-[#5d371f] bg-[#fbf2ee] ring-1 ring-[#5d371f]'
                                       : 'border-[#eae1dd] bg-white hover:border-[#5d371f]/40'
@@ -1307,10 +1306,10 @@ function CheckoutContent() {
                                       Toàn bộ
                                     </span>
                                   </div>
-                                  <div className="text-sm font-data-mono font-bold text-[#1f1b19]">
+                                  <div className="text-xs sm:text-sm font-data-mono font-bold text-[#1f1b19]">
                                     {finalTotal.toLocaleString('vi-VN')}₫
                                   </div>
-                                  <span className="text-[10px] text-[#83746c]">
+                                  <span className="text-[9px] sm:text-[10px] text-[#83746c]">
                                     Thanh toán trọn gói một lần
                                   </span>
                                 </button>
@@ -1320,42 +1319,42 @@ function CheckoutContent() {
 
                           {/* VietQR Bank Preview Box */}
                           {paymentMethod === 'qr' && (
-                            <div className="mt-4 p-4 sm:p-5 bg-white border border-[#eae1dd] flex flex-col md:flex-row items-center gap-5 shadow-sm animate-scale-in">
-                              <div className="flex flex-col items-center gap-2 shrink-0">
-                                <div className="bg-white p-2 border border-[#eae1dd] shadow-sm">
+                            <div className="mt-3 sm:mt-4 p-3 sm:p-5 bg-white border border-[#eae1dd] flex flex-col md:flex-row items-center gap-3.5 sm:gap-5 shadow-xs sm:shadow-sm animate-scale-in">
+                              <div className="flex flex-col items-center gap-1.5 sm:gap-2 shrink-0">
+                                <div className="bg-white p-1.5 sm:p-2 border border-[#eae1dd] shadow-xs sm:shadow-sm">
                                   <img
                                     src={dynamicQrUrl}
                                     alt={`Mã QR Chuyển khoản ${activeBankName}`}
-                                    className="w-44 h-auto object-contain"
+                                    className="w-36 sm:w-44 h-auto object-contain"
                                   />
                                 </div>
-                                <span className="text-[10px] text-[#83746c] flex items-center gap-1 font-medium">
+                                <span className="text-[9px] sm:text-[10px] text-[#83746c] flex items-center gap-1 font-medium text-center">
                                   <QrcodeOutlined /> Quét QR tự điền số tiền &amp; nội dung
                                 </span>
                               </div>
 
-                              <div className="flex flex-col gap-2 text-xs flex-1 w-full">
-                                <div className="pb-2 border-b border-[#eae1dd]">
-                                  <span className="text-[10px] uppercase font-bold text-[#83746c] block tracking-wider">Ngân hàng thụ hưởng</span>
-                                  <p className="font-bold text-sm text-[#1f1b19]">{activeBankName}</p>
+                              <div className="flex flex-col gap-1.5 sm:gap-2 text-xs flex-1 w-full">
+                                <div className="pb-1.5 sm:pb-2 border-b border-[#eae1dd]">
+                                  <span className="text-[9px] sm:text-[10px] uppercase font-bold text-[#83746c] block tracking-wider">Ngân hàng thụ hưởng</span>
+                                  <p className="font-bold text-xs sm:text-sm text-[#1f1b19]">{activeBankName}</p>
                                 </div>
 
                                 <div className="flex items-center justify-between py-1 border-b border-[#eae1dd]/60">
                                   <div>
-                                    <span className="text-[10px] text-[#83746c] block">Chủ tài khoản:</span>
-                                    <strong className="font-serif text-[#5d371f] text-xs uppercase">{activeAccountName}</strong>
+                                    <span className="text-[9px] sm:text-[10px] text-[#83746c] block">Chủ tài khoản:</span>
+                                    <strong className="font-serif text-[#5d371f] text-[11px] sm:text-xs uppercase">{activeAccountName}</strong>
                                   </div>
                                 </div>
 
                                 <div className="flex items-center justify-between py-1 border-b border-[#eae1dd]/60">
                                   <div>
-                                    <span className="text-[10px] text-[#83746c] block">Số tài khoản:</span>
-                                    <strong className="font-data-mono text-sm text-[#1f1b19]">{activeAccountNumber}</strong>
+                                    <span className="text-[9px] sm:text-[10px] text-[#83746c] block">Số tài khoản:</span>
+                                    <strong className="font-data-mono text-xs sm:text-sm text-[#1f1b19]">{activeAccountNumber}</strong>
                                   </div>
                                   <button
                                     type="button"
                                     onClick={() => handleCopy(activeAccountNumber, 'Số tài khoản')}
-                                    className="px-2.5 py-1 bg-[#fbf2ee] hover:bg-[#eae1dd] border border-[#eae1dd] text-[11px] font-bold text-[#5d371f] flex items-center gap-1 transition-colors cursor-pointer"
+                                    className="px-2 py-0.5 sm:px-2.5 sm:py-1 bg-[#fbf2ee] hover:bg-[#eae1dd] border border-[#eae1dd] text-[10px] sm:text-[11px] font-bold text-[#5d371f] flex items-center gap-1 transition-colors cursor-pointer"
                                   >
                                     <CopyOutlined /> Sao chép
                                   </button>
@@ -1363,20 +1362,20 @@ function CheckoutContent() {
 
                                 <div className="flex items-center justify-between py-1 border-b border-[#eae1dd]/60">
                                   <div>
-                                    <span className="text-[10px] text-[#83746c] block">
+                                    <span className="text-[9px] sm:text-[10px] text-[#83746c] block">
                                       {activeDepositPercent < 100 ? `Số tiền đặt cọc (${activeDepositPercent}%):` : 'Số tiền thanh toán (100%):'}
                                     </span>
-                                    <strong className="font-data-mono text-sm text-[#5d371f]">{payableNow.toLocaleString('vi-VN')}₫</strong>
+                                    <strong className="font-data-mono text-xs sm:text-sm text-[#5d371f]">{payableNow.toLocaleString('vi-VN')}₫</strong>
                                     {activeDepositPercent < 100 && (
-                                      <span className="text-[10px] text-[#83746c] block mt-0.5">
-                                        (Còn lại: {remainingOnDelivery.toLocaleString('vi-VN')}₫ thanh toán khi nhận hàng)
+                                      <span className="text-[9px] sm:text-[10px] text-[#83746c] block mt-0.5">
+                                        (Còn lại: {remainingOnDelivery.toLocaleString('vi-VN')}₫ khi nhận hàng)
                                       </span>
                                     )}
                                   </div>
                                   <button
                                     type="button"
                                     onClick={() => handleCopy(payableNow.toString(), 'Số tiền')}
-                                    className="px-2.5 py-1 bg-[#fbf2ee] hover:bg-[#eae1dd] border border-[#eae1dd] text-[11px] font-bold text-[#5d371f] flex items-center gap-1 transition-colors cursor-pointer"
+                                    className="px-2 py-0.5 sm:px-2.5 sm:py-1 bg-[#fbf2ee] hover:bg-[#eae1dd] border border-[#eae1dd] text-[10px] sm:text-[11px] font-bold text-[#5d371f] flex items-center gap-1 transition-colors cursor-pointer"
                                   >
                                     <CopyOutlined /> Sao chép
                                   </button>
@@ -1384,13 +1383,13 @@ function CheckoutContent() {
 
                                 <div className="flex items-center justify-between pt-1">
                                   <div>
-                                    <span className="text-[10px] text-[#83746c] block">Nội dung chuyển khoản:</span>
-                                    <strong className="font-data-mono text-xs text-[#5d371f]">{transferMemo}</strong>
+                                    <span className="text-[9px] sm:text-[10px] text-[#83746c] block">Nội dung chuyển khoản:</span>
+                                    <strong className="font-data-mono text-[11px] sm:text-xs text-[#5d371f]">{transferMemo}</strong>
                                   </div>
                                   <button
                                     type="button"
                                     onClick={() => handleCopy(transferMemo, 'Nội dung chuyển khoản')}
-                                    className="px-2.5 py-1 bg-[#fbf2ee] hover:bg-[#eae1dd] border border-[#eae1dd] text-[11px] font-bold text-[#5d371f] flex items-center gap-1 transition-colors cursor-pointer"
+                                    className="px-2 py-0.5 sm:px-2.5 sm:py-1 bg-[#fbf2ee] hover:bg-[#eae1dd] border border-[#eae1dd] text-[10px] sm:text-[11px] font-bold text-[#5d371f] flex items-center gap-1 transition-colors cursor-pointer"
                                   >
                                     <CopyOutlined /> Sao chép
                                   </button>
@@ -1405,31 +1404,31 @@ function CheckoutContent() {
                     {/* Option 2: COD Payment */}
                     <div
                       onClick={() => setPaymentMethod('cod')}
-                      className={`p-4 border transition-all cursor-pointer ${
+                      className={`p-3 sm:p-4 border transition-all cursor-pointer ${
                         paymentMethod === 'cod'
                           ? 'border-[#5d371f] bg-[#fbf2ee]'
                           : 'border-[#eae1dd] bg-white hover:border-[#5d371f]/40'
                       }`}
                     >
-                      <div className="flex items-start gap-3">
+                      <div className="flex items-start gap-2.5 sm:gap-3">
                         <input
                           type="radio"
                           name="payment"
                           checked={paymentMethod === 'cod'}
                           onChange={() => setPaymentMethod('cod')}
-                          className="w-4 h-4 mt-1 accent-[#5d371f] cursor-pointer"
+                          className="w-4 h-4 mt-0.5 sm:mt-1 accent-[#5d371f] cursor-pointer shrink-0"
                         />
-                        <div className="flex-1">
-                          <div className="flex items-center justify-between">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between flex-wrap gap-1">
                             <div className="flex items-center gap-2">
-                              <span className="font-bold text-sm text-[#1f1b19]">
+                              <span className="font-bold text-xs sm:text-sm text-[#1f1b19]">
                                 Thanh toán khi nhận hàng &amp; Nghiệm thu (COD)
                               </span>
                             </div>
-                            <SafetyCertificateOutlined className="text-lg text-[#5d371f]" />
+                            <SafetyCertificateOutlined className="text-base sm:text-lg text-[#5d371f]" />
                           </div>
 
-                          <p className="text-xs text-[#51443d] mt-1 leading-relaxed">
+                          <p className="text-[11px] sm:text-xs text-[#51443d] mt-1 leading-relaxed">
                             Quý khách trực tiếp kiểm tra vân gỗ, kết cấu và đường hoàn thiện tinh dầu tại nhà trước khi thanh toán cho đội ngũ giao lắp D2 LUXURY.
                           </p>
                         </div>
@@ -1440,49 +1439,49 @@ function CheckoutContent() {
               </div>
 
               {/* RIGHT COLUMN: 5 Columns Sticky Summary Card */}
-              <div className="lg:col-span-5 flex flex-col gap-6 lg:sticky lg:top-24">
-                <div className="bg-white border border-[#eae1dd] p-6 shadow-md flex flex-col gap-5">
-                  <div className="flex items-center justify-between pb-3 border-b border-[#eae1dd]">
+              <div className="lg:col-span-5 flex flex-col gap-4 sm:gap-6 lg:sticky lg:top-24">
+                <div className="bg-white border border-[#eae1dd] p-3.5 sm:p-6 shadow-sm sm:shadow-md flex flex-col gap-3.5 sm:gap-5">
+                  <div className="flex items-center justify-between pb-2.5 sm:pb-3 border-b border-[#eae1dd]">
                     <div>
-                      <span className="text-xs text-[#83746c] font-medium block">
+                      <span className="text-[10px] sm:text-xs text-[#83746c] font-medium block">
                         Phiếu thanh toán
                       </span>
-                      <h2 className="font-serif text-xl font-bold text-[#1f1b19]">Tóm tắt Đơn Hàng</h2>
+                      <h2 className="font-serif text-base sm:text-xl font-bold text-[#1f1b19]">Tóm tắt Đơn Hàng</h2>
                     </div>
-                    <span className="font-data-mono text-xs px-2.5 py-1 bg-[#f5ece8] border border-[#eae1dd] text-[#5d371f] font-bold">
+                    <span className="font-data-mono text-[10px] sm:text-xs px-2 py-0.5 sm:px-2.5 sm:py-1 bg-[#f5ece8] border border-[#eae1dd] text-[#5d371f] font-bold">
                       #D2-2025-89
                     </span>
                   </div>
 
                   {/* Price breakdown table */}
-                  <div className="flex flex-col gap-3 text-xs pt-1">
+                  <div className="flex flex-col gap-2.5 sm:gap-3 text-xs pt-1">
                     <div className="flex justify-between text-[#51443d]">
-                      <span>Tạm tính ({activeItems.length} tác phẩm):</span>
-                      <span className="font-data-mono font-bold text-[#1f1b19]">
+                      <span className="text-[11px] sm:text-xs">Tạm tính ({activeItems.length} tác phẩm):</span>
+                      <span className="font-data-mono font-bold text-[#1f1b19] text-xs sm:text-sm">
                         {subtotal.toLocaleString('vi-VN')}đ
                       </span>
                     </div>
 
                     <div className="flex justify-between text-[#51443d]">
                       <div>
-                        <span>Vận chuyển &amp; Bê lên tầng chuyên dụng:</span>
-                        <p className="text-[10px] text-[#83746c]">Bọc màng chống sốc 3 lớp &amp; xe thùng kín</p>
+                        <span className="text-[11px] sm:text-xs">Vận chuyển &amp; Bê lên tầng chuyên dụng:</span>
+                        <p className="text-[9px] sm:text-[10px] text-[#83746c]">Bọc màng chống sốc 3 lớp &amp; xe thùng kín</p>
                       </div>
-                      <span className="text-xs font-semibold text-[#3f4332] bg-[#e1e5ce] px-2.5 py-0.5 self-start">
+                      <span className="text-[10px] sm:text-xs font-semibold text-[#3f4332] bg-[#e1e5ce] px-2 py-0.5 sm:px-2.5 self-start">
                         Miễn phí
                       </span>
                     </div>
 
                     <div className="flex justify-between text-[#51443d]">
-                      <span>Dịch vụ kỹ thuật căn chỉnh tại nhà:</span>
-                      <span className="text-xs font-semibold text-[#3f4332] bg-[#e1e5ce] px-2.5 py-0.5 self-start">
+                      <span className="text-[11px] sm:text-xs">Dịch vụ kỹ thuật căn chỉnh tại nhà:</span>
+                      <span className="text-[10px] sm:text-xs font-semibold text-[#3f4332] bg-[#e1e5ce] px-2 py-0.5 sm:px-2.5 self-start">
                         Miễn phí
                       </span>
                     </div>
 
                     <div className="flex justify-between text-[#1f1b19] font-semibold pt-1 border-t border-[#eae1dd]/60">
-                      <span>Tổng giá trị đơn hàng:</span>
-                      <span className="font-data-mono text-sm">
+                      <span className="text-xs sm:text-sm">Tổng giá trị đơn hàng:</span>
+                      <span className="font-data-mono text-xs sm:text-sm">
                         {finalTotal.toLocaleString('vi-VN')}đ
                       </span>
                     </div>
@@ -1490,14 +1489,14 @@ function CheckoutContent() {
                     {!isCod && activeDepositPercent < 100 && (
                       <>
                         <div className="flex justify-between text-[#5d371f] font-semibold pt-1 border-t border-dashed border-[#eae1dd]">
-                          <span>Tiền đặt cọc ({activeDepositPercent}% theo cài đặt):</span>
-                          <span className="font-data-mono text-sm font-bold">
+                          <span className="text-[11px] sm:text-xs">Tiền đặt cọc ({activeDepositPercent}%):</span>
+                          <span className="font-data-mono text-xs sm:text-sm font-bold">
                             {payableNow.toLocaleString('vi-VN')}đ
                           </span>
                         </div>
                         <div className="flex justify-between text-[#83746c]">
-                          <span>Còn lại khi nhận hàng ({100 - activeDepositPercent}%):</span>
-                          <span className="font-data-mono font-semibold">
+                          <span className="text-[11px] sm:text-xs">Còn lại khi nhận hàng ({100 - activeDepositPercent}%):</span>
+                          <span className="font-data-mono font-semibold text-[11px] sm:text-xs">
                             {remainingOnDelivery.toLocaleString('vi-VN')}đ
                           </span>
                         </div>
@@ -1506,24 +1505,24 @@ function CheckoutContent() {
                   </div>
 
                   {/* Grand Total box */}
-                  <div className="bg-[#fbf2ee] border border-[#eae1dd] p-4 flex flex-col gap-1">
+                  <div className="bg-[#fbf2ee] border border-[#eae1dd] p-3 sm:p-4 flex flex-col gap-0.5 sm:gap-1">
                     <div className="flex items-baseline justify-between">
                       <div>
-                        <span className="text-sm font-bold text-[#1f1b19]">
+                        <span className="text-xs sm:text-sm font-bold text-[#1f1b19]">
                           {!isCod && activeDepositPercent < 100
                             ? `Cần thanh toán hôm nay (Cọc ${activeDepositPercent}%):`
                             : isCod
                             ? 'Thanh toán khi nhận hàng (COD):'
                             : 'Tổng thanh toán:'}
                         </span>
-                        <span className="block text-[10px] text-[#83746c]">
+                        <span className="block text-[9px] sm:text-[10px] text-[#83746c] mt-0.5">
                           {!isCod && activeDepositPercent < 100
                             ? `Còn lại ${remainingOnDelivery.toLocaleString('vi-VN')}đ thanh toán khi giao lắp & nghiệm thu`
                             : 'Đã bao gồm 8% thuế GTGT & bảo hiểm hành trình'}
                         </span>
                       </div>
                       <div className="text-right">
-                        <span className="font-serif text-xl sm:text-2xl font-bold text-[#5d371f] font-data-mono">
+                        <span className="font-serif text-lg sm:text-2xl font-bold text-[#5d371f] font-data-mono">
                           {(!isCod && activeDepositPercent < 100
                             ? payableNow
                             : finalTotal
@@ -1542,7 +1541,7 @@ function CheckoutContent() {
                         ? { backgroundColor: '#eae1dd', color: '#83746c' }
                         : { backgroundColor: '#5d371f', color: '#ffffff' }
                     }
-                    className={`w-full py-3.5 px-6 font-semibold text-sm transition-all flex items-center justify-center gap-2 shadow-md ${
+                    className={`w-full py-3 sm:py-3.5 px-4 sm:px-6 font-semibold text-xs sm:text-sm transition-all flex items-center justify-center gap-2 shadow-md ${
                       activeItems.length === 0
                         ? 'cursor-not-allowed opacity-60'
                         : '!bg-[#5d371f] !text-white hover:!bg-[#784e34] cursor-pointer hover-lift'
@@ -1553,15 +1552,28 @@ function CheckoutContent() {
                         ? 'Đang kích hoạt lịch bàn giao...'
                         : 'Xác nhận đặt hàng & Giữ lịch giao'}
                     </span>
-                    <ArrowRightOutlined className="text-sm" />
+                    <ArrowRightOutlined className="text-xs sm:text-sm" />
                   </button>
 
-                  <p className="text-[11px] text-[#83746c] text-center leading-relaxed">
+                  <p className="text-[10px] sm:text-[11px] text-[#83746c] text-center leading-relaxed">
                     Bằng việc xác nhận, quý khách đồng ý với điều khoản chăm sóc đồ gỗ &amp; quy chuẩn nghiệm thu của D2 LUXURY.
                   </p>
 
                   {/* 2 Reassurance Badges */}
-                  <div className="flex flex-col gap-3 pt-3 border-t border-[#eae1dd] bg-[#fbf2ee] p-4">
+                  {/* Mobile: compact bullets */}
+                  <div className="flex sm:hidden flex-col gap-1.5 pt-2 border-t border-[#eae1dd] bg-[#fbf2ee] p-2.5 text-[10px] text-[#51443d]">
+                    <div className="flex items-center gap-2">
+                      <SafetyCertificateOutlined className="text-[#5d371f] text-xs shrink-0" />
+                      <span>Nghiệm thu tận mắt, chỉ thanh toán khi hài lòng</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <FileProtectOutlined className="text-[#5d371f] text-xs shrink-0" />
+                      <span>Bảo hành kết cấu 5 năm &amp; đánh sáp tại nhà miễn phí</span>
+                    </div>
+                  </div>
+
+                  {/* Desktop: detailed paragraphs */}
+                  <div className="hidden sm:flex flex-col gap-3 pt-3 border-t border-[#eae1dd] bg-[#fbf2ee] p-4">
                     <div className="flex items-start gap-3">
                       <SafetyCertificateOutlined className="text-[#5d371f] text-base shrink-0 mt-0.5" />
                       <div>
@@ -1584,17 +1596,17 @@ function CheckoutContent() {
                   </div>
 
                   {/* Contact Hotline box */}
-                  <div className="bg-[#f5ece8] border border-[#eae1dd] p-4 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <CustomerServiceOutlined className="text-[#5d371f] text-2xl" />
-                      <div>
-                        <p className="text-xs font-bold text-[#1f1b19]">Cần hỗ trợ về không gian?</p>
-                        <p className="text-[11px] text-[#83746c]">KTS D2 LUXURY tư vấn trực tiếp 1-1</p>
+                  <div className="bg-[#f5ece8] border border-[#eae1dd] p-2.5 sm:p-4 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                      <CustomerServiceOutlined className="text-[#5d371f] text-base sm:text-2xl shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-[11px] sm:text-xs font-bold text-[#1f1b19] truncate">Hỗ trợ không gian 3D</p>
+                        <p className="text-[9px] sm:text-[11px] text-[#83746c] truncate">KTS D2 LUXURY tư vấn 1-1</p>
                       </div>
                     </div>
                     <a
                       href="tel:0867612199"
-                      className="px-3 py-1.5 bg-white border border-[#eae1dd] text-xs font-bold text-[#5d371f] hover:bg-[#5d371f] hover:text-white transition-colors"
+                      className="shrink-0 px-2.5 py-1 bg-[#5d371f] text-white text-[11px] sm:text-xs font-bold hover:bg-[#784e34] transition-colors sm:bg-white sm:text-[#5d371f] sm:border sm:border-[#eae1dd] sm:px-3 sm:py-1.5 font-data-mono sm:font-sans"
                     >
                       0867 612 199
                     </a>
@@ -1618,60 +1630,60 @@ function CheckoutContent() {
         centered
         styles={{
           body: {
-            padding: '28px',
+            padding: '20px 16px',
             backgroundColor: '#fff8f5',
           },
         }}
       >
-        <div className="flex flex-col items-center text-center gap-4">
-          <div className="w-16 h-16 bg-[#e1e5ce] text-[#3f4332] flex items-center justify-center shadow-sm">
-            <CheckCircleFilled className="text-3xl text-[#3f4332]" />
+        <div className="flex flex-col items-center text-center gap-3 sm:gap-4">
+          <div className="w-12 h-12 sm:w-16 sm:h-16 bg-[#e1e5ce] text-[#3f4332] flex items-center justify-center shadow-xs sm:shadow-sm">
+            <CheckCircleFilled className="text-2xl sm:text-3xl text-[#3f4332]" />
           </div>
 
           <div>
-            <span className="text-xs text-[#5d371f] font-semibold block">
+            <span className="text-[11px] sm:text-xs text-[#5d371f] font-semibold block">
               Xác Nhận Đặt Hàng Thành Công
             </span>
-            <h3 className="font-serif text-2xl font-bold text-[#1f1b19] mt-1">
+            <h3 className="font-serif text-lg sm:text-2xl font-bold text-[#1f1b19] mt-0.5 sm:mt-1">
               Đơn Hàng {createdOrderCode} Đã Được Ghi Nhận
             </h3>
-            <p className="text-xs text-[#83746c] mt-2 max-w-md leading-relaxed">
-              Cảm ơn quý khách <strong>{fullName}</strong>. Kỹ sư trưởng xưởng mộc D2 LUXURY sẽ liên hệ trực tiếp qua số điện thoại <strong>{phone}</strong> trong vòng 15 phút để xác thực phôi gỗ và đối chiếu kích thước thang máy.
+            <p className="text-[11px] sm:text-xs text-[#83746c] mt-1.5 sm:mt-2 max-w-md leading-relaxed">
+              Cảm ơn quý khách <strong>{fullName}</strong>. Kỹ sư trưởng xưởng mộc D2 LUXURY sẽ liên hệ qua SĐT <strong>{phone}</strong> trong vòng 15 phút để xác thực phôi gỗ và đối chiếu kích thước thang máy.
             </p>
           </div>
 
-          <div className="w-full bg-white border border-[#eae1dd] p-4 text-left text-xs flex flex-col gap-2 shadow-sm">
+          <div className="w-full bg-white border border-[#eae1dd] p-3 sm:p-4 text-left text-xs flex flex-col gap-1.5 sm:gap-2 shadow-xs sm:shadow-sm">
             <div className="flex justify-between">
               <span className="text-[#83746c]">Người nhận:</span>
-              <span className="font-semibold text-[#1f1b19]">{fullName} ({phone})</span>
+              <span className="font-semibold text-[#1f1b19] truncate ml-2">{fullName} ({phone})</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-[#83746c]">Địa chỉ nhận hàng:</span>
-              <span className="font-semibold text-[#1f1b19] text-right truncate max-w-[260px]">{address}{district ? `, ${district}` : ''}{city ? `, ${city}` : ''}</span>
+              <span className="text-[#83746c] shrink-0">Địa chỉ:</span>
+              <span className="font-semibold text-[#1f1b19] text-right truncate max-w-[190px] sm:max-w-[260px] ml-2">{address}{district ? `, ${district}` : ''}{city ? `, ${city}` : ''}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-[#83746c]">Phương thức:</span>
               <span className="font-semibold text-[#5d371f]">
-                {paymentMethod === 'qr' ? 'Chuyển khoản VietQR' : 'Thanh toán khi nhận hàng (COD)'}
+                {paymentMethod === 'qr' ? 'Chuyển khoản VietQR' : 'Thanh toán khi nhận (COD)'}
               </span>
             </div>
-            <div className="flex justify-between pt-2 border-t border-[#eae1dd]">
-              <span className="text-sm font-bold text-[#1f1b19]">Tổng giá trị:</span>
-              <span className="font-serif text-base font-bold text-[#5d371f] font-data-mono">
+            <div className="flex justify-between pt-1.5 sm:pt-2 border-t border-[#eae1dd]">
+              <span className="text-xs sm:text-sm font-bold text-[#1f1b19]">Tổng giá trị:</span>
+              <span className="font-serif text-sm sm:text-base font-bold text-[#5d371f] font-data-mono">
                 {finalTotal.toLocaleString('vi-VN')}đ
               </span>
             </div>
           </div>
 
           {paymentMethod === 'qr' && (
-            <div className="w-full bg-[#fbf2ee] border border-[#eae1dd] p-4 flex flex-col items-center gap-2">
-              <span className="text-xs font-bold text-[#5d371f]">Quét mã VietQR {activeBankName} để thanh toán ngay</span>
+            <div className="w-full bg-[#fbf2ee] border border-[#eae1dd] p-3 sm:p-4 flex flex-col items-center gap-1.5 sm:gap-2">
+              <span className="text-[11px] sm:text-xs font-bold text-[#5d371f]">Quét mã VietQR {activeBankName} để thanh toán ngay</span>
               <img
                 src={dynamicQrUrl}
                 alt={`VietQR ${activeBankName}`}
-                className="w-40 h-auto rounded border border-[#eae1dd] shadow-sm bg-white p-1"
+                className="w-32 sm:w-40 h-auto rounded border border-[#eae1dd] shadow-xs sm:shadow-sm bg-white p-1"
               />
-              <span className="text-[11px] text-[#83746c]">
+              <span className="text-[10px] sm:text-[11px] text-[#83746c] text-center">
                 STK: <strong>{activeAccountNumber}</strong> ({activeBankName}) • Chủ TK: <strong>{activeAccountName}</strong> • Nội dung: <strong>{transferMemo}</strong>
               </span>
             </div>
@@ -1680,7 +1692,7 @@ function CheckoutContent() {
           <button
             onClick={handleFinishAndReturnHome}
             type="button"
-            className="w-full bg-[#5d371f] text-white py-3 px-6 font-semibold text-sm hover:bg-[#784e34] transition-colors mt-2 shadow-md cursor-pointer"
+            className="w-full bg-[#5d371f] text-white py-2.5 sm:py-3 px-4 sm:px-6 font-semibold text-xs sm:text-sm hover:bg-[#784e34] transition-colors mt-1 sm:mt-2 shadow-md cursor-pointer"
           >
             Hoàn tất &amp; Về trang chủ
           </button>
@@ -1696,26 +1708,26 @@ function CheckoutContent() {
         width={480}
         styles={{
           body: {
-            padding: '28px 24px',
+            padding: '20px 16px',
             backgroundColor: '#fff8f5',
           },
         }}
       >
         <div className="flex flex-col items-center text-center">
-          <div className="w-14 h-14 rounded-full bg-[#f5ece8] border border-[#d2b8aa] flex items-center justify-center mb-3.5">
-            <SafetyCertificateOutlined className="text-2xl text-[#5d371f]" />
+          <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-[#f5ece8] border border-[#d2b8aa] flex items-center justify-center mb-2.5 sm:mb-3.5">
+            <SafetyCertificateOutlined className="text-xl sm:text-2xl text-[#5d371f]" />
           </div>
 
-          <h3 className="font-serif text-xl font-bold text-[#1f1b19] tracking-tight mb-1.5">
+          <h3 className="font-serif text-lg sm:text-xl font-bold text-[#1f1b19] tracking-tight mb-1">
             Đăng nhập để hoàn tất đơn hàng
           </h3>
-          <p className="text-xs text-[#83746c] max-w-sm leading-relaxed mb-4">
+          <p className="text-[11px] sm:text-xs text-[#83746c] max-w-sm leading-relaxed mb-3 sm:mb-4">
             Để đảm bảo quyền lợi bảo hành 10 năm mộng gỗ thủ công D2 LUXURY, xuất hóa đơn hợp đồng và theo dõi tiến độ thi công bàn giao, quý khách vui lòng đăng nhập hoặc tạo tài khoản.
           </p>
 
-          <div className="w-full bg-white border border-[#d2b8aa] p-3 text-left mb-5 flex items-start gap-2.5 shadow-xs">
-            <CheckCircleFilled className="text-emerald-700 text-sm mt-0.5 shrink-0" />
-            <div className="text-[11px] text-[#5d371f] leading-relaxed">
+          <div className="w-full bg-white border border-[#d2b8aa] p-2.5 sm:p-3 text-left mb-3.5 sm:mb-5 flex items-start gap-2 shadow-xs">
+            <CheckCircleFilled className="text-emerald-700 text-xs sm:text-sm mt-0.5 shrink-0" />
+            <div className="text-[10px] sm:text-[11px] text-[#5d371f] leading-relaxed">
               <strong className="block text-[#1f1b19]">Thông tin nhận hàng của quý khách đã được lưu tạm:</strong>
               <div className="text-[#83746c] mt-0.5 truncate">
                 {fullName || 'Chưa nhập tên'} &bull; {phone || 'Chưa nhập SĐT'} &bull; {address ? `${address}, ${district}, ${city}` : 'Địa chỉ nhận hàng'}
@@ -1723,25 +1735,25 @@ function CheckoutContent() {
             </div>
           </div>
 
-          <div className="w-full flex flex-col gap-2.5">
+          <div className="w-full flex flex-col gap-2 sm:gap-2.5">
             <button
               type="button"
               onClick={() => handleRedirectAuth('/login')}
-              className="w-full py-3 bg-[#5d371f] hover:bg-[#784e34] text-white text-xs font-bold uppercase tracking-wider transition-all cursor-pointer border-0 shadow-sm"
+              className="w-full py-2.5 sm:py-3 bg-[#5d371f] hover:bg-[#784e34] text-white text-xs font-bold uppercase tracking-wider transition-all cursor-pointer border-0 shadow-sm"
             >
               Đăng nhập tài khoản gia chủ
             </button>
             <button
               type="button"
               onClick={() => handleRedirectAuth('/login?tab=register')}
-              className="w-full py-2.5 bg-white hover:bg-[#f5ece8] text-[#5d371f] border border-[#d2b8aa] text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
+              className="w-full py-2 sm:py-2.5 bg-white hover:bg-[#f5ece8] text-[#5d371f] border border-[#d2b8aa] text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
             >
               Đăng ký tài khoản mới (Tự động đăng nhập)
             </button>
             <button
               type="button"
               onClick={() => setIsAuthModalOpen(false)}
-              className="text-[11px] text-[#83746c] hover:text-[#1f1b19] underline cursor-pointer bg-transparent border-0 mt-1"
+              className="text-[10px] sm:text-[11px] text-[#83746c] hover:text-[#1f1b19] underline cursor-pointer bg-transparent border-0 mt-1"
             >
               Quay lại chỉnh sửa thêm thông tin đơn hàng
             </button>

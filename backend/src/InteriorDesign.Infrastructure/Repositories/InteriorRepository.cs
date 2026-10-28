@@ -180,11 +180,7 @@ public sealed class InteriorRepository(InteriorDbContext db) : IInteriorReposito
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var sTrim = search?.Trim();
-        var query = !string.IsNullOrWhiteSpace(sTrim)
-            ? baseQuery.OrderByDescending(p => p.Sku.Contains(sTrim) || EF.Functions.Collate(p.Name, HasVietnameseAccents(sTrim) ? "Vietnamese_CI_AS" : "Vietnamese_CI_AI").Contains(sTrim))
-                       .ThenByDescending(p => p.CreatedAt)
-            : baseQuery.OrderByDescending(p => p.CreatedAt);
+        var query = baseQuery.OrderByDescending(p => p.CreatedAt);
         var items = pageSize <= 0
             ? await query.Include(p => p.Category).ToListAsync(cancellationToken)
             : await query.Include(p => p.Category).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(cancellationToken);

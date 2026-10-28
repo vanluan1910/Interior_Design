@@ -1,5 +1,10 @@
 import { AdminCategory } from '@/types/admin';
 import { cachedFetch, invalidateApiCache } from './shared/apiCache';
+import {
+  ADMIN_STORAGE_KEYS,
+  getStoredAdminData,
+  setStoredAdminData,
+} from '@/utils/adminStorage';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
@@ -12,7 +17,7 @@ export interface CategoryStats {
 
 export const categoryApi = {
   /**
-   * Lấy danh sách danh mục nhóm hàng (có cache & deduplication)
+   * Lấy danh sách danh mục nhóm hàng (có cache & deduplication & offline fallback)
    */
   async getCategories(params?: {
     search?: string;
@@ -32,26 +37,52 @@ export const categoryApi = {
     if (params?.includeDeleted) query.append('includeDeleted', 'true');
 
     if (params?.forceRefresh) {
-      const res = await fetch(`${API_BASE_URL}/api/categories?${query.toString()}`, {
-        headers: { Accept: 'application/json' },
-      });
-      if (!res.ok) throw new Error(`Failed to fetch categories (${res.status})`);
-      const json = await res.json();
-      return json.data || [];
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/categories?${query.toString()}`, {
+          headers: { Accept: 'application/json' },
+        });
+        if (!res.ok) {
+          const stored = getStoredAdminData<AdminCategory[]>(ADMIN_STORAGE_KEYS.CATEGORIES, []);
+          if (stored && stored.length > 0) return stored;
+          throw new Error(`Failed to fetch categories (${res.status})`);
+        }
+        const json = await res.json();
+        const list = json.data || [];
+        if (Array.isArray(list) && list.length > 0) {
+          setStoredAdminData(ADMIN_STORAGE_KEYS.CATEGORIES, list);
+        }
+        return list;
+      } catch (err) {
+        const stored = getStoredAdminData<AdminCategory[]>(ADMIN_STORAGE_KEYS.CATEGORIES, []);
+        if (stored && stored.length > 0) return stored;
+        throw err;
+      }
     }
 
     const cacheKey = `categories:${query.toString()}`;
     return cachedFetch(cacheKey, async () => {
-      const res = await fetch(`${API_BASE_URL}/api/categories?${query.toString()}`, {
-        headers: { Accept: 'application/json' },
-      });
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/categories?${query.toString()}`, {
+          headers: { Accept: 'application/json' },
+        });
 
-      if (!res.ok) {
-        throw new Error(`Failed to fetch categories (${res.status})`);
+        if (!res.ok) {
+          const stored = getStoredAdminData<AdminCategory[]>(ADMIN_STORAGE_KEYS.CATEGORIES, []);
+          if (stored && stored.length > 0) return stored;
+          throw new Error(`Failed to fetch categories (${res.status})`);
+        }
+
+        const json = await res.json();
+        const list = json.data || [];
+        if (Array.isArray(list) && list.length > 0) {
+          setStoredAdminData(ADMIN_STORAGE_KEYS.CATEGORIES, list);
+        }
+        return list;
+      } catch (err) {
+        const stored = getStoredAdminData<AdminCategory[]>(ADMIN_STORAGE_KEYS.CATEGORIES, []);
+        if (stored && stored.length > 0) return stored;
+        throw err;
       }
-
-      const json = await res.json();
-      return json.data || [];
     });
   },
 

@@ -12,8 +12,14 @@ export default function FloatingContactButtons() {
     return null;
   }
 
+  const isFormPage = pathname === '/cart' || pathname === '/checkout' || pathname === '/profile';
+
   return (
-    <div className="fixed bottom-6 right-5 sm:right-7 z-50 flex flex-col items-end gap-3.5 select-none pointer-events-auto">
+    <div
+      className={`fixed right-5 sm:right-7 z-30 flex flex-col items-end gap-3.5 select-none pointer-events-auto ${
+        isFormPage ? 'bottom-6 hidden sm:flex' : 'bottom-6'
+      }`}
+    >
       
       {/* 1. BUTTON ZALO CHAT */}
       <a

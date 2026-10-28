@@ -22,7 +22,6 @@ import {
   EditOutlined,
   DeleteOutlined,
   PlusOutlined,
-  ReloadOutlined,
   DownloadOutlined,
   UploadOutlined,
   SearchOutlined,
@@ -40,6 +39,8 @@ import {
   HistoryOutlined,
   CopyOutlined,
   SwapOutlined,
+  RightOutlined,
+  FilterOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import {
@@ -48,6 +49,8 @@ import {
   AdminSidebarSummary,
   AdminFormDrawer,
   AdminStatusBadge,
+  AdminFilterDrawer,
+  AdminSearchInput,
   AutoCodeButton,
   getNextCode,
 } from '@/components/admin';
@@ -113,6 +116,11 @@ export function SuppliersTab({
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'active' | 'inactive'
   const [debtFilter, setDebtFilter] = useState('all'); // 'all' | 'has_debt' | 'no_debt'
+
+  // Mobile UI States
+  const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
+  const [mobileSort, setMobileSort] = useState<'name_asc' | 'debt_desc' | 'purchased_desc'>('name_asc');
+  const [mobilePage, setMobilePage] = useState(1);
 
   // Selection & Accordion Detail Expansion State
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
@@ -247,6 +255,31 @@ export function SuppliersTab({
       return matchSearch && matchBranch && matchStatus && matchDebt;
     });
   }, [enrichedSuppliersList, searchQuery, statusFilter, debtFilter, selectedGlobalBranch]);
+
+  const supplierActiveFiltersCount = useMemo(() => {
+    return (
+      (searchQuery ? 1 : 0) +
+      (statusFilter !== 'all' ? 1 : 0) +
+      (debtFilter !== 'all' ? 1 : 0) +
+      (mobileSort !== 'name_asc' ? 1 : 0)
+    );
+  }, [searchQuery, statusFilter, debtFilter, mobileSort]);
+
+  const sortedSuppliers = useMemo(() => {
+    const list = [...filteredSuppliers];
+    if (mobileSort === 'debt_desc') {
+      return list.sort((a, b) => (Number(b.currentDebt) || 0) - (Number(a.currentDebt) || 0));
+    }
+    if (mobileSort === 'purchased_desc') {
+      return list.sort((a, b) => (Number(b.totalPurchased) || 0) - (Number(a.totalPurchased) || 0));
+    }
+    return list.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'vi'));
+  }, [filteredSuppliers, mobileSort]);
+
+  const mobileTotalPages = Math.ceil(sortedSuppliers.length / 10) || 1;
+  const paginatedSuppliers = useMemo(() => {
+    return sortedSuppliers.slice((mobilePage - 1) * 10, mobilePage * 10);
+  }, [sortedSuppliers, mobilePage]);
 
   const selectedSupplierRecord = useMemo(() => {
     if (selectedRowKeys.length === 1) {
@@ -613,8 +646,8 @@ export function SuppliersTab({
 
   return (
     <div className="space-y-4 flex-1 flex flex-col h-full">
-      {/* 2-COLUMN LAYOUT: FILTER SIDEBAR + DATA TABLE */}
-      <div className="flex flex-col lg:flex-row gap-4 items-start flex-1">
+      {/* 2-COLUMN LAYOUT: FILTER SIDEBAR + DATA TABLE (Desktop Only) */}
+      <div className="hidden lg:flex flex-col lg:flex-row gap-4 items-start flex-1">
         {/* Left Filter Sidebar */}
         <AdminFilterSidebar
           title="Bộ lọc nhà cung cấp"
@@ -765,14 +798,6 @@ export function SuppliersTab({
             searchPlaceholder="Theo mã, tên nhà cung cấp, SĐT, MST, người liên hệ..."
             extraHeaderActions={
               <>
-                <Button
-                  icon={<ReloadOutlined />}
-                  onClick={handleRefreshSuppliers}
-                  className="!h-8 px-2.5 rounded-lg border-slate-300 bg-white text-slate-700 text-xs shadow-xs inline-flex items-center justify-center hover:text-[#784e34]"
-                  title="Làm mới"
-                >
-                  Làm mới
-                </Button>
                 <Upload
                   accept=".xlsx,.xls"
                   showUploadList={false}
@@ -964,6 +989,412 @@ export function SuppliersTab({
         </div>
       </div>
 
+      {/* MOBILE SUPPLIERS VIEW (Strictly Mobile Only) */}
+      <div className="block lg:hidden space-y-3 flex-1 pb-24">
+        {/* Mobile Search Bar */}
+        <AdminSearchInput
+          value={searchQuery}
+          onChange={(val) => {
+            setSearchQuery(val);
+            setMobilePage(1);
+          }}
+          placeholder="Tìm mã, tên NCC, SĐT, MST..."
+        />
+
+        {/* Quick Action Buttons Row */}
+        <div className="flex items-center justify-between gap-2">
+          <Button
+            size="small"
+            icon={<FilterOutlined className={supplierActiveFiltersCount > 0 ? 'text-[#784e34]' : 'text-slate-600'} />}
+            onClick={() => setIsMobileFilterOpen(true)}
+            className={`h-8 w-8 !p-0 flex items-center justify-center rounded-lg border-slate-200 bg-white shadow-2xs hover:text-[#784e34] relative ${
+              supplierActiveFiltersCount > 0 ? '!border-[#784e34] !text-[#784e34] !bg-amber-50/50' : 'text-slate-600'
+            }`}
+            title="Bộ lọc"
+          >
+            {supplierActiveFiltersCount > 0 && (
+              <span className="absolute -top-1 -right-1 w-4 h-4 bg-[#784e34] text-white rounded-full text-[9px] font-bold flex items-center justify-center shadow-xs">
+                {supplierActiveFiltersCount}
+              </span>
+            )}
+          </Button>
+          <div className="flex items-center gap-1.5">
+            <Button
+              size="small"
+              icon={<DownloadOutlined />}
+              onClick={handleExportExcel}
+              className="h-8 px-2.5 rounded-lg border-slate-200 text-xs text-slate-600 bg-white shadow-2xs hover:text-[#784e34]"
+            >
+              Xuất Excel
+            </Button>
+            <Button
+              type="primary"
+              size="small"
+              icon={<PlusOutlined />}
+              onClick={handleOpenCreate}
+              className="h-8 px-3 rounded-lg !bg-[#784e34] !border-[#784e34] hover:!bg-[#5e3c28] text-xs font-semibold shadow-xs"
+            >
+              Thêm mới
+            </Button>
+          </div>
+        </div>
+
+        {/* Suppliers Cards List */}
+        {paginatedSuppliers.length === 0 ? (
+          <div className="p-8 text-center bg-white rounded-xl border border-slate-200/80 shadow-2xs">
+            <ShopOutlined className="text-3xl text-slate-300 mb-2" />
+            <p className="text-sm font-medium text-slate-600 m-0">Không tìm thấy nhà cung cấp nào phù hợp</p>
+            <p className="text-xs text-slate-400 mt-1 mb-3">Thử thay đổi bộ lọc hoặc từ khóa tìm kiếm</p>
+            <Button
+              size="small"
+              onClick={() => {
+                setSearchQuery('');
+                setStatusFilter('all');
+                setDebtFilter('all');
+              }}
+              className="text-xs"
+            >
+              Đặt lại bộ lọc
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-2.5">
+            {paginatedSuppliers.map((supplier) => {
+              const currentDebt = Number(supplier.currentDebt || 0);
+              const totalPurchased = Number(supplier.totalPurchased || 0);
+
+              return (
+                <div
+                  key={supplier.id}
+                  className="bg-white rounded-xl border border-slate-200/80 p-3.5 shadow-2xs space-y-2.5 transition-all"
+                >
+                  {/* Top Bar: Name + Status */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <Tag color="cyan" className="font-mono text-[11px] font-semibold m-0">
+                          {supplier.code || 'NCC'}
+                        </Tag>
+                        {supplier.taxCode && (
+                          <span className="text-[11px] text-slate-400 font-mono">
+                            MST: {supplier.taxCode}
+                          </span>
+                        )}
+                      </div>
+                      <h4
+                        className="font-bold text-slate-900 text-sm mt-1 mb-0 truncate cursor-pointer hover:text-[#784e34]"
+                        onClick={() => handleOpenEdit(supplier)}
+                      >
+                        {supplier.name}
+                      </h4>
+                    </div>
+
+                    <span
+                      onClick={() => handleChangeStatus(supplier.id, supplier.status === 'active' ? 'inactive' : 'active')}
+                      className="cursor-pointer shrink-0"
+                      title="Nhấn để đổi trạng thái"
+                    >
+                      <AdminStatusBadge
+                        status={supplier.status === 'active' ? 'active' : 'inactive'}
+                        label={supplier.status === 'active' ? 'Đang hợp tác' : 'Tạm dừng'}
+                        dot
+                      />
+                    </span>
+                  </div>
+
+                  {/* Contact Info */}
+                  <div className="space-y-1 text-xs text-slate-600 bg-slate-50/70 p-2.5 rounded-lg border border-slate-100">
+                    {supplier.contactPerson && (
+                      <div className="flex items-center gap-1.5">
+                        <UserOutlined className="text-slate-400 text-xs shrink-0" />
+                        <span className="font-medium text-slate-700">{supplier.contactPerson}</span>
+                      </div>
+                    )}
+                    {supplier.phone && (
+                      <div className="flex items-center gap-1.5">
+                        <PhoneOutlined className="text-slate-400 text-xs shrink-0" />
+                        <a href={`tel:${supplier.phone}`} className="text-sky-600 hover:underline">
+                          {supplier.phone}
+                        </a>
+                      </div>
+                    )}
+                    {supplier.email && (
+                      <div className="flex items-center gap-1.5 truncate">
+                        <MailOutlined className="text-slate-400 text-xs shrink-0" />
+                        <span className="text-slate-600 truncate">{supplier.email}</span>
+                      </div>
+                    )}
+                    {supplier.address && (
+                      <div className="flex items-start gap-1.5">
+                        <EnvironmentOutlined className="text-slate-400 text-xs shrink-0 mt-0.5" />
+                        <span className="text-slate-500 line-clamp-1">{supplier.address}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Financial Metrics Grid */}
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="bg-amber-50/60 p-2 rounded-lg border border-amber-100/80">
+                      <span className="text-slate-500 block text-[11px] mb-0.5">Còn nợ NCC</span>
+                      <span
+                        className={`font-mono font-bold text-xs ${
+                          currentDebt > 0 ? 'text-rose-600' : 'text-emerald-700'
+                        }`}
+                      >
+                        {currentDebt.toLocaleString('vi-VN')} đ
+                      </span>
+                    </div>
+
+                    <div className="bg-slate-50/80 p-2 rounded-lg border border-slate-100">
+                      <span className="text-slate-500 block text-[11px] mb-0.5">Tổng mua hàng</span>
+                      <span className="font-mono font-bold text-xs text-[#784e34]">
+                        {totalPurchased.toLocaleString('vi-VN')} đ
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Actions Footer */}
+                  <div className="flex items-center justify-between pt-1 border-t border-slate-100 gap-2">
+                    {currentDebt > 0 ? (
+                      <Button
+                        size="small"
+                        icon={<DollarOutlined />}
+                        onClick={() => handleOpenPayment(supplier)}
+                        className="h-7 text-xs !bg-emerald-600 !border-emerald-600 hover:!bg-emerald-700 text-white font-medium"
+                      >
+                        Thanh toán nợ
+                      </Button>
+                    ) : (
+                      <div className="text-[11px] text-slate-400 italic">Đã hết nợ</div>
+                    )}
+
+                    <div className="flex items-center gap-1.5">
+                      <Button
+                        size="small"
+                        icon={<EditOutlined />}
+                        onClick={() => handleOpenEdit(supplier)}
+                        className="h-7 text-xs border-slate-200 text-slate-700"
+                      >
+                        Sửa
+                      </Button>
+
+                      <Popconfirm
+                        title={`Xóa nhà cung cấp ${supplier.name}?`}
+                        description="Hành động này không thể hoàn tác."
+                        onConfirm={() => handleDeleteSupplier(supplier.id, supplier.name)}
+                        okText="Xóa"
+                        cancelText="Hủy"
+                        okButtonProps={{ danger: true }}
+                      >
+                        <Button
+                          size="small"
+                          danger
+                          icon={<DeleteOutlined />}
+                          className="h-7 text-xs"
+                        />
+                      </Popconfirm>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Mobile Pagination */}
+        {sortedSuppliers.length > 10 && (
+          <div className="flex items-center justify-between pt-2 text-xs text-slate-600">
+            <span>
+              Tổng <strong>{sortedSuppliers.length}</strong> đối tác
+            </span>
+            <div className="flex items-center gap-1.5">
+              <Button
+                size="small"
+                disabled={mobilePage <= 1}
+                onClick={() => setMobilePage((p) => Math.max(1, p - 1))}
+                className="text-xs h-7"
+              >
+                Trước
+              </Button>
+              <span className="font-medium px-1">
+                {mobilePage} / {mobileTotalPages}
+              </span>
+              <Button
+                size="small"
+                disabled={mobilePage >= mobileTotalPages}
+                onClick={() => setMobilePage((p) => Math.min(mobileTotalPages, p + 1))}
+                className="text-xs h-7"
+              >
+                Sau
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Mobile Filter Drawer */}
+        <AdminFilterDrawer
+          open={isMobileFilterOpen}
+          onClose={() => setIsMobileFilterOpen(false)}
+          title="Bộ lọc nhà cung cấp"
+          hasActiveFilters={supplierActiveFiltersCount > 0}
+          onResetFilters={() => {
+            setSearchQuery('');
+            setStatusFilter('all');
+            setDebtFilter('all');
+            setMobileSort('name_asc');
+            setMobilePage(1);
+          }}
+        >
+          <div className="space-y-4">
+            {/* Sắp xếp danh sách */}
+            <div>
+              <div className="mb-2 text-xs font-semibold text-slate-700 uppercase tracking-wide">
+                Sắp xếp danh sách
+              </div>
+              <Select
+                value={mobileSort}
+                onChange={(v) => {
+                  setMobileSort(v);
+                  setMobilePage(1);
+                }}
+                className="w-full text-xs"
+                size="small"
+                options={[
+                  { value: 'name_asc', label: 'Tên A-Z' },
+                  { value: 'debt_desc', label: 'Nợ giảm dần' },
+                  { value: 'purchased_desc', label: 'Mua nhiều nhất' },
+                ]}
+              />
+            </div>
+
+            {/* Trạng thái hợp tác */}
+            <div className="pt-2 border-t border-slate-100">
+              <div className="mb-2 text-xs font-semibold text-slate-700 uppercase tracking-wide">
+                Trạng thái hợp tác
+              </div>
+              <div className="space-y-1">
+                {[
+                  { value: 'all', label: 'Tất cả đối tác', count: suppliersList.length },
+                  {
+                    value: 'active',
+                    label: '🟢 Đang hợp tác',
+                    count: suppliersList.filter((s) => s.status === 'active').length,
+                  },
+                  {
+                    value: 'inactive',
+                    label: '⚪ Tạm dừng',
+                    count: suppliersList.filter((s) => s.status === 'inactive').length,
+                  },
+                ].map((opt) => {
+                  const isSelected = statusFilter === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => {
+                        setStatusFilter(opt.value);
+                        setMobilePage(1);
+                      }}
+                      className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs transition-colors cursor-pointer border-none ${
+                        isSelected
+                          ? 'bg-amber-50/80 font-semibold text-[#784e34]'
+                          : 'bg-transparent text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span>{opt.label}</span>
+                      <span
+                        className={`text-[10px] px-2 py-0.5 rounded-full ${
+                          isSelected ? 'bg-[#784e34] text-white' : 'text-slate-400 bg-slate-100'
+                        }`}
+                      >
+                        {opt.count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Tình trạng công nợ */}
+            <div className="pt-2 border-t border-slate-100">
+              <div className="mb-2 text-xs font-semibold text-slate-700 uppercase tracking-wide">
+                Tình trạng công nợ
+              </div>
+              <div className="space-y-1">
+                {[
+                  { value: 'all', label: 'Tất cả đối tác' },
+                  {
+                    value: 'has_debt',
+                    label: '🔴 Còn nợ cần trả',
+                    count: enrichedSuppliersList.filter((s) => Number(s.currentDebt || 0) > 0).length,
+                  },
+                  {
+                    value: 'no_debt',
+                    label: '🟢 Đã thanh toán hết',
+                    count: enrichedSuppliersList.filter((s) => Number(s.currentDebt || 0) <= 0).length,
+                  },
+                ].map((opt) => {
+                  const isSelected = debtFilter === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => {
+                        setDebtFilter(opt.value);
+                        setMobilePage(1);
+                      }}
+                      className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs transition-colors cursor-pointer border-none ${
+                        isSelected
+                          ? 'bg-amber-50/80 font-semibold text-[#784e34]'
+                          : 'bg-transparent text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span>{opt.label}</span>
+                      {opt.count !== undefined && (
+                        <span
+                          className={`text-[10px] px-2 py-0.5 rounded-full ${
+                            isSelected ? 'bg-[#784e34] text-white' : 'text-slate-400 bg-slate-100'
+                          }`}
+                        >
+                          {opt.count}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Thống kê đối tác */}
+            <AdminSidebarSummary
+              title="Thống kê đối tác NCC"
+              items={[
+                { label: 'Tổng số nhà cung cấp', value: `${enrichedSuppliersList.length} đối tác` },
+                {
+                  label: 'Đang hợp tác',
+                  value: `${enrichedSuppliersList.filter((s) => s.status === 'active').length} đối tác`,
+                  color: 'success',
+                },
+                {
+                  label: 'Tổng nợ cần trả NCC',
+                  value: `${(
+                    enrichedSuppliersList.reduce((acc, s) => acc + (s.currentDebt || 0), 0) / 1000000
+                  ).toLocaleString('vi-VN')} Tr`,
+                  color: 'default',
+                },
+                {
+                  label: 'Tổng tiền mua hàng',
+                  value: `${(
+                    enrichedSuppliersList.reduce((acc, s) => acc + (s.totalPurchased || 0), 0) / 1000000
+                  ).toLocaleString('vi-VN')} Tr`,
+                  color: 'primary',
+                },
+              ]}
+            />
+          </div>
+        </AdminFilterDrawer>
+      </div>
+
       {/* FORM DRAWER SỬ DỤNG ADMIN FORM DRAWER CHUNG */}
       <AdminFormDrawer
         open={drawerOpen}
@@ -991,8 +1422,8 @@ export function SuppliersTab({
               <Input placeholder="VD: Northwest Hardwoods (USA)" className="h-10 rounded-lg text-sm" />
             </Form.Item>
 
-            <Row gutter={12}>
-              <Col span={12}>
+            <Row gutter={[12, 12]}>
+              <Col xs={24} sm={12}>
                 <Form.Item
                   label={<span className="text-xs font-semibold text-slate-800">Mã nhà cung cấp</span>}
                   name="code"
@@ -1009,7 +1440,7 @@ export function SuppliersTab({
                   />
                 </Form.Item>
               </Col>
-              <Col span={12}>
+              <Col xs={24} sm={12}>
                 <Form.Item
                   label={<span className="text-xs font-semibold text-slate-800">Mã số thuế (MST)</span>}
                   name="taxCode"
@@ -1019,8 +1450,8 @@ export function SuppliersTab({
               </Col>
             </Row>
 
-            <Row gutter={12}>
-              <Col span={12}>
+            <Row gutter={[12, 12]}>
+              <Col xs={24} sm={12}>
                 <Form.Item
                   label={<span className="text-xs font-semibold text-slate-800">Người liên hệ / Đại diện</span>}
                   name="contactPerson"
@@ -1028,7 +1459,7 @@ export function SuppliersTab({
                   <Input placeholder="VD: David Johnson" className="h-10 rounded-lg text-sm" />
                 </Form.Item>
               </Col>
-              <Col span={12}>
+              <Col xs={24} sm={12}>
                 <Form.Item
                   label={<span className="text-xs font-semibold text-slate-800">Số điện thoại liên hệ</span>}
                   name="phone"
@@ -1038,13 +1469,13 @@ export function SuppliersTab({
               </Col>
             </Row>
 
-            <Row gutter={12}>
-              <Col span={14}>
+            <Row gutter={[12, 12]}>
+              <Col xs={24} sm={14}>
                 <Form.Item label={<span className="text-xs font-semibold text-slate-800">Email giao dịch</span>} name="email">
                   <Input placeholder="sales@supplier.com" className="h-10 rounded-lg text-sm" />
                 </Form.Item>
               </Col>
-              <Col span={10}>
+              <Col xs={24} sm={10}>
                 <Form.Item label={<span className="text-xs font-semibold text-slate-800">Trạng thái hợp tác</span>} name="status" initialValue="active">
                   <Select className="h-10 text-sm">
                     <Select.Option value="active">🟢 Đang hợp tác</Select.Option>
@@ -1073,8 +1504,8 @@ export function SuppliersTab({
               </Tag>
             </div>
 
-            <Row gutter={12}>
-              <Col span={12}>
+            <Row gutter={[12, 12]}>
+              <Col xs={24} sm={12}>
                 <Form.Item label={<span className="text-xs font-semibold text-slate-800">Ngân hàng thụ hưởng</span>} name="bankName">
                   <Select
                     placeholder="Chọn ngân hàng"
@@ -1085,7 +1516,7 @@ export function SuppliersTab({
                   />
                 </Form.Item>
               </Col>
-              <Col span={12}>
+              <Col xs={24} sm={12}>
                 <Form.Item label={<span className="text-xs font-semibold text-slate-800">Số tài khoản ngân hàng</span>} name="bankAccount">
                   <Input placeholder="VD: 0071001234567" className="h-10 rounded-lg font-mono text-sm" />
                 </Form.Item>

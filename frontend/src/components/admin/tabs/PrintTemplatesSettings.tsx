@@ -178,6 +178,7 @@ export function PrintTemplatesSettings() {
   const { message } = App.useApp();
   const [activeKey, setActiveKey] = useState<string>('invoice');
   const [templates, setTemplates] = useState<PrintTemplateConfig[]>(DEFAULT_PRINT_TEMPLATES);
+  const [mobileSubTab, setMobileSubTab] = useState<'config' | 'preview'>('config');
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<PrintTemplateConfig | null>(null);
@@ -457,52 +458,69 @@ export function PrintTemplatesSettings() {
   };
 
   return (
-    <div className="space-y-4 flex-1 flex flex-col h-full w-full">
-      {/* 1. Header Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200/80 shadow-xs">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-[#784e34]/10 text-[#784e34] flex items-center justify-center text-xl shrink-0">
+    <div className="space-y-3.5 sm:space-y-4 flex-1 flex flex-col h-full w-full">
+      {/* 1. Header Toolbar (Mobile optimized, Desktop untouched) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 bg-white p-3 sm:p-4 rounded-xl border border-slate-200/80 shadow-xs">
+        <div className="flex items-center gap-2.5 sm:gap-3">
+          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-[#784e34]/10 text-[#784e34] flex items-center justify-center text-lg sm:text-xl shrink-0">
             <PrinterOutlined />
           </div>
-          <div>
+          <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h2 className="font-bold text-base text-slate-900 m-0">Mẫu Phiếu In &amp; Hóa Đơn Hệ Thống</h2>
-              <Tag color="gold" className="text-[10px] font-semibold m-0">POS &amp; ERP</Tag>
+              <h2 className="font-bold text-sm sm:text-base text-slate-900 m-0 truncate">Mẫu Phiếu In &amp; Hóa Đơn</h2>
+              <Tag color="gold" className="text-[10px] font-semibold m-0 shrink-0">POS &amp; ERP</Tag>
             </div>
-            <p className="text-xs text-slate-500 m-0 mt-0.5">
-              Cấu hình mẫu in chuẩn cho Đơn hàng, Nhập kho, Kiểm kho, Xuất trả NCC, Bàn giao và Thu chi
-            </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
           <Button
             icon={<ReloadOutlined />}
             onClick={handleResetToDefault}
-            className="rounded-lg text-xs hover:text-[#784e34]"
+            className="flex-1 sm:flex-none rounded-lg text-xs hover:text-[#784e34] !h-8 px-2 sm:px-3"
+            title="Khôi phục mặc định"
           >
-            Khôi phục mặc định
+            <span className="hidden sm:inline">Khôi phục mặc định</span>
+            <span className="sm:hidden">Khôi phục</span>
           </Button>
           <Button
             icon={<EditOutlined />}
             onClick={handleOpenEdit}
-            className="rounded-lg text-xs border-[#784e34] text-[#784e34] hover:bg-[#784e34]/5"
+            className="flex-1 sm:flex-none rounded-lg text-xs border-[#784e34] text-[#784e34] hover:bg-[#784e34]/5 !h-8 px-2.5 sm:px-3 font-medium"
           >
-            Chỉnh sửa mẫu
+            <span className="hidden sm:inline">Chỉnh sửa mẫu</span>
+            <span className="sm:hidden">Sửa mẫu</span>
           </Button>
           <Button
             type="primary"
             icon={<PrinterOutlined />}
             onClick={handlePrintTest}
-            className="rounded-lg bg-[#784e34] hover:!bg-[#5d371f] text-xs font-semibold px-4"
+            className="flex-1 sm:flex-none rounded-lg bg-[#784e34] hover:!bg-[#5d371f] text-xs font-semibold !h-8 px-2.5 sm:px-4"
           >
-            In thử nghiệm
+            <span className="hidden sm:inline">In thử nghiệm</span>
+            <span className="sm:hidden">In thử</span>
           </Button>
         </div>
       </div>
 
       {/* 2. Sub-Tabs Selector matching system modules */}
-      <div className="bg-white p-2 rounded-xl border border-slate-200/80 shadow-xs overflow-x-auto">
+      {/* Mobile: Compact Select Dropdown (< sm) */}
+      <div className="sm:hidden bg-white p-2.5 rounded-xl border border-slate-200/80 shadow-xs flex items-center gap-2">
+        <span className="text-xs font-semibold text-slate-700 shrink-0">Loại mẫu:</span>
+        <Select
+          value={activeKey}
+          onChange={(val) => setActiveKey(val as string)}
+          className="flex-1 text-xs"
+          size="middle"
+          options={templates.map((t) => ({
+            value: t.key,
+            label: `${t.tab} (${t.paperSize.toUpperCase()})`,
+          }))}
+        />
+      </div>
+
+      {/* Desktop: Segmented Tabs (hidden on mobile) */}
+      <div className="hidden sm:block bg-white p-2 rounded-xl border border-slate-200/80 shadow-xs overflow-x-auto">
         <Segmented
           value={activeKey}
           onChange={(val) => setActiveKey(val as string)}
@@ -518,10 +536,40 @@ export function PrintTemplatesSettings() {
         />
       </div>
 
+      {/* Mobile View Toggle: Config vs Live Preview (lg:hidden) */}
+      <div className="lg:hidden">
+        <Segmented
+          value={mobileSubTab}
+          onChange={(val) => setMobileSubTab(val as 'config' | 'preview')}
+          block
+          options={[
+            {
+              value: 'config',
+              label: (
+                <span className="flex items-center justify-center gap-1.5 py-1 text-xs font-semibold">
+                  <FileTextOutlined /> Cấu hình nhanh
+                </span>
+              ),
+            },
+            {
+              value: 'preview',
+              label: (
+                <span className="flex items-center justify-center gap-1.5 py-1 text-xs font-semibold">
+                  <EyeOutlined /> Xem trước phiếu in
+                </span>
+              ),
+            },
+          ]}
+          className="bg-slate-100 p-1 rounded-lg w-full"
+        />
+      </div>
+
       {/* 3. Main Workspace: Settings Quick Config + Live Preview Paper */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        {/* Left Quick Config Panel */}
-        <div className="lg:col-span-4 bg-white p-4 sm:p-5 rounded-xl border border-slate-200/80 shadow-xs space-y-4">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-5 items-start">
+        {/* Left Quick Config Panel (Visible on desktop or when mobileSubTab === 'config') */}
+        <div className={`lg:col-span-4 bg-white p-3.5 sm:p-5 rounded-xl border border-slate-200/80 shadow-xs space-y-3.5 sm:space-y-4 ${
+          mobileSubTab === 'config' ? 'block' : 'hidden lg:block'
+        }`}>
           <div className="flex items-center justify-between border-b border-slate-100 pb-2">
             <span className="font-bold text-xs uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
               <FileTextOutlined className="text-[#784e34]" /> Cấu hình nhanh
@@ -553,7 +601,7 @@ export function PrintTemplatesSettings() {
           </div>
 
           {/* Toggle Switches */}
-          <div className="space-y-2.5 pt-2 border-t border-slate-100">
+          <div className="space-y-2.5 pt-2 border-t border-slate-100 text-xs">
             <div className="flex items-center justify-between">
               <span className="text-slate-700">Logo thương hiệu D2 LUXURY</span>
               <Switch
@@ -606,46 +654,80 @@ export function PrintTemplatesSettings() {
           {/* Header & Footer Notes Summary */}
           <div className="pt-2 border-t border-slate-100 space-y-2">
             <div>
-              <span className="font-semibold text-slate-700 block mb-1">Tiêu đề phụ:</span>
-              <div className="bg-slate-50 p-2 rounded text-slate-600 text-[11px] italic border border-slate-100">
+              <span className="font-semibold text-slate-700 block mb-1 text-xs">Tiêu đề phụ:</span>
+              <div className="bg-slate-50 p-2 rounded text-slate-600 text-[11px] italic border border-slate-100 line-clamp-2">
                 {activeTemplate.headerNote || '—'}
               </div>
             </div>
             <div>
-              <span className="font-semibold text-slate-700 block mb-1">Ghi chú chân trang:</span>
-              <div className="bg-slate-50 p-2 rounded text-slate-600 text-[11px] italic border border-slate-100">
+              <span className="font-semibold text-slate-700 block mb-1 text-xs">Ghi chú chân trang:</span>
+              <div className="bg-slate-50 p-2 rounded text-slate-600 text-[11px] italic border border-slate-100 line-clamp-2">
                 {activeTemplate.footerNote || '—'}
               </div>
             </div>
           </div>
 
-          <Button
-            block
-            icon={<EditOutlined />}
-            onClick={handleOpenEdit}
-            className="rounded-lg text-xs bg-slate-50 hover:!bg-[#784e34]/10 hover:!text-[#784e34] hover:!border-[#784e34]"
-          >
-            Chỉnh sửa toàn diện
-          </Button>
+          <div className="flex gap-2 pt-1">
+            <Button
+              block
+              icon={<EditOutlined />}
+              onClick={handleOpenEdit}
+              className="rounded-lg text-xs bg-slate-50 hover:!bg-[#784e34]/10 hover:!text-[#784e34] hover:!border-[#784e34] !h-8.5"
+            >
+              Chỉnh sửa toàn diện
+            </Button>
+            <Button
+              block
+              type="primary"
+              icon={<EyeOutlined />}
+              onClick={() => setMobileSubTab('preview')}
+              className="lg:hidden rounded-lg text-xs bg-[#784e34] hover:!bg-[#5d371f] text-white !h-8.5"
+            >
+              Xem bản in →
+            </Button>
+          </div>
         </div>
 
-        {/* Right Live Preview Paper Area */}
-        <div className="lg:col-span-8 bg-slate-100/70 p-4 sm:p-6 rounded-xl border border-slate-200/80 flex flex-col items-center justify-start overflow-y-auto min-h-[680px]">
-          <div className="text-center text-xs font-semibold text-slate-500 mb-3 flex items-center gap-1.5">
+        {/* Right Live Preview Paper Area (Visible on desktop or when mobileSubTab === 'preview') */}
+        <div className={`lg:col-span-8 bg-slate-100/70 p-2.5 sm:p-6 rounded-xl border border-slate-200/80 flex flex-col items-center justify-start overflow-x-auto min-h-0 lg:min-h-[680px] w-full ${
+          mobileSubTab === 'preview' ? 'block' : 'hidden lg:block'
+        }`}>
+          {/* Mobile Preview Action Bar */}
+          <div className="lg:hidden w-full flex items-center justify-between gap-2 mb-2.5 px-0.5">
+            <Button
+              size="small"
+              icon={<EditOutlined />}
+              onClick={() => setMobileSubTab('config')}
+              className="text-xs text-slate-700 rounded-lg !h-7 font-medium"
+            >
+              ← Về cấu hình
+            </Button>
+            <Button
+              size="small"
+              type="primary"
+              icon={<PrinterOutlined />}
+              onClick={handlePrintTest}
+              className="text-xs bg-[#784e34] hover:!bg-[#5d371f] text-white rounded-lg !h-7 font-semibold"
+            >
+              In thử nghiệm
+            </Button>
+          </div>
+
+          <div className="text-center text-xs font-semibold text-slate-500 mb-2.5 sm:mb-3 flex items-center gap-1.5">
             <EyeOutlined className="text-[#784e34]" /> Bản xem trước thực tế (Khổ: {activeTemplate.paperSize.toUpperCase()})
           </div>
 
           {/* SIMULATED PAPER CONTAINER */}
           <div
             id="print-preview-container"
-            className={`bg-white rounded-lg shadow-md border border-slate-300 p-6 sm:p-8 text-slate-900 transition-all font-sans ${
+            className={`bg-white rounded-lg shadow-md border border-slate-300 p-3.5 sm:p-8 text-slate-900 transition-all font-sans w-full ${
               activeTemplate.paperSize === 'k80'
-                ? 'w-full max-w-[380px] text-[11px] leading-relaxed'
+                ? 'max-w-[380px] text-[11px] leading-relaxed'
                 : activeTemplate.paperSize === 'k57'
-                ? 'w-full max-w-[300px] text-[10px] leading-tight'
+                ? 'max-w-[300px] text-[10px] leading-tight'
                 : activeTemplate.paperSize === 'a5'
-                ? 'w-full max-w-[580px] text-xs leading-normal'
-                : 'w-full max-w-[760px] text-xs leading-relaxed'
+                ? 'max-w-[580px] text-xs leading-normal'
+                : 'max-w-[760px] text-xs leading-relaxed'
             }`}
           >
             {/* Header: Store Identity */}
@@ -748,15 +830,15 @@ export function PrintTemplatesSettings() {
             )}
 
             {/* Items Table */}
-            <div className="my-3 border-t border-b border-slate-900 py-1">
-              <table className="w-full text-left text-[11px] border-collapse">
+            <div className="my-2.5 sm:my-3 border-t border-b border-slate-900 py-1 overflow-x-auto [scrollbar-width:thin]">
+              <table className="w-full text-left text-[10px] sm:text-[11px] border-collapse min-w-[280px]">
                 <thead>
                   <tr className="border-b border-slate-300 font-bold text-slate-900">
-                    <th className="py-1 text-center w-8">#</th>
+                    <th className="py-1 text-center w-6 sm:w-8">#</th>
                     <th className="py-1">Sản phẩm &amp; Quy cách</th>
-                    <th className="py-1 text-center w-10">SL</th>
-                    <th className="py-1 text-right w-24">Đơn giá</th>
-                    <th className="py-1 text-right w-24">Thành tiền</th>
+                    <th className="py-1 text-center w-8 sm:w-10">SL</th>
+                    <th className="py-1 text-right w-16 sm:w-24">Đơn giá</th>
+                    <th className="py-1 text-right w-18 sm:w-24">Thành tiền</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-dashed divide-slate-200">
@@ -764,7 +846,7 @@ export function PrintTemplatesSettings() {
                     <td className="py-1.5 text-center font-mono">1</td>
                     <td className="py-1.5">
                       <div className="font-semibold text-slate-900">Bàn Ăn Óc Chó Bắc Mỹ Tự Nhiên</div>
-                      <div className="text-[9px] text-slate-500">Kích thước 2200 x 950 x 750mm, hoàn thiện sơn lau dầu Hesse Lignal Đức</div>
+                      <div className="text-[8.5px] sm:text-[9px] text-slate-500">Kích thước 2200 x 950 x 750mm, hoàn thiện sơn lau dầu Hesse Lignal Đức</div>
                     </td>
                     <td className="py-1.5 text-center font-semibold">1</td>
                     <td className="py-1.5 text-right font-mono">38,500,000</td>
@@ -774,7 +856,7 @@ export function PrintTemplatesSettings() {
                     <td className="py-1.5 text-center font-mono">2</td>
                     <td className="py-1.5">
                       <div className="font-semibold text-slate-900">Ghế Ăn Grace Da Bò Ý D2-M08</div>
-                      <div className="text-[9px] text-slate-500">Khung gỗ Sồi Tần Bì, đệm mút cao cấp bọc da bò Mastrotto Ý màu Nâu Cà phê</div>
+                      <div className="text-[8.5px] sm:text-[9px] text-slate-500">Khung gỗ Sồi Tần Bì, đệm mút cao cấp bọc da bò Mastrotto Ý màu Nâu Cà phê</div>
                     </td>
                     <td className="py-1.5 text-center font-semibold">6</td>
                     <td className="py-1.5 text-right font-mono">4,500,000</td>
@@ -784,7 +866,7 @@ export function PrintTemplatesSettings() {
                     <td className="py-1.5 text-center font-mono">3</td>
                     <td className="py-1.5">
                       <div className="font-semibold text-slate-900">Tủ Trang Trí Gỗ Gõ Đỏ Pachyloba</div>
-                      <div className="text-[9px] text-slate-500">Cánh kính khung nhôm Anode mạ PVD vàng đồng, ray trượt Blum giảm chấn</div>
+                      <div className="text-[8.5px] sm:text-[9px] text-slate-500">Cánh kính khung nhôm Anode mạ PVD vàng đồng, ray trượt Blum giảm chấn</div>
                     </td>
                     <td className="py-1.5 text-center font-semibold">1</td>
                     <td className="py-1.5 text-right font-mono">22,000,000</td>
@@ -795,7 +877,7 @@ export function PrintTemplatesSettings() {
             </div>
 
             {/* Totals Calculation */}
-            <div className="space-y-1 text-right text-[11px] pt-1">
+            <div className="space-y-1 text-right text-[10px] sm:text-[11px] pt-1">
               <div className="flex justify-between text-slate-700">
                 <span>Tổng tiền hàng (3 mục):</span>
                 <span className="font-mono font-semibold">87,500,000 đ</span>
@@ -804,47 +886,47 @@ export function PrintTemplatesSettings() {
                 <span>Chi phí vận chuyển &amp; lắp đặt tận nơi:</span>
                 <span className="font-mono text-emerald-700 font-semibold">Miễn phí</span>
               </div>
-              <div className="flex justify-between items-center text-xs font-bold text-slate-900 pt-1.5 border-t border-slate-900">
+              <div className="flex justify-between items-center text-[11px] sm:text-xs font-bold text-slate-900 pt-1.5 border-t border-slate-900">
                 <span className="uppercase">Tổng thanh toán:</span>
-                <span className="text-sm font-mono font-bold text-[#784e34]">87,500,000 đ</span>
+                <span className="text-xs sm:text-sm font-mono font-bold text-[#784e34]">87,500,000 đ</span>
               </div>
-              <div className="text-left text-[10px] italic text-slate-600 pt-0.5">
+              <div className="text-left text-[9px] sm:text-[10px] italic text-slate-600 pt-0.5">
                 (Bằng chữ: Tám mươi bảy triệu năm trăm nghìn đồng chẵn)
               </div>
             </div>
 
             {/* QR Code & Banking */}
             {activeTemplate.showQr && (
-              <div className="mt-4 p-3 bg-slate-50 rounded-lg border border-dashed border-slate-300 flex items-center justify-between gap-4">
-                <div className="text-left text-[10px] space-y-0.5">
-                  <div className="font-bold text-slate-900 flex items-center gap-1">
+              <div className="mt-3.5 sm:mt-4 p-2.5 sm:p-3 bg-slate-50 rounded-lg border border-dashed border-slate-300 flex items-center justify-between gap-2 sm:gap-4">
+                <div className="text-left text-[9px] sm:text-[10px] space-y-0.5 min-w-0">
+                  <div className="font-bold text-slate-900 flex items-center gap-1 truncate">
                     <QrcodeOutlined className="text-[#784e34]" /> Quét mã VietQR chuyển khoản:
                   </div>
-                  <div>Ngân hàng: <strong>MBBank (Hà Nội)</strong></div>
+                  <div className="truncate">Ngân hàng: <strong>MBBank (Hà Nội)</strong></div>
                   <div>Số tài khoản: <strong className="font-mono font-bold text-[#784e34]">0986739587</strong></div>
-                  <div>Chủ TK: <strong>CTCP NOI THAT D2 LUXURY</strong></div>
-                  <div className="text-[9px] text-slate-500">Nội dung: {activeTemplate.codePrefix}-2026-0889</div>
+                  <div className="truncate">Chủ TK: <strong>CTCP NOI THAT D2 LUXURY</strong></div>
+                  <div className="text-[8.5px] sm:text-[9px] text-slate-500 truncate">Nội dung: {activeTemplate.codePrefix}-2026-0889</div>
                 </div>
 
                 <div className="flex flex-col items-center shrink-0">
                   <img
                     src="https://api.vietqr.io/image/970422-0986739587-n2LwzB0.jpg?accountName=CTCP%20NOI%20THAT%20D2%20LUXURY&amount=87500000&addInfo=HD-2026-0889"
                     alt="VietQR Chuyển khoản"
-                    className="w-20 h-20 rounded border border-slate-200 object-contain bg-white p-0.5"
+                    className="w-16 h-16 sm:w-20 sm:h-20 rounded border border-slate-200 object-contain bg-white p-0.5"
                     onError={(e: any) => {
                       e.currentTarget.src = '/logo.png';
                     }}
                   />
-                  <span className="text-[8px] text-slate-400 font-mono mt-0.5">VietQR Chuẩn</span>
+                  <span className="text-[7.5px] sm:text-[8px] text-slate-400 font-mono mt-0.5">VietQR Chuẩn</span>
                 </div>
               </div>
             )}
 
             {/* Signatures */}
             {activeTemplate.showSignature && (
-              <div className="mt-6 pt-2 grid grid-cols-3 text-center text-[10px] text-slate-700 font-semibold gap-2">
+              <div className="mt-4 sm:mt-6 pt-2 grid grid-cols-3 text-center text-[9px] sm:text-[10px] text-slate-700 font-semibold gap-1 sm:gap-2">
                 <div>
-                  <div>
+                  <div className="line-clamp-2">
                     {activeTemplate.key === 'purchase' || activeTemplate.key === 'return'
                       ? 'Đại diện Đối tác / NCC'
                       : activeTemplate.key === 'receipt'
@@ -855,14 +937,14 @@ export function PrintTemplatesSettings() {
                       ? 'Người nhận hàng'
                       : 'Khách hàng / Đại diện'}
                   </div>
-                  <div className="text-[9px] font-normal italic text-slate-400 mt-0.5">(Ký &amp; ghi rõ họ tên)</div>
-                  <div className="h-12"></div>
-                  <div className="font-normal text-slate-800">
+                  <div className="text-[8px] sm:text-[9px] font-normal italic text-slate-400 mt-0.5">(Ký &amp; ghi rõ họ tên)</div>
+                  <div className="h-8 sm:h-12"></div>
+                  <div className="font-normal text-slate-800 truncate">
                     {activeTemplate.key === 'payment' ? 'Đại diện NCC' : 'Nguyễn Văn Luân'}
                   </div>
                 </div>
                 <div>
-                  <div>
+                  <div className="line-clamp-2">
                     {activeTemplate.key === 'purchase' || activeTemplate.key === 'stocktake'
                       ? 'Thủ kho / KCS'
                       : activeTemplate.key === 'receipt' || activeTemplate.key === 'payment'
@@ -871,15 +953,15 @@ export function PrintTemplatesSettings() {
                       ? 'Đội thi công & Lắp đặt'
                       : 'Kỹ sư giám sát'}
                   </div>
-                  <div className="text-[9px] font-normal italic text-slate-400 mt-0.5">(Ký &amp; ghi rõ họ tên)</div>
-                  <div className="h-12"></div>
-                  <div className="font-normal text-slate-800">Trần Quang Huy</div>
+                  <div className="text-[8px] sm:text-[9px] font-normal italic text-slate-400 mt-0.5">(Ký &amp; ghi rõ họ tên)</div>
+                  <div className="h-8 sm:h-12"></div>
+                  <div className="font-normal text-slate-800 truncate">Trần Quang Huy</div>
                 </div>
                 <div>
-                  <div>Đại diện D2 LUXURY</div>
-                  <div className="text-[9px] font-normal italic text-slate-400 mt-0.5">(Ký, đóng dấu)</div>
-                  <div className="h-12"></div>
-                  <div className="font-normal text-slate-800">Thủ trưởng đơn vị</div>
+                  <div className="line-clamp-2">Đại diện D2 LUXURY</div>
+                  <div className="text-[8px] sm:text-[9px] font-normal italic text-slate-400 mt-0.5">(Ký, đóng dấu)</div>
+                  <div className="h-8 sm:h-12"></div>
+                  <div className="font-normal text-slate-800 truncate">Thủ trưởng đơn vị</div>
                 </div>
               </div>
             )}

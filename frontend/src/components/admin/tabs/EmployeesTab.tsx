@@ -26,7 +26,6 @@ import {
   EditOutlined,
   DeleteOutlined,
   PlusOutlined,
-  ReloadOutlined,
   DownloadOutlined,
   UploadOutlined,
   SearchOutlined,
@@ -47,11 +46,13 @@ import {
   SafetyCertificateOutlined,
   CalendarOutlined,
   FileTextOutlined,
+  FilterOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import {
   AdminDataTable,
   AdminFilterSidebar,
+  AdminFilterDrawer,
   AdminSidebarSummary,
   AdminSearchInput,
   AutoCodeButton,
@@ -223,6 +224,13 @@ export function EmployeesTab({
   const [departmentFilter, setDepartmentFilter] = useState<string>('all');
   // Always default to 'all' to show all employees across all branches
   const [branchFilter, setBranchFilter] = useState<string>('all');
+  const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
+  const hasActiveEmployeeFilters = Boolean(
+    searchQuery ||
+    statusFilter !== 'all' ||
+    departmentFilter !== 'all' ||
+    branchFilter !== 'all'
+  );
 
   // Compute active branch to auto-assign for created employees
   const activeBranch = useMemo(() => {
@@ -658,8 +666,8 @@ export function EmployeesTab({
   return (
     <div className="space-y-4">
       {/* 1. TOP ACTION TOOLBAR */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-none shadow-xs border border-slate-200/80">
-        <div className="flex flex-1 items-center gap-2.5 min-w-[280px] max-w-xl">
+      <div className="bg-white p-3 sm:p-4 rounded-xl shadow-xs border border-slate-200/80 flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 sm:gap-3">
+        <div className="flex-1 w-full lg:max-w-xl min-w-0">
           <AdminSearchInput
             placeholder="Tìm theo tên nhân viên, mã NV, SĐT, email, CCCD, chức vụ, phòng ban..."
             value={searchQuery}
@@ -667,44 +675,45 @@ export function EmployeesTab({
           />
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
-          <Button
-            icon={<ReloadOutlined />}
-            onClick={() => {
-              setSearchQuery('');
-              setStatusFilter('all');
-              setDepartmentFilter('all');
-              setBranchFilter('all');
-              message.success('Đã làm mới danh sách nhân viên toàn hệ thống!');
-            }}
-            className="h-10 rounded-none text-sm font-normal text-slate-700 hover:text-[#784e34]"
-          >
-            Làm mới
-          </Button>
+        <div className="flex items-center justify-between lg:justify-end gap-2 w-full lg:w-auto">
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <Button
+              icon={<FilterOutlined className={hasActiveEmployeeFilters ? 'text-[#784e34]' : 'text-slate-600'} />}
+              onClick={() => setIsMobileFilterOpen(true)}
+              className="lg:hidden !h-8 px-2.5 rounded-lg border-slate-300 bg-white text-xs font-medium text-slate-700 hover:text-[#784e34] inline-flex items-center gap-1 shadow-2xs"
+              title="Mở bộ lọc nhân sự"
+            >
+              <span>Bộ lọc</span>
+              {hasActiveEmployeeFilters && <span className="w-1.5 h-1.5 rounded-full bg-[#784e34]" />}
+            </Button>
 
-          <Button
-            icon={<DownloadOutlined />}
-            onClick={handleExportExcel}
-            className="h-10 rounded-none text-sm font-normal text-slate-700 hover:text-[#784e34]"
-          >
-            Xuất Excel
-          </Button>
+            <Button
+              icon={<DownloadOutlined />}
+              onClick={handleExportExcel}
+              className="!h-8 px-2 sm:px-3 rounded-lg border-slate-300 bg-white text-xs font-medium text-slate-700 hover:text-[#784e34] inline-flex items-center gap-1 shadow-2xs"
+              title="Xuất Excel"
+            >
+              <span className="hidden sm:inline">Xuất Excel</span>
+            </Button>
 
-          <Button
-            icon={<UploadOutlined />}
-            onClick={() => setImportModalOpen(true)}
-            className="h-10 rounded-none text-sm font-normal text-slate-700 hover:text-[#784e34]"
-          >
-            Nhập Excel
-          </Button>
+            <Button
+              icon={<UploadOutlined />}
+              onClick={() => setImportModalOpen(true)}
+              className="!h-8 px-2 sm:px-3 rounded-lg border-slate-300 bg-white text-xs font-medium text-slate-700 hover:text-[#784e34] inline-flex items-center gap-1 shadow-2xs"
+              title="Nhập Excel"
+            >
+              <span className="hidden sm:inline">Nhập Excel</span>
+            </Button>
+          </div>
 
           <Button
             type="primary"
             icon={<PlusOutlined />}
             onClick={handleOpenCreate}
-            className="h-10 rounded-none bg-[#784e34] hover:!bg-[#5d371f] px-4 text-sm font-medium text-white shadow-none border-none flex items-center"
+            className="!h-8 px-3 sm:px-4 rounded-lg !bg-[#784e34] hover:!bg-[#5d371f] text-xs font-semibold text-white shadow-2xs border-none inline-flex items-center gap-1 shrink-0"
           >
-            Thêm nhân viên
+            <span className="hidden xs:inline">Thêm nhân viên</span>
+            <span className="xs:hidden">Thêm mới</span>
           </Button>
         </div>
       </div>
@@ -713,13 +722,9 @@ export function EmployeesTab({
       <div className="flex flex-col lg:flex-row gap-4 items-start">
         {/* Left Filter Sidebar */}
         <AdminFilterSidebar
+          className="hidden lg:block w-64"
           title="Bộ lọc nhân sự"
-          hasActiveFilters={Boolean(
-            searchQuery ||
-              statusFilter !== 'all' ||
-              departmentFilter !== 'all' ||
-              branchFilter !== 'all'
-          )}
+          hasActiveFilters={hasActiveEmployeeFilters}
           onResetFilters={() => {
             setSearchQuery('');
             setStatusFilter('all');
@@ -1582,6 +1587,133 @@ export function EmployeesTab({
           </Upload.Dragger>
         </div>
       </Modal>
+
+      {/* Mobile Filter Drawer */}
+      <AdminFilterDrawer
+        open={isMobileFilterOpen}
+        onClose={() => setIsMobileFilterOpen(false)}
+        title="Bộ lọc nhân sự"
+        hasActiveFilters={hasActiveEmployeeFilters}
+        onResetFilters={() => {
+          setSearchQuery('');
+          setStatusFilter('all');
+          setDepartmentFilter('all');
+          setBranchFilter('all');
+        }}
+      >
+        <div className="space-y-4">
+          {/* Lọc Trạng thái làm việc */}
+          <div>
+            <div className="mb-2 text-xs font-medium text-slate-700 uppercase tracking-wide">
+              Trạng thái làm việc
+            </div>
+            <div className="space-y-1">
+              {[
+                { value: 'all', label: 'Tất cả nhân sự', count: employeesList.length },
+                {
+                  value: 'working',
+                  label: '🟢 Đang làm việc',
+                  count: employeesList.filter((e) => e.status === 'working').length,
+                },
+                {
+                  value: 'resigned',
+                  label: '⚪ Đã nghỉ việc',
+                  count: employeesList.filter((e) => e.status === 'resigned').length,
+                },
+              ].map((opt) => {
+                const isSelected = statusFilter === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setStatusFilter(opt.value as any)}
+                    className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors cursor-pointer border-none ${
+                      isSelected
+                        ? 'bg-amber-50/80 font-semibold text-[#784e34]'
+                        : 'bg-transparent text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span>{opt.label}</span>
+                    <span
+                      className={`text-xs px-2 py-0.5 rounded-full ${
+                        isSelected ? 'bg-[#784e34] text-white' : 'text-slate-400 bg-slate-100'
+                      }`}
+                    >
+                      {opt.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Lọc theo Phòng ban */}
+          <div className="pt-2 border-t border-slate-100">
+            <div className="mb-2 text-xs font-semibold text-slate-600 uppercase tracking-wider">
+              Phòng ban
+            </div>
+            <Select
+              value={departmentFilter}
+              onChange={setDepartmentFilter}
+              className="w-full text-sm"
+              options={[
+                { value: 'all', label: 'Tất cả phòng ban' },
+                ...DEPARTMENTS.map((d) => ({ value: d, label: d })),
+              ]}
+            />
+          </div>
+
+          {/* Lọc theo Chi nhánh cơ sở */}
+          <div className="pt-2 border-t border-slate-100">
+            <div className="mb-2 text-xs font-semibold text-slate-600 uppercase tracking-wider">
+              Chi nhánh cơ sở
+            </div>
+            <Select
+              value={branchFilter}
+              onChange={setBranchFilter}
+              className="w-full text-sm"
+              options={[
+                { value: 'all', label: 'Tất cả chi nhánh' },
+                ...branchesList.map((b) => ({ value: b.name, label: b.name })),
+              ]}
+            />
+          </div>
+
+          {/* Summary Card */}
+          <AdminSidebarSummary
+            title="Thống kê nhân sự"
+            items={[
+              { label: 'Tổng số nhân viên', value: `${employeesList.length} người` },
+              {
+                label: 'Đang làm việc',
+                value: `${employeesList.filter((e) => e.status === 'working').length} người`,
+                color: 'success',
+              },
+              {
+                label: 'Đã nghỉ việc',
+                value: `${employeesList.filter((e) => e.status === 'resigned').length} người`,
+                color: 'default',
+              },
+              {
+                label: 'Tài khoản có vai trò',
+                value: `${employeesList.filter((e) => Boolean(e.role || e.login || e.username)).length} TK`,
+                color: 'primary',
+              },
+            ]}
+          />
+
+          <div className="pt-2">
+            <Button
+              type="primary"
+              block
+              onClick={() => setIsMobileFilterOpen(false)}
+              className="bg-[#784e34] hover:!bg-[#5d371f] font-bold h-10 rounded-lg text-sm"
+            >
+              Áp dụng bộ lọc
+            </Button>
+          </div>
+        </div>
+      </AdminFilterDrawer>
     </div>
   );
 }

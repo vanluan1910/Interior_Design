@@ -67,6 +67,7 @@ function mapCatalogToDetailProduct(item: FeaturedCatalogProduct, currentBranch?:
   if (images.length === 0 && item.image) {
     images = [item.image];
   }
+  images = Array.from(new Set(images.filter(Boolean)));
 
   return {
     id: item.id,
@@ -91,7 +92,7 @@ function mapCatalogToDetailProduct(item: FeaturedCatalogProduct, currentBranch?:
     rating: 5.0,
     reviewCount: 48,
     subtitle: item.collection || item.material || 'Chế tác mộng mộc truyền thống',
-    description: item.description || `Sản phẩm ${item.name} chế tác tỉ mỉ từ gỗ tự nhiên tuyển chọn bởi nghệ nhân D2 LUXURY.`,
+    description: item.description || `Sản phẩm ${item.name} chế tác tỉ mỉ từ gỗ tự nhiên tuyển chọn bởi D2 LUXURY.`,
     dimensions: item.dimensions || 'Theo thiết kế tiêu chuẩn',
     stockStatus: item.stockType === 'custom' ? 'Đặt may đo (7-14 ngày)' : '',
     inStock: true,
@@ -252,7 +253,7 @@ export default function ProductDetailPage({
       badge: 'Tuyệt phẩm mộc',
       image: currentProduct.image,
       price: calculatedPrice,
-      originalPrice: calculatedStrike || Math.round(calculatedPrice * 1.15),
+      originalPrice: calculatedStrike && calculatedStrike > calculatedPrice ? calculatedStrike : undefined,
       specs: [
         currentProduct.woodType,
         currentProduct.dimensions,
@@ -273,7 +274,7 @@ export default function ProductDetailPage({
       badge: 'Tuyệt phẩm mộc',
       image: currentProduct.image,
       price: calculatedPrice,
-      originalPrice: calculatedStrike || Math.round(calculatedPrice * 1.15),
+      originalPrice: calculatedStrike && calculatedStrike > calculatedPrice ? calculatedStrike : undefined,
       quantity: Math.max(1, quantity),
       selected: true,
       isFavorite: false,
@@ -343,15 +344,15 @@ export default function ProductDetailPage({
         onOpenBooking={() => {}}
       />
 
-      <main className="w-full pt-20">
+      <main className="w-full pt-20 pb-10 sm:pb-0">
         {/* Top Breadcrumb & Quick Actions Bar */}
-        <section className="w-full bg-[#fbf2ee] py-3.5 border-b border-[#eae1dd]">
-          <div className="w-full max-w-[1720px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-16 flex flex-wrap items-center justify-between gap-3 text-xs font-medium text-[#83746c]">
-            <nav aria-label="Breadcrumb" className="flex items-center gap-2 flex-wrap">
+        <section className="w-full bg-[#fbf2ee] py-2.5 sm:py-3.5 border-b border-[#eae1dd]">
+          <div className="w-full max-w-[1720px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-16 flex items-center justify-between gap-2 sm:gap-3 text-xs font-medium text-[#83746c]">
+            <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 sm:gap-2 flex-wrap text-[11px] sm:text-xs">
               <Link href="/" className="hover:text-[#5d371f] transition-colors">
                 Trang chủ
               </Link>
-              <RightOutlined className="text-[10px]" />
+              <RightOutlined className="text-[9px] sm:text-[10px]" />
               <Link
                 href={`/products?space=${currentProduct.category}`}
                 className="hover:text-[#5d371f] transition-colors"
@@ -360,7 +361,7 @@ export default function ProductDetailPage({
               </Link>
               {currentProduct.subCategoryName && (
                 <>
-                  <RightOutlined className="text-[10px]" />
+                  <RightOutlined className="text-[9px] sm:text-[10px]" />
                   <Link
                     href={`/products?space=${currentProduct.category}&category=${encodeURIComponent(currentProduct.subCategoryName)}`}
                     className="hover:text-[#5d371f] transition-colors"
@@ -369,14 +370,14 @@ export default function ProductDetailPage({
                   </Link>
                 </>
               )}
-              <RightOutlined className="text-[10px]" />
+              <RightOutlined className="text-[9px] sm:text-[10px]" />
               <span className="text-[#5d371f] font-bold line-clamp-1">
                 {currentProduct.name}
               </span>
             </nav>
 
-            <div className="flex items-center gap-4 text-[#51443d]">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-white border border-[#eae1dd] text-[#3f4332] text-[11px] font-semibold">
+            <div className="flex items-center gap-3 text-[#51443d] shrink-0">
+              <span className="hidden md:inline-flex items-center gap-1.5 px-3 py-1 bg-white border border-[#eae1dd] text-[#3f4332] text-[11px] font-semibold">
                 <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
                 Bộ sưu tập D2 LUXURY
               </span>
@@ -399,8 +400,8 @@ export default function ProductDetailPage({
         </section>
 
         {/* Main Showcase & Buy Action Section */}
-        <section className="w-full max-w-[1720px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-16 py-8 md:py-12">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
+        <section className="w-full max-w-[1720px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-16 py-4 sm:py-8 md:py-12">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-8 lg:gap-12 items-start">
             
             {/* Gallery Column (7 cols) */}
             <div className="lg:col-span-7 flex flex-col gap-4">
@@ -417,30 +418,27 @@ export default function ProductDetailPage({
                 />
 
                 {/* Badges */}
-                <div className="absolute top-4 left-4 flex flex-col gap-2">
+                <div className="absolute top-2.5 left-2.5 sm:top-4 sm:left-4 flex flex-col gap-1 sm:gap-2">
                   {calculatedStrike && calculatedStrike > calculatedPrice && (
-                    <span className="px-3 py-1 bg-[#ba1a1a] text-white text-[11px] font-bold uppercase tracking-wider shadow-sm">
+                    <span className="px-2 py-0.5 sm:px-3 sm:py-1 bg-[#ba1a1a] text-white text-[10px] sm:text-[11px] font-bold uppercase tracking-wider shadow-xs sm:shadow-sm">
                       GIẢM {Math.round(((calculatedStrike - calculatedPrice) / calculatedStrike) * 100)}%
                     </span>
                   )}
-                  <span className="px-3 py-1 bg-[#5d371f] text-white text-[11px] font-semibold uppercase tracking-wider shadow-sm">
-                    Nghệ nhân D2 LUXURY
-                  </span>
-                  <span className="px-3 py-1 bg-white/95 backdrop-blur-sm text-[#3f4332] text-[11px] font-semibold shadow-sm border border-[#eae1dd] flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-emerald-600"></span> Gỗ FSC Tuyển Chọn
+                  <span className="px-2 py-0.5 sm:px-3 sm:py-1 bg-white/95 backdrop-blur-sm text-[#3f4332] text-[10px] sm:text-[11px] font-semibold shadow-xs sm:shadow-sm border border-[#eae1dd] flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-emerald-600"></span> Gỗ FSC Tuyển Chọn
                   </span>
                 </div>
               </div>
 
-              {/* Thumbnail Strip (Only shown if multiple real images exist) */}
+              {/* Thumbnail Strip (Scrollable on mobile, Grid on desktop) */}
               {galleryImages.length > 1 && (
-                <div className="grid grid-cols-5 gap-3">
+                <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none sm:grid sm:grid-cols-5 sm:gap-3">
                   {galleryImages.map((thumb, idx) => (
                     <button
                       key={idx}
                       type="button"
                       onClick={() => setSelectedImgIdx(idx)}
-                      className={`relative aspect-[4/3] overflow-hidden bg-[#eae1dd] transition-all cursor-pointer border ${
+                      className={`relative w-16 h-12 sm:w-auto sm:aspect-[4/3] shrink-0 sm:shrink overflow-hidden bg-[#eae1dd] transition-all cursor-pointer border ${
                         selectedImgIdx === idx
                           ? 'border-[#5d371f] ring-2 ring-[#5d371f] shadow-md'
                           : 'border-[#eae1dd] opacity-75 hover:opacity-100'
@@ -455,7 +453,7 @@ export default function ProductDetailPage({
                           if (!target.src.includes('logo.png')) target.src = '/logo.png';
                         }}
                       />
-                      <span className="absolute bottom-0 inset-x-0 bg-black/60 text-white text-[10px] font-medium py-0.5 text-center truncate px-1">
+                      <span className="absolute bottom-0 inset-x-0 bg-black/60 text-white text-[9px] sm:text-[10px] font-medium py-0.5 text-center truncate px-1">
                         {thumb.tag}
                       </span>
                     </button>
@@ -468,181 +466,195 @@ export default function ProductDetailPage({
             {/* Right Column: Product Detail & Purchase Configuration (5 cols) */}
             <div className="lg:col-span-5 flex flex-col gap-5">
               {/* Header Info */}
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-1 sm:gap-1.5">
                 <div className="flex items-center justify-between text-xs text-[#83746c] font-medium">
-                  <span className="font-mono">{currentProduct.sku}</span>
+                  <span className="font-mono text-[11px] sm:text-xs text-[#5d371f] font-semibold">{currentProduct.sku}</span>
                   {currentProduct.stockStatus && (
-                    <span className={`inline-flex items-center gap-1.5 font-semibold ${!currentProduct.inStock ? 'text-[#ba1a1a]' : 'text-[#3f4332]'}`}>
-                      <span className={`w-2 h-2 rounded-full ${!currentProduct.inStock ? 'bg-[#ba1a1a]' : 'bg-emerald-600'}`}></span>
+                    <span className={`inline-flex items-center gap-1.5 font-semibold text-[11px] sm:text-xs ${!currentProduct.inStock ? 'text-[#ba1a1a]' : 'text-[#3f4332]'}`}>
+                      <span className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${!currentProduct.inStock ? 'bg-[#ba1a1a]' : 'bg-emerald-600'}`}></span>
                       {currentProduct.stockStatus}
                     </span>
                   )}
                 </div>
 
-                <h1 className="font-headline-lg text-2xl sm:text-3xl text-[#1f1b19] font-normal tracking-tight">
+                <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold lg:font-semibold lg:font-headline-lg text-[#1f1b19] tracking-tight leading-snug lg:leading-[44px]">
                   {currentProduct.name}
                 </h1>
               </div>
 
               {/* Price Banner */}
-              <div className="p-4 bg-[#fbf2ee] border border-[#eae1dd] flex flex-col gap-2 shadow-sm">
-                <div className="flex items-baseline gap-3 flex-wrap">
-                  <span className="font-headline-lg text-2xl sm:text-3xl text-[#5d371f] font-bold">
+              <div className="p-3 sm:p-4 bg-[#fbf2ee] border border-[#eae1dd] flex flex-col gap-1.5 sm:gap-2 shadow-xs sm:shadow-sm">
+                <div className="flex items-baseline gap-2 sm:gap-3 flex-wrap">
+                  <span className="text-xl sm:text-2xl lg:font-headline-lg lg:text-3xl text-[#5d371f] font-bold">
                     {formatPrice(calculatedPrice)}
                   </span>
                   {calculatedStrike && calculatedStrike > calculatedPrice && (
-                    <span className="text-base sm:text-lg text-[#a89b93] line-through font-mono">
+                    <span className="text-xs sm:text-sm md:text-lg text-[#a89b93] line-through font-mono">
                       {formatPrice(calculatedStrike)}
                     </span>
                   )}
                   {calculatedStrike && calculatedStrike > calculatedPrice && (
-                    <span className="px-2 py-0.5 bg-red-600 text-white text-xs font-bold uppercase tracking-wide rounded-none shadow-sm">
+                    <span className="px-1.5 py-0.5 sm:px-2 bg-red-600 text-white text-[10px] sm:text-xs font-bold uppercase tracking-wide rounded-none shadow-xs">
                       -{Math.round(((calculatedStrike - calculatedPrice) / calculatedStrike) * 100)}%
                     </span>
                   )}
                 </div>
                 {calculatedStrike && calculatedStrike > calculatedPrice && (
-                  <div className="text-xs text-[#5d371f] font-medium flex items-center gap-1.5 pt-1.5 border-t border-[#eae1dd]/60">
+                  <div className="text-[11px] sm:text-xs text-[#5d371f] font-medium flex items-center gap-1.5 pt-1.5 border-t border-[#eae1dd]/60 flex-wrap">
                     <span>Tiết kiệm:</span>
-                    <span className="font-bold text-red-600 font-mono text-sm">
+                    <span className="font-bold text-red-600 font-mono text-xs sm:text-sm">
                       {formatPrice(calculatedStrike - calculatedPrice)}
                     </span>
-                    <span className="text-[#83746c] text-[11px]">(Ưu đãi giá tốt nhất trực tiếp từ xưởng D2)</span>
+                    <span className="text-[#83746c] text-[10px] sm:text-[11px]">(Ưu đãi giá tốt nhất trực tiếp từ xưởng D2)</span>
                   </div>
                 )}
               </div>
 
-
               {/* Product Specifications Bento Card */}
-              <div className="flex flex-col bg-white border border-[#eae1dd] shadow-sm">
-                <div className="px-4 py-2.5 bg-[#fbf2ee] border-b border-[#eae1dd] flex items-center justify-between">
-                  <span className="font-bold text-xs uppercase tracking-wider text-[#5d371f] flex items-center gap-1.5">
-                    <CheckCircleOutlined className="text-sm" />
-                    Thông số sản phẩm chi tiết
+              <div className="flex flex-col bg-white border border-[#eae1dd] shadow-xs sm:shadow-sm">
+                <div className="px-3 py-2 sm:px-4 sm:py-2.5 bg-[#fbf2ee] border-b border-[#eae1dd] flex items-center justify-between gap-2">
+                  <span className="font-bold text-[11px] sm:text-xs uppercase tracking-wider text-[#5d371f] flex items-center gap-1.5 whitespace-nowrap">
+                    <CheckCircleOutlined className="text-xs sm:text-sm shrink-0" />
+                    <span className="sm:hidden">Thông số chi tiết</span>
+                    <span className="hidden sm:inline">Thông số sản phẩm chi tiết</span>
                   </span>
-                  <span className="text-[11px] text-[#83746c]">Chuẩn nghệ nhân D2 LUXURY</span>
+                  <span className="text-[10px] sm:text-[11px] text-[#83746c] whitespace-nowrap">
+                    Chuẩn D2 LUXURY
+                  </span>
                 </div>
 
-                <div className="p-3.5 flex flex-col gap-2.5 text-xs">
+                <div className="p-3 sm:p-3.5 flex flex-col gap-2 text-xs">
                   {/* 1. Kích thước */}
-                  <div className="flex items-start justify-between gap-3 pb-2 border-b border-[#eae1dd]/60">
-                    <span className="font-bold text-[#1f1b19] min-w-[110px] text-slate-700">Kích thước:</span>
-                    <span className="font-mono font-bold text-[#5d371f] text-right">
+                  <div className="flex items-start justify-between gap-2 pb-2 border-b border-[#eae1dd]/60">
+                    <span className="font-bold text-slate-700 shrink-0 w-24 sm:w-28 text-[11px] sm:text-xs">Kích thước:</span>
+                    <span className="font-mono font-bold text-[#5d371f] text-right text-[11px] sm:text-xs flex-1 break-words">
                       {currentProduct.dimensions || 'Theo thiết kế tiêu chuẩn'}
                     </span>
                   </div>
 
                   {/* 2. Chất liệu */}
-                  <div className="flex items-start justify-between gap-3 pb-2 border-b border-[#eae1dd]/60">
-                    <span className="font-bold text-[#1f1b19] min-w-[110px] text-slate-700">Chất liệu:</span>
-                    <span className="font-medium text-[#1f1b19] text-right">
+                  <div className="flex items-start justify-between gap-2 pb-2 border-b border-[#eae1dd]/60">
+                    <span className="font-bold text-slate-700 shrink-0 w-24 sm:w-28 text-[11px] sm:text-xs">Chất liệu:</span>
+                    <span className="font-medium text-[#1f1b19] text-right text-[11px] sm:text-xs flex-1 break-words">
                       {currentProduct.woodType || currentProduct.materialDetails || 'Gỗ tự nhiên cao cấp'}
                     </span>
                   </div>
 
                   {/* 3. Màu sản phẩm */}
-                  <div className="flex items-start justify-between gap-3 pb-2 border-b border-[#eae1dd]/60">
-                    <span className="font-bold text-[#1f1b19] min-w-[110px] text-slate-700">Màu sản phẩm:</span>
-                    <span className="font-medium text-[#1f1b19] text-right">
+                  <div className="flex items-start justify-between gap-2 pb-2 border-b border-[#eae1dd]/60">
+                    <span className="font-bold text-slate-700 shrink-0 w-24 sm:w-28 text-[11px] sm:text-xs">Màu sản phẩm:</span>
+                    <span className="font-medium text-[#1f1b19] text-right text-[11px] sm:text-xs flex-1">
                       {currentProduct.color || 'Nâu hạt dẻ / tự nhiên (Đa dạng)'}
                     </span>
                   </div>
 
                   {/* 4. Màu nệm gối (Nếu là sản phẩm có bọc nệm) */}
                   {isUpholstered && (
-                    <div className="flex items-start justify-between gap-3 pb-2 border-b border-[#eae1dd]/60">
-                      <span className="font-bold text-[#1f1b19] min-w-[110px] text-slate-700">Vải bọc / Nệm:</span>
-                      <span className="font-medium text-[#1f1b19] text-right">
+                    <div className="flex items-start justify-between gap-2 pb-2 border-b border-[#eae1dd]/60">
+                      <span className="font-bold text-slate-700 shrink-0 w-24 sm:w-28 text-[11px] sm:text-xs">Vải bọc / Nệm:</span>
+                      <span className="font-medium text-[#1f1b19] text-right text-[11px] sm:text-xs flex-1">
                         Linen dệt sợi thô tự nhiên / Đệm cao su êm ái
                       </span>
                     </div>
                   )}
 
                   {/* 5. Bảo hành */}
-                  <div className="flex items-start justify-between gap-3">
-                    <span className="font-bold text-[#1f1b19] min-w-[110px] text-slate-700">Bảo hành:</span>
-                    <span className="font-semibold text-emerald-700 text-right">
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="font-bold text-slate-700 shrink-0 w-24 sm:w-28 text-[11px] sm:text-xs">Bảo hành:</span>
+                    <span className="font-semibold text-emerald-700 text-right text-[11px] sm:text-xs flex-1">
                       {currentProduct.warranty || '24 tháng'} chính hãng &amp; Bảo trì trọn đời
                     </span>
                   </div>
                 </div>
               </div>
 
-                {/* Quantity & Action Buttons */}
-                <div className="flex flex-col gap-2.5 pt-2">
-                  <div className="flex items-center gap-3">
-                    {/* Stepper */}
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center bg-white border border-[#d5c3ba] shadow-sm">
-                        <button
-                          type="button"
-                          disabled={quantity <= 1}
-                          onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                          className="w-10 h-10 flex items-center justify-center text-[#51443d] hover:bg-[#f5ece8] cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                          <MinusOutlined className="text-[12px]" />
-                        </button>
-                        <input
-                          type="text"
-                          readOnly
-                          value={quantity}
-                          className="w-12 text-center font-bold text-sm text-[#1f1b19] bg-transparent focus:outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setQuantity((q) => q + 1)}
-                          className="w-10 h-10 flex items-center justify-center text-[#51443d] hover:bg-[#f5ece8] cursor-pointer"
-                          title="Tăng số lượng"
-                        >
-                          <PlusOutlined className="text-[12px]" />
-                        </button>
-                      </div>
+              {/* Quantity & Action Buttons */}
+              <div className="flex flex-col gap-2.5 pt-1 sm:pt-2">
+                <div className="flex items-center gap-2 sm:gap-3">
+                  {/* Stepper */}
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center bg-white border border-[#d5c3ba] shadow-xs sm:shadow-sm">
+                      <button
+                        type="button"
+                        disabled={quantity <= 1}
+                        onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                        className="w-9 h-10 sm:w-10 sm:h-10 flex items-center justify-center text-[#51443d] hover:bg-[#f5ece8] cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <MinusOutlined className="text-[12px]" />
+                      </button>
+                      <input
+                        type="text"
+                        readOnly
+                        value={quantity}
+                        className="w-10 sm:w-12 text-center font-bold text-sm text-[#1f1b19] bg-transparent focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setQuantity((q) => q + 1)}
+                        className="w-9 h-10 sm:w-10 sm:h-10 flex items-center justify-center text-[#51443d] hover:bg-[#f5ece8] cursor-pointer"
+                        title="Tăng số lượng"
+                      >
+                        <PlusOutlined className="text-[12px]" />
+                      </button>
                     </div>
-
-                    {/* Cart Button */}
-                    <button
-                      type="button"
-                      onClick={handleAddToCart}
-                      className="flex-1 h-10 px-4 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 border border-[#d5c3ba] bg-[#f5ece8] hover:bg-[#eae1dd] text-[#5d371f] transition-all shadow-sm cursor-pointer"
-                    >
-                      <ShoppingCartOutlined className="text-[16px]" />
-                      <span>Thêm vào giỏ hàng</span>
-                    </button>
                   </div>
 
-                  {/* Buy Now Button */}
+                  {/* Cart Button */}
                   <button
                     type="button"
-                    onClick={handleBuyNow}
-                    className="w-full h-12 font-bold text-sm flex items-center justify-center gap-2 transition-all uppercase tracking-wider bg-[#5d371f] hover:bg-[#784e34] text-white shadow-md cursor-pointer"
+                    onClick={handleAddToCart}
+                    className="flex-1 h-10 px-3 sm:px-4 font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 sm:gap-2 border border-[#d5c3ba] bg-[#f5ece8] hover:bg-[#eae1dd] text-[#5d371f] transition-all shadow-xs sm:shadow-sm cursor-pointer"
                   >
-                    <CarOutlined className="text-[18px]" />
-                    <span>Mua ngay — Giao &amp; Lắp đặt tận nhà</span>
+                    <ShoppingCartOutlined className="text-[15px] sm:text-[16px]" />
+                    <span>Thêm vào giỏ hàng</span>
                   </button>
                 </div>
 
+                {/* Buy Now Button */}
+                <button
+                  type="button"
+                  onClick={handleBuyNow}
+                  className="w-full h-11 sm:h-12 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all uppercase tracking-wider bg-[#5d371f] hover:bg-[#784e34] text-white shadow-md cursor-pointer"
+                >
+                  <CarOutlined className="text-[16px] sm:text-[18px]" />
+                  <span>Mua ngay — Giao &amp; Lắp đặt tận nhà</span>
+                </button>
+              </div>
+
               {/* Guarantee & Benefits Bento */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2">
-                <div className="p-3 bg-white border border-[#eae1dd] shadow-sm flex flex-col gap-1">
-                  <SafetyCertificateOutlined className="text-[#5d371f] text-[18px]" />
-                  <h4 className="font-bold text-xs text-[#1f1b19]">Chất lượng nghệ nhân</h4>
-                  <p className="text-[11px] text-[#83746c] leading-tight">
-                    100% gỗ tự nhiên chất lượng cao, kết cấu mộng truyền thống chuẩn mực.
-                  </p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                <div className="p-3 bg-white border border-[#eae1dd] shadow-xs flex items-center sm:items-start sm:flex-col gap-3 sm:gap-1">
+                  <div className="w-8 h-8 rounded-none bg-[#fbf2ee] flex items-center justify-center shrink-0 text-[#5d371f]">
+                    <SafetyCertificateOutlined className="text-[16px]" />
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <h4 className="font-bold text-xs text-[#1f1b19]">Chất lượng nghệ nhân</h4>
+                    <p className="text-[11px] text-[#83746c] leading-tight">
+                      100% gỗ tự nhiên cao cấp, kết cấu mộng chuẩn mực.
+                    </p>
+                  </div>
                 </div>
-                <div className="p-3 bg-white border border-[#eae1dd] shadow-sm flex flex-col gap-1">
-                  <GiftOutlined className="text-[#5d371f] text-[18px]" />
-                  <h4 className="font-bold text-xs text-[#1f1b19]">Bảo hành {currentProduct.warranty || '24 tháng'}</h4>
-                  <p className="text-[11px] text-[#83746c] leading-tight">
-                    Bảo hành kết cấu khung gỗ {currentProduct.warranty || '24 tháng'} &amp; hỗ trợ bảo trì trọn đời.
-                  </p>
+                <div className="p-3 bg-white border border-[#eae1dd] shadow-xs flex items-center sm:items-start sm:flex-col gap-3 sm:gap-1">
+                  <div className="w-8 h-8 rounded-none bg-[#fbf2ee] flex items-center justify-center shrink-0 text-[#5d371f]">
+                    <GiftOutlined className="text-[16px]" />
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <h4 className="font-bold text-xs text-[#1f1b19]">Bảo hành {currentProduct.warranty || '24 tháng'}</h4>
+                    <p className="text-[11px] text-[#83746c] leading-tight">
+                      Bảo hành khung gỗ {currentProduct.warranty || '24 tháng'} &amp; bảo trì trọn đời.
+                    </p>
+                  </div>
                 </div>
-                <div className="p-3 bg-white border border-[#eae1dd] shadow-sm flex flex-col gap-1">
-                  <ToolOutlined className="text-[#5d371f] text-[18px]" />
-                  <h4 className="font-bold text-xs text-[#1f1b19]">Giao lắp tận nhà</h4>
-                  <p className="text-[11px] text-[#83746c] leading-tight">
-                    {currentProduct.shippingNote || 'Đội ngũ kỹ thuật D2 LUXURY vận chuyển và lắp đặt hoàn thiện.'}
-                  </p>
+                <div className="p-3 bg-white border border-[#eae1dd] shadow-xs flex items-center sm:items-start sm:flex-col gap-3 sm:gap-1">
+                  <div className="w-8 h-8 rounded-none bg-[#fbf2ee] flex items-center justify-center shrink-0 text-[#5d371f]">
+                    <ToolOutlined className="text-[16px]" />
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <h4 className="font-bold text-xs text-[#1f1b19]">Giao lắp tận nhà</h4>
+                    <p className="text-[11px] text-[#83746c] leading-tight">
+                      {currentProduct.shippingNote || 'Kỹ thuật viên D2 LUXURY vận chuyển &amp; lắp đặt.'}
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -650,26 +662,27 @@ export default function ProductDetailPage({
         </section>
 
         {/* Deep Dive Interactive Tabs Section */}
-        <section className="w-full bg-[#fbf2ee] py-12 md:py-16 border-t border-[#eae1dd]">
-          <div className="w-full max-w-[1720px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-16 flex flex-col gap-6">
+        <section className="w-full bg-[#fbf2ee] py-8 sm:py-12 md:py-16 border-t border-[#eae1dd]">
+          <div className="w-full max-w-[1720px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-16 flex flex-col gap-4 sm:gap-6">
             {/* Tab Headers */}
-            <div className="flex items-center gap-2 overflow-x-auto pb-1 border-b border-[#eae1dd]">
+            <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-1 border-b border-[#eae1dd] scrollbar-none">
               {[
-                { id: 'specs', label: 'Thông số kỹ thuật' },
-                { id: 'care', label: 'Hướng dẫn bảo dưỡng gỗ tự nhiên' },
-                { id: 'shipping', label: 'Chính sách giao nhận & Đổi trả' },
+                { id: 'specs', label: 'Thông số kỹ thuật', mobileLabel: 'Thông số' },
+                { id: 'care', label: 'Hướng dẫn bảo dưỡng gỗ tự nhiên', mobileLabel: 'Bảo dưỡng gỗ' },
+                { id: 'shipping', label: 'Chính sách giao nhận & Đổi trả', mobileLabel: 'Giao nhận & Đổi trả' },
               ].map((tab) => (
                 <button
                   key={tab.id}
                   type="button"
                   onClick={() => setActiveTab(tab.id as any)}
-                  className={`px-4 py-2.5 font-bold text-xs sm:text-sm whitespace-nowrap transition-all cursor-pointer border-b-2 ${
+                  className={`px-3 py-2 sm:px-4 sm:py-2.5 font-bold text-xs sm:text-sm whitespace-nowrap transition-all cursor-pointer border-b-2 ${
                     activeTab === tab.id
                       ? 'border-[#5d371f] text-[#5d371f] bg-white shadow-sm'
                       : 'border-transparent text-[#83746c] hover:text-[#5d371f]'
                   }`}
                 >
-                  {tab.label}
+                  <span className="sm:hidden">{tab.mobileLabel}</span>
+                  <span className="hidden sm:inline">{tab.label}</span>
                 </button>
               ))}
             </div>
@@ -680,7 +693,7 @@ export default function ProductDetailPage({
                 <div className="lg:col-span-7 flex flex-col gap-4">
                   {/* Spec Table */}
                   <div className="overflow-hidden bg-white border border-[#eae1dd] shadow-sm">
-                    <table className="w-full text-left text-xs">
+                    <table className="w-full text-left text-[11px] sm:text-xs">
                       <tbody>
                         <tr className="bg-[#fbf2ee]/60 border-b border-[#eae1dd]">
                           <td className="p-3 font-bold text-[#1f1b19] w-1/3">Tên sản phẩm</td>
@@ -708,7 +721,7 @@ export default function ProductDetailPage({
                         </tr>
                         <tr>
                           <td className="p-3 font-bold text-[#1f1b19]">Xuất xứ &amp; Chế tác</td>
-                          <td className="p-3 text-[#51443d]">Xưởng mộc thủ công nghệ nhân D2 LUXURY</td>
+                          <td className="p-3 text-[#51443d]">Xưởng mộc thủ công D2 LUXURY</td>
                         </tr>
                       </tbody>
                     </table>
@@ -829,7 +842,7 @@ export default function ProductDetailPage({
                   <span className="text-xs uppercase tracking-widest text-[#83746c] font-semibold">
                     Không gian đồng điệu
                   </span>
-                  <h2 className="font-headline-lg text-2xl sm:text-3xl text-[#1f1b19] font-normal tracking-tight mt-1">
+                  <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold lg:font-semibold lg:font-headline-lg text-[#1f1b19] tracking-tight mt-1">
                     Nội thất phối hợp hoàn hảo
                   </h2>
                 </div>
@@ -842,11 +855,11 @@ export default function ProductDetailPage({
                 </Link>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-6">
                 {companionProducts.map((p) => (
                   <div
                     key={p.id}
-                    className="group flex flex-col bg-white border border-[#eae1dd] shadow-sm hover:shadow-xl transition-all duration-300"
+                    className="group flex flex-col bg-white border border-[#eae1dd] shadow-xs sm:shadow-sm hover:shadow-xl transition-all duration-300"
                   >
                     <div className="relative aspect-[4/3] bg-[#eae1dd] overflow-hidden">
                       <img
@@ -854,47 +867,47 @@ export default function ProductDetailPage({
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                         src={p.image}
                       />
-                      <span className="absolute top-3 left-3 px-2.5 py-0.5 bg-white/95 text-[#1f1b19] text-[11px] font-bold shadow-sm">
+                      <span className="absolute top-2 left-2 sm:top-3 sm:left-3 px-1.5 py-0.5 sm:px-2.5 sm:py-0.5 bg-white/95 text-[#1f1b19] text-[9px] sm:text-[11px] font-bold shadow-xs sm:shadow-sm">
                         {p.woodType}
                       </span>
                     </div>
 
-                    <div className="p-4 flex flex-col gap-2 flex-1 justify-between">
+                    <div className="p-2.5 sm:p-4 flex flex-col gap-1.5 sm:gap-2 flex-1 justify-between">
                       <div>
                         <Link
                           href={`/products/${p.id}`}
-                          className="font-bold text-sm sm:text-base text-[#1f1b19] group-hover:text-[#5d371f] transition-colors line-clamp-1 cursor-pointer block"
+                          className="font-bold text-xs sm:text-base text-[#1f1b19] group-hover:text-[#5d371f] transition-colors line-clamp-2 sm:line-clamp-1 cursor-pointer block leading-snug sm:leading-normal"
                         >
                           {p.name}
                         </Link>
-                        <p className="text-xs text-[#83746c] mt-0.5">{p.subtitle || p.dimensions}</p>
+                        <p className="text-[10px] sm:text-xs text-[#83746c] mt-0.5 truncate">{p.subtitle || p.dimensions}</p>
                       </div>
 
-                      <div className="flex items-center justify-between pt-2 border-t border-[#eae1dd]/60">
-                        <div className="flex flex-col">
-                          <div className="flex items-baseline gap-1.5">
-                            <span className="font-bold text-sm sm:text-base text-[#5d371f]">
+                      <div className="flex items-center justify-between pt-2 border-t border-[#eae1dd]/60 gap-1">
+                        <div className="flex flex-col min-w-0">
+                          <div className="flex items-baseline gap-1 sm:gap-1.5 flex-wrap">
+                            <span className="font-bold text-[11.5px] sm:text-base text-[#5d371f] truncate">
                               {formatPrice(p.price)}
                             </span>
                             {p.originalPrice && p.originalPrice > p.price && (
-                              <span className="text-[11px] text-[#a89b93] line-through font-mono">
+                              <span className="text-[9px] sm:text-[11px] text-[#a89b93] line-through font-mono">
                                 {formatPrice(p.originalPrice)}
                               </span>
                             )}
                           </div>
                           {p.originalPrice && p.originalPrice > p.price && (
-                            <span className="text-[10px] font-bold text-red-600">
+                            <span className="text-[9px] sm:text-[10px] font-bold text-red-600">
                               -{Math.round(((p.originalPrice - p.price) / p.originalPrice) * 100)}%
                             </span>
                           )}
                         </div>
 
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1 shrink-0">
                           <Button
                             size="small"
                             onClick={() => setQuickViewProduct(p)}
-                            className="rounded-none bg-[#f5ece8] border-[#eae1dd] text-[#1f1b19] font-bold text-xs hover:!bg-[#eae1dd]"
-                            icon={<EyeOutlined />}
+                            className="rounded-none bg-[#f5ece8] border-[#eae1dd] text-[#1f1b19] font-bold text-xs hover:!bg-[#eae1dd] w-7 h-7 sm:w-8 sm:h-8 p-0 flex items-center justify-center"
+                            icon={<EyeOutlined className="text-xs sm:text-sm" />}
                           />
                           <Button
                             type="primary"
@@ -913,8 +926,8 @@ export default function ProductDetailPage({
                               }, 1);
                               message.success(`Đã thêm "${p.name}" vào giỏ!`);
                             }}
-                            className="bg-[#5d371f] hover:!bg-[#784e34] rounded-none shadow-sm"
-                            icon={<ShoppingCartOutlined />}
+                            className="bg-[#5d371f] hover:!bg-[#784e34] rounded-none shadow-xs sm:shadow-sm w-7 h-7 sm:w-8 sm:h-8 p-0 flex items-center justify-center"
+                            icon={<ShoppingCartOutlined className="text-xs sm:text-sm" />}
                           />
                         </div>
                       </div>

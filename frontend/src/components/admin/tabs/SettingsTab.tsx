@@ -68,6 +68,7 @@ import {
   PictureOutlined,
   FileTextOutlined,
   SyncOutlined,
+  LeftOutlined,
 } from '@ant-design/icons';
 import { VietQrCard, getBankBin } from '@/components/common/VietQrCard';
 import { useAuth } from '@/context/AuthContext';
@@ -109,6 +110,7 @@ export interface SettingsTabProps {
   selectedGlobalBranch?: string;
   activeSettingsTab?: 'company' | 'payment' | 'print-templates' | 'branches' | 'warehouses' | 'employees' | 'permissions';
   onSettingsTabChange?: (tab: 'company' | 'payment' | 'print-templates' | 'branches' | 'warehouses' | 'employees' | 'permissions') => void;
+  onBackToFunctions?: () => void;
 }
 
 interface SettingsMenuItem {
@@ -130,6 +132,7 @@ export function SettingsTab({
   selectedGlobalBranch = 'all',
   activeSettingsTab,
   onSettingsTabChange,
+  onBackToFunctions,
 }: SettingsTabProps) {
   const { hasPermission } = useAuth();
   const { message, modal } = App.useApp();
@@ -1226,39 +1229,52 @@ export function SettingsTab({
     }
   }, [settingsMenuItems, settingsActiveTab]);
 
+  const currentActiveMenuItem = useMemo(() => {
+    return settingsMenuItems.find((item) => item.key === settingsActiveTab);
+  }, [settingsMenuItems, settingsActiveTab]);
+
   return (
-    <div className="space-y-4 flex-1 flex flex-col h-full">
-      {/* Top Header Toolbar: Standardized matching AdminListToolbar container */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-none shadow-xs border border-slate-200/80">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-[#784e34]/10 text-[#784e34] flex items-center justify-center text-lg shrink-0">
-            <SettingOutlined />
+    <div className="flex flex-col gap-3 lg:gap-4 flex-1 h-full">
+      {/* Top Header Toolbar: Standardized matching AdminListToolbar container (Hidden on mobile per user request) */}
+      <div className="hidden lg:flex flex-wrap items-center justify-between gap-3 bg-white p-3 sm:p-4 rounded-none shadow-xs border border-slate-200/80">
+        <div className="flex items-center gap-2.5 sm:gap-3">
+          {onBackToFunctions && (
+            <button
+              type="button"
+              onClick={onBackToFunctions}
+              className="lg:hidden flex items-center justify-center w-8 h-8 rounded-lg bg-[#f5ece8] hover:bg-[#ebd8ce] text-[#784e34] border-0 cursor-pointer shrink-0 transition-colors"
+              title="Quay lại danh sách chức năng"
+              aria-label="Quay lại danh sách chức năng"
+            >
+              <LeftOutlined className="text-sm" />
+            </button>
+          )}
+          <div className="w-8 h-8 sm:w-9 sm:h-9 bg-[#784e34]/10 text-[#784e34] flex items-center justify-center text-base sm:text-lg shrink-0 rounded-lg lg:rounded-none">
+            {currentActiveMenuItem?.icon || <SettingOutlined />}
           </div>
           <div>
-            <h2 className="font-bold text-sm sm:text-base text-slate-900 m-0">Thiết lập &amp; Cài đặt hệ thống</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="font-bold text-sm sm:text-base text-slate-900 m-0">
+                <span className="hidden lg:inline">Thiết lập &amp; Cài đặt hệ thống - </span>
+                <span>{currentActiveMenuItem?.label || 'Cài đặt hệ thống'}</span>
+              </h2>
+              {currentActiveMenuItem?.badge && (
+                <span className="lg:hidden">{currentActiveMenuItem.badge}</span>
+              )}
+            </div>
+            <div className="text-[11px] text-slate-400 mt-0.5 lg:hidden">
+              Quản trị D2 LUXURY • Thiết lập hệ thống
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Responsive Segmented Tabs for Mobile / Tablet (< lg) */}
-      <div className="block lg:hidden bg-white p-3 rounded-none border border-slate-200/80 shadow-xs overflow-x-auto">
-        <Segmented
-          value={settingsActiveTab}
-          onChange={(val: any) => setSettingsActiveTab(val)}
-          options={settingsMenuItems.map((item) => ({
-            value: item.key,
-            label: `${item.label}${item.badge ? ` (${item.key === 'branches' ? currentBranches.length : item.key === 'employees' ? currentEmployees.length : currentRoles.length})` : ''}`,
-          }))}
-          className="w-full bg-slate-100 p-1"
-        />
-      </div>
-
       {/* 2-COLUMN MASTER LAYOUT: LEFT SIDEBAR MENU (DESKTOP) + RIGHT CONTENT */}
       <div className="flex flex-col lg:flex-row gap-4 items-start w-full flex-1">
-        
+
         {/* ================= LEFT SIDEBAR MENU (UNIFIED WITH ADMINFILTERBAR WIDTH) ================= */}
         <aside className="hidden lg:block w-72 bg-white rounded-none shadow-xs border border-slate-200/80 p-3 space-y-3 shrink-0 text-xs lg:sticky lg:top-[96px] lg:self-start lg:max-h-[calc(100vh-112px)] lg:overflow-y-auto [scrollbar-width:thin]">
-          
+
           {/* GROUP 1: DOANH NGHIỆP & THANH TOÁN */}
           <div className="space-y-1">
             <div className="px-2.5 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
@@ -1273,11 +1289,10 @@ export function SettingsTab({
                     key={item.key}
                     type="button"
                     onClick={() => setSettingsActiveTab(item.key)}
-                    className={`w-full text-left px-3 py-2 transition-all flex items-center justify-between gap-2.5 border ${
-                      isActive
+                    className={`w-full text-left px-3 py-2 transition-all flex items-center justify-between gap-2.5 border ${isActive
                         ? 'bg-[#784e34]/8 border-l-[3px] !border-l-[#784e34] border-slate-200/80 text-[#784e34] font-bold shadow-2xs'
                         : 'bg-transparent border-transparent hover:bg-slate-50 text-slate-700'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
                       <span className={`p-1.5 rounded text-sm shrink-0 ${isActive ? 'bg-[#784e34] text-white' : 'bg-slate-100 text-slate-500'}`}>
@@ -1307,11 +1322,10 @@ export function SettingsTab({
                     key={item.key}
                     type="button"
                     onClick={() => setSettingsActiveTab(item.key)}
-                    className={`w-full text-left px-3 py-2 transition-all flex items-center justify-between gap-2.5 border ${
-                      isActive
+                    className={`w-full text-left px-3 py-2 transition-all flex items-center justify-between gap-2.5 border ${isActive
                         ? 'bg-[#784e34]/8 border-l-[3px] !border-l-[#784e34] border-slate-200/80 text-[#784e34] font-bold shadow-2xs'
                         : 'bg-transparent border-transparent hover:bg-slate-50 text-slate-700'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
                       <span className={`p-1.5 rounded text-sm shrink-0 ${isActive ? 'bg-[#784e34] text-white' : 'bg-slate-100 text-slate-500'}`}>
@@ -1341,11 +1355,10 @@ export function SettingsTab({
                     key={item.key}
                     type="button"
                     onClick={() => setSettingsActiveTab(item.key)}
-                    className={`w-full text-left px-3 py-2 transition-all flex items-center justify-between gap-2.5 border ${
-                      isActive
+                    className={`w-full text-left px-3 py-2 transition-all flex items-center justify-between gap-2.5 border ${isActive
                         ? 'bg-[#784e34]/8 border-l-[3px] !border-l-[#784e34] border-slate-200/80 text-[#784e34] font-bold shadow-2xs'
                         : 'bg-transparent border-transparent hover:bg-slate-50 text-slate-700'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
                       <span className={`p-1.5 rounded text-sm shrink-0 ${isActive ? 'bg-[#784e34] text-white' : 'bg-slate-100 text-slate-500'}`}>
@@ -1363,391 +1376,390 @@ export function SettingsTab({
         </aside>
 
         {/* ================= RIGHT MAIN CONTENT CONTAINER ================= */}
-        <main className="flex-1 min-w-0 w-full bg-white rounded-none shadow-xs border border-slate-200/80 p-5 sm:p-6 space-y-6">
-          
+        <main className="flex-1 min-w-0 w-full max-w-full overflow-x-hidden bg-white rounded-none shadow-xs border border-slate-200/80 p-3.5 sm:p-5 lg:p-6 space-y-4 sm:space-y-6">
+
           {/* TAB 1: THÔNG TIN CỬA HÀNG (DOMACO POS STORE INFO) */}
           <div className={settingsActiveTab === 'company' ? 'space-y-4' : 'hidden'}>
-              {/* Header: Title & Action Button */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
-                <div>
-                  <h3 className="text-base sm:text-lg font-semibold text-slate-900 m-0">Thông tin cửa hàng</h3>
-                </div>
-
-                <Button
-                  type="primary"
-                  icon={<SaveOutlined />}
-                  onClick={() => companyForm.submit()}
-                  className="h-9 sm:h-10 rounded-lg bg-[#784e34] hover:!bg-[#5d371f] px-4 sm:px-5 text-xs sm:text-sm font-semibold text-white border-none shadow-none shrink-0"
-                >
-                  Lưu Cấu Hình
-                </Button>
+            {/* Header: Title & Action Button */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+              <div>
+                <h3 className="text-base sm:text-lg font-semibold text-slate-900 m-0">Thông tin cửa hàng</h3>
               </div>
 
-              {/* Main Form: Exact 3 SectionCards matching Domaco POS */}
-              <Form
-                form={companyForm}
-                layout="vertical"
-                initialValues={{
-                  code: companyInfo.code || EMPTY_COMPANY_INFO.code,
-                  companyName: companyInfo.companyName || EMPTY_COMPANY_INFO.companyName,
-                  taxId: companyInfo.taxId || EMPTY_COMPANY_INFO.taxId,
-                  phone: companyInfo.phone || EMPTY_COMPANY_INFO.phone,
-                  hotline: companyInfo.hotline || EMPTY_COMPANY_INFO.hotline,
-                  zalo: companyInfo.zalo || EMPTY_COMPANY_INFO.zalo,
-                  email: companyInfo.email || EMPTY_COMPANY_INFO.email,
-                  website: companyInfo.website || EMPTY_COMPANY_INFO.website,
-                  representative: companyInfo.representative || EMPTY_COMPANY_INFO.representative,
-                  headquarters: companyInfo.headquarters || EMPTY_COMPANY_INFO.headquarters,
-                  logoUrl: companyInfo.logoUrl || EMPTY_COMPANY_INFO.logoUrl,
-                  status: companyInfo.status !== false,
-                }}
-                onFinish={handleSaveCompanyInfo}
-                className="space-y-4 [&_.ant-form-item]:!mb-4 [&_.ant-form-item-label]:!pb-1.5 [&_.ant-form-item-label_label]:!text-xs [&_.ant-form-item-label_label]:!font-medium [&_.ant-form-item-label_label]:!text-slate-700"
+              <Button
+                type="primary"
+                icon={<SaveOutlined />}
+                onClick={() => companyForm.submit()}
+                className="h-9 sm:h-10 rounded-lg bg-[#784e34] hover:!bg-[#5d371f] px-4 sm:px-5 text-xs sm:text-sm font-semibold text-white border-none shadow-none shrink-0"
               >
-                <Form.Item name="logoUrl" hidden>
-                  <Input />
-                </Form.Item>
+                Lưu Cấu Hình
+              </Button>
+            </div>
 
-                {/* 1. ĐỊNH DANH & PHÁP LÝ */}
-                <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs">
-                  <div className="border-b border-slate-200 px-4 py-3.5 sm:px-6 sm:py-5">
-                    <h2 className="m-0 text-sm font-semibold text-slate-900">Định danh &amp; Pháp lý</h2>
-                  </div>
-                  <div className="px-4 py-4 sm:px-6 sm:py-5">
-                    <div className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
-                      <Form.Item
-                        label="Mã công ty"
-                        name="code"
-                        rules={[{ required: true, message: 'Vui lòng nhập mã công ty' }]}
-                      >
-                        <Input
-                          placeholder="Nhập mã công ty"
-                          className="h-9 sm:h-10 rounded-lg text-xs sm:text-sm font-mono uppercase"
-                        />
-                      </Form.Item>
+            {/* Main Form: Exact 3 SectionCards matching Domaco POS */}
+            <Form
+              form={companyForm}
+              layout="vertical"
+              initialValues={{
+                code: companyInfo.code || EMPTY_COMPANY_INFO.code,
+                companyName: companyInfo.companyName || EMPTY_COMPANY_INFO.companyName,
+                taxId: companyInfo.taxId || EMPTY_COMPANY_INFO.taxId,
+                phone: companyInfo.phone || EMPTY_COMPANY_INFO.phone,
+                hotline: companyInfo.hotline || EMPTY_COMPANY_INFO.hotline,
+                zalo: companyInfo.zalo || EMPTY_COMPANY_INFO.zalo,
+                email: companyInfo.email || EMPTY_COMPANY_INFO.email,
+                website: companyInfo.website || EMPTY_COMPANY_INFO.website,
+                representative: companyInfo.representative || EMPTY_COMPANY_INFO.representative,
+                headquarters: companyInfo.headquarters || EMPTY_COMPANY_INFO.headquarters,
+                logoUrl: companyInfo.logoUrl || EMPTY_COMPANY_INFO.logoUrl,
+                status: companyInfo.status !== false,
+              }}
+              onFinish={handleSaveCompanyInfo}
+              className="space-y-4 [&_.ant-form-item]:!mb-4 [&_.ant-form-item-label]:!pb-1.5 [&_.ant-form-item-label_label]:!text-xs [&_.ant-form-item-label_label]:!font-medium [&_.ant-form-item-label_label]:!text-slate-700"
+            >
+              <Form.Item name="logoUrl" hidden>
+                <Input />
+              </Form.Item>
 
-                      <Form.Item
-                        label="Tên công ty (Pháp lý)"
-                        name="companyName"
-                        rules={[{ required: true, message: 'Vui lòng nhập tên công ty' }]}
-                      >
-                        <Input
-                          prefix={<ShopOutlined className="text-slate-400 mr-1" />}
-                          placeholder="Nhập tên công ty pháp lý"
-                          className="h-9 sm:h-10 rounded-lg text-xs sm:text-sm"
-                        />
-                      </Form.Item>
+              {/* 1. ĐỊNH DANH & PHÁP LÝ */}
+              <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs">
+                <div className="border-b border-slate-200 px-4 py-3.5 sm:px-6 sm:py-5">
+                  <h2 className="m-0 text-sm font-semibold text-slate-900">Định danh &amp; Pháp lý</h2>
+                </div>
+                <div className="px-4 py-4 sm:px-6 sm:py-5">
+                  <div className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
+                    <Form.Item
+                      label="Mã công ty"
+                      name="code"
+                      rules={[{ required: true, message: 'Vui lòng nhập mã công ty' }]}
+                    >
+                      <Input
+                        placeholder="Nhập mã công ty"
+                        className="h-9 sm:h-10 rounded-lg text-xs sm:text-sm font-mono uppercase"
+                      />
+                    </Form.Item>
 
-                      <Form.Item label="Mã số thuế" name="taxId">
-                        <Input
-                          prefix={<CreditCardOutlined className="text-slate-400 mr-1" />}
-                          placeholder="Nhập mã số thuế"
-                          className="h-9 sm:h-10 rounded-lg text-xs sm:text-sm font-mono"
-                        />
-                      </Form.Item>
+                    <Form.Item
+                      label="Tên công ty (Pháp lý)"
+                      name="companyName"
+                      rules={[{ required: true, message: 'Vui lòng nhập tên công ty' }]}
+                    >
+                      <Input
+                        prefix={<ShopOutlined className="text-slate-400 mr-1" />}
+                        placeholder="Nhập tên công ty pháp lý"
+                        className="h-9 sm:h-10 rounded-lg text-xs sm:text-sm"
+                      />
+                    </Form.Item>
 
-                      <Form.Item label="Số điện thoại" name="phone">
-                        <Input
-                          placeholder="Nhập số điện thoại"
-                          className="h-9 sm:h-10 rounded-lg text-xs sm:text-sm"
-                        />
-                      </Form.Item>
-                    </div>
-                  </div>
-                </section>
+                    <Form.Item label="Mã số thuế" name="taxId">
+                      <Input
+                        prefix={<CreditCardOutlined className="text-slate-400 mr-1" />}
+                        placeholder="Nhập mã số thuế"
+                        className="h-9 sm:h-10 rounded-lg text-xs sm:text-sm font-mono"
+                      />
+                    </Form.Item>
 
-                {/* 2. HÌNH ẢNH THƯƠNG HIỆU */}
-                <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs">
-                  <div className="border-b border-slate-200 px-4 py-3.5 sm:px-6 sm:py-5">
-                    <h2 className="m-0 text-sm font-semibold text-slate-900">Hình ảnh thương hiệu</h2>
-                  </div>
-                  <div className="px-4 py-4 sm:px-6 sm:py-5">
-                    <div className="flex flex-col gap-3.5 rounded-xl border border-slate-200 p-3.5 sm:p-4 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="flex min-w-0 items-center gap-4">
-                        <div className="flex h-24 w-36 sm:h-28 sm:w-48 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white p-2.5 shadow-2xs">
-                          {companyInfo.logoUrl ? (
-                            <img
-                              src={companyInfo.logoUrl}
-                              alt="Logo công ty"
-                              className="max-h-full max-w-full object-contain"
-                            />
-                          ) : (
-                            <span className="text-xs text-slate-400">Chưa có logo</span>
-                          )}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="text-xs sm:text-sm font-semibold text-slate-900">Logo thương hiệu</div>
-                          <div className="text-[11px] text-slate-500 mt-0.5">Kích thước chuẩn, tự động tối ưu hiển thị trên thanh tiêu đề và hóa đơn POS</div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <Upload
-                          accept="image/png,image/jpeg,image/jpg"
-                          showUploadList={false}
-                          beforeUpload={handleLogoUpload}
-                          disabled={uploadingLogo}
-                          className="w-full sm:w-auto"
-                        >
-                          <Button
-                            icon={uploadingLogo ? <ReloadOutlined spin /> : <UploadOutlined />}
-                            className="h-9 sm:h-10 rounded-lg px-4 text-xs sm:text-sm font-medium w-full sm:w-auto"
-                            disabled={uploadingLogo}
-                          >
-                            {uploadingLogo ? 'Đang tải logo...' : 'Tải logo lên'}
-                          </Button>
-                        </Upload>
-
-                        {companyInfo.logoUrl && (
-                          <Button
-                            type="text"
-                            danger
-                            size="small"
-                            onClick={() => {
-                              companyForm.setFieldsValue({ logoUrl: null });
-                              setCompanyInfo((prev) => ({ ...prev, logoUrl: null }));
-                              message.info('Đã xóa logo');
-                            }}
-                            className="text-xs"
-                          >
-                            Xóa
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </section>
-
-                {/* 3. THÔNG TIN LIÊN HỆ */}
-                <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs">
-                  <div className="border-b border-slate-200 px-4 py-3.5 sm:px-6 sm:py-5">
-                    <h2 className="m-0 text-sm font-semibold text-slate-900">Thông tin liên hệ &amp; Pháp lý</h2>
-                  </div>
-                  <div className="px-4 py-4 sm:px-6 sm:py-5">
-                    <div className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
-                      <Form.Item label="Email hỗ trợ" name="email">
-                        <Input
-                          prefix={<MailOutlined className="text-slate-400 mr-1" />}
-                          placeholder="Nhập email hỗ trợ"
-                          className="h-9 sm:h-10 rounded-lg text-xs sm:text-sm"
-                        />
-                      </Form.Item>
-                      <Form.Item label="Hotline CSKH / Bán hàng" name="hotline">
-                        <Input
-                          prefix={<PhoneOutlined className="text-slate-400 mr-1" />}
-                          placeholder="VD: 0867 612 199"
-                          className="h-9 sm:h-10 rounded-lg text-xs sm:text-sm"
-                        />
-                      </Form.Item>
-                      <Form.Item label="Số điện thoại / Zalo tư vấn" name="zalo">
-                        <Input
-                          placeholder="VD: 0867612199 hoặc https://zalo.me/0867612199"
-                          className="h-9 sm:h-10 rounded-lg text-xs sm:text-sm"
-                        />
-                      </Form.Item>
-                      <Form.Item label="Website thương hiệu" name="website">
-                        <Input
-                          prefix={<GlobalOutlined className="text-slate-400 mr-1" />}
-                          placeholder="VD: https://d2luxury.vn"
-                          className="h-9 sm:h-10 rounded-lg text-xs sm:text-sm"
-                        />
-                      </Form.Item>
-                      <Form.Item label="Người đại diện pháp luật" name="representative">
-                        <Input
-                          prefix={<UserOutlined className="text-slate-400 mr-1" />}
-                          placeholder="Nhập tên người đại diện"
-                          className="h-9 sm:h-10 rounded-lg text-xs sm:text-sm"
-                        />
-                      </Form.Item>
-                    </div>
-                    <Form.Item label="Địa chỉ trụ sở chính" name="headquarters">
-                      <Input.TextArea
-                        rows={2}
-                        placeholder="Nhập địa chỉ trụ sở chính"
-                        className="rounded-lg text-xs sm:text-sm"
+                    <Form.Item label="Số điện thoại" name="phone">
+                      <Input
+                        placeholder="Nhập số điện thoại"
+                        className="h-9 sm:h-10 rounded-lg text-xs sm:text-sm"
                       />
                     </Form.Item>
                   </div>
+                </div>
+              </section>
 
-                  <div className="border-t border-slate-200">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-6 px-4 py-3.5 sm:px-6 sm:py-5">
-                      <div className="min-w-0 flex-1 pr-0 sm:pr-4">
-                        <div className="text-xs sm:text-sm font-medium text-slate-900">Trạng thái cửa hàng</div>
+              {/* 2. HÌNH ẢNH THƯƠNG HIỆU */}
+              <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs">
+                <div className="border-b border-slate-200 px-4 py-3.5 sm:px-6 sm:py-5">
+                  <h2 className="m-0 text-sm font-semibold text-slate-900">Hình ảnh thương hiệu</h2>
+                </div>
+                <div className="px-4 py-4 sm:px-6 sm:py-5">
+                  <div className="flex flex-col gap-3.5 rounded-xl border border-slate-200 p-3.5 sm:p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex min-w-0 items-center gap-4">
+                      <div className="flex h-24 w-36 sm:h-28 sm:w-48 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white p-2.5 shadow-2xs">
+                        {companyInfo.logoUrl ? (
+                          <img
+                            src={companyInfo.logoUrl}
+                            alt="Logo công ty"
+                            className="max-h-full max-w-full object-contain"
+                          />
+                        ) : (
+                          <span className="text-xs text-slate-400">Chưa có logo</span>
+                        )}
                       </div>
-                      <div className="shrink-0">
-                        <Form.Item name="status" valuePropName="checked" noStyle>
-                          <Switch checkedChildren="Hoạt động" unCheckedChildren="Khóa" />
-                        </Form.Item>
+                      <div className="min-w-0">
+                        <div className="text-xs sm:text-sm font-semibold text-slate-900">Logo thương hiệu</div>
+                        <div className="text-[11px] text-slate-500 mt-0.5">Kích thước chuẩn, tự động tối ưu hiển thị trên thanh tiêu đề và hóa đơn POS</div>
                       </div>
                     </div>
+
+                    <div className="flex items-center gap-2">
+                      <Upload
+                        accept="image/png,image/jpeg,image/jpg"
+                        showUploadList={false}
+                        beforeUpload={handleLogoUpload}
+                        disabled={uploadingLogo}
+                        className="w-full sm:w-auto"
+                      >
+                        <Button
+                          icon={uploadingLogo ? <ReloadOutlined spin /> : <UploadOutlined />}
+                          className="h-9 sm:h-10 rounded-lg px-4 text-xs sm:text-sm font-medium w-full sm:w-auto"
+                          disabled={uploadingLogo}
+                        >
+                          {uploadingLogo ? 'Đang tải logo...' : 'Tải logo lên'}
+                        </Button>
+                      </Upload>
+
+                      {companyInfo.logoUrl && (
+                        <Button
+                          type="text"
+                          danger
+                          size="small"
+                          onClick={() => {
+                            companyForm.setFieldsValue({ logoUrl: null });
+                            setCompanyInfo((prev) => ({ ...prev, logoUrl: null }));
+                            message.info('Đã xóa logo');
+                          }}
+                          className="text-xs"
+                        >
+                          Xóa
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                </section>
-              </Form>
-            </div>
+                </div>
+              </section>
+
+              {/* 3. THÔNG TIN LIÊN HỆ */}
+              <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs">
+                <div className="border-b border-slate-200 px-4 py-3.5 sm:px-6 sm:py-5">
+                  <h2 className="m-0 text-sm font-semibold text-slate-900">Thông tin liên hệ &amp; Pháp lý</h2>
+                </div>
+                <div className="px-4 py-4 sm:px-6 sm:py-5">
+                  <div className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
+                    <Form.Item label="Email hỗ trợ" name="email">
+                      <Input
+                        prefix={<MailOutlined className="text-slate-400 mr-1" />}
+                        placeholder="Nhập email hỗ trợ"
+                        className="h-9 sm:h-10 rounded-lg text-xs sm:text-sm"
+                      />
+                    </Form.Item>
+                    <Form.Item label="Hotline CSKH / Bán hàng" name="hotline">
+                      <Input
+                        prefix={<PhoneOutlined className="text-slate-400 mr-1" />}
+                        placeholder="VD: 0867 612 199"
+                        className="h-9 sm:h-10 rounded-lg text-xs sm:text-sm"
+                      />
+                    </Form.Item>
+                    <Form.Item label="Số điện thoại / Zalo tư vấn" name="zalo">
+                      <Input
+                        placeholder="VD: 0867612199 hoặc https://zalo.me/0867612199"
+                        className="h-9 sm:h-10 rounded-lg text-xs sm:text-sm"
+                      />
+                    </Form.Item>
+                    <Form.Item label="Website thương hiệu" name="website">
+                      <Input
+                        prefix={<GlobalOutlined className="text-slate-400 mr-1" />}
+                        placeholder="VD: https://d2luxury.vn"
+                        className="h-9 sm:h-10 rounded-lg text-xs sm:text-sm"
+                      />
+                    </Form.Item>
+                    <Form.Item label="Người đại diện pháp luật" name="representative">
+                      <Input
+                        prefix={<UserOutlined className="text-slate-400 mr-1" />}
+                        placeholder="Nhập tên người đại diện"
+                        className="h-9 sm:h-10 rounded-lg text-xs sm:text-sm"
+                      />
+                    </Form.Item>
+                  </div>
+                  <Form.Item label="Địa chỉ trụ sở chính" name="headquarters">
+                    <Input.TextArea
+                      rows={2}
+                      placeholder="Nhập địa chỉ trụ sở chính"
+                      className="rounded-lg text-xs sm:text-sm"
+                    />
+                  </Form.Item>
+                </div>
+
+                <div className="border-t border-slate-200">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-6 px-4 py-3.5 sm:px-6 sm:py-5">
+                    <div className="min-w-0 flex-1 pr-0 sm:pr-4">
+                      <div className="text-xs sm:text-sm font-medium text-slate-900">Trạng thái cửa hàng</div>
+                    </div>
+                    <div className="shrink-0">
+                      <Form.Item name="status" valuePropName="checked" noStyle>
+                        <Switch checkedChildren="Hoạt động" unCheckedChildren="Khóa" />
+                      </Form.Item>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </Form>
+          </div>
 
           {/* TAB 2: CẤU HÌNH THANH TOÁN & VIETQR */}
           <div className={settingsActiveTab === 'payment' ? 'space-y-5' : 'hidden'}>
-              <div className="pb-3 border-b border-slate-100 flex items-center justify-between flex-wrap gap-2">
-                <div className="flex items-center gap-2">
-                  <CreditCardOutlined className="text-[#784e34] text-lg" />
-                  <div>
-                    <h3 className="font-bold text-sm text-slate-900 m-0">Tài khoản ngân hàng &amp; Mã QR Thanh toán</h3>
-                    <p className="text-xs text-slate-500 m-0">Tự động sinh mã VietQR động cho khách đặt cọc và thanh toán đơn hàng</p>
-                  </div>
+            <div className="pb-3 border-b border-slate-100 flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <CreditCardOutlined className="text-[#784e34] text-lg" />
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900 m-0">Tài khoản ngân hàng &amp; Mã QR Thanh toán</h3>
                 </div>
-                <Button
-                  type="primary"
-                  icon={<SaveOutlined />}
-                  onClick={() => paymentForm.submit()}
-                  className="bg-[#5d371f] hover:bg-[#784e34] text-white font-semibold text-xs px-4 h-9 rounded-none shadow-sm cursor-pointer"
-                >
-                  Lưu cấu hình thanh toán
-                </Button>
               </div>
-
-              <Form
-                form={paymentForm}
-                layout="vertical"
-                onFinish={handleSaveSettings}
-                initialValues={paymentSettings}
-                onValuesChange={(_, allValues) => setPaymentSettings((prev) => ({ ...prev, ...allValues }))}
+              <Button
+                type="primary"
+                icon={<SaveOutlined />}
+                onClick={() => paymentForm.submit()}
+                className="bg-[#5d371f] hover:bg-[#784e34] text-white font-semibold text-xs px-4 h-9 rounded-none shadow-sm cursor-pointer"
               >
-                <Form.Item name="bankBin" noStyle>
-                  <Input type="hidden" />
-                </Form.Item>
-                <Row gutter={24} className="items-start">
-                  <Col xs={24} lg={15}>
-                    <div className="space-y-4">
-                      <Form.Item label={<span className="text-xs font-semibold text-slate-800">Ngân hàng thụ hưởng</span>} name="bankName" rules={[{ required: true, message: 'Vui lòng chọn ngân hàng' }]}>
-                        <Select
-                          showSearch
-                          loading={loadingBanks}
-                          placeholder="Tìm kiếm ngân hàng (MB, VCB, ACB, Techcombank...)..."
-                          className="h-10 text-sm"
-                          onChange={(val, option: any) => {
-                            const bin = option?.key || getBankBin(val);
-                            paymentForm.setFieldsValue({ bankBin: bin, bankName: val });
-                            setPaymentSettings((prev) => ({ ...prev, bankName: val, bankBin: bin }));
-                          }}
-                          filterOption={(input, option) => {
-                            const label = String(option?.label || '');
-                            const val = String(option?.value || '');
-                            return label.toLowerCase().includes(input.toLowerCase()) || val.toLowerCase().includes(input.toLowerCase());
-                          }}
-                        >
-                          {vietQrBanks.length > 0 ? (
-                            vietQrBanks.map((b) => (
-                              <Option key={b.bin} value={`${b.shortName} (${b.name})`} label={`${b.shortName} - ${b.name} (${b.bin})`}>
-                                <div className="flex items-center gap-2 py-0.5">
-                                  {b.logo && (
-                                    <img src={b.logo} alt={b.shortName} className="h-4 w-auto max-w-[42px] object-contain shrink-0" />
-                                  )}
-                                  <span className="font-semibold text-slate-800 text-xs">{b.shortName}</span>
-                                  <span className="text-slate-400 text-xs truncate max-w-[280px]">- {b.name}</span>
-                                  <span className="ml-auto text-[10px] font-mono text-slate-400">({b.bin})</span>
-                                </div>
-                              </Option>
-                            ))
-                          ) : (
-                            <>
-                              <Option value="MB Bank (Ngân hàng Quân Đội)">MB Bank - Ngân hàng TMCP Quân Đội (970422)</Option>
-                              <Option value="Vietcombank (Ngân hàng Ngoại Thương)">Vietcombank - Ngân hàng Ngoại Thương (970436)</Option>
-                              <Option value="Techcombank (Ngân hàng Kỹ Thương)">Techcombank - Ngân hàng Kỹ Thương (970407)</Option>
-                              <Option value="ACB (Ngân hàng Á Châu)">ACB - Ngân hàng TMCP Á Châu (970416)</Option>
-                              <Option value="BIDV (Ngân hàng Đầu tư & Phát triển)">BIDV - Ngân hàng Đầu tư &amp; Phát triển (970418)</Option>
-                            </>
-                          )}
-                        </Select>
-                      </Form.Item>
-
-                      <Row gutter={16}>
-                        <Col xs={24} sm={12}>
-                          <Form.Item 
-                            label={<span className="text-xs font-semibold text-slate-800">Số tài khoản</span>} 
-                            name="accountNumber" 
-                            rules={[{ required: true, message: 'Vui lòng nhập số tài khoản ngân hàng' }]}
-                          >
-                            <Input placeholder="VD: 0379241075" className="h-10 text-sm font-mono font-bold text-[#784e34] rounded-none" />
-                          </Form.Item>
-                        </Col>
-                        <Col xs={24} sm={12}>
-                          <Form.Item 
-                            label={<span className="text-xs font-semibold text-slate-800">Tên chủ tài khoản</span>} 
-                            name="accountName" 
-                            rules={[{ required: true, message: 'Vui lòng nhập tên chủ tài khoản' }]}
-                          >
-                            <Input placeholder="VD: NGUYEN VAN A" className="h-10 text-sm font-semibold uppercase rounded-none" />
-                          </Form.Item>
-                        </Col>
-                      </Row>
-
-                      <Row gutter={16}>
-                        <Col xs={24} sm={12}>
-                          <Form.Item label={<span className="text-xs font-semibold text-slate-800">Chi nhánh ngân hàng (không bắt buộc)</span>} name="branchName">
-                            <Input placeholder="VD: Chi nhánh Sở Giao Dịch Hà Nội" className="h-10 text-sm rounded-none" />
-                          </Form.Item>
-                        </Col>
-                        <Col xs={24} sm={12}>
-                          <Form.Item 
-                            label={<span className="text-xs font-semibold text-slate-800">Tỷ lệ cọc mặc định (%)</span>} 
-                            required
-                          >
-                            <div className="space-y-2">
-                              <Space.Compact className="w-40">
-                                <Form.Item
-                                  name="defaultDeposit"
-                                  noStyle
-                                  rules={[{ required: true, message: 'Vui lòng nhập tỷ lệ cọc' }]}
-                                >
-                                  <InputNumber
-                                    min={0}
-                                    max={100}
-                                    className="h-10 text-sm w-full font-semibold text-[#784e34] rounded-none"
-                                    placeholder="30"
-                                  />
-                                </Form.Item>
-                                <div className="h-10 px-3.5 bg-slate-100 border border-l-0 border-slate-300 flex items-center justify-center font-bold text-xs text-slate-700 shrink-0 select-none">
-                                  %
-                                </div>
-                              </Space.Compact>
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                {[10, 20, 30, 50, 70, 100].map((pct) => (
-                                  <button
-                                    key={pct}
-                                    type="button"
-                                    onClick={() => {
-                                      paymentForm.setFieldsValue({ defaultDeposit: pct });
-                                      setPaymentSettings((prev) => ({ ...prev, defaultDeposit: pct }));
-                                    }}
-                                    className="px-2 py-1 text-xs border border-slate-200 bg-white hover:border-[#784e34] hover:text-[#784e34] text-slate-600 rounded cursor-pointer transition-colors"
-                                  >
-                                    {pct}%
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          </Form.Item>
-                        </Col>
-                      </Row>
-                    </div>
-                  </Col>
-
-                  {/* Live Preview QR Card */}
-                  <Col xs={24} lg={9}>
-                    <div className="bg-slate-50/70 p-4 rounded-none border border-slate-200/80 flex flex-col items-center">
-                      <span className="text-xs font-bold text-slate-800 pb-2 mb-2 border-b border-slate-200/80 w-full text-center">
-                        Xem trước mã VietQR tự động
-                      </span>
-                      <VietQrCard
-                        bankName={paymentSettings.bankName}
-                        accountNumber={paymentSettings.accountNumber}
-                        accountName={paymentSettings.accountName}
-                      />
-                    </div>
-                  </Col>
-                </Row>
-              </Form>
+                Lưu cấu hình thanh toán
+              </Button>
             </div>
+
+            <Form
+              form={paymentForm}
+              layout="vertical"
+              onFinish={handleSaveSettings}
+              initialValues={paymentSettings}
+              onValuesChange={(_, allValues) => setPaymentSettings((prev) => ({ ...prev, ...allValues }))}
+            >
+              <Form.Item name="bankBin" noStyle>
+                <Input type="hidden" />
+              </Form.Item>
+              <Row gutter={24} className="items-start">
+                <Col xs={24} lg={15}>
+                  <div className="space-y-4">
+                    <Form.Item label={<span className="text-xs font-semibold text-slate-800">Ngân hàng thụ hưởng</span>} name="bankName" rules={[{ required: true, message: 'Vui lòng chọn ngân hàng' }]}>
+                      <Select
+                        showSearch
+                        loading={loadingBanks}
+                        placeholder="Tìm kiếm ngân hàng (MB, VCB, ACB, Techcombank...)..."
+                        className="h-10 text-sm"
+                        onChange={(val, option: any) => {
+                          const bin = option?.key || getBankBin(val);
+                          paymentForm.setFieldsValue({ bankBin: bin, bankName: val });
+                          setPaymentSettings((prev) => ({ ...prev, bankName: val, bankBin: bin }));
+                        }}
+                        filterOption={(input, option) => {
+                          const label = String(option?.label || '');
+                          const val = String(option?.value || '');
+                          return label.toLowerCase().includes(input.toLowerCase()) || val.toLowerCase().includes(input.toLowerCase());
+                        }}
+                      >
+                        {vietQrBanks.length > 0 ? (
+                          vietQrBanks.map((b) => (
+                            <Option key={b.bin} value={`${b.shortName} (${b.name})`} label={`${b.shortName} - ${b.name} (${b.bin})`}>
+                              <div className="flex items-center gap-2 py-0.5">
+                                {b.logo && (
+                                  <img src={b.logo} alt={b.shortName} className="h-4 w-auto max-w-[42px] object-contain shrink-0" />
+                                )}
+                                <span className="font-semibold text-slate-800 text-xs">{b.shortName}</span>
+                                <span className="text-slate-400 text-xs truncate max-w-[280px]">- {b.name}</span>
+                                <span className="ml-auto text-[10px] font-mono text-slate-400">({b.bin})</span>
+                              </div>
+                            </Option>
+                          ))
+                        ) : (
+                          <>
+                            <Option value="MB Bank (Ngân hàng Quân Đội)">MB Bank - Ngân hàng TMCP Quân Đội (970422)</Option>
+                            <Option value="Vietcombank (Ngân hàng Ngoại Thương)">Vietcombank - Ngân hàng Ngoại Thương (970436)</Option>
+                            <Option value="Techcombank (Ngân hàng Kỹ Thương)">Techcombank - Ngân hàng Kỹ Thương (970407)</Option>
+                            <Option value="ACB (Ngân hàng Á Châu)">ACB - Ngân hàng TMCP Á Châu (970416)</Option>
+                            <Option value="BIDV (Ngân hàng Đầu tư & Phát triển)">BIDV - Ngân hàng Đầu tư &amp; Phát triển (970418)</Option>
+                          </>
+                        )}
+                      </Select>
+                    </Form.Item>
+
+                    <Row gutter={16}>
+                      <Col xs={24} sm={12}>
+                        <Form.Item
+                          label={<span className="text-xs font-semibold text-slate-800">Số tài khoản</span>}
+                          name="accountNumber"
+                          rules={[{ required: true, message: 'Vui lòng nhập số tài khoản ngân hàng' }]}
+                        >
+                          <Input placeholder="VD: 0379241075" className="h-10 text-sm font-mono font-bold text-[#784e34] rounded-none" />
+                        </Form.Item>
+                      </Col>
+                      <Col xs={24} sm={12}>
+                        <Form.Item
+                          label={<span className="text-xs font-semibold text-slate-800">Tên chủ tài khoản</span>}
+                          name="accountName"
+                          rules={[{ required: true, message: 'Vui lòng nhập tên chủ tài khoản' }]}
+                        >
+                          <Input placeholder="VD: NGUYEN VAN A" className="h-10 text-sm font-semibold uppercase rounded-none" />
+                        </Form.Item>
+                      </Col>
+                    </Row>
+
+                    <Row gutter={16}>
+                      <Col xs={24} sm={12}>
+                        <Form.Item label={<span className="text-xs font-semibold text-slate-800">Chi nhánh ngân hàng (không bắt buộc)</span>} name="branchName">
+                          <Input placeholder="VD: Chi nhánh Sở Giao Dịch Hà Nội" className="h-10 text-sm rounded-none" />
+                        </Form.Item>
+                      </Col>
+                      <Col xs={24} sm={12}>
+                        <Form.Item
+                          label={<span className="text-xs font-semibold text-slate-800">Tỷ lệ cọc mặc định (%)</span>}
+                          required
+                        >
+                          <div className="space-y-2">
+                            <Space.Compact className="w-40">
+                              <Form.Item
+                                name="defaultDeposit"
+                                noStyle
+                                rules={[{ required: true, message: 'Vui lòng nhập tỷ lệ cọc' }]}
+                              >
+                                <InputNumber
+                                  min={0}
+                                  max={100}
+                                  className="h-10 text-sm w-full font-semibold text-[#784e34] rounded-none"
+                                  placeholder="30"
+                                />
+                              </Form.Item>
+                              <div className="h-10 px-3.5 bg-slate-100 border border-l-0 border-slate-300 flex items-center justify-center font-bold text-xs text-slate-700 shrink-0 select-none">
+                                %
+                              </div>
+                            </Space.Compact>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {[10, 20, 30, 50, 70, 100].map((pct) => (
+                                <button
+                                  key={pct}
+                                  type="button"
+                                  onClick={() => {
+                                    paymentForm.setFieldsValue({ defaultDeposit: pct });
+                                    setPaymentSettings((prev) => ({ ...prev, defaultDeposit: pct }));
+                                  }}
+                                  className="px-2 py-1 text-xs border border-slate-200 bg-white hover:border-[#784e34] hover:text-[#784e34] text-slate-600 rounded cursor-pointer transition-colors"
+                                >
+                                  {pct}%
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </Form.Item>
+                      </Col>
+                    </Row>
+                  </div>
+                </Col>
+
+                {/* Live Preview QR Card */}
+                <Col xs={24} lg={9}>
+                  <div className="bg-slate-50/70 p-4 rounded-none border border-slate-200/80 flex flex-col items-center">
+                    <span className="text-xs font-bold text-slate-800 pb-2 mb-2 border-b border-slate-200/80 w-full text-center">
+                      Xem trước mã VietQR tự động
+                    </span>
+                    <VietQrCard
+                      bankName={paymentSettings.bankName}
+                      accountNumber={paymentSettings.accountNumber}
+                      accountName={paymentSettings.accountName}
+                    />
+                  </div>
+                </Col>
+              </Row>
+            </Form>
+          </div>
 
           {/* TAB 2.5: MẪU PHIẾU IN & HÓA ĐƠN HỆ THỐNG */}
           <div className={settingsActiveTab === 'print-templates' ? 'space-y-4' : 'hidden'}>
@@ -1756,337 +1768,488 @@ export function SettingsTab({
 
           {/* TAB 3: CHI NHÁNH & CƠ SỞ (DOMACO POS BRANCH SETTINGS) */}
           <div className={settingsActiveTab === 'branches' ? 'space-y-4' : 'hidden'}>
-              {/* Main Card Container */}
-              <section className="flex-1 min-h-0 flex flex-col bg-white overflow-hidden rounded-xl border border-slate-200 shadow-xs">
-                {/* Header Toolbar matching Domaco POS */}
-                <div className="shrink-0 flex flex-col gap-3 border-b border-slate-200 bg-white p-3.5 sm:p-4">
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                    <div className="flex items-center gap-2 text-slate-900">
-                      <h3 className="m-0 text-base sm:text-lg font-semibold text-slate-900">Quản lý chi nhánh</h3>
-                      <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">
-                        {currentBranches.length} chi nhánh
-                      </span>
-                    </div>
+            {/* Main Card Container */}
+            <section className="flex-1 min-h-0 flex flex-col bg-white overflow-hidden rounded-xl border border-slate-200 shadow-xs">
+              {/* Header Toolbar matching Domaco POS */}
+              <div className="shrink-0 flex flex-col gap-2.5 sm:gap-3 border-b border-slate-200 bg-white p-3 sm:p-4">
+                {/* Top Row: Title + Count + (Mobile: Create Button | Desktop: Actions Cluster) */}
+                <div className="flex items-center justify-between gap-2.5">
+                  <div className="flex items-center gap-2 text-slate-900 min-w-0">
+                    <span className="text-base shrink-0">📍</span>
+                    <h3 className="m-0 text-base sm:text-lg font-semibold text-slate-900 truncate">Quản lý chi nhánh</h3>
+                    <span className="rounded-full bg-slate-100 px-2 sm:px-2.5 py-0.5 text-xs font-semibold text-slate-600 shrink-0">
+                      {currentBranches.length} chi nhánh
+                    </span>
+                  </div>
 
-                    <div className="flex flex-wrap items-center justify-start sm:justify-end gap-1.5 sm:gap-2 w-full sm:w-auto">
-                      <Button
-                        htmlType="button"
-                        icon={<CopyOutlined />}
-                        disabled={selectedBranchKeys.length !== 1 || !selectedBranchRecord}
-                        onClick={() => selectedBranchRecord && handleCloneBranch(selectedBranchRecord)}
-                        className="!h-8 !w-8 !p-0 rounded-lg border-slate-300 bg-white text-slate-700 text-xs shadow-xs inline-flex items-center justify-center"
-                        title="Sao chép chi nhánh"
-                      />
+                  {/* Desktop Action Buttons Cluster (hidden on mobile) */}
+                  <div className="hidden sm:flex items-center gap-1.5 sm:gap-2">
+                    <Button
+                      htmlType="button"
+                      icon={<CopyOutlined />}
+                      disabled={selectedBranchKeys.length !== 1 || !selectedBranchRecord}
+                      onClick={() => selectedBranchRecord && handleCloneBranch(selectedBranchRecord)}
+                      className="!h-8 !w-8 !p-0 rounded-lg border-slate-300 bg-white text-slate-700 text-xs shadow-xs inline-flex items-center justify-center disabled:opacity-40"
+                      title="Sao chép chi nhánh"
+                    />
 
-                      <Button
-                        htmlType="button"
-                        icon={<EditOutlined />}
-                        disabled={selectedBranchKeys.length !== 1 || !selectedBranchRecord}
-                        onClick={() => selectedBranchRecord && handleOpenEditBranch(selectedBranchRecord)}
-                        className="!h-8 !w-8 !p-0 rounded-lg border-slate-300 bg-white text-slate-700 text-xs shadow-xs inline-flex items-center justify-center"
-                        title="Chỉnh sửa chi nhánh"
-                      />
+                    <Button
+                      htmlType="button"
+                      icon={<EditOutlined />}
+                      disabled={selectedBranchKeys.length !== 1 || !selectedBranchRecord}
+                      onClick={() => selectedBranchRecord && handleOpenEditBranch(selectedBranchRecord)}
+                      className="!h-8 !w-8 !p-0 rounded-lg border-slate-300 bg-white text-slate-700 text-xs shadow-xs inline-flex items-center justify-center disabled:opacity-40"
+                      title="Chỉnh sửa chi nhánh"
+                    />
 
+                    <Button
+                      htmlType="button"
+                      icon={<DeleteOutlined />}
+                      disabled={!selectedBranchKeys.length}
+                      onClick={handleDeleteSelectedBranches}
+                      className="!h-8 !w-8 !p-0 rounded-lg border-slate-300 bg-white text-rose-600 text-xs shadow-xs inline-flex items-center justify-center hover:!border-rose-300 hover:!bg-rose-50 disabled:opacity-40"
+                      title="Xóa chi nhánh đã chọn"
+                    />
+
+                    <Button
+                      htmlType="button"
+                      type="primary"
+                      icon={<PlusOutlined />}
+                      onClick={handleOpenCreateBranch}
+                      className="!h-8 px-3.5 bg-[#784e34] hover:!bg-[#5d371f] text-white border-none font-bold text-xs rounded-lg shadow-xs inline-flex items-center justify-center gap-1.5"
+                    >
+                      Thêm mới
+                    </Button>
+                  </div>
+
+                  {/* Mobile Create Button (placed cleanly beside title) */}
+                  <Button
+                    htmlType="button"
+                    type="primary"
+                    icon={<PlusOutlined />}
+                    onClick={handleOpenCreateBranch}
+                    className="sm:hidden !h-8 px-2.5 bg-[#784e34] hover:!bg-[#5d371f] text-white border-none font-bold text-xs rounded-lg shadow-xs inline-flex items-center justify-center gap-1 shrink-0"
+                  >
+                    Thêm mới
+                  </Button>
+                </div>
+
+                {/* Mobile Selection Action Bar (appears only when items are selected on mobile) */}
+                {selectedBranchKeys.length > 0 && (
+                  <div className="sm:hidden flex items-center justify-between bg-[#fbf2ee] border border-[#d8c3af] px-3 py-1.5 rounded-lg text-xs">
+                    <span className="font-bold text-[#5d371f]">
+                      Đã chọn {selectedBranchKeys.length} chi nhánh
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      {selectedBranchKeys.length === 1 && selectedBranchRecord && (
+                        <Button
+                          size="small"
+                          icon={<CopyOutlined />}
+                          onClick={() => handleCloneBranch(selectedBranchRecord)}
+                          className="!h-7 px-2 rounded-md bg-white border-slate-300 text-slate-700 text-xs shadow-2xs inline-flex items-center gap-1"
+                        >
+                          Sao chép
+                        </Button>
+                      )}
+                      {selectedBranchKeys.length === 1 && selectedBranchRecord && (
+                        <Button
+                          size="small"
+                          icon={<EditOutlined />}
+                          onClick={() => handleOpenEditBranch(selectedBranchRecord)}
+                          className="!h-7 px-2 rounded-md bg-white border-slate-300 text-slate-700 text-xs shadow-2xs inline-flex items-center gap-1"
+                        >
+                          Sửa
+                        </Button>
+                      )}
                       <Button
-                        htmlType="button"
+                        size="small"
+                        danger
                         icon={<DeleteOutlined />}
-                        disabled={!selectedBranchKeys.length}
                         onClick={handleDeleteSelectedBranches}
-                        className="!h-8 !w-8 !p-0 rounded-lg border-slate-300 bg-white text-rose-600 text-xs shadow-xs inline-flex items-center justify-center hover:!border-rose-300 hover:!bg-rose-50"
-                        title="Xóa chi nhánh đã chọn"
-                      />
-
-                      <Button
-                        htmlType="button"
-                        type="primary"
-                        icon={<PlusOutlined />}
-                        onClick={handleOpenCreateBranch}
-                        className="!h-8 px-3 sm:px-4 bg-[#784e34] hover:!bg-[#5d371f] text-white border-none font-bold text-xs rounded-lg shadow-xs inline-flex items-center justify-center gap-1.5 ml-auto sm:ml-0"
+                        className="!h-7 px-2 rounded-md bg-white text-xs shadow-2xs inline-flex items-center gap-1"
                       >
-                        Thêm mới
+                        Xóa
                       </Button>
                     </div>
                   </div>
+                )}
 
-                  {/* Quick Search Bar */}
-                  <div className="w-full sm:w-80">
-                    <AdminSearchInput
-                      placeholder="Tìm theo mã, tên, địa chỉ..."
-                      value={branchSearchQuery}
-                      onChange={(val) => setBranchSearchQuery(val)}
-                      sizeVariant="sm"
-                    />
-                  </div>
+                {/* Quick Search Bar */}
+                <div className="w-full sm:w-80">
+                  <AdminSearchInput
+                    placeholder="Tìm theo mã, tên, địa chỉ..."
+                    value={branchSearchQuery}
+                    onChange={(val) => setBranchSearchQuery(val)}
+                    sizeVariant="sm"
+                  />
                 </div>
+              </div>
 
-                {/* Table View */}
-                <div className="overflow-x-auto">
-                  <Table
-                    rowKey="id"
-                    size="small"
-                    dataSource={filteredBranches}
-                    rowSelection={{
-                      selectedRowKeys: selectedBranchKeys,
-                      onChange: (keys) => setSelectedBranchKeys(keys),
-                    }}
-                    onRow={(record) => ({
-                      onClick: () => {
-                        setSelectedBranchKeys((prev) =>
-                          prev.includes(record.id) ? prev.filter((k) => k !== record.id) : [...prev, record.id]
-                        );
-                      },
-                    })}
-                    pagination={{
-                      pageSize: 10,
-                      showSizeChanger: true,
-                      pageSizeOptions: ['10', '20', '50'],
-                      showTotal: (total, range) => (
-                        <span className="text-xs text-slate-500 font-medium">
-                          Hiển thị {range[0]} – {range[1]} trong tổng số {total} chi nhánh
-                        </span>
-                      ),
-                    }}
-                    columns={[
-                      {
-                        title: (
-                          <div className="flex items-center gap-1">
-                            <span>Mã số</span>
-                            <SearchOutlined className="text-slate-400 text-3xs" />
-                          </div>
-                        ),
-                        dataIndex: 'code',
-                        key: 'code',
-                        width: 130,
-                        render: (value, record) => (
-                          <span
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenEditBranch(record);
-                            }}
-                            className="font-semibold text-[#784e34] hover:underline cursor-pointer font-mono"
-                          >
-                            {value || '—'}
-                          </span>
-                        ),
-                      },
-                      {
-                        title: (
-                          <div className="flex items-center gap-1">
-                            <span>Tên / Nội dung</span>
-                            <SearchOutlined className="text-slate-400 text-3xs" />
-                          </div>
-                        ),
-                        dataIndex: 'name',
-                        key: 'name',
-                        width: 250,
-                        render: (value, record) => {
-                          const isDef = Boolean(record.isDefault || record.isHeadquarter);
-                          return (
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="font-semibold text-slate-900">{value || '—'}</span>
+              {/* Branches Data View (Responsive: Mobile Cards + Desktop Table) */}
+              {filteredBranches.length === 0 ? (
+                <div className="py-12 px-4 flex flex-col items-center justify-center text-center">
+                  <div className="w-12 h-12 rounded-full bg-[#f5ece8] flex items-center justify-center text-[#784e34] text-xl mb-2.5">
+                    <EnvironmentOutlined />
+                  </div>
+                  <div className="font-bold text-sm text-slate-800">Chưa có chi nhánh nào</div>
+                  <div className="text-xs text-slate-400 mt-1 mb-3">Tạo chi nhánh đầu tiên để thiết lập cơ sở bán hàng &amp; tồn kho</div>
+                  <Button
+                    type="primary"
+                    icon={<PlusOutlined />}
+                    onClick={handleOpenCreateBranch}
+                    className="bg-[#784e34] hover:!bg-[#5d371f] font-bold text-xs rounded-lg shadow-xs"
+                  >
+                    Thêm chi nhánh mới
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  {/* Mobile Card List (< md) - ZERO Horizontal Scroll */}
+                  <div className="block md:hidden divide-y divide-slate-100 p-3 space-y-3">
+                    {filteredBranches.map((branch) => {
+                      const isSelected = selectedBranchKeys.includes(branch.id);
+                      const isDef = Boolean(branch.isDefault || branch.isHeadquarter);
+                      return (
+                        <div
+                          key={branch.id}
+                          onClick={() => {
+                            setSelectedBranchKeys((prev) =>
+                              prev.includes(branch.id) ? prev.filter((k) => k !== branch.id) : [...prev, branch.id]
+                            );
+                          }}
+                          className={`p-3.5 bg-white border rounded-xl space-y-2.5 transition-all cursor-pointer ${isSelected ? 'border-[#784e34] bg-[#784e34]/5 shadow-xs' : 'border-slate-200 shadow-2xs'
+                            }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-mono text-xs font-bold text-[#784e34] bg-[#f5ece8] px-2 py-0.5 rounded">
+                                {branch.code || '—'}
+                              </span>
                               {isDef && (
-                                <Tag color="gold" className="text-3xs font-bold border-amber-300 m-0 px-1 py-0 inline-flex items-center gap-1">
-                                  <span>⭐</span> MẶC ĐỊNH
+                                <Tag color="gold" className="text-3xs font-bold m-0 border-amber-300">
+                                  ⭐ MẶC ĐỊNH
                                 </Tag>
                               )}
+                              <span className={`px-2 py-0.5 rounded text-2xs font-bold uppercase ${branch.status === 'active' || (branch.status as any) === true ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                                }`}>
+                                {branch.status === 'active' || (branch.status as any) === true ? 'Mở' : 'Khóa'}
+                              </span>
                             </div>
-                          );
-                        },
-                      },
-                      {
-                        title: (
-                          <div className="flex items-center justify-center gap-1">
-                            <span>Mặc định</span>
-                          </div>
-                        ),
-                        dataIndex: 'isDefault',
-                        key: 'isDefault',
-                        width: 110,
-                        align: 'center',
-                        render: (_value, record) => {
-                          const isDef = Boolean(record.isDefault || record.isHeadquarter);
-                          return (
-                            <div
-                              onClick={(e) => e.stopPropagation()}
-                              className="flex items-center justify-center gap-1.5"
-                            >
+
+                            <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                               <Switch
                                 size="small"
                                 checked={isDef}
                                 checkedChildren="BẬT"
                                 unCheckedChildren="TẮT"
-                                onChange={(checked) => handleToggleDefaultBranch(record, checked)}
+                                onChange={(checked) => handleToggleDefaultBranch(branch, checked)}
+                              />
+                              <Button
+                                size="small"
+                                type="text"
+                                icon={<EditOutlined />}
+                                onClick={() => handleOpenEditBranch(branch)}
+                                className="text-slate-600 hover:text-[#784e34]"
                               />
                             </div>
-                          );
-                        },
-                      },
-                      {
-                        title: (
-                          <div className="flex items-center gap-1">
-                            <span>Ghi chú</span>
-                            <SearchOutlined className="text-slate-400 text-3xs" />
                           </div>
-                        ),
-                        dataIndex: 'description',
-                        key: 'description',
-                        width: 200,
-                        render: (value, record) => (
-                          <span className="text-xs text-slate-500">
-                            {value || record.typeLabel || '—'}
-                          </span>
-                        ),
-                      },
-                      {
-                        title: (
-                          <div className="flex items-center gap-1">
-                            <span>Địa chỉ</span>
-                            <SearchOutlined className="text-slate-400 text-3xs" />
+
+                          <div>
+                            <h4 className="font-bold text-sm text-slate-900 m-0">{branch.name}</h4>
+                            {branch.address && (
+                              <div className="text-xs text-slate-600 flex items-start gap-1.5 mt-1">
+                                <span className="text-slate-400 shrink-0">📍</span>
+                                <span className="line-clamp-2">{branch.address}</span>
+                              </div>
+                            )}
+                            {(branch.managerPhone || (branch as any).phone) && (
+                              <div className="text-xs text-slate-600 flex items-center gap-1.5 mt-1">
+                                <span className="text-slate-400 shrink-0">📞</span>
+                                <span>{branch.managerPhone || (branch as any).phone}</span>
+                              </div>
+                            )}
                           </div>
-                        ),
-                        dataIndex: 'address',
-                        key: 'address',
-                        width: 260,
-                        render: (value) => (
-                          <span className="text-xs text-slate-700 truncate max-w-xs block" title={value}>
-                            {value || '—'}
-                          </span>
-                        ),
-                      },
-                      {
-                        title: (
-                          <div className="flex items-center justify-center gap-1">
-                            <span>Trạng thái</span>
-                            <SearchOutlined className="text-slate-400 text-3xs" />
-                          </div>
-                        ),
-                        dataIndex: 'status',
-                        key: 'status',
-                        width: 110,
-                        align: 'center',
-                        render: (value) => (
-                          value === 'active' || value === true ? (
-                            <span className="inline-block rounded bg-emerald-50 px-2.5 py-0.5 text-2xs font-bold text-emerald-700 uppercase">
-                              Mở
-                            </span>
-                          ) : (
-                            <span className="inline-block rounded bg-slate-100 px-2.5 py-0.5 text-2xs font-bold text-slate-500 uppercase">
-                              Khóa
-                            </span>
-                          )
-                        ),
-                      },
-                    ]}
-                    className="[&_.ant-table-thead>tr>th]:!bg-white [&_.ant-table-thead>tr>th]:!font-semibold [&_.ant-table-tbody>tr>td]:!py-2.5 [&_.ant-pagination]:!m-0 [&_.ant-pagination]:!py-2.5 [&_.ant-pagination]:!px-4 [&_.ant-pagination]:border-t [&_.ant-pagination]:border-slate-200"
-                  />
-                </div>
-              </section>
 
-              {/* ── DRAWER: THÊM MỚI / CHỈNH SỬA CHI NHÁNH (DOMACO POS SPEC) ────────────────── */}
-              <AdminFormDrawer
-                open={branchDrawerOpen}
-                onClose={handleCloseBranchDrawer}
-                isEditing={!!editingBranch}
-                createTitle="Thêm mới chi nhánh"
-                editTitle="Cập nhật chi nhánh"
-                recordId={editingBranch?.code}
-                width={560}
-                onSubmit={handleSaveBranchSubmit}
-                submitText={editingBranch ? 'Lưu thay đổi' : 'Thêm chi nhánh'}
-              >
-                <Form form={branchForm} layout="vertical" className="space-y-4">
-                  {/* Section 1: THÔNG TIN CƠ BẢN */}
-                  <div className="bg-white p-5 rounded-xl border border-slate-200/80 shadow-xs space-y-4">
-                    <div className="text-xs font-bold text-slate-500 tracking-wider uppercase border-b border-slate-100 pb-2 flex items-center gap-1.5">
-                      <ShopOutlined className="text-[#784e34]" /> THÔNG TIN CƠ BẢN
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                      <Form.Item
-                        name="code"
-                        label={<span className="text-xs font-semibold text-slate-700">Mã chi nhánh</span>}
-                        rules={[{ required: true, message: 'Vui lòng nhập mã chi nhánh' }]}
-                        className="mb-0"
-                      >
-                        <Input
-                          className="h-10 rounded-lg text-sm font-mono font-semibold uppercase border !border-slate-300 bg-white hover:!border-[#784e34] focus:!border-[#784e34]"
-                          placeholder="CN000001"
-                          suffix={
-                            <AutoCodeButton
-                              onGenerate={handleGenerateBranchCode}
-                              tooltipTitle="Tự động tạo mã chi nhánh mới"
-                            />
-                          }
-                        />
-                      </Form.Item>
-
-                      <Form.Item
-                        name="name"
-                        label={<span className="text-xs font-semibold text-slate-700">Tên chi nhánh</span>}
-                        rules={[{ required: true, message: 'Vui lòng nhập tên chi nhánh' }]}
-                        className="mb-0"
-                      >
-                        <Input
-                          className="h-10 rounded-lg text-sm font-medium border !border-slate-300 bg-white hover:!border-[#784e34] focus:!border-[#784e34]"
-                          placeholder="Ví dụ: Showroom Thảo Điền"
-                        />
-                      </Form.Item>
-                    </div>
-
-                    <Form.Item
-                      name="description"
-                      label={<span className="text-xs font-semibold text-slate-700">Mô tả</span>}
-                      className="mb-0"
-                    >
-                      <Input.TextArea
-                        rows={2}
-                        className="rounded-lg text-sm border !border-slate-300 bg-white hover:!border-[#784e34] focus:!border-[#784e34] p-2.5"
-                        placeholder="Nhập mô tả chi nhánh..."
-                      />
-                    </Form.Item>
+                          {branch.description && (
+                            <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-500 italic">
+                              {branch.description}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
 
-                  {/* Section 2: THÔNG TIN CHI NHÁNH */}
-                  <div className="bg-white p-5 rounded-xl border border-slate-200/80 shadow-xs space-y-4">
-                    <div className="text-xs font-bold text-slate-500 tracking-wider uppercase border-b border-slate-100 pb-2 flex items-center gap-1.5">
-                      <EnvironmentOutlined className="text-[#784e34]" /> ĐỊA CHỈ & TRẠNG THÁI
-                    </div>
+                  {/* Desktop Table View (>= md) */}
+                  <div className="hidden md:block overflow-x-auto">
+                    <Table
+                      rowKey="id"
+                      size="small"
+                      dataSource={filteredBranches}
+                      rowSelection={{
+                        selectedRowKeys: selectedBranchKeys,
+                        onChange: (keys) => setSelectedBranchKeys(keys),
+                      }}
+                      onRow={(record) => ({
+                        onClick: () => {
+                          setSelectedBranchKeys((prev) =>
+                            prev.includes(record.id) ? prev.filter((k) => k !== record.id) : [...prev, record.id]
+                          );
+                        },
+                      })}
+                      pagination={{
+                        pageSize: 10,
+                        showSizeChanger: true,
+                        pageSizeOptions: ['10', '20', '50'],
+                        showTotal: (total, range) => (
+                          <span className="text-xs text-slate-500 font-medium">
+                            Hiển thị {range[0]} – {range[1]} trong tổng số {total} chi nhánh
+                          </span>
+                        ),
+                      }}
+                      columns={[
+                        {
+                          title: (
+                            <div className="flex items-center gap-1">
+                              <span>Mã số</span>
+                              <SearchOutlined className="text-slate-400 text-3xs" />
+                            </div>
+                          ),
+                          dataIndex: 'code',
+                          key: 'code',
+                          width: 130,
+                          render: (value, record) => (
+                            <span
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenEditBranch(record);
+                              }}
+                              className="font-semibold text-[#784e34] hover:underline cursor-pointer font-mono"
+                            >
+                              {value || '—'}
+                            </span>
+                          ),
+                        },
+                        {
+                          title: (
+                            <div className="flex items-center gap-1">
+                              <span>Tên / Nội dung</span>
+                              <SearchOutlined className="text-slate-400 text-3xs" />
+                            </div>
+                          ),
+                          dataIndex: 'name',
+                          key: 'name',
+                          width: 250,
+                          render: (value, record) => {
+                            const isDef = Boolean(record.isDefault || record.isHeadquarter);
+                            return (
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-semibold text-slate-900">{value || '—'}</span>
+                                {isDef && (
+                                  <Tag color="gold" className="text-3xs font-bold border-amber-300 m-0 px-1 py-0 inline-flex items-center gap-1">
+                                    <span>⭐</span> MẶC ĐỊNH
+                                  </Tag>
+                                )}
+                              </div>
+                            );
+                          },
+                        },
+                        {
+                          title: (
+                            <div className="flex items-center justify-center gap-1">
+                              <span>Mặc định</span>
+                            </div>
+                          ),
+                          dataIndex: 'isDefault',
+                          key: 'isDefault',
+                          width: 110,
+                          align: 'center',
+                          render: (_value, record) => {
+                            const isDef = Boolean(record.isDefault || record.isHeadquarter);
+                            return (
+                              <div
+                                onClick={(e) => e.stopPropagation()}
+                                className="flex items-center justify-center gap-1.5"
+                              >
+                                <Switch
+                                  size="small"
+                                  checked={isDef}
+                                  checkedChildren="BẬT"
+                                  unCheckedChildren="TẮT"
+                                  onChange={(checked) => handleToggleDefaultBranch(record, checked)}
+                                />
+                              </div>
+                            );
+                          },
+                        },
+                        {
+                          title: (
+                            <div className="flex items-center gap-1">
+                              <span>Ghi chú</span>
+                              <SearchOutlined className="text-slate-400 text-3xs" />
+                            </div>
+                          ),
+                          dataIndex: 'description',
+                          key: 'description',
+                          width: 200,
+                          render: (value, record) => (
+                            <span className="text-xs text-slate-500">
+                              {value || record.typeLabel || '—'}
+                            </span>
+                          ),
+                        },
+                        {
+                          title: (
+                            <div className="flex items-center gap-1">
+                              <span>Địa chỉ</span>
+                              <SearchOutlined className="text-slate-400 text-3xs" />
+                            </div>
+                          ),
+                          dataIndex: 'address',
+                          key: 'address',
+                          width: 260,
+                          render: (value) => (
+                            <span className="text-xs text-slate-700 truncate max-w-xs block" title={value}>
+                              {value || '—'}
+                            </span>
+                          ),
+                        },
+                        {
+                          title: (
+                            <div className="flex items-center justify-center gap-1">
+                              <span>Trạng thái</span>
+                              <SearchOutlined className="text-slate-400 text-3xs" />
+                            </div>
+                          ),
+                          dataIndex: 'status',
+                          key: 'status',
+                          width: 110,
+                          align: 'center',
+                          render: (value) => (
+                            value === 'active' || value === true ? (
+                              <span className="inline-block rounded bg-emerald-50 px-2.5 py-0.5 text-2xs font-bold text-emerald-700 uppercase">
+                                Mở
+                              </span>
+                            ) : (
+                              <span className="inline-block rounded bg-slate-100 px-2.5 py-0.5 text-2xs font-bold text-slate-500 uppercase">
+                                Khóa
+                              </span>
+                            )
+                          ),
+                        },
+                      ]}
+                      className="[&_.ant-table-thead>tr>th]:!bg-white [&_.ant-table-thead>tr>th]:!font-semibold [&_.ant-table-tbody>tr>td]:!py-2.5 [&_.ant-pagination]:!m-0 [&_.ant-pagination]:!py-2.5 [&_.ant-pagination]:!px-4 [&_.ant-pagination]:border-t [&_.ant-pagination]:border-slate-200"
+                    />
+                  </div>
+                </>
+              )}
+            </section>
 
+            {/* ── DRAWER: THÊM MỚI / CHỈNH SỬA CHI NHÁNH (DOMACO POS SPEC) ────────────────── */}
+            <AdminFormDrawer
+              open={branchDrawerOpen}
+              onClose={handleCloseBranchDrawer}
+              isEditing={!!editingBranch}
+              createTitle="Thêm mới chi nhánh"
+              editTitle="Cập nhật chi nhánh"
+              recordId={editingBranch?.code}
+              width={560}
+              onSubmit={handleSaveBranchSubmit}
+              submitText={editingBranch ? 'Lưu thay đổi' : 'Thêm chi nhánh'}
+            >
+              <Form form={branchForm} layout="vertical" className="space-y-4">
+                {/* Section 1: THÔNG TIN CƠ BẢN */}
+                <div className="bg-white p-5 rounded-xl border border-slate-200/80 shadow-xs space-y-4">
+                  <div className="text-xs font-bold text-slate-500 tracking-wider uppercase border-b border-slate-100 pb-2 flex items-center gap-1.5">
+                    <ShopOutlined className="text-[#784e34]" /> THÔNG TIN CƠ BẢN
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                     <Form.Item
-                      name="address"
-                      label={<span className="text-xs font-semibold text-slate-700">Địa chỉ chi nhánh</span>}
+                      name="code"
+                      label={<span className="text-xs font-semibold text-slate-700">Mã chi nhánh</span>}
+                      rules={[{ required: true, message: 'Vui lòng nhập mã chi nhánh' }]}
                       className="mb-0"
                     >
                       <Input
-                        className="h-10 rounded-lg text-sm border !border-slate-300 bg-white hover:!border-[#784e34] focus:!border-[#784e34]"
-                        placeholder="Nhập địa chỉ đầy đủ..."
+                        className="h-10 rounded-lg text-sm font-mono font-semibold uppercase border !border-slate-300 bg-white hover:!border-[#784e34] focus:!border-[#784e34]"
+                        placeholder="CN000001"
+                        suffix={
+                          <AutoCodeButton
+                            onGenerate={handleGenerateBranchCode}
+                            tooltipTitle="Tự động tạo mã chi nhánh mới"
+                          />
+                        }
                       />
                     </Form.Item>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 pt-1">
-                      <Form.Item
-                        name="isDefault"
-                        label={<span className="text-xs font-semibold text-slate-700">Chi nhánh mặc định</span>}
-                        valuePropName="checked"
-                        className="mb-0"
-                        extra={<span className="text-3xs text-slate-400 block mt-1">Tự động gán cho đơn hàng online & ưu tiên xuất kho trừ tồn</span>}
-                      >
-                        <Switch checkedChildren="MẶC ĐỊNH" unCheckedChildren="PHỤ" />
-                      </Form.Item>
-
-                      <Form.Item
-                        name="status"
-                        label={<span className="text-xs font-semibold text-slate-700">Trạng thái hoạt động</span>}
-                        valuePropName="checked"
-                        className="mb-0"
-                      >
-                        <Switch checkedChildren="MỞ" unCheckedChildren="KHÓA" defaultChecked />
-                      </Form.Item>
-                    </div>
+                    <Form.Item
+                      name="name"
+                      label={<span className="text-xs font-semibold text-slate-700">Tên chi nhánh</span>}
+                      rules={[{ required: true, message: 'Vui lòng nhập tên chi nhánh' }]}
+                      className="mb-0"
+                    >
+                      <Input
+                        className="h-10 rounded-lg text-sm font-medium border !border-slate-300 bg-white hover:!border-[#784e34] focus:!border-[#784e34]"
+                        placeholder="Ví dụ: Showroom Thảo Điền"
+                      />
+                    </Form.Item>
                   </div>
-                </Form>
-              </AdminFormDrawer>
-            </div>
+
+                  <Form.Item
+                    name="description"
+                    label={<span className="text-xs font-semibold text-slate-700">Mô tả</span>}
+                    className="mb-0"
+                  >
+                    <Input.TextArea
+                      rows={2}
+                      className="rounded-lg text-sm border !border-slate-300 bg-white hover:!border-[#784e34] focus:!border-[#784e34] p-2.5"
+                      placeholder="Nhập mô tả chi nhánh..."
+                    />
+                  </Form.Item>
+                </div>
+
+                {/* Section 2: THÔNG TIN CHI NHÁNH */}
+                <div className="bg-white p-5 rounded-xl border border-slate-200/80 shadow-xs space-y-4">
+                  <div className="text-xs font-bold text-slate-500 tracking-wider uppercase border-b border-slate-100 pb-2 flex items-center gap-1.5">
+                    <EnvironmentOutlined className="text-[#784e34]" /> ĐỊA CHỈ & TRẠNG THÁI
+                  </div>
+
+                  <Form.Item
+                    name="address"
+                    label={<span className="text-xs font-semibold text-slate-700">Địa chỉ chi nhánh</span>}
+                    className="mb-0"
+                  >
+                    <Input
+                      className="h-10 rounded-lg text-sm border !border-slate-300 bg-white hover:!border-[#784e34] focus:!border-[#784e34]"
+                      placeholder="Nhập địa chỉ đầy đủ..."
+                    />
+                  </Form.Item>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 pt-1">
+                    <Form.Item
+                      name="isDefault"
+                      label={<span className="text-xs font-semibold text-slate-700">Chi nhánh mặc định</span>}
+                      valuePropName="checked"
+                      className="mb-0"
+                      extra={<span className="text-3xs text-slate-400 block mt-1">Tự động gán cho đơn hàng online & ưu tiên xuất kho trừ tồn</span>}
+                    >
+                      <Switch checkedChildren="MẶC ĐỊNH" unCheckedChildren="PHỤ" />
+                    </Form.Item>
+
+                    <Form.Item
+                      name="status"
+                      label={<span className="text-xs font-semibold text-slate-700">Trạng thái hoạt động</span>}
+                      valuePropName="checked"
+                      className="mb-0"
+                    >
+                      <Switch checkedChildren="MỞ" unCheckedChildren="KHÓA" defaultChecked />
+                    </Form.Item>
+                  </div>
+                </div>
+              </Form>
+            </AdminFormDrawer>
+          </div>
 
           {/* ================= TAB 3.5: KHO HÀNG & ĐIỂM LƯU KHO TOÀN HỆ THỐNG ================= */}
           <div className={settingsActiveTab === 'warehouses' ? 'space-y-4' : 'hidden'}>
@@ -2111,32 +2274,58 @@ export function SettingsTab({
           </div>
 
           {/* ================= TAB 6: VAI TRÒ & PHÂN QUYỀN (DOMACO POS RBAC) ================= */}
-          <div className={settingsActiveTab === 'permissions' ? 'space-y-5' : 'hidden'}>
-              {/* Permissions Header */}
-              <div className="pb-3 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <SafetyCertificateOutlined className="text-[#784e34] text-lg" />
-                  <div>
-                    <h3 className="font-bold text-sm text-slate-900 m-0">Bảo mật, Vai trò &amp; Ma trận phân quyền (RBAC)</h3>
-                    <p className="text-xs text-slate-500 m-0">Thiết lập chi tiết quyền hạn theo chức danh, phân bổ nhân sự và bảo vệ dữ liệu</p>
-                  </div>
+          <div className={settingsActiveTab === 'permissions' ? 'space-y-3 sm:space-y-4 pb-16 sm:pb-0' : 'hidden'}>
+            {/* Permissions Header */}
+            <div className="pb-2.5 border-b border-slate-200/80 flex items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-[#784e34]/10 text-[#784e34] flex items-center justify-center shrink-0">
+                  <SafetyCertificateOutlined className="text-sm sm:text-base" />
                 </div>
-
-                <Button
-                  type="primary"
-                  icon={<PlusOutlined />}
-                  onClick={handleOpenCreateRole}
-                  className="bg-[#784e34] hover:!bg-[#5d371f] text-xs font-semibold rounded-none shadow-none border-none flex items-center h-9"
-                >
-                  Tạo vai trò mới
-                </Button>
+                <h3 className="font-bold text-sm sm:text-base text-slate-900 m-0 truncate">Phân quyền &amp; Vai trò</h3>
               </div>
 
-              {/* ROLE SELECTOR CAROUSEL / PILLS BAR */}
-              <div className="space-y-2">
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={handleOpenCreateRole}
+                className="!h-7 sm:!h-8 px-2.5 sm:px-3 bg-[#784e34] hover:!bg-[#5d371f] text-xs font-bold text-white rounded-lg shadow-2xs border-none flex items-center gap-1 shrink-0"
+              >
+                <span>Tạo vai trò</span>
+              </Button>
+            </div>
+
+            {/* ROLE SELECTOR: DROPDOWN ON MOBILE (< sm) & CAROUSEL ON DESKTOP (>= sm) */}
+            <div>
+              {/* Mobile Role Select Dropdown */}
+              <div className="sm:hidden bg-slate-50/90 p-2 rounded-xl border border-slate-200/80">
+                <Select
+                  value={selectedRoleId}
+                  onChange={(val) => setSelectedRoleId(val)}
+                  className="w-full text-xs font-semibold"
+                  options={currentRoles.map((r) => ({
+                    value: r.id,
+                    label: (
+                      <div className="flex items-center justify-between gap-2 py-0.5">
+                        <span className="font-bold text-slate-900 truncate">{r.name}</span>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {r.isSystem && (
+                            <Tag color="purple" className="text-[9px] px-1 py-0 m-0 leading-none">Hệ thống</Tag>
+                          )}
+                          <span className="text-[10px] text-[#784e34] font-bold font-mono">
+                            {r.permissions.filter((k: string) => allPermissionKeys.includes(k)).length} quyền
+                          </span>
+                        </div>
+                      </div>
+                    ),
+                  }))}
+                />
+              </div>
+
+              {/* Desktop Role Carousel */}
+              <div className="hidden sm:block space-y-2">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-slate-800">Chọn vai trò cần thiết lập quyền hạn ({currentRoles.length} vai trò):</span>
-                  <div className="w-60">
+                  <span className="font-semibold text-slate-800">Chọn vai trò cần thiết lập quyền ({currentRoles.length}):</span>
+                  <div className="w-56">
                     <AdminSearchInput
                       placeholder="Tìm vai trò..."
                       value={roleSearchQuery}
@@ -2146,7 +2335,7 @@ export function SettingsTab({
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2.5 overflow-x-auto pb-1">
+                <div className="flex items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:thin]">
                   {filteredRoles.map((role) => {
                     const isSelected = role.id === currentRole?.id;
                     return (
@@ -2154,11 +2343,10 @@ export function SettingsTab({
                         key={role.id}
                         type="button"
                         onClick={() => setSelectedRoleId(role.id)}
-                        className={`p-3 text-left transition-all border shrink-0 min-w-[200px] max-w-[240px] cursor-pointer ${
-                          isSelected
+                        className={`p-2.5 text-left transition-all rounded-xl border shrink-0 min-w-[190px] max-w-[220px] cursor-pointer ${isSelected
                             ? 'bg-[#784e34]/8 border-[#784e34] shadow-xs'
                             : 'bg-white border-slate-200/80 hover:border-slate-300 hover:bg-slate-50/60'
-                        }`}
+                          }`}
                       >
                         <div className="flex items-center justify-between gap-1 mb-1">
                           <span className={`text-xs font-bold truncate ${isSelected ? 'text-[#784e34]' : 'text-slate-900'}`}>
@@ -2179,354 +2367,357 @@ export function SettingsTab({
                   })}
                 </div>
               </div>
+            </div>
 
-              {/* ACTIVE ROLE DETAIL CARD */}
-              {currentRole && (
-                <div className="border border-slate-200/80 rounded-none bg-white p-4 sm:p-5 shadow-xs space-y-4">
-                  {/* Active Role Header Bar */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200/80">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-bold text-base text-slate-900">{currentRole.name}</span>
-                        {currentRole.isSystem && (
-                          <Tag color="purple" className="text-xs">Vai trò quản trị viên mặc định</Tag>
-                        )}
-                        <Tag color={currentRole.status === 'active' ? 'success' : 'default'} className="text-xs">
-                          {currentRole.status === 'active' ? 'Đang áp dụng' : 'Tạm dừng'}
-                        </Tag>
-                      </div>
-                      {currentRole.description ? (
-                        <p className="text-xs text-slate-500 m-0">
-                          {currentRole.description}
-                        </p>
-                      ) : null}
-                    </div>
+            {/* ACTIVE ROLE DETAIL CARD */}
+            {currentRole && (
+              <div className="border border-slate-200/80 rounded-xl bg-white p-3 sm:p-4 shadow-xs space-y-3">
+                {/* Active Role Header Bar (Clean & Compact - No verbose descriptions) */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 border-b border-slate-100">
+                  <div className="flex items-center gap-2 flex-wrap min-w-0">
+                    <span className="font-bold text-sm sm:text-base text-slate-900 truncate">{currentRole.name}</span>
+                    {currentRole.isSystem && (
+                      <Tag color="purple" className="text-[10px] m-0 px-1.5 py-0 leading-normal">Hệ thống</Tag>
+                    )}
+                    <Tag color={currentRole.status === 'active' ? 'success' : 'default'} className="text-[10px] m-0 px-1.5 py-0 leading-normal">
+                      {currentRole.status === 'active' ? 'Áp dụng' : 'Tạm dừng'}
+                    </Tag>
+                  </div>
 
-                    {/* Quick Role Actions (Edit, Clone, Delete) */}
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <Button
-                        size="small"
-                        icon={<EditOutlined />}
-                        onClick={() => handleOpenEditRole(currentRole)}
-                        className="rounded-none text-xs"
+                  {/* Quick Role Actions (Edit, Clone, Delete) */}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <Button
+                      size="small"
+                      icon={<EditOutlined />}
+                      onClick={() => handleOpenEditRole(currentRole)}
+                      className="!h-7 px-2 rounded-lg border-slate-300 text-xs text-slate-700 hover:text-[#784e34] shadow-2xs inline-flex items-center gap-1"
+                    >
+                      <span className="hidden xs:inline">Chỉnh sửa</span>
+                      <span className="xs:hidden">Sửa</span>
+                    </Button>
+
+                    <Button
+                      size="small"
+                      icon={<CopyOutlined />}
+                      onClick={() => handleCloneRole(currentRole)}
+                      className="!h-7 px-2 rounded-lg border-slate-300 text-xs text-slate-700 hover:text-[#784e34] shadow-2xs inline-flex items-center gap-1"
+                    >
+                      Nhân bản
+                    </Button>
+
+                    {!currentRole.isSystem && (
+                      <Popconfirm
+                        title="Xác nhận xóa vai trò"
+                        description={`Bạn có chắc chắn muốn xóa vai trò "${currentRole.name}"?`}
+                        onConfirm={() => handleDeleteRole(currentRole)}
+                        okText="Xóa"
+                        cancelText="Hủy"
+                        okButtonProps={{ danger: true }}
                       >
-                        Chỉnh sửa vai trò
-                      </Button>
-
-                      <Button
-                        size="small"
-                        icon={<CopyOutlined />}
-                        onClick={() => handleCloneRole(currentRole)}
-                        className="rounded-none text-xs"
-                      >
-                        Nhân bản
-                      </Button>
-
-                      {!currentRole.isSystem && (
-                        <Popconfirm
-                          title="Xác nhận xóa vai trò"
-                          description={`Bạn có chắc chắn muốn xóa vai trò "${currentRole.name}"?`}
-                          onConfirm={() => handleDeleteRole(currentRole)}
-                          okText="Xóa"
-                          cancelText="Hủy"
-                          okButtonProps={{ danger: true }}
+                        <Button
+                          size="small"
+                          danger
+                          icon={<DeleteOutlined />}
+                          className="!h-7 px-2 rounded-lg text-xs shadow-2xs inline-flex items-center gap-1"
                         >
-                          <Button
-                            size="small"
-                            danger
-                            icon={<DeleteOutlined />}
-                            className="rounded-none text-xs"
-                          >
-                            Xóa
-                          </Button>
-                        </Popconfirm>
-                      )}
-                    </div>
+                          Xóa
+                        </Button>
+                      </Popconfirm>
+                    )}
                   </div>
+                </div>
 
-                  {/* Detail View Switcher: Ma trận quyền vs Nhân sự đảm nhiệm */}
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                    <Segmented
-                      value={roleDetailTab}
-                      onChange={(val: any) => setRoleDetailTab(val)}
-                      options={[
-                        {
-                          value: 'matrix',
-                          label: (
-                            <span className="flex items-center gap-1.5 px-3 py-0.5 text-xs font-semibold">
-                              <KeyOutlined /> Ma trận phân quyền ({currentRoleValidGrantedCount}/{allPermissionKeys.length})
-                            </span>
-                          ),
-                        },
-                        {
-                          value: 'members',
-                          label: (
-                            <span className="flex items-center gap-1.5 px-3 py-0.5 text-xs font-semibold">
-                              <TeamOutlined /> Nhân sự đảm nhiệm ({assignedEmployees.length})
-                            </span>
-                          ),
-                        },
-                      ]}
-                      className="bg-slate-100 p-1 rounded-none"
-                    />
-                  </div>
+                {/* Detail View Switcher: Ma trận quyền vs Nhân sự đảm nhiệm */}
+                <div className="border-b border-slate-100 pb-2.5">
+                  <Segmented
+                    value={roleDetailTab}
+                    onChange={(val: any) => setRoleDetailTab(val)}
+                    block
+                    options={[
+                      {
+                        value: 'matrix',
+                        label: (
+                          <span className="flex items-center justify-center gap-1.5 py-0.5 text-xs font-semibold">
+                            <KeyOutlined />
+                            Phân quyền ({currentRoleValidGrantedCount}/{allPermissionKeys.length})
+                          </span>
+                        ),
+                      },
+                      {
+                        value: 'members',
+                        label: (
+                          <span className="flex items-center justify-center gap-1.5 py-0.5 text-xs font-semibold">
+                            <TeamOutlined /> Nhân sự ({assignedEmployees.length})
+                          </span>
+                        ),
+                      },
+                    ]}
+                    className="bg-slate-100/80 p-0.5 rounded-lg w-full"
+                  />
+                </div>
 
-                  {/* TAB 1: PERMISSION MATRIX VIEW (100% CHECKBOXES - NO SWITCHES) */}
-                  {roleDetailTab === 'matrix' && (
-                    <div className="space-y-4">
-                      {/* Search & Filter Toolbar */}
-                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-50 p-3 rounded-none border border-slate-200">
-                        <div className="w-full sm:w-80">
+                {/* TAB 1: PERMISSION MATRIX VIEW */}
+                {roleDetailTab === 'matrix' && (
+                  <div className="space-y-3">
+                    {/* Search & Filter Toolbar */}
+                    <div className="flex flex-col gap-2 bg-slate-50 p-2 sm:p-2.5 rounded-xl border border-slate-200/80">
+                      <div className="flex items-center gap-2 w-full">
+                        <div className="flex-1 min-w-0">
                           <AdminSearchInput
-                            placeholder="Tìm nhanh tên quyền hoặc mã..."
+                            placeholder="Tìm tên quyền hoặc mã..."
                             value={permissionKeywordSearch}
                             onChange={(val) => setPermissionKeywordSearch(val)}
                             sizeVariant="sm"
                           />
                         </div>
 
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <Button
-                            size="small"
-                            onClick={() => handleToggleAllPermissions(true)}
-                            className="text-xs font-semibold text-emerald-700 bg-emerald-50 border-emerald-200 hover:!bg-emerald-100 rounded-none h-8 px-3"
-                          >
-                            Chọn tất cả ({allPermissionKeys.length})
-                          </Button>
-                          <Button
-                            size="small"
-                            onClick={() => handleToggleAllPermissions(false)}
-                            className="text-xs font-semibold text-slate-600 bg-white border-slate-300 hover:!bg-slate-100 rounded-none h-8 px-3"
-                          >
-                            Bỏ chọn tất cả
-                          </Button>
-                          <Button
-                            type="primary"
-                            icon={<SaveOutlined />}
-                            loading={isSavingPermissions}
-                            onClick={handleSavePermissions}
-                            className="bg-[#784e34] hover:!bg-[#5d371f] text-xs font-bold rounded-none h-8 px-4 shadow-none border-none"
-                          >
-                            Lưu phân quyền
-                          </Button>
-                        </div>
-                      </div>
-
-                      {/* Section Filter Tabs */}
-                      <div className="overflow-x-auto border-b border-slate-200 pb-1">
-                        <Tabs
-                          activeKey={permissionFilterSection}
-                          onChange={setPermissionFilterSection}
-                          className="[&_.ant-tabs-nav]:!mb-0 [&_.ant-tabs-tab]:!py-1.5 [&_.ant-tabs-tab]:!text-xs font-medium"
-                          items={[
-                            {
-                              key: 'all',
-                              label: (
-                                <span className="flex items-center gap-1.5">
-                                  <span>Tất cả chức năng</span>
-                                  <span className={`rounded-full px-2 py-0.2 text-[10px] font-bold ${
-                                    currentRoleValidGrantedCount > 0 ? 'bg-[#784e34]/10 text-[#784e34]' : 'bg-slate-200 text-slate-500'
-                                  }`}>
-                                    {currentRoleValidGrantedCount}/{allPermissionKeys.length}
-                                  </span>
-                                </span>
-                              ),
-                            },
-                            ...permissionCatalogGroups.map((group: PermissionGroup) => {
-                              const groupTotal = group.permissions.length;
-                              const groupGranted = group.permissions.filter((p: PermissionDefinition) => currentRole.permissions.includes(p.key)).length;
-                              return {
-                                key: group.groupKey,
-                                label: (
-                                  <span className="flex items-center gap-1.5">
-                                    <span>{group.groupIcon} {group.groupName.split('(')[0].trim()}</span>
-                                    <span className={`rounded-full px-2 py-0.2 text-[10px] font-bold ${
-                                      groupGranted > 0 ? 'bg-[#784e34]/10 text-[#784e34]' : 'bg-slate-200 text-slate-500'
-                                    }`}>
-                                      {groupGranted}/{groupTotal}
-                                    </span>
-                                  </span>
-                                ),
-                              };
-                            }),
-                          ]}
-                        />
-                      </div>
-
-                      {/* Granular Matrix Cards */}
-                      <div className="space-y-4">
-                        {displayedPermissionGroups.map((group: PermissionGroup) => {
-                          const groupKeys = group.permissions.map((p: PermissionDefinition) => p.key);
-                          const groupGrantedCount = groupKeys.filter((k: string) => currentRole.permissions.includes(k)).length;
-                          const groupTotalCount = groupKeys.length;
-                          const groupAllChecked = groupGrantedCount === groupTotalCount && groupTotalCount > 0;
-                          const groupIndeterminate = groupGrantedCount > 0 && groupGrantedCount < groupTotalCount;
-
-                          const subGroups: PermissionSubGroup[] = group.subGroups || [
-                            { subKey: group.groupKey, subName: group.groupName, permissions: group.permissions },
-                          ];
-
-                          return (
-                            <div key={group.groupKey} className="rounded-none border border-slate-200 bg-white shadow-xs overflow-hidden">
-                              {/* Group Card Header */}
-                              <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2.5">
-                                <Checkbox
-                                  checked={groupAllChecked}
-                                  indeterminate={groupIndeterminate}
-                                  onChange={(e) => handleToggleGroupPermissions(group.groupKey, e.target.checked)}
-                                >
-                                  <span className="font-bold text-xs sm:text-sm text-slate-900 flex items-center gap-1.5">
-                                    <span>{group.groupIcon}</span>
-                                    <span>{group.groupName}</span>
-                                  </span>
-                                </Checkbox>
-
-                                <Tag
-                                  color={groupGrantedCount > 0 ? 'processing' : 'default'}
-                                  className="font-mono text-xs font-bold m-0 rounded-full px-2.5"
-                                >
-                                  {groupGrantedCount} / {groupTotalCount} quyền đã cấp
-                                </Tag>
-                              </div>
-
-                              {/* SubGroups Grid */}
-                              <div className="p-3 sm:p-4 bg-slate-50/20">
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
-                                  {subGroups.map((sub: PermissionSubGroup) => {
-                                    const subTotalCount = sub.permissions.length;
-                                    const subGrantedCount = sub.permissions.filter((p: PermissionDefinition) => currentRole.permissions.includes(p.key)).length;
-                                    const subAllChecked = subGrantedCount === subTotalCount && subTotalCount > 0;
-                                    const subIndeterminate = subGrantedCount > 0 && subGrantedCount < subTotalCount;
-
-                                    const filteredSubPermissions = sub.permissions.filter((p: PermissionDefinition) => {
-                                      if (!permissionKeywordSearch.trim()) return true;
-                                      const q = permissionKeywordSearch.toLowerCase();
-                                      return (
-                                        p.name.toLowerCase().includes(q) ||
-                                        p.key.toLowerCase().includes(q) ||
-                                        (p.description && p.description.toLowerCase().includes(q))
-                                      );
-                                    });
-
-                                    if (permissionKeywordSearch.trim() && filteredSubPermissions.length === 0) {
-                                      return null;
-                                    }
-
-                                    return (
-                                      <div key={sub.subKey} className="rounded-none border border-slate-200 bg-white shadow-2xs overflow-hidden flex flex-col">
-                                        {/* SubGroup Header with SubGroup Checkbox */}
-                                        <div className="flex items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/80 px-3 py-2">
-                                          <Checkbox
-                                            checked={subAllChecked}
-                                            indeterminate={subIndeterminate}
-                                            onChange={(e) => handleToggleSubGroupPermissions(sub.permissions, e.target.checked)}
-                                          >
-                                            <span className="font-semibold text-xs text-slate-800">{sub.subName}</span>
-                                          </Checkbox>
-                                          <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
-                                            subGrantedCount > 0 ? 'bg-[#784e34]/10 text-[#784e34]' : 'bg-slate-100 text-slate-400'
-                                          }`}>
-                                            {subGrantedCount}/{subTotalCount}
-                                          </span>
-                                        </div>
-
-                                        {/* Permissions List with Checkboxes (NO SWITCHES) */}
-                                        <div className="p-2.5 space-y-1.5 flex-1 bg-white">
-                                          {filteredSubPermissions.map((perm: PermissionDefinition) => {
-                                            const isChecked = currentRole.permissions.includes(perm.key);
-                                            return (
-                                              <div
-                                                key={perm.key}
-                                                className={`flex items-start gap-2.5 p-2 rounded-none transition-colors cursor-pointer ${
-                                                  isChecked
-                                                    ? 'bg-[#784e34]/5 border border-[#784e34]/20'
-                                                    : 'hover:bg-slate-50 border border-transparent'
-                                                }`}
-                                                onClick={() => handleTogglePermission(perm.key)}
-                                              >
-                                                <Checkbox
-                                                  checked={isChecked}
-                                                  onChange={() => handleTogglePermission(perm.key)}
-                                                  onClick={(e) => e.stopPropagation()}
-                                                  className="mt-0.5"
-                                                />
-                                                <div className="min-w-0 flex-1 select-none">
-                                                  <div className="flex items-center gap-2">
-                                                    <span className={`text-xs font-semibold ${isChecked ? 'text-[#784e34]' : 'text-slate-800'}`}>
-                                                      {perm.name}
-                                                    </span>
-                                                  </div>
-                                                  {perm.description && (
-                                                    <p className="text-[11px] text-slate-500 line-clamp-1 m-0 pt-0.5">
-                                                      {perm.description}
-                                                    </p>
-                                                  )}
-                                                </div>
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* TAB 2: ASSIGNED EMPLOYEES VIEW */}
-                  {roleDetailTab === 'members' && (
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between text-xs text-slate-500">
-                        <span>Danh sách nhân sự đang được áp dụng vai trò <strong>{currentRole.name}</strong> ({assignedEmployees.length} nhân viên)</span>
                         <Button
-                          size="small"
-                          type="link"
-                          icon={<TeamOutlined />}
-                          onClick={() => setSettingsActiveTab('employees')}
-                          className="text-xs font-semibold text-[#784e34] p-0"
+                          type="primary"
+                          icon={<SaveOutlined />}
+                          loading={isSavingPermissions}
+                          onClick={handleSavePermissions}
+                          className="bg-[#784e34] hover:!bg-[#5d371f] text-xs font-bold rounded-lg !h-8 px-3 shadow-2xs border-none shrink-0 inline-flex items-center gap-1"
                         >
-                          Quản lý hồ sơ nhân viên →
+                          <span>Lưu quyền</span>
                         </Button>
                       </div>
 
-                      {assignedEmployees.length === 0 ? (
-                        <div className="py-12 text-center text-slate-400 bg-slate-50 rounded-none border border-dashed border-slate-200">
-                          <TeamOutlined className="text-3xl mb-2 text-slate-300" />
-                          <p className="text-xs font-medium m-0">Chưa có nhân viên nào được phân bổ vai trò này.</p>
-                        </div>
-                      ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                          {assignedEmployees.map((emp) => (
-                            <div
-                              key={emp.id}
-                              className="p-3 bg-slate-50/70 border border-slate-200/80 rounded-none flex items-center gap-3"
-                            >
-                              <div className="space-y-0.5 min-w-0 flex-1">
-                                <div className="flex items-center justify-between">
-                                  <span className="font-bold text-xs text-slate-900 truncate">{emp.name}</span>
-                                  <Tag color="cyan" className="font-mono text-[10px] m-0">{emp.code}</Tag>
-                                </div>
-                                <div className="text-[11px] text-slate-600 truncate">{emp.title}</div>
-                                <div className="text-[10px] text-slate-500 font-mono flex items-center gap-2">
-                                  <span>📞 {emp.phone}</span>
-                                  <span>•</span>
-                                  <span className="truncate">{emp.branch}</span>
-                                </div>
+                      <div className="flex items-center justify-between sm:justify-start gap-2">
+                        <Button
+                          size="small"
+                          onClick={() => handleToggleAllPermissions(true)}
+                          className="flex-1 sm:flex-none text-xs font-semibold text-emerald-700 bg-emerald-50 border-emerald-200 hover:!bg-emerald-100 rounded-lg !h-7 px-2"
+                        >
+                          Chọn tất cả ({allPermissionKeys.length})
+                        </Button>
+                        <Button
+                          size="small"
+                          onClick={() => handleToggleAllPermissions(false)}
+                          className="flex-1 sm:flex-none text-xs font-semibold text-slate-600 bg-white border-slate-300 hover:!bg-slate-100 rounded-lg !h-7 px-2"
+                        >
+                          Bỏ chọn tất cả
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Section Filter Tabs */}
+                    <div className="overflow-x-auto border-b border-slate-200 pb-0.5 [scrollbar-width:thin]">
+                      <Tabs
+                        activeKey={permissionFilterSection}
+                        onChange={setPermissionFilterSection}
+                        className="[&_.ant-tabs-nav]:!mb-0 [&_.ant-tabs-tab]:!py-1 [&_.ant-tabs-tab]:!text-xs font-medium"
+                        items={[
+                          {
+                            key: 'all',
+                            label: (
+                              <span className="flex items-center gap-1.5">
+                                <span>Tất cả</span>
+                                <span className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${currentRoleValidGrantedCount > 0 ? 'bg-[#784e34]/10 text-[#784e34]' : 'bg-slate-200 text-slate-500'
+                                  }`}>
+                                  {currentRoleValidGrantedCount}/{allPermissionKeys.length}
+                                </span>
+                              </span>
+                            ),
+                          },
+                          ...permissionCatalogGroups.map((group: PermissionGroup) => {
+                            const groupTotal = group.permissions.length;
+                            const groupGranted = group.permissions.filter((p: PermissionDefinition) => currentRole.permissions.includes(p.key)).length;
+                            return {
+                              key: group.groupKey,
+                              label: (
+                                <span className="flex items-center gap-1.5">
+                                  <span>{group.groupIcon} {group.groupName.split('(')[0].trim()}</span>
+                                  <span className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${groupGranted > 0 ? 'bg-[#784e34]/10 text-[#784e34]' : 'bg-slate-200 text-slate-500'
+                                    }`}>
+                                    {groupGranted}/{groupTotal}
+                                  </span>
+                                </span>
+                              ),
+                            };
+                          }),
+                        ]}
+                      />
+                    </div>
+
+                    {/* Granular Matrix Cards (Clean, Compact, No Descriptions) */}
+                    <div className="space-y-3">
+                      {displayedPermissionGroups.map((group: PermissionGroup) => {
+                        const groupKeys = group.permissions.map((p: PermissionDefinition) => p.key);
+                        const groupGrantedCount = groupKeys.filter((k: string) => currentRole.permissions.includes(k)).length;
+                        const groupTotalCount = groupKeys.length;
+                        const groupAllChecked = groupGrantedCount === groupTotalCount && groupTotalCount > 0;
+                        const groupIndeterminate = groupGrantedCount > 0 && groupGrantedCount < groupTotalCount;
+
+                        const subGroups: PermissionSubGroup[] = group.subGroups || [
+                          { subKey: group.groupKey, subName: group.groupName, permissions: group.permissions },
+                        ];
+
+                        return (
+                          <div key={group.groupKey} className="rounded-xl border border-slate-200 bg-white shadow-2xs overflow-hidden">
+                            {/* Group Card Header */}
+                            <div className="flex items-center justify-between gap-2 border-b border-slate-200 bg-[#fbf5f0]/70 px-3 sm:px-4 py-2">
+                              <Checkbox
+                                checked={groupAllChecked}
+                                indeterminate={groupIndeterminate}
+                                onChange={(e) => handleToggleGroupPermissions(group.groupKey, e.target.checked)}
+                              >
+                                <span className="font-bold text-xs sm:text-sm text-slate-900 flex items-center gap-1.5">
+                                  <span>{group.groupIcon}</span>
+                                  <span className="line-clamp-1">{group.groupName}</span>
+                                </span>
+                              </Checkbox>
+
+                              <Tag
+                                color={groupGrantedCount > 0 ? 'processing' : 'default'}
+                                className="font-mono text-[10px] font-bold m-0 rounded-full px-2 shrink-0"
+                              >
+                                {groupGrantedCount}/{groupTotalCount}
+                              </Tag>
+                            </div>
+
+                            {/* SubGroups Grid */}
+                            <div className="p-2 sm:p-3 bg-slate-50/20">
+                              <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 sm:gap-3">
+                                {subGroups.map((sub: PermissionSubGroup) => {
+                                  const subTotalCount = sub.permissions.length;
+                                  const subGrantedCount = sub.permissions.filter((p: PermissionDefinition) => currentRole.permissions.includes(p.key)).length;
+                                  const subAllChecked = subGrantedCount === subTotalCount && subTotalCount > 0;
+                                  const subIndeterminate = subGrantedCount > 0 && subGrantedCount < subTotalCount;
+
+                                  const filteredSubPermissions = sub.permissions.filter((p: PermissionDefinition) => {
+                                    if (!permissionKeywordSearch.trim()) return true;
+                                    const q = permissionKeywordSearch.toLowerCase();
+                                    return (
+                                      p.name.toLowerCase().includes(q) ||
+                                      p.key.toLowerCase().includes(q)
+                                    );
+                                  });
+
+                                  if (permissionKeywordSearch.trim() && filteredSubPermissions.length === 0) {
+                                    return null;
+                                  }
+
+                                  return (
+                                    <div key={sub.subKey} className="rounded-lg border border-slate-200/90 bg-white shadow-2xs overflow-hidden flex flex-col">
+                                      {/* SubGroup Header with SubGroup Checkbox */}
+                                      <div className="flex items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/70 px-2.5 py-1.5">
+                                        <Checkbox
+                                          checked={subAllChecked}
+                                          indeterminate={subIndeterminate}
+                                          onChange={(e) => handleToggleSubGroupPermissions(sub.permissions, e.target.checked)}
+                                        >
+                                          <span className="font-semibold text-xs text-slate-800 line-clamp-1">{sub.subName}</span>
+                                        </Checkbox>
+                                        <span className={`text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-full shrink-0 ${subGrantedCount > 0 ? 'bg-[#784e34]/10 text-[#784e34]' : 'bg-slate-100 text-slate-400'
+                                          }`}>
+                                          {subGrantedCount}/{subTotalCount}
+                                        </span>
+                                      </div>
+
+                                      {/* Permissions List with Checkboxes (Ultra-compact, No descriptions) */}
+                                      <div className="p-1.5 space-y-0.5 flex-1 bg-white">
+                                        {filteredSubPermissions.map((perm: PermissionDefinition) => {
+                                          const isChecked = currentRole.permissions.includes(perm.key);
+                                          return (
+                                            <div
+                                              key={perm.key}
+                                              className={`flex items-center gap-2 px-2 py-1.5 rounded-md transition-colors cursor-pointer select-none ${isChecked
+                                                  ? 'bg-[#784e34]/8 text-[#784e34]'
+                                                  : 'hover:bg-slate-50 text-slate-700'
+                                                }`}
+                                              onClick={() => handleTogglePermission(perm.key)}
+                                            >
+                                              <Checkbox
+                                                checked={isChecked}
+                                                onChange={() => handleTogglePermission(perm.key)}
+                                                onClick={(e) => e.stopPropagation()}
+                                                className="shrink-0"
+                                              />
+                                              <span className="text-xs font-medium leading-tight truncate">
+                                                {perm.name}
+                                              </span>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
                               </div>
                             </div>
-                          ))}
-                        </div>
-                      )}
+                          </div>
+                        );
+                      })}
                     </div>
-                  )}
-                </div>
-              )}
-            </div>
+
+                    {/* Mobile Floating Bottom Quick Save Bar */}
+                    <div className="sm:hidden fixed bottom-14 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 px-4 py-2 flex items-center justify-between shadow-lg">
+                      <div className="text-xs">
+                        <span className="text-slate-500">Đã cấp: </span>
+                        <strong className="text-[#784e34] font-mono">{currentRoleValidGrantedCount}/{allPermissionKeys.length} quyền</strong>
+                      </div>
+                      <Button
+                        type="primary"
+                        icon={<SaveOutlined />}
+                        loading={isSavingPermissions}
+                        onClick={handleSavePermissions}
+                        className="bg-[#784e34] hover:!bg-[#5d371f] text-xs font-bold rounded-lg !h-8 px-4 shadow-sm border-none"
+                      >
+                        Lưu quyền
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB 2: ASSIGNED EMPLOYEES VIEW */}
+                {roleDetailTab === 'members' && (
+                  <div className="space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-500">
+                      <span>Nhân sự áp dụng vai trò <strong>{currentRole.name}</strong> ({assignedEmployees.length} nhân viên)</span>
+                      <Button
+                        size="small"
+                        type="link"
+                        icon={<TeamOutlined />}
+                        onClick={() => setSettingsActiveTab('employees')}
+                        className="text-xs font-semibold text-[#784e34] p-0 self-start sm:self-auto"
+                      >
+                        Quản lý hồ sơ nhân viên →
+                      </Button>
+                    </div>
+
+                    {assignedEmployees.length === 0 ? (
+                      <div className="py-10 text-center text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                        <TeamOutlined className="text-3xl mb-2 text-slate-300" />
+                        <p className="text-xs font-medium m-0">Chưa có nhân viên nào được phân bổ vai trò này.</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2.5 sm:gap-3">
+                        {assignedEmployees.map((emp) => (
+                          <div
+                            key={emp.id}
+                            className="p-3 bg-slate-50/70 border border-slate-200/80 rounded-xl flex items-center gap-3 shadow-2xs"
+                          >
+                            <div className="space-y-0.5 min-w-0 flex-1">
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-xs text-slate-900 truncate">{emp.name}</span>
+                                <Tag color="cyan" className="font-mono text-[10px] m-0">{emp.code}</Tag>
+                              </div>
+                              <div className="text-[11px] text-slate-600 truncate">{emp.title}</div>
+                              <div className="text-[10px] text-slate-500 font-mono flex items-center gap-2">
+                                <span>📞 {emp.phone}</span>
+                                <span>•</span>
+                                <span className="truncate">{emp.branch}</span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
         </main>
       </div>

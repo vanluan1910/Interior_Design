@@ -3,7 +3,6 @@
 import React from 'react';
 import { Button, Segmented } from 'antd';
 import {
-  ReloadOutlined,
   DownloadOutlined,
   PlusOutlined,
   UnorderedListOutlined,
@@ -55,16 +54,6 @@ export function AdminListToolbar({
 
       {/* Actions Toolbar */}
       <div className="flex items-center gap-2.5 flex-wrap">
-        {onRefresh && (
-          <Button
-            icon={<ReloadOutlined />}
-            onClick={onRefresh}
-            className="h-10 rounded-none text-sm font-normal text-slate-700 hover:text-[#784e34]"
-          >
-            Làm mới
-          </Button>
-        )}
-
         {onExport && (
           <Button
             icon={<DownloadOutlined />}

@@ -49,9 +49,15 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({
   className = '',
 }) => {
   const [mounted, setMounted] = React.useState(false);
+  const [isMobile, setIsMobile] = React.useState(false);
 
   React.useEffect(() => {
     setMounted(true);
+    const mql = window.matchMedia('(max-width: 767px)');
+    const onChange = () => setIsMobile(mql.matches);
+    setIsMobile(mql.matches);
+    mql.addEventListener('change', onChange);
+    return () => mql.removeEventListener('change', onChange);
   }, []);
 
   const displayTitle =
@@ -71,9 +77,10 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({
     }
   };
 
-  const computedWidth =
-    width ||
-    (size === 'small' ? 520 : size === 'large' ? 760 : size === 'xl' ? 840 : 640);
+  const computedWidth = isMobile
+    ? '100vw'
+    : width ||
+      (size === 'small' ? 520 : size === 'large' ? 760 : size === 'xl' ? 840 : 640);
 
   if (!mounted) {
     return null;
@@ -89,16 +96,16 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({
       styles={{
         wrapper: { width: computedWidth, maxWidth: '100vw' },
         header: {
-          padding: '14px 20px',
+          padding: isMobile ? '12px 16px' : '14px 20px',
           borderBottom: '1px solid #f1ece7',
           backgroundColor: '#ffffff',
         },
         body: {
-          padding: '20px',
+          padding: isMobile ? '14px 16px' : '20px',
           backgroundColor: '#faf8f5',
         },
         footer: {
-          padding: '12px 20px',
+          padding: isMobile ? '12px 16px' : '12px 20px',
           borderTop: '1px solid #f1ece7',
           backgroundColor: '#ffffff',
         },

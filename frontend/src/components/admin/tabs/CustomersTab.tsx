@@ -22,7 +22,6 @@ import {
   EditOutlined,
   DeleteOutlined,
   PlusOutlined,
-  ReloadOutlined,
   DownloadOutlined,
   UploadOutlined,
   SearchOutlined,
@@ -31,6 +30,11 @@ import {
   WalletOutlined,
   ShoppingCartOutlined,
   GiftOutlined,
+  FilterOutlined,
+  PhoneOutlined,
+  MailOutlined,
+  EnvironmentOutlined,
+  EyeOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import {
@@ -38,6 +42,8 @@ import {
   AdminFilterSidebar,
   AdminSidebarSummary,
   AdminSearchInput,
+  AdminFilterDrawer,
+  AdminStatusBadge,
   AutoCodeButton,
   getNextCode,
 } from '@/components/admin';
@@ -154,6 +160,12 @@ export function CustomersTab({
 
   // Import Excel Modal
   const [importModalOpen, setImportModalOpen] = useState(false);
+
+  // Mobile UI States
+  const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
+  const [mobileSort, setMobileSort] = useState<'default' | 'name_asc' | 'debt_desc' | 'spent_desc'>('default');
+  const [mobilePage, setMobilePage] = useState(1);
+  const [selectedMobileCustomerDetail, setSelectedMobileCustomerDetail] = useState<AdminCustomer | null>(null);
 
   // Merge orders customers so any customer who placed an order is always included
   // and dynamically compute accurate debt & totalSpent from actual orders for EVERY customer
@@ -351,6 +363,46 @@ export function CustomersTab({
       return matchSearch && matchStatus && matchDebt && matchBranch;
     });
   }, [allMergedCustomers, ordersList, customerSearchQuery, debtFilter, statusFilter, branchFilter, effectiveBranches]);
+
+  // Mobile Customer Computation
+  const customerActiveFiltersCount = useMemo(() => {
+    let count = 0;
+    if (customerSearchQuery) count++;
+    if (debtFilter !== 'all') count++;
+    if (statusFilter !== 'all') count++;
+    if (branchFilter && branchFilter !== 'all') count++;
+    return count;
+  }, [customerSearchQuery, debtFilter, statusFilter, branchFilter]);
+
+  const sortedMobileCustomers = useMemo(() => {
+    const list = [...filteredCustomers];
+    if (mobileSort === 'name_asc') {
+      list.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'vi'));
+    } else if (mobileSort === 'debt_desc') {
+      list.sort((a, b) => (Number(b.debt || 0) - Number(a.debt || 0)));
+    } else if (mobileSort === 'spent_desc') {
+      list.sort((a, b) => (Number(b.totalSpent || 0) - Number(a.totalSpent || 0)));
+    }
+    return list;
+  }, [filteredCustomers, mobileSort]);
+
+  const MOBILE_PAGE_SIZE = 10;
+  const mobileTotalPages = Math.ceil(sortedMobileCustomers.length / MOBILE_PAGE_SIZE) || 1;
+  const paginatedMobileCustomers = useMemo(() => {
+    const start = (mobilePage - 1) * MOBILE_PAGE_SIZE;
+    return sortedMobileCustomers.slice(start, start + MOBILE_PAGE_SIZE);
+  }, [sortedMobileCustomers, mobilePage]);
+
+  const handleToggleStatus = async (id: string, currentStatus?: string) => {
+    try {
+      const nextStatus = currentStatus === 'active' ? 'inactive' : 'active';
+      await customerApi.updateCustomer(id, { status: nextStatus });
+      message.success(`Đã chuyển trạng thái sang ${nextStatus === 'active' ? 'Đang hoạt động' : 'Ngừng hoạt động'}`);
+      await refreshCustomers();
+    } catch (err: any) {
+      message.error(err?.message || 'Cập nhật trạng thái thất bại.');
+    }
+  };
 
   // Open Create Customer Drawer
   const handleOpenCreate = () => {
@@ -725,8 +777,8 @@ export function CustomersTab({
 
   return (
     <div className="space-y-4 flex-1 flex flex-col h-full">
-      {/* ── TOP ACTION TOOLBAR ────────────────────────────────────────── */}
-      <div className="bg-white p-4 rounded-none shadow-xs border border-slate-200/80 flex flex-wrap items-center justify-between gap-3">
+      {/* ── TOP ACTION TOOLBAR (Desktop Only) ────────────────────────── */}
+      <div className="hidden lg:flex bg-white p-4 rounded-none shadow-xs border border-slate-200/80 items-center justify-between gap-3">
         {/* Search Box */}
         <div className="flex-1 min-w-[240px] max-w-md">
           <AdminSearchInput
@@ -739,21 +791,6 @@ export function CustomersTab({
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2 flex-wrap">
-          <Button
-            icon={<ReloadOutlined />}
-            onClick={async () => {
-              setCustomerSearchQuery('');
-              setDebtFilter('all');
-              setStatusFilter('all');
-              setBranchFilter('all');
-              await refreshCustomers();
-              message.success('Đã làm mới danh sách khách hàng từ Database!');
-            }}
-            className="h-10 rounded-none text-sm font-normal text-slate-700 hover:text-[#784e34]"
-          >
-            Làm mới
-          </Button>
-
           <Button
             icon={<UploadOutlined />}
             onClick={() => setImportModalOpen(true)}
@@ -781,9 +818,9 @@ export function CustomersTab({
         </div>
       </div>
 
-      {/* ── BATCH SELECTION BANNER ───────────────────────────────────── */}
+      {/* ── BATCH SELECTION BANNER (Desktop Only) ────────────────────── */}
       {selectedRowKeys.length > 0 && (
-        <div className="bg-[#fbf2ee] border border-[#d8c3af] px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="hidden lg:flex bg-[#fbf2ee] border border-[#d8c3af] px-4 py-3 items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-2 text-[#5d371f]">
             <span className="font-bold text-sm">Đã chọn {selectedRowKeys.length} khách hàng</span>
             <span className="text-slate-500">|</span>
@@ -825,50 +862,22 @@ export function CustomersTab({
         </div>
       )}
 
-      {/* ── 2-COLUMN LAYOUT: FILTER SIDEBAR + DATA TABLE ─────────────── */}
-      <div className="flex flex-col lg:flex-row gap-4 items-start flex-1">
+      {/* ── 2-COLUMN LAYOUT: FILTER SIDEBAR + DATA TABLE (Desktop Only) ── */}
+      <div className="hidden lg:flex flex-row gap-4 items-start flex-1">
         {/* LEFT FILTER SIDEBAR */}
         <AdminFilterSidebar
           title="Bộ lọc khách hàng"
           hasActiveFilters={Boolean(
             customerSearchQuery ||
               debtFilter !== 'all' ||
-              statusFilter !== 'all' ||
-              branchFilter !== 'all'
+              statusFilter !== 'all'
           )}
           onResetFilters={() => {
             setCustomerSearchQuery('');
             setDebtFilter('all');
             setStatusFilter('all');
-            setBranchFilter(selectedGlobalBranch || '');
           }}
         >
-
-          {/* Cơ sở / Chi nhánh */}
-          {effectiveBranches.length > 0 && (
-            <div className="space-y-1.5 pt-2">
-              <label className="font-semibold text-slate-600 text-xs uppercase tracking-wider block">Cơ sở / Chi nhánh</label>
-              <Select
-                value={branchFilter || 'all'}
-                onChange={(v) => setBranchFilter(v)}
-                className="w-full text-sm font-semibold"
-                options={[
-                  { value: 'all', label: `Toàn bộ chi nhánh (${allMergedCustomers.length})` },
-                  ...effectiveBranches.map((b) => {
-                    const count = allMergedCustomers.filter((c) => {
-                      const custBranch = c.branch || c.branchName;
-                      if (!custBranch || custBranch === 'Toàn hệ thống' || custBranch.toLowerCase() === 'all') return true;
-                      return isMatchBranch(custBranch, b.name);
-                    }).length;
-                    return {
-                      value: b.name,
-                      label: `${b.name} (${count})`,
-                    };
-                  }),
-                ]}
-              />
-            </div>
-          )}
 
           {/* Tình trạng công nợ */}
           <div className="space-y-1.5 pt-2 border-t border-slate-100">
@@ -879,8 +888,8 @@ export function CustomersTab({
               className="w-full text-sm"
               options={[
                 { value: 'all', label: 'Tất cả công nợ' },
-                { value: 'has_debt', label: '⚠️ Đang có công nợ (> 0đ)' },
-                { value: 'no_debt', label: '✅ Không có công nợ (0đ)' },
+                { value: 'has_debt', label: 'Đang có công nợ (> 0đ)' },
+                { value: 'no_debt', label: 'Không có công nợ (0đ)' },
               ]}
             />
           </div>
@@ -894,8 +903,8 @@ export function CustomersTab({
               className="w-full text-sm"
               options={[
                 { value: 'all', label: 'Tất cả trạng thái' },
-                { value: 'active', label: '🟢 Đang hoạt động' },
-                { value: 'inactive', label: '⚪ Ngừng hoạt động' },
+                { value: 'active', label: 'Đang hoạt động' },
+                { value: 'inactive', label: 'Ngừng hoạt động' },
               ]}
             />
           </div>
@@ -1128,6 +1137,507 @@ export function CustomersTab({
         </div>
       </div>
 
+      {/* ── MOBILE CUSTOMERS VIEW (Mobile Only: block lg:hidden) ── */}
+      <div className="block lg:hidden space-y-3 flex-1 pb-24">
+        {/* Mobile Search Bar */}
+        <AdminSearchInput
+          placeholder="Tìm mã, họ tên, SĐT, email, MST..."
+          value={customerSearchQuery}
+          onChange={(val) => {
+            setCustomerSearchQuery(val);
+            setMobilePage(1);
+          }}
+        />
+
+        {/* Action Row */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5">
+            <Button
+              size="small"
+              icon={<FilterOutlined className="text-slate-600" />}
+              onClick={() => setIsMobileFilterOpen(true)}
+              className="h-8 px-3 rounded-lg border-slate-200 bg-white shadow-2xs text-xs font-medium text-slate-700 flex items-center gap-1.5 hover:text-[#784e34] hover:border-[#784e34]"
+            >
+              <span>Bộ lọc</span>
+            </Button>
+
+            <Button
+              size="small"
+              icon={<DownloadOutlined />}
+              onClick={handleExportExcel}
+              className="h-8 w-8 !p-0 flex items-center justify-center rounded-lg border-slate-200 text-xs text-slate-700 bg-white shadow-2xs hover:text-[#784e34]"
+              title="Xuất Excel"
+            />
+          </div>
+
+          <Button
+            type="primary"
+            size="small"
+            icon={<PlusOutlined />}
+            onClick={handleOpenCreate}
+            className="h-8 px-3 rounded-lg !bg-[#784e34] !border-[#784e34] hover:!bg-[#5d371f] text-xs font-semibold text-white shadow-xs flex items-center gap-1"
+          >
+            Thêm mới
+          </Button>
+        </div>
+
+        {/* Quick Metrics Strip */}
+        <div className="grid grid-cols-3 gap-2 text-xs">
+          <div className="bg-white p-2.5 rounded-xl border border-slate-200/80 shadow-2xs">
+            <span className="text-[11px] text-slate-400 block mb-0.5">Khách hàng</span>
+            <span className="font-bold text-slate-800 text-xs">
+              {filteredCustomers.length} <span className="font-normal text-[10px] text-slate-400">khách</span>
+            </span>
+          </div>
+
+          <div className="bg-white p-2.5 rounded-xl border border-slate-200/80 shadow-2xs">
+            <span className="text-[11px] text-slate-400 block mb-0.5">Doanh số</span>
+            <span className="font-bold text-emerald-700 text-xs">
+              {(filteredCustomers.reduce((acc, c) => acc + (c.totalSpent || 0), 0) / 1000000).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} Tr
+            </span>
+          </div>
+
+          <div className="bg-white p-2.5 rounded-xl border border-slate-200/80 shadow-2xs">
+            <span className="text-[11px] text-slate-400 block mb-0.5">Tổng nợ</span>
+            <span className={`font-bold text-xs ${
+              filteredCustomers.reduce((acc, c) => acc + (c.debt || 0), 0) > 0 ? 'text-rose-600' : 'text-slate-600'
+            }`}>
+              {(filteredCustomers.reduce((acc, c) => acc + (c.debt || 0), 0) / 1000000).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} Tr
+            </span>
+          </div>
+        </div>
+
+        {/* Customer Cards List */}
+        {paginatedMobileCustomers.length === 0 ? (
+          <div className="p-8 text-center bg-white rounded-xl border border-slate-200/80 shadow-2xs">
+            <UserOutlined className="text-3xl text-slate-300 mb-2" />
+            <p className="text-sm font-medium text-slate-600 m-0">Không tìm thấy khách hàng nào</p>
+            <p className="text-xs text-slate-400 mt-1 mb-3">Thử thay đổi từ khóa hoặc bộ lọc</p>
+            <Button
+              size="small"
+              onClick={() => {
+                setCustomerSearchQuery('');
+                setStatusFilter('all');
+                setDebtFilter('all');
+                setMobilePage(1);
+              }}
+              className="text-xs"
+            >
+              Đặt lại bộ lọc
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-2.5">
+            {paginatedMobileCustomers.map((customer) => {
+              const displayName = customer.name || (customer as any).fullName || 'Khách hàng';
+              const displayInitial = displayName ? displayName.charAt(0).toUpperCase() : 'K';
+              const debt = Number(customer.debt || 0);
+              const totalSpent = Number(customer.totalSpent || 0);
+              const ordersCount = customer.totalOrders || customer.ordersCount || 0;
+              const isOrg = customer.customerType === 'organization';
+
+              return (
+                <div
+                  key={customer.id}
+                  className="bg-white rounded-xl border border-slate-200/80 p-3.5 shadow-2xs space-y-2.5 transition-all"
+                >
+                  {/* Top Bar: Code + Type + Status */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedMobileCustomerDetail(customer)}
+                        className="font-mono text-[11px] font-semibold text-[#784e34] bg-[#784e34]/10 hover:bg-[#784e34]/20 px-2 py-0.5 rounded border-0 cursor-pointer"
+                      >
+                        {customer.code || 'KH'}
+                      </button>
+
+                      <Tag color={isOrg ? 'purple' : 'blue'} className="text-[10px] m-0 border-0 px-1.5 py-0">
+                        {isOrg ? 'Doanh nghiệp' : 'Cá nhân'}
+                      </Tag>
+
+                      {customer.branch && (
+                        <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+                          {customer.branch}
+                        </span>
+                      )}
+                    </div>
+
+                    <span
+                      onClick={() => handleToggleStatus(customer.id, customer.status)}
+                      className="cursor-pointer shrink-0"
+                      title="Nhấn để đổi trạng thái"
+                    >
+                      <AdminStatusBadge
+                        status={customer.status === 'active' ? 'active' : 'inactive'}
+                        label={customer.status === 'active' ? 'Hoạt động' : 'Tạm khóa'}
+                        dot
+                      />
+                    </span>
+                  </div>
+
+                  {/* Customer Main Info: Avatar + Name + Contact */}
+                  <div className="flex items-start gap-2.5">
+                    <div
+                      onClick={() => setSelectedMobileCustomerDetail(customer)}
+                      className="w-10 h-10 rounded-full bg-[#fbf2ee] text-[#784e34] flex items-center justify-center font-bold text-sm shrink-0 border border-[#eae1dd] cursor-pointer"
+                    >
+                      {displayInitial}
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <h4
+                        onClick={() => setSelectedMobileCustomerDetail(customer)}
+                        className="font-bold text-slate-900 text-sm m-0 truncate hover:text-[#784e34] cursor-pointer"
+                      >
+                        {displayName}
+                      </h4>
+
+                      {/* Phone & Address */}
+                      <div className="space-y-0.5 mt-1 text-xs">
+                        {customer.phone ? (
+                          <div className="flex items-center gap-2">
+                            <span className="text-slate-500 font-mono text-[11px]">{customer.phone}</span>
+                            <a
+                              href={`tel:${customer.phone}`}
+                              className="text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-1.5 py-0.5 rounded text-[10px] font-semibold no-underline flex items-center gap-0.5"
+                            >
+                              <PhoneOutlined className="text-[9px]" /> Gọi
+                            </a>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 text-[11px] italic">Chưa có SĐT</span>
+                        )}
+
+                        {customer.email && (
+                          <div className="text-[11px] text-slate-500 truncate">
+                            <MailOutlined className="mr-1 text-slate-400 text-[10px]" />
+                            {customer.email}
+                          </div>
+                        )}
+
+                        {customer.address && (
+                          <div className="text-[11px] text-slate-500 line-clamp-1">
+                            <EnvironmentOutlined className="mr-1 text-slate-400 text-[10px]" />
+                            {customer.address}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Financials Strip (2 cols) */}
+                  <div className="grid grid-cols-2 gap-2 text-xs pt-1">
+                    <div className="bg-slate-50/80 p-2 rounded-lg border border-slate-100">
+                      <span className="text-slate-400 block text-[10px] mb-0.5">Doanh số tích lũy</span>
+                      <div className="flex items-baseline justify-between gap-1">
+                        <span className="font-mono font-bold text-xs text-[#784e34]">
+                          {totalSpent.toLocaleString('vi-VN')} đ
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-normal">
+                          {ordersCount} đơn
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className={`p-2 rounded-lg border ${debt > 0 ? 'bg-rose-50/60 border-rose-100' : 'bg-emerald-50/60 border-emerald-100'}`}>
+                      <span className="text-slate-400 block text-[10px] mb-0.5">Công nợ hiện tại</span>
+                      <span className={`font-mono font-bold text-xs ${debt > 0 ? 'text-rose-600' : 'text-emerald-700'}`}>
+                        {debt > 0 ? `${debt.toLocaleString('vi-VN')} đ` : '0 đ (Hết nợ)'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Actions Footer */}
+                  <div className="flex items-center justify-between pt-1 border-t border-slate-100 gap-1.5">
+                    <div className="flex items-center gap-1.5">
+                      {debt > 0 && (
+                        <Button
+                          size="small"
+                          icon={<WalletOutlined />}
+                          onClick={() => {
+                            setCollectDebtCustomer(customer);
+                            setCollectAmount(debt);
+                            setCollectNote(`Thu nợ đơn may đo KH ${customer.code}`);
+                          }}
+                          className="h-7 text-xs !bg-rose-600 !border-rose-600 hover:!bg-rose-700 text-white font-medium flex items-center"
+                        >
+                          Thu nợ
+                        </Button>
+                      )}
+
+                      <Button
+                        size="small"
+                        icon={<EyeOutlined />}
+                        onClick={() => setSelectedMobileCustomerDetail(customer)}
+                        className="h-7 text-xs border-slate-200 text-[#784e34] bg-amber-50/40 hover:bg-amber-50"
+                      >
+                        Chi tiết
+                      </Button>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      <Button
+                        size="small"
+                        icon={<EditOutlined />}
+                        onClick={() => handleOpenEdit(customer)}
+                        className="h-7 text-xs border-slate-200 text-slate-700"
+                      >
+                        Sửa
+                      </Button>
+
+                      <Popconfirm
+                        title={`Xóa khách hàng ${displayName}?`}
+                        description="Hành động này không thể hoàn tác."
+                        onConfirm={() => handleDeleteCustomer(customer.id)}
+                        okText="Xóa"
+                        cancelText="Hủy"
+                        okButtonProps={{ danger: true }}
+                      >
+                        <Button
+                          size="small"
+                          danger
+                          icon={<DeleteOutlined />}
+                          className="h-7 text-xs"
+                        />
+                      </Popconfirm>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Mobile Pagination */}
+        {sortedMobileCustomers.length > MOBILE_PAGE_SIZE && (
+          <div className="flex items-center justify-between pt-2 text-xs text-slate-600">
+            <span>
+              Tổng <strong>{sortedMobileCustomers.length}</strong> khách hàng
+            </span>
+            <div className="flex items-center gap-1.5">
+              <Button
+                size="small"
+                disabled={mobilePage <= 1}
+                onClick={() => setMobilePage((p) => Math.max(1, p - 1))}
+                className="text-xs h-7"
+              >
+                Trước
+              </Button>
+              <span className="font-medium px-1">
+                {mobilePage} / {mobileTotalPages}
+              </span>
+              <Button
+                size="small"
+                disabled={mobilePage >= mobileTotalPages}
+                onClick={() => setMobilePage((p) => Math.min(mobileTotalPages, p + 1))}
+                className="text-xs h-7"
+              >
+                Sau
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Mobile Filter Drawer */}
+        <AdminFilterDrawer
+          open={isMobileFilterOpen}
+          onClose={() => setIsMobileFilterOpen(false)}
+          title="Bộ lọc khách hàng"
+          hasActiveFilters={customerActiveFiltersCount > 0}
+          onResetFilters={() => {
+            setCustomerSearchQuery('');
+            setDebtFilter('all');
+            setStatusFilter('all');
+            setBranchFilter(selectedGlobalBranch || 'all');
+            setMobileSort('default');
+            setMobilePage(1);
+          }}
+        >
+          <div className="space-y-4">
+            {/* Sắp xếp danh sách */}
+            <div>
+              <div className="mb-2 text-xs font-semibold text-slate-700 uppercase tracking-wide">
+                Sắp xếp danh sách
+              </div>
+              <Select
+                value={mobileSort}
+                onChange={(v) => {
+                  setMobileSort(v);
+                  setMobilePage(1);
+                }}
+                className="w-full text-xs"
+                size="small"
+                options={[
+                  { value: 'default', label: 'Mới nhất (Mặc định)' },
+                  { value: 'name_asc', label: 'Tên khách hàng A-Z' },
+                  { value: 'debt_desc', label: 'Công nợ giảm dần' },
+                  { value: 'spent_desc', label: 'Doanh số cao nhất' },
+                ]}
+              />
+            </div>
+
+            {/* Tình trạng công nợ */}
+            <div className="pt-2 border-t border-slate-100">
+              <div className="mb-2 text-xs font-semibold text-slate-700 uppercase tracking-wide">
+                Tình trạng công nợ
+              </div>
+              <div className="space-y-1">
+                {[
+                  { value: 'all', label: 'Tất cả công nợ' },
+                  { value: 'has_debt', label: 'Đang có công nợ (> 0đ)' },
+                  { value: 'no_debt', label: 'Không có nợ (0đ)' },
+                ].map((opt) => {
+                  const isSelected = debtFilter === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => {
+                        setDebtFilter(opt.value);
+                        setMobilePage(1);
+                      }}
+                      className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors cursor-pointer border-none ${
+                        isSelected
+                          ? 'bg-amber-50/80 font-semibold text-[#784e34]'
+                          : 'bg-transparent text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span>{opt.label}</span>
+                      {isSelected && <span className="text-[#784e34]">✓</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Trạng thái tài khoản */}
+            <div className="pt-2 border-t border-slate-100">
+              <div className="mb-2 text-xs font-semibold text-slate-700 uppercase tracking-wide">
+                Trạng thái tài khoản
+              </div>
+              <div className="space-y-1">
+                {[
+                  { value: 'all', label: 'Tất cả trạng thái' },
+                  { value: 'active', label: '🟢 Đang hoạt động' },
+                  { value: 'inactive', label: '⚪ Ngừng hoạt động' },
+                ].map((opt) => {
+                  const isSelected = statusFilter === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => {
+                        setStatusFilter(opt.value);
+                        setMobilePage(1);
+                      }}
+                      className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors cursor-pointer border-none ${
+                        isSelected
+                          ? 'bg-amber-50/80 font-semibold text-[#784e34]'
+                          : 'bg-transparent text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span>{opt.label}</span>
+                      {isSelected && <span className="text-[#784e34]">✓</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Chi nhánh */}
+            {effectiveBranches.length > 0 && (
+              <div className="pt-2 border-t border-slate-100">
+                <div className="mb-2 text-xs font-semibold text-slate-700 uppercase tracking-wide">
+                  Chi nhánh phụ trách
+                </div>
+                <Select
+                  value={branchFilter}
+                  onChange={(v) => {
+                    setBranchFilter(v);
+                    setMobilePage(1);
+                  }}
+                  className="w-full text-xs"
+                  size="small"
+                  options={[
+                    { value: 'all', label: 'Tất cả chi nhánh' },
+                    ...effectiveBranches.map((b) => ({
+                      value: b.name,
+                      label: b.name,
+                    })),
+                  ]}
+                />
+              </div>
+            )}
+
+            {/* Quick Metrics */}
+            <div className="pt-3 border-t border-slate-100">
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/80 space-y-1.5 text-xs">
+                <div className="flex justify-between text-slate-600">
+                  <span>Số khách hàng:</span>
+                  <span className="font-semibold text-slate-800">{filteredCustomers.length}</span>
+                </div>
+                <div className="flex justify-between text-slate-600">
+                  <span>Tổng doanh số:</span>
+                  <span className="font-semibold text-emerald-700">
+                    {(filteredCustomers.reduce((acc, c) => acc + (c.totalSpent || 0), 0) / 1000000).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} Tr
+                  </span>
+                </div>
+                <div className="flex justify-between text-slate-600">
+                  <span>Tổng công nợ:</span>
+                  <span className="font-semibold text-rose-600">
+                    {(filteredCustomers.reduce((acc, c) => acc + (c.debt || 0), 0) / 1000000).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} Tr
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </AdminFilterDrawer>
+
+        {/* Mobile Customer Detail Drawer */}
+        <Drawer
+          open={Boolean(selectedMobileCustomerDetail)}
+          onClose={() => setSelectedMobileCustomerDetail(null)}
+          title={
+            <div className="flex items-center gap-2">
+              <UserOutlined className="text-[#784e34]" />
+              <span className="font-bold text-sm text-slate-800 truncate">
+                Hồ sơ: {selectedMobileCustomerDetail?.name} ({selectedMobileCustomerDetail?.code})
+              </span>
+            </div>
+          }
+          styles={{
+            wrapper: { width: '100vw', maxWidth: '100vw' },
+            body: { padding: '12px', backgroundColor: '#fcfaf8' },
+          }}
+          destroyOnHidden
+        >
+          {selectedMobileCustomerDetail && (
+            <CustomerExpandedDetailRow
+              customer={selectedMobileCustomerDetail}
+              ordersList={ordersList}
+              onEdit={() => {
+                const c = selectedMobileCustomerDetail;
+                setSelectedMobileCustomerDetail(null);
+                handleOpenEdit(c);
+              }}
+              onDelete={() => {
+                const c = selectedMobileCustomerDetail;
+                setSelectedMobileCustomerDetail(null);
+                handleDeleteCustomer(c.id);
+              }}
+              onCollectDebt={(amt, note) => {
+                const c = selectedMobileCustomerDetail;
+                setSelectedMobileCustomerDetail(null);
+                setCollectDebtCustomer(c);
+                setCollectAmount(amt !== undefined ? amt : Number(c.debt || 0));
+                setCollectNote(note || `Thu nợ đơn may đo KH ${c.code}`);
+              }}
+            />
+          )}
+        </Drawer>
+      </div>
+
       {/* ── DRAWER: THÊM MỚI / CHỈNH SỬA KHÁCH HÀNG (DOMACO POS SPEC) ─── */}
       <Drawer
         title={
@@ -1260,8 +1770,8 @@ export function CustomersTab({
               >
                 <Select
                   options={[
-                    { value: 'active', label: '🟢 Đang hoạt động' },
-                    { value: 'inactive', label: '⚪ Ngừng hoạt động' },
+                    { value: 'active', label: 'Đang hoạt động' },
+                    { value: 'inactive', label: 'Ngừng hoạt động' },
                   ]}
                   className="w-full text-xs"
                 />

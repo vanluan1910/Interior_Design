@@ -8,7 +8,6 @@ import {
   Statistic,
   Table,
   Tag,
-  Progress,
   Select,
   Button,
   Space,
@@ -19,7 +18,6 @@ import {
 import {
   DownloadOutlined,
   EnvironmentOutlined,
-  ReloadOutlined,
 } from '@ant-design/icons';
 import type { OrderRow } from '@/types/admin';
 import { isMatchBranch } from '@/utils/branchHelper';
@@ -49,7 +47,7 @@ export function OverviewTab({ ordersList, selectedGlobalBranch = 'all', onNaviga
   const [loading, setLoading] = React.useState<boolean>(false);
   const [overviewData, setOverviewData] = React.useState<OverviewDataResponse | null>(null);
 
-  const setActiveNav = onNavigateTab || (() => {});
+  const setActiveNav = onNavigateTab || (() => { });
 
   // Fetch real Overview data from Backend API
   const fetchOverview = React.useCallback(async (showToast = false) => {
@@ -129,12 +127,6 @@ export function OverviewTab({ ordersList, selectedGlobalBranch = 'all', onNaviga
   // Top products from API
   const topProductsList = overviewData?.topProducts || [];
 
-  // Category performance from API
-  const categoryPerformanceList = overviewData?.categoryPerformance || [];
-
-  // Branch performance from API
-  const branchPerformanceList = overviewData?.branchPerformance || [];
-
   // Recent orders: prefer API recent orders, fallback to scoped orders
   const recentOrdersData = (overviewData?.recentOrders && overviewData.recentOrders.length > 0)
     ? overviewData.recentOrders
@@ -153,28 +145,30 @@ export function OverviewTab({ ordersList, selectedGlobalBranch = 'all', onNaviga
     }));
 
   return (
-    <div className="space-y-6 flex-1 flex flex-col h-full">
+    <div className="space-y-4 sm:space-y-6 flex-1 flex flex-col h-full">
       {/* Top Header Filter Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3">
         <div>
-          <Title level={3} className="!mb-0 !text-[#1f1b19] font-headline-md flex items-center gap-2">
+          <Title level={3} className="!mb-1 !text-[#1f1b19] font-headline-md !font-bold flex items-center gap-2 !text-xl sm:!text-2xl">
             <span>Tổng quan hoạt động</span>
             {loading && <Spin size="small" />}
           </Title>
           {selectedGlobalBranch !== 'all' ? (
-            <div className="flex items-center gap-1.5 mt-1">
-              <Tag color="gold" className="text-xs font-semibold px-2 py-0.5 border-[#c5a880]">
-                <EnvironmentOutlined className="mr-1" />
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <span className="inline-flex items-center gap-1 bg-[#fef9ee] text-[#b45309] border border-[#fde68a] text-xs font-semibold px-2 py-0.5 rounded-md">
+                <EnvironmentOutlined className="text-xs" />
                 Cơ sở: {selectedGlobalBranch}
-              </Tag>
+              </span>
             </div>
           ) : (
-            <div className="text-xs text-slate-500 mt-1">
+            <div className="text-xs text-slate-500">
               Hệ thống toàn quốc • Cập nhật dữ liệu thời gian thực
             </div>
           )}
         </div>
-        <Space>
+
+        {/* Desktop Filter controls - hidden on mobile to match mockup */}
+        <div className="hidden sm:flex items-center gap-2 w-full sm:w-auto">
           <Select
             value={timeFilter}
             onChange={(val) => setTimeFilter(val)}
@@ -186,111 +180,79 @@ export function OverviewTab({ ordersList, selectedGlobalBranch = 'all', onNaviga
             <Option value="this_year">Năm nay</Option>
             <Option value="all">Toàn thời gian</Option>
           </Select>
-          <Button
-            icon={<ReloadOutlined spin={loading} />}
-            onClick={() => {
-              dashboardApi.invalidateCache();
-              fetchOverview(true);
-            }}
-            title="Làm mới dữ liệu từ máy chủ"
-          >
-            Làm mới
-          </Button>
           {canExportReports && (
             <Button
               icon={<DownloadOutlined />}
               onClick={() => message.success('Đã xuất báo cáo tổng quan hoạt động thành công!')}
+              title="Xuất file"
+              className="shrink-0 text-xs px-3"
             >
               Xuất file
             </Button>
           )}
-        </Space>
+        </div>
       </div>
 
-      {/* KPI Cards: DOANH THU - GIÁ VỐN - LỢI NHUẬN GỘP - ĐƠN HÀNG - TỒN KHO */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 w-full">
+      {/* KPI Cards: Doanh thu - Giá vốn - Lợi nhuận gộp - Đơn hàng - Tồn kho */}
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 w-full">
         {/* Doanh thu thuần */}
         <div className="w-full">
-          <Card className="border border-slate-200/80 shadow-xs bg-white rounded-xl p-1 h-full">
-            <Statistic
-              title={<span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Doanh thu thuần</span>}
-              value={canViewFinancials ? kpiRevenue : '••••••••'}
-              precision={canViewFinancials ? 0 : undefined}
-              suffix={canViewFinancials ? 'đ' : ''}
-              styles={{ content: { color: '#5d371f', fontWeight: 700, fontSize: '1.25rem' } }}
-            />
-            <div className="mt-2 text-[11px] text-emerald-700 font-semibold flex items-center gap-1">
-              <span>{canViewFinancials ? kpiRevenueGrowth : '•••'}</span>{' '}
-              <span className="text-slate-500 font-normal">
-                {selectedGlobalBranch === 'all' ? 'toàn hệ thống' : 'tại cơ sở'}
-              </span>
+          <Card className="border border-slate-100 shadow-xs bg-white rounded-2xl h-full [&_.ant-card-body]:!p-3.5 sm:[&_.ant-card-body]:!p-4">
+            <div className="text-xs font-medium text-slate-500 truncate">Doanh thu thuần</div>
+            <div className="mt-1 text-base sm:text-lg font-bold text-[#5d371f] font-sans">
+              {canViewFinancials ? (
+                <span>{kpiRevenue.toLocaleString('vi-VN')} đ</span>
+              ) : (
+                '••••••••'
+              )}
             </div>
           </Card>
         </div>
 
         {/* Giá vốn hàng bán (COGS) */}
         <div className="w-full">
-          <Card className="border border-slate-200/80 shadow-xs bg-white rounded-xl p-1 h-full">
-            <Statistic
-              title={<span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Giá vốn hàng bán (COGS)</span>}
-              value={canViewFinancials ? kpiCogs : '••••••••'}
-              precision={canViewFinancials ? 0 : undefined}
-              suffix={canViewFinancials ? 'đ' : ''}
-              styles={{ content: { color: '#854d0e', fontWeight: 700, fontSize: '1.25rem' } }}
-            />
-            <div className="mt-2 text-[11px] text-amber-800 font-semibold flex items-center gap-1">
-              <span>{canViewFinancials ? (kpiRevenue > 0 ? '57.0%' : '0%') : '•••'}</span> <span className="text-slate-500 font-normal">tiền vốn nhập hàng</span>
+          <Card className="border border-slate-100 shadow-xs bg-white rounded-2xl h-full [&_.ant-card-body]:!p-3.5 sm:[&_.ant-card-body]:!p-4">
+            <div className="text-xs font-medium text-slate-500 truncate">Giá vốn hàng bán (COGS)</div>
+            <div className="mt-1 text-base sm:text-lg font-bold text-[#5d371f] font-sans">
+              {canViewFinancials ? (
+                <span>{kpiCogs.toLocaleString('vi-VN')} đ</span>
+              ) : (
+                '••••••••'
+              )}
             </div>
           </Card>
         </div>
 
         {/* Lợi nhuận gộp */}
         <div className="w-full">
-          <Card className="border border-emerald-200 shadow-xs bg-emerald-50/40 rounded-xl p-1 h-full">
-            <Statistic
-              title={<span className="text-xs font-bold text-emerald-800 uppercase tracking-wider">Lợi nhuận gộp (Lãi gộp)</span>}
-              value={canViewFinancials ? kpiProfit : '••••••••'}
-              precision={canViewFinancials ? 0 : undefined}
-              suffix={canViewFinancials ? 'đ' : ''}
-              styles={{ content: { color: '#047857', fontWeight: 800, fontSize: '1.25rem' } }}
-            />
-            <div className="mt-2 text-[11px] text-emerald-700 font-semibold flex items-center gap-1">
-              <span className="font-bold">{canViewFinancials ? kpiProfitGrowth : '•••'}</span>{' '}
-              <span className="text-slate-500 font-normal">
-                {selectedGlobalBranch === 'all' ? 'toàn hệ thống' : 'tại cơ sở'}
-              </span>
+          <Card className="border border-slate-100 shadow-xs bg-white rounded-2xl h-full [&_.ant-card-body]:!p-3.5 sm:[&_.ant-card-body]:!p-4">
+            <div className="text-xs font-medium text-emerald-800 truncate">Lợi nhuận gộp (Lãi gộp)</div>
+            <div className="mt-1 text-base sm:text-lg font-bold text-[#047857] font-sans">
+              {canViewFinancials ? (
+                <span>{kpiProfit.toLocaleString('vi-VN')} đ</span>
+              ) : (
+                '••••••••'
+              )}
             </div>
           </Card>
         </div>
 
         {/* Đơn hàng hoàn tất */}
         <div className="w-full">
-          <Card className="border border-slate-200/80 shadow-xs bg-white rounded-xl p-1 h-full">
-            <Statistic
-              title={<span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Đơn hàng hoàn tất</span>}
-              value={kpiCompletedOrders}
-              suffix="đơn"
-              styles={{ content: { color: '#1f1b19', fontWeight: 700, fontSize: '1.25rem' } }}
-            />
-            <div className="mt-2 text-[11px] text-slate-600 flex items-center gap-1">
-              <span className="font-semibold text-[#784e34]">{kpiPendingOrders} đơn</span>{' '}
-              <span>đang giao &amp; lắp đặt</span>
+          <Card className="border border-slate-100 shadow-xs bg-white rounded-2xl h-full [&_.ant-card-body]:!p-3.5 sm:[&_.ant-card-body]:!p-4">
+            <div className="text-xs font-medium text-slate-500 truncate">Đơn hàng hoàn tất</div>
+            <div className="mt-1 text-base sm:text-lg font-bold text-[#1f1b19] font-sans">
+              {kpiCompletedOrders} đơn
             </div>
           </Card>
         </div>
 
-        {/* Tồn kho sẵn bán */}
-        <div className="w-full">
-          <Card className="border border-slate-200/80 shadow-xs bg-white rounded-xl p-1 h-full">
-            <Statistic
-              title={<span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Tồn kho sẵn bán</span>}
-              value={kpiReadyStock}
-              precision={0}
-              suffix="món"
-              styles={{ content: { color: '#5d371f', fontWeight: 700, fontSize: '1.25rem' } }}
-            />
-            <div className="mt-2 text-[11px] text-slate-500 flex items-center gap-1 truncate">
-              <span>Giá trị:</span> <span className="font-semibold text-slate-800 font-mono">{kpiStockValueFormatted}</span>
+        {/* Tồn kho sẵn bán (Full width on mobile) */}
+        <div className="col-span-2 md:col-span-1 xl:col-span-1 w-full">
+          <Card className="border border-slate-100 shadow-xs bg-white rounded-2xl h-full [&_.ant-card-body]:!p-3.5 sm:[&_.ant-card-body]:!p-4">
+            <div className="text-xs font-medium text-slate-500 truncate">Tồn kho sẵn bán</div>
+            <div className="mt-1 text-base sm:text-lg font-bold text-[#5d371f] font-sans">
+              {kpiReadyStock} món
             </div>
           </Card>
         </div>
@@ -302,9 +264,9 @@ export function OverviewTab({ ordersList, selectedGlobalBranch = 'all', onNaviga
         <Col xs={24} lg={14}>
           <Card
             title={
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 bg-[#5d371f]"></span>
-                <span className="font-bold text-sm text-[#1f1b19]">Biểu đồ Doanh thu &amp; Lợi nhuận gộp</span>
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="w-3 h-3 bg-[#784e34] rounded-xs shrink-0"></span>
+                <span className="font-bold text-sm sm:text-base text-[#1f1b19] truncate">Biểu đồ Doanh thu &amp; Lợi nhuận gộp</span>
               </div>
             }
             extra={
@@ -312,7 +274,7 @@ export function OverviewTab({ ordersList, selectedGlobalBranch = 'all', onNaviga
                 size="small"
                 value={revenueFilter}
                 onChange={(val: any) => setRevenueFilter(val)}
-                className="w-36 text-xs"
+                className="w-28 sm:w-36 text-xs"
                 options={[
                   { label: 'Theo tuần', value: 'week' },
                   { label: 'Theo tháng', value: 'month' },
@@ -320,12 +282,12 @@ export function OverviewTab({ ordersList, selectedGlobalBranch = 'all', onNaviga
                 ]}
               />
             }
-            className="border border-slate-200/80 shadow-xs bg-white rounded-xl h-full"
+            className="border border-slate-100 shadow-xs bg-white rounded-2xl h-full [&_.ant-card-head]:!min-h-[48px] sm:[&_.ant-card-head]:!min-h-[56px] [&_.ant-card-head]:!px-4 sm:[&_.ant-card-head]:!px-6 [&_.ant-card-body]:!p-4 sm:[&_.ant-card-body]:!p-6"
           >
             {/* Summary row */}
-            <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-[#eae1dd] mb-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#eae1dd] mb-4">
               <div>
-                <div className="text-[11px] font-medium text-slate-500">
+                <div className="text-xs font-medium text-slate-400">
                   {revenueFilter === 'week'
                     ? 'Doanh thu tuần này'
                     : revenueFilter === 'month'
@@ -333,35 +295,36 @@ export function OverviewTab({ ordersList, selectedGlobalBranch = 'all', onNaviga
                       : `Doanh thu năm ${new Date().getFullYear()}`}
                 </div>
                 <div className="flex items-baseline gap-2 mt-0.5">
-                  <span className="font-mono font-semibold text-2xl text-[#5d371f]">
+                  <span className="font-sans font-bold text-xl sm:text-2xl text-[#1f1b19]">
                     {chartTotalRevenue.toLocaleString('vi-VN')} đ
                   </span>
-                  <Tag color={chartTotalRevenue > 0 ? 'green' : 'default'} className="font-medium text-xs">
+                  <span className="bg-slate-100 text-slate-500 font-medium text-xs px-2 py-0.5 rounded">
                     {chartGrowthLabel}
-                  </Tag>
+                  </span>
                 </div>
               </div>
-              <div className="flex items-center gap-4 text-xs">
+              <div className="flex flex-wrap items-center gap-3 text-xs">
                 <div className="flex items-center gap-1.5">
-                  <span className="w-3 h-3 bg-[#5d371f] inline-block"></span>
+                  <span className="w-2.5 h-2.5 bg-[#5d371f] inline-block rounded-xs"></span>
                   <span className="text-[#51443d] font-medium">Doanh thu bán</span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span className="w-3 h-3 bg-[#c5a880] inline-block"></span>
+                  <span className="w-2.5 h-2.5 bg-[#c5a880] inline-block rounded-xs"></span>
                   <span className="text-[#51443d] font-medium">Giá vốn</span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span className="w-3 h-3 bg-emerald-600 inline-block"></span>
-                  <span className="text-emerald-800 font-bold">Lợi nhuận gộp</span>
+                  <span className="w-2.5 h-2.5 bg-emerald-600 inline-block rounded-xs"></span>
+                  <span className="text-[#51443d] font-medium">Lợi nhuận gộp</span>
                 </div>
               </div>
             </div>
 
             {/* Interactive Visual Bar Chart with Profit Breakdown */}
-            <div className="h-64 flex items-end gap-3 sm:gap-5 pt-4 pb-2 px-2">
+            <div className="h-48 sm:h-64 flex items-end gap-1.5 sm:gap-5 pt-4 pb-2 px-1 sm:px-2">
               {chartBars.length === 0 || chartBars.every((b) => b.total === 0) ? (
-                <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 text-xs">
-                  <span>Chưa có doanh thu phát sinh trong khoảng thời gian này tại cơ sở</span>
+                <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 text-xs gap-1 py-8">
+                  <span>Chưa có doanh thu phát sinh</span>
+                  <span>trong khoảng thời gian này tại cơ sở</span>
                 </div>
               ) : (
                 chartBars.map((item, idx) => (
@@ -393,7 +356,7 @@ export function OverviewTab({ ordersList, selectedGlobalBranch = 'all', onNaviga
                     )}
 
                     {/* Top value */}
-                    <span className="text-[10px] font-mono font-bold text-[#83746c] mb-1.5 group-hover:text-[#5d371f] transition-colors">
+                    <span className="text-[9px] sm:text-[10px] font-mono font-bold text-[#83746c] mb-1 sm:mb-1.5 group-hover:text-[#5d371f] transition-colors">
                       {item.total > 0
                         ? (revenueFilter === 'year'
                           ? (item.total / 1000).toFixed(1) + 'B'
@@ -405,7 +368,7 @@ export function OverviewTab({ ordersList, selectedGlobalBranch = 'all', onNaviga
 
                     {/* Stacked Bars: COGS + GROSS PROFIT */}
                     <div
-                      className="w-full max-w-[40px] flex flex-col justify-end overflow-hidden transition-all duration-300 group-hover:opacity-90 rounded-t-sm"
+                      className="w-full max-w-[28px] sm:max-w-[40px] flex flex-col justify-end overflow-hidden transition-all duration-300 group-hover:opacity-90 rounded-t-sm"
                       style={{ height: `${Math.max(6, item.percent)}%` }}
                     >
                       <div
@@ -420,7 +383,7 @@ export function OverviewTab({ ordersList, selectedGlobalBranch = 'all', onNaviga
 
                     {/* Label */}
                     <span
-                      className={`text-[11px] font-semibold mt-2 ${item.isCurrent ? 'text-[#5d371f] font-bold' : 'text-[#83746c]'}`}
+                      className={`text-[9.5px] sm:text-[11px] font-semibold mt-1 sm:mt-2 ${item.isCurrent ? 'text-[#5d371f] font-bold' : 'text-[#83746c]'}`}
                     >
                       {item.label}
                     </span>
@@ -429,23 +392,23 @@ export function OverviewTab({ ordersList, selectedGlobalBranch = 'all', onNaviga
               )}
             </div>
 
-            {/* Footnote KPI details: REVENUE, COGS, PROFIT */}
-            <div className="mt-4 pt-3 border-t border-[#eae1dd] grid grid-cols-3 gap-2 text-center text-xs">
-              <div className="p-2.5 bg-[#fbf2ee] rounded">
-                <div className="text-[10px] text-[#83746c] font-medium">Tổng Doanh thu</div>
-                <div className="font-mono font-bold text-[#5d371f] text-sm">
+            {/* Footnote KPI details: REVENUE, COGS, PROFIT (3 columns matching mockup) */}
+            <div className="mt-4 pt-3 border-t border-[#eae1dd] grid grid-cols-3 gap-2 sm:gap-3 text-center text-xs">
+              <div className="p-2 sm:p-2.5 bg-[#fbf2ee] rounded-xl">
+                <div className="text-[11px] text-[#83746c] font-medium">Tổng Doanh thu</div>
+                <div className="font-mono font-bold text-[#1f1b19] text-xs sm:text-sm mt-0.5">
                   {chartTotalRevenue.toLocaleString('vi-VN')} đ
                 </div>
               </div>
-              <div className="p-2.5 bg-amber-50/70 border border-amber-100 rounded">
-                <div className="text-[10px] text-amber-800 font-medium">Tổng Giá vốn (COGS)</div>
-                <div className="font-mono font-bold text-amber-900 text-sm">
+              <div className="p-2 sm:p-2.5 bg-[#fffbeb] border border-amber-100 rounded-xl">
+                <div className="text-[11px] text-amber-900 font-medium">Tổng Giá vốn (COGS)</div>
+                <div className="font-mono font-bold text-amber-900 text-xs sm:text-sm mt-0.5">
                   {chartTotalCogs.toLocaleString('vi-VN')} đ
                 </div>
               </div>
-              <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded">
-                <div className="text-[10px] text-emerald-800 font-bold">Lợi nhuận gộp</div>
-                <div className="font-mono font-bold text-emerald-700 text-sm">
+              <div className="p-2 sm:p-2.5 bg-[#ecfdf5] border border-emerald-300 rounded-xl">
+                <div className="text-[11px] text-emerald-800 font-bold">Lợi nhuận gộp</div>
+                <div className="font-mono font-bold text-emerald-700 text-xs sm:text-sm mt-0.5">
                   {chartTotalProfit.toLocaleString('vi-VN')} đ
                 </div>
               </div>
@@ -457,31 +420,31 @@ export function OverviewTab({ ordersList, selectedGlobalBranch = 'all', onNaviga
         <Col xs={24} lg={10}>
           <Card
             title={
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 bg-emerald-700"></span>
-                <span className="font-bold text-sm text-[#1f1b19]">Top sản phẩm đóng góp lợi nhuận cao</span>
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="w-3 h-3 bg-emerald-600 rounded-xs shrink-0"></span>
+                <span className="font-bold text-sm sm:text-base text-[#1f1b19] truncate">Top sản phẩm đóng góp lợi nhuận cao</span>
               </div>
             }
             extra={
-              <Button type="link" onClick={() => setActiveNav('inventory')} className="text-[#5d371f] font-bold text-xs p-0">
+              <Button type="link" onClick={() => setActiveNav('inventory')} className="text-[#83746c] hover:text-[#5d371f] font-semibold text-xs p-0 whitespace-nowrap">
                 Xem kho hàng &gt;
               </Button>
             }
-            className="border border-slate-200/80 shadow-xs bg-white rounded-xl h-full"
+            className="border border-slate-100 shadow-xs bg-white rounded-2xl h-full [&_.ant-card-head]:!min-h-[48px] sm:[&_.ant-card-head]:!min-h-[56px] [&_.ant-card-head]:!px-4 sm:[&_.ant-card-head]:!px-6 [&_.ant-card-body]:!p-4 sm:[&_.ant-card-body]:!p-6"
           >
             <div className="space-y-3">
               {topProductsList.length === 0 ? (
-                <div className="py-16 flex flex-col items-center justify-center text-slate-400 text-xs gap-1.5">
+                <div className="py-12 flex flex-col items-center justify-center text-slate-400 text-xs gap-1.5 text-center">
                   <span className="font-semibold text-slate-600">Chưa có sản phẩm phát sinh doanh thu</span>
                   <span>Cơ sở này chưa bán sản phẩm nào trong kỳ thống kê</span>
                 </div>
               ) : (
                 topProductsList.map((item) => (
-                  <div key={item.rank} className="p-2.5 bg-slate-50 rounded-lg hover:shadow-xs transition-all border border-slate-200/60">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2.5 min-w-0">
+                  <div key={item.rank} className="p-2 sm:p-2.5 bg-slate-50 rounded-lg hover:shadow-xs transition-all border border-slate-200/60">
+                    <div className="flex items-center justify-between gap-2 sm:gap-3">
+                      <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
                         <span
-                          className={`w-5 h-5 flex items-center justify-center font-bold text-xs shrink-0 rounded-full ${item.rank === 1
+                          className={`w-4 h-4 sm:w-5 sm:h-5 flex items-center justify-center font-bold text-[10px] sm:text-xs shrink-0 rounded-full ${item.rank === 1
                             ? 'bg-[#c5a880] text-[#1f1b19]'
                             : item.rank === 2
                               ? 'bg-[#d8c3af] text-[#1f1b19]'
@@ -495,21 +458,21 @@ export function OverviewTab({ ordersList, selectedGlobalBranch = 'all', onNaviga
                         <img
                           src={item.image}
                           alt={item.name}
-                          className="w-10 h-10 object-cover shrink-0 rounded"
+                          className="w-8 h-8 sm:w-10 sm:h-10 object-cover shrink-0 rounded"
                         />
                         <div className="min-w-0">
                           <div className="font-bold text-xs text-slate-900 truncate">{item.name}</div>
                           <div className="text-[10px] text-slate-500 flex items-center gap-1.5 mt-0.5">
-                            <span>Đã bán: <b className="text-slate-800">{item.salesCount}</b> sản phẩm</span>
+                            <span>Đã bán: <b className="text-slate-800">{item.salesCount}</b></span>
                           </div>
                         </div>
                       </div>
 
                       <div className="text-right shrink-0">
-                        <div className="font-mono font-bold text-xs text-emerald-700">
+                        <div className="font-mono font-bold text-[11px] sm:text-xs text-emerald-700">
                           +{item.profit.toLocaleString('vi-VN')} đ
                         </div>
-                        <span className="text-[10px] text-slate-500">Lãi gộp đóng góp</span>
+                        <span className="text-[9.5px] sm:text-[10px] text-slate-500">Lãi gộp</span>
                       </div>
                     </div>
                   </div>
@@ -520,179 +483,172 @@ export function OverviewTab({ ordersList, selectedGlobalBranch = 'all', onNaviga
         </Col>
       </Row>
 
-      {/* ROW 2: PHÂN TÍCH LỢI NHUẬN GỘP THEO DANH MỤC & CHI NHÁNH */}
-      <Row gutter={[16, 16]}>
-        {/* Theo Danh Mục Nhóm Hàng */}
-        <Col xs={24} lg={14}>
-          <Card
-            title={
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 bg-[#784e34]"></span>
-                <span className="font-bold text-sm text-slate-900">Hiệu quả lợi nhuận theo nhóm ngành hàng</span>
-              </div>
-            }
-            className="border border-slate-200/80 shadow-xs bg-white rounded-xl"
-          >
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left">
-                <thead>
-                  <tr className="border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[11px] bg-slate-50/80">
-                    <th className="py-2 px-3">Nhóm sản phẩm</th>
-                    <th className="py-2 px-3 text-right">Doanh thu</th>
-                    <th className="py-2 px-3 text-right">Giá vốn (COGS)</th>
-                    <th className="py-2 px-3 text-right">Lợi nhuận gộp</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {categoryPerformanceList.map((cat, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-2.5 px-3 font-semibold text-slate-900">{cat.name}</td>
-                      <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-800">
-                        {cat.revenue.toLocaleString('vi-VN')} đ
-                      </td>
-                      <td className="py-2.5 px-3 text-right font-mono text-amber-900">
-                        {cat.cogs.toLocaleString('vi-VN')} đ
-                      </td>
-                      <td className="py-2.5 px-3 text-right font-mono font-bold text-emerald-700">
-                        +{cat.profit.toLocaleString('vi-VN')} đ
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        </Col>
-
-        {/* Theo Chi Nhánh / Showroom */}
-        <Col xs={24} lg={10}>
-          <Card
-            title={
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 bg-[#5d371f]"></span>
-                <span className="font-bold text-sm text-slate-900">Lợi nhuận gộp theo Showroom</span>
-              </div>
-            }
-            className="border border-slate-200/80 shadow-xs bg-white rounded-xl h-full"
-          >
-            <div className="space-y-3.5">
-              {branchPerformanceList.map((branch, idx) => (
-                <div key={idx} className="p-2.5 bg-slate-50 border border-slate-200/60 rounded-lg">
-                  <div className="flex items-center justify-between text-xs mb-1">
-                    <span className="font-bold text-slate-900">{branch.name}</span>
-                    <span className="font-mono font-bold text-emerald-700">+{branch.profit.toLocaleString('vi-VN')} đ</span>
-                  </div>
-                  <div className="text-[11px] text-slate-500 mb-1.5">
-                    <span>Doanh thu: {branch.revenue.toLocaleString('vi-VN')} đ</span>
-                  </div>
-                  <Progress percent={branch.percent} strokeColor="#059669" size="small" showInfo={false} />
-                </div>
-              ))}
-            </div>
-          </Card>
-        </Col>
-      </Row>
-
-      {/* ROW 3: FULL WIDTH RECENT ORDERS TABLE */}
+      {/* RECENT ORDERS TABLE */}
       <Card
         title={
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 bg-[#784e34]"></span>
-            <span className="font-bold text-sm text-[#1f1b19]">Đơn hàng bán lẻ &amp; giao hàng gần đây</span>
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="w-3 h-3 bg-[#784e34] rounded-xs shrink-0"></span>
+            <span className="font-bold text-sm sm:text-base text-[#1f1b19] truncate">Đơn hàng bán lẻ</span>
           </div>
         }
-        className="border border-slate-200/80 shadow-xs bg-white rounded-xl overflow-hidden"
+        className="border border-slate-100 shadow-xs bg-white rounded-2xl overflow-hidden [&_.ant-card-head]:!min-h-[48px] sm:[&_.ant-card-head]:!min-h-[56px] [&_.ant-card-head]:!px-4 sm:[&_.ant-card-head]:!px-6 [&_.ant-card-body]:!p-0 sm:[&_.ant-card-body]:!p-6"
         extra={
-          <Button type="link" onClick={() => setActiveNav('orders')} className="text-[#5d371f] font-semibold text-xs p-0">
-            Xem tất cả đơn hàng &gt;
+          <Button type="link" onClick={() => setActiveNav('orders')} className="text-[#83746c] hover:text-[#5d371f] font-semibold text-xs p-0 whitespace-nowrap">
+            Xem tất cả &gt;
           </Button>
         }
       >
-        <Table
-          dataSource={recentOrdersData}
-          rowKey="id"
-          pagination={false}
-          locale={{ emptyText: 'Cơ sở này chưa có đơn hàng nào phát sinh' }}
-          className="ant-table-custom"
-          columns={[
-            {
-              title: 'Mã đơn',
-              dataIndex: 'orderCode',
-              key: 'orderCode',
-              render: (text) => <span className="font-mono font-semibold text-[#5d371f]">{text}</span>,
-            },
-            {
-              title: 'Khách hàng',
-              dataIndex: 'customerName',
-              key: 'customerName',
-              render: (text, record: any) => (
-                <div>
-                  <div className="font-medium text-[#1f1b19]">{text}</div>
-                  <div className="text-xs text-[#83746c]">{record.customerPhone}</div>
-                </div>
-              ),
-            },
-            {
-              title: 'Tác phẩm / Sản phẩm',
-              dataIndex: 'productName',
-              key: 'productName',
-              render: (text, record: any) => {
-                const clean = getCleanProductName(text);
-                return (
-                  <div>
-                    <div className="font-medium text-[#1f1b19]">{clean}</div>
-                    <div className="text-xs text-[#83746c]">{record.productSpec}</div>
+        {/* Mobile View: No horizontal scroll, clean structured cards */}
+        <div className="block sm:hidden divide-y divide-slate-100">
+          {recentOrdersData.length === 0 ? (
+            <div className="py-8 text-center text-xs text-slate-400">
+              Cơ sở này chưa có đơn hàng nào phát sinh
+            </div>
+          ) : (
+            recentOrdersData.map((order: any) => {
+              const clean = getCleanProductName(order.productName);
+              const qty = order.quantity ?? getOrderQuantity(order);
+              const st = order.status;
+              const tagColor =
+                st === 'completed'
+                  ? 'green'
+                  : st === 'processing' || st === 'inproduction'
+                    ? 'orange'
+                    : st === 'delivering'
+                      ? 'blue'
+                      : st === 'cancelled'
+                        ? 'red'
+                        : 'default';
+              const statusText =
+                order.statusLabel ||
+                (st === 'completed'
+                  ? 'Hoàn tất & bàn giao'
+                  : st === 'cancelled'
+                    ? 'Đã hủy'
+                    : 'Chờ xử lý');
+
+              return (
+                <div key={order.id} className="p-3 bg-white hover:bg-slate-50/60 transition-colors">
+                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <span className="font-mono font-bold text-xs text-[#5d371f]">
+                      {order.orderCode}
+                    </span>
+                    <Tag color={tagColor} className="m-0 text-[10px] font-medium">
+                      {statusText}
+                    </Tag>
                   </div>
-                );
+                  
+                  <div className="flex items-start justify-between gap-2 text-xs">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-semibold text-slate-900 truncate">{clean}</div>
+                      <div className="text-[11px] text-slate-500 mt-0.5 truncate">
+                        {order.customerName} {order.customerPhone && `• ${order.customerPhone}`}
+                      </div>
+                    </div>
+                    
+                    <div className="text-right shrink-0">
+                      <div className="font-mono font-bold text-xs text-slate-900">
+                        {(order.value || 0).toLocaleString('vi-VN')} đ
+                      </div>
+                      <div className="text-[10px] text-slate-500 mt-0.5">
+                        SL: <b className="text-slate-700">{qty}</b>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Desktop View: Full Table without horizontal scroll */}
+        <div className="hidden sm:block">
+          <Table
+            dataSource={recentOrdersData}
+            rowKey="id"
+            pagination={false}
+            locale={{ emptyText: 'Cơ sở này chưa có đơn hàng nào phát sinh' }}
+            className="ant-table-custom"
+            columns={[
+              {
+                title: 'Mã đơn',
+                dataIndex: 'orderCode',
+                key: 'orderCode',
+                render: (text) => <span className="font-mono font-semibold text-[#5d371f]">{text}</span>,
               },
-            },
-            {
-              title: 'Số lượng',
-              key: 'quantity',
-              align: 'center',
-              width: 90,
-              render: (_, record: any) => {
-                const qty = record.quantity ?? getOrderQuantity(record);
-                return (
-                  <span className="font-mono font-bold text-xs text-slate-800 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded inline-block">
-                    {qty}
-                  </span>
-                );
+              {
+                title: 'Khách hàng',
+                dataIndex: 'customerName',
+                key: 'customerName',
+                render: (text, record: any) => (
+                  <div>
+                    <div className="font-medium text-[#1f1b19]">{text}</div>
+                    <div className="text-xs text-[#83746c]">{record.customerPhone}</div>
+                  </div>
+                ),
               },
-            },
-            {
-              title: 'Giá trị',
-              dataIndex: 'value',
-              key: 'value',
-              align: 'right',
-              render: (val) => <span className="font-mono font-medium text-slate-800">{(val || 0).toLocaleString('vi-VN')} đ</span>,
-            },
-            {
-              title: 'Trạng thái',
-              dataIndex: 'status',
-              key: 'status',
-              align: 'center',
-              render: (st, r: any) => (
-                <Tag
-                  color={
-                    st === 'completed'
-                      ? 'green'
-                      : st === 'processing' || st === 'inproduction'
-                        ? 'orange'
-                        : st === 'delivering'
-                          ? 'blue'
-                          : st === 'cancelled'
-                            ? 'red'
-                            : 'default'
-                  }
-                  className="font-medium"
-                >
-                  {r.statusLabel || (st === 'completed' ? 'Hoàn tất & bàn giao' : st === 'cancelled' ? 'Đã hủy' : 'Chờ xử lý')}
-                </Tag>
-              ),
-            },
-          ]}
-        />
+              {
+                title: 'Tác phẩm / Sản phẩm',
+                dataIndex: 'productName',
+                key: 'productName',
+                render: (text, record: any) => {
+                  const clean = getCleanProductName(text);
+                  return (
+                    <div>
+                      <div className="font-medium text-[#1f1b19]">{clean}</div>
+                      <div className="text-xs text-[#83746c]">{record.productSpec}</div>
+                    </div>
+                  );
+                },
+              },
+              {
+                title: 'Số lượng',
+                key: 'quantity',
+                align: 'center',
+                width: 90,
+                render: (_, record: any) => {
+                  const qty = record.quantity ?? getOrderQuantity(record);
+                  return (
+                    <span className="font-mono font-bold text-xs text-slate-800 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded inline-block">
+                      {qty}
+                    </span>
+                  );
+                },
+              },
+              {
+                title: 'Giá trị',
+                dataIndex: 'value',
+                key: 'value',
+                align: 'right',
+                render: (val) => <span className="font-mono font-medium text-slate-800">{(val || 0).toLocaleString('vi-VN')} đ</span>,
+              },
+              {
+                title: 'Trạng thái',
+                dataIndex: 'status',
+                key: 'status',
+                align: 'center',
+                render: (st, r: any) => (
+                  <Tag
+                    color={
+                      st === 'completed'
+                        ? 'green'
+                        : st === 'processing' || st === 'inproduction'
+                          ? 'orange'
+                          : st === 'delivering'
+                            ? 'blue'
+                            : st === 'cancelled'
+                              ? 'red'
+                              : 'default'
+                    }
+                    className="font-medium"
+                  >
+                    {r.statusLabel || (st === 'completed' ? 'Hoàn tất & bàn giao' : st === 'cancelled' ? 'Đã hủy' : 'Chờ xử lý')}
+                  </Tag>
+                ),
+              },
+            ]}
+          />
+        </div>
       </Card>
     </div>
   );
