@@ -183,75 +183,71 @@ function CartContent() {
         onOpenBooking={() => {}}
       />
 
-      <main className="w-full pt-20 flex-1">
+      <main className="w-full pt-20 flex-1 pb-6 sm:pb-8 lg:pb-0">
         {/* Top Breadcrumb & Spatial Status Bar */}
-        <section className="w-full bg-[#fbf2ee] py-3.5 border-b border-[#eae1dd]">
-          <div className="w-full max-w-[1720px] mx-auto px-4 sm:px-6 lg:px-10 xl:px-14 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs font-medium text-[#83746c]">
-            <nav aria-label="Breadcrumb" className="flex items-center gap-2 flex-wrap text-xs font-medium text-[#83746c]">
+        <section className="w-full bg-[#fbf2ee] py-2 sm:py-3.5 border-b border-[#eae1dd]">
+          <div className="w-full max-w-[1720px] mx-auto px-3.5 sm:px-6 lg:px-10 xl:px-14 flex items-center justify-between gap-2 text-xs font-medium text-[#83746c]">
+            <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs font-medium text-[#83746c]">
               <Link href="/" className="hover:text-[#5d371f] transition-colors">
                 Trang chủ
               </Link>
               <span className="text-[#d5c3ba]">/</span>
-              <Link href="/products" className="hover:text-[#5d371f] transition-colors">
-                Bộ sưu tập
-              </Link>
-              <span className="text-[#d5c3ba]">/</span>
               <span className="text-[#5d371f] font-bold">
-                Giỏ hàng của bạn
+                Giỏ hàng ({cartItems.length})
               </span>
             </nav>
 
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#ffffff] border border-[#eae1dd] text-[11px] text-[#51443d] font-medium shadow-sm">
+            <div className="hidden sm:inline-flex items-center gap-2 px-3 py-1.5 bg-[#ffffff] border border-[#eae1dd] text-[11px] text-[#51443d] font-medium shadow-sm">
               <span className="w-2 h-2 rounded-full bg-[#5d371f] animate-pulse"></span>
-              <span>Phôi gỗ tuyển chọn nguyên khối · Giữ mộng trong 48 giờ</span>
+              <span>Phôi gỗ tuyển chọn nguyên khối · Giữ mộng 48h</span>
             </div>
           </div>
         </section>
 
         {/* Main Architecture Grid: 8 Cols Cart / 4 Cols Summary */}
-        <section className="max-w-[1720px] mx-auto w-full px-4 sm:px-6 lg:px-10 xl:px-14 py-6">
+        <section className="max-w-[1720px] mx-auto w-full px-3 sm:px-6 lg:px-10 xl:px-14 py-4 sm:py-6">
           {cartItems.length === 0 ? (
             /* Empty Cart State */
-            <div className="bg-white border border-[#eae1dd] p-12 text-center my-8 shadow-sm">
-              <div className="w-16 h-16 mx-auto mb-4 bg-[#f5ece8] flex items-center justify-center text-[#5d371f] text-2xl">
+            <div className="bg-white border border-[#eae1dd] p-6 sm:p-12 text-center my-6 sm:my-8 shadow-xs sm:shadow-sm">
+              <div className="w-12 h-12 sm:w-16 sm:h-16 mx-auto mb-3 sm:mb-4 bg-[#f5ece8] flex items-center justify-center text-[#5d371f] text-xl sm:text-2xl">
                 <TagOutlined />
               </div>
-              <h3 className="font-serif text-2xl font-bold text-[#1f1b19] mb-2">Giỏ hàng của bạn đang trống</h3>
-              <p className="text-sm text-[#83746c] max-w-md mx-auto mb-6">
+              <h3 className="font-serif text-xl sm:text-2xl font-bold text-[#1f1b19] mb-2">Giỏ hàng của bạn đang trống</h3>
+              <p className="text-xs sm:text-sm text-[#83746c] max-w-md mx-auto mb-5 sm:mb-6 leading-relaxed">
                 Hãy khám phá các tuyệt tác nội thất gỗ tự nhiên mộng truyền thống từ Bộ sưu tập D2 LUXURY.
               </p>
               <Link
                 href="/products"
-                className="inline-flex items-center gap-2 px-6 py-3 bg-[#5d371f] text-white text-xs font-bold hover:bg-[#784e34] transition-colors"
+                className="inline-flex items-center gap-2 px-5 py-2.5 sm:px-6 sm:py-3 bg-[#5d371f] text-white text-xs font-bold hover:bg-[#784e34] transition-colors shadow-sm"
               >
                 <span>Khám phá bộ sưu tập</span>
                 <ArrowRightOutlined />
               </Link>
             </div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start animate-fade-in-up">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-8 items-start animate-fade-in-up">
               {/* LEFT COLUMN: 8 Columns */}
-              <div className="lg:col-span-8 flex flex-col gap-6">
+              <div className="lg:col-span-8 flex flex-col gap-4 sm:gap-6">
                 {/* Cart Action Controls Bar */}
-                <div className="flex items-center justify-between bg-[#ffffff] px-5 py-4 border border-[#eae1dd] shadow-sm">
-                  <label className="flex items-center gap-3 cursor-pointer select-none">
+                <div className="flex items-center justify-between bg-[#ffffff] px-3.5 py-3 sm:px-5 sm:py-4 border border-[#eae1dd] shadow-xs sm:shadow-sm">
+                  <label className="flex items-center gap-2 sm:gap-3 cursor-pointer select-none">
                     <input
                       checked={allSelected}
                       onChange={toggleSelectAll}
                       type="checkbox"
                       className="w-4 h-4 rounded-none accent-[#5d371f] text-[#5d371f] cursor-pointer"
                     />
-                    <span className="text-sm font-bold text-[#1f1b19]">
-                      Chọn tất cả ({cartItems.length} tác phẩm mộc)
+                    <span className="text-xs sm:text-sm font-bold text-[#1f1b19]">
+                      Chọn tất cả ({cartItems.length} tác phẩm)
                     </span>
                   </label>
 
                   <button
                     onClick={handleRemoveSelected}
                     type="button"
-                    className="flex items-center gap-1.5 text-xs text-[#83746c] hover:text-[#ba1a1a] transition-colors font-medium cursor-pointer"
+                    className="flex items-center gap-1 sm:gap-1.5 text-[11px] sm:text-xs text-[#83746c] hover:text-[#ba1a1a] transition-colors font-medium cursor-pointer"
                   >
-                    <DeleteOutlined className="text-sm" />
+                    <DeleteOutlined className="text-xs sm:text-sm" />
                     <span>Xóa mục đã chọn</span>
                   </button>
                 </div>
@@ -259,22 +255,33 @@ function CartContent() {
                 {/* Product Items List */}
                 {cartItems.map((item) => {
                   const outOfStock = isItemOutOfStock(item);
+                  const catalogItem = catalogProducts.find(
+                    (p) => p.id === item.id || (p.code && item.sku && p.code.toLowerCase() === item.sku.toLowerCase())
+                  );
+                  // Only display discount if product actually has an originalPrice > price in database
+                  const hasRealDiscount = catalogItem
+                    ? (catalogItem.originalPrice !== undefined && catalogItem.originalPrice > catalogItem.price)
+                    : (item.originalPrice !== undefined && item.originalPrice > item.price && item.originalPrice !== Math.round(item.price * 1.15));
+                  const displayOriginalPrice = hasRealDiscount
+                    ? (catalogItem?.originalPrice || item.originalPrice)
+                    : undefined;
+
                   return (
                     <article
                       key={item.id}
-                      className={`bg-[#ffffff] border p-6 flex flex-col gap-5 shadow-sm transition-all hover-lift ${
+                      className={`bg-[#ffffff] border p-3 sm:p-6 flex flex-col gap-2.5 sm:gap-5 shadow-xs sm:shadow-sm transition-all hover-lift ${
                         outOfStock ? 'border-[#ba1a1a]/40 bg-[#fff5f5]/30' : 'border-[#eae1dd] hover:border-[#5d371f]/40'
                       }`}
                     >
-                      <div className="flex flex-col sm:flex-row gap-5">
-                        <div className="flex items-start gap-3">
+                      <div className="flex gap-2.5 sm:gap-5">
+                        <div className="flex items-start gap-2 sm:gap-3 shrink-0">
                           <input
                             checked={item.selected}
                             onChange={() => toggleItemSelect(item.id)}
                             type="checkbox"
-                            className="w-4 h-4 mt-2 rounded-none accent-[#5d371f] text-[#5d371f] cursor-pointer shrink-0"
+                            className="w-4 h-4 mt-1.5 sm:mt-2 rounded-none accent-[#5d371f] text-[#5d371f] cursor-pointer shrink-0"
                           />
-                          <div className="w-32 h-32 sm:w-40 sm:h-40 bg-[#f5ece8] overflow-hidden shrink-0 relative border border-[#eae1dd]">
+                          <div className="w-20 h-20 sm:w-40 sm:h-40 bg-[#f5ece8] overflow-hidden shrink-0 relative border border-[#eae1dd]">
                             <img
                               src={item.image}
                               alt={item.name}
@@ -282,7 +289,7 @@ function CartContent() {
                             />
                             {outOfStock && (
                               <div className="absolute inset-0 bg-black/25 flex items-center justify-center pointer-events-none">
-                                <span className="px-2 py-0.5 bg-[#ba1a1a] text-white text-[11px] font-bold uppercase tracking-wider shadow-md">
+                                <span className="px-1.5 py-0.5 sm:px-2 sm:py-0.5 bg-[#ba1a1a] text-white text-[9px] sm:text-[11px] font-bold uppercase tracking-wider shadow-md">
                                   Hết hàng
                                 </span>
                               </div>
@@ -290,36 +297,36 @@ function CartContent() {
                           </div>
                         </div>
 
-                        <div className="flex-1 flex flex-col justify-between">
+                        <div className="flex-1 min-w-0 flex flex-col justify-between">
                           <div>
-                            <div className="flex items-start justify-between gap-4">
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-xs text-[#3f4332] font-semibold block">
+                            <div className="flex items-start justify-between gap-1.5">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-[10px] sm:text-xs text-[#3f4332] font-semibold truncate block">
                                     {item.collection}
                                   </span>
                                   {outOfStock && (
-                                    <span className="px-2 py-0.5 bg-[#ffdad6] text-[#ba1a1a] font-bold text-[10px] uppercase">
+                                    <span className="px-1.5 py-0.5 bg-[#ffdad6] text-[#ba1a1a] font-bold text-[9px] sm:text-[10px] uppercase">
                                       Tạm hết hàng
                                     </span>
                                   )}
                                 </div>
                                 <Link
                                   href={`/products/${item.id}`}
-                                  className="font-serif text-lg sm:text-xl font-bold text-[#1f1b19] mt-0.5 hover:text-[#5d371f] transition-colors block"
+                                  className="font-serif text-[13px] sm:text-xl font-bold text-[#1f1b19] mt-0.5 hover:text-[#5d371f] transition-colors block line-clamp-2 leading-tight"
                                 >
                                   {item.name}
                                 </Link>
                               </div>
 
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-1 shrink-0">
                                 <Tooltip title="Bỏ sản phẩm">
                                   <button
                                     onClick={() => handleRemoveItem(item.id, item.name)}
                                     type="button"
                                     className="text-[#83746c] hover:text-[#ba1a1a] transition-colors p-1 cursor-pointer"
                                   >
-                                    <DeleteOutlined className="text-lg" />
+                                    <DeleteOutlined className="text-xs sm:text-lg" />
                                   </button>
                                 </Tooltip>
                               </div>
@@ -327,80 +334,91 @@ function CartContent() {
 
                             {/* Material & Spec Tags */}
                             {item.specs && item.specs.length > 0 && (
-                              <div className="mt-3 flex flex-wrap gap-1.5 text-xs text-[#51443d]">
-                                {item.specs.map((sp, idx) => (
-                                  <span
-                                    key={idx}
-                                    className="bg-[#f5ece8] border border-[#eae1dd] px-2.5 py-1 text-[11px] font-medium"
-                                  >
-                                    {sp}
-                                  </span>
-                                ))}
+                              <div className="mt-1 sm:mt-3 flex flex-col sm:flex-row sm:flex-wrap gap-1 sm:gap-1.5 text-xs text-[#51443d]">
+                                {/* Mobile: Clean text bullets without bulky gray tags */}
+                                <div className="flex sm:hidden flex-col gap-0.5 text-[10px] text-[#83746c] mt-0.5">
+                                  {item.specs.map((sp, idx) => (
+                                    <span key={idx} className="line-clamp-1 truncate">
+                                      • {sp}
+                                    </span>
+                                  ))}
+                                </div>
+                                {/* Desktop: Original badges */}
+                                <div className="hidden sm:flex flex-wrap gap-1.5">
+                                  {item.specs.map((sp, idx) => (
+                                    <span
+                                      key={idx}
+                                      className="bg-[#f5ece8] border border-[#eae1dd] px-2.5 py-1 text-[11px] font-medium"
+                                    >
+                                      {sp}
+                                    </span>
+                                  ))}
+                                </div>
                               </div>
                             )}
 
                             {outOfStock && (
-                              <div className="mt-2.5 p-2 bg-[#ffdad6]/40 border border-[#ffdad6] text-xs text-[#ba1a1a] font-semibold flex items-center gap-1.5">
+                              <div className="mt-2 p-1.5 sm:p-2 bg-[#ffdad6]/40 border border-[#ffdad6] text-[11px] sm:text-xs text-[#ba1a1a] font-semibold flex items-center gap-1.5">
                                 <span>⚠️ Sản phẩm hiện đã hết hàng trong kho. Vui lòng bỏ chọn hoặc xóa khỏi giỏ để thanh toán các sản phẩm khác.</span>
                               </div>
                             )}
 
                             {!outOfStock && isItemExceedingStock(item) && (
-                              <div className="mt-2.5 p-2 bg-[#fff3cd] border border-[#ffeeba] text-xs text-[#856404] font-semibold flex items-center gap-1.5">
+                              <div className="mt-2 p-1.5 sm:p-2 bg-[#fff3cd] border border-[#ffeeba] text-[11px] sm:text-xs text-[#856404] font-semibold flex items-center gap-1.5">
                                 <span>⚠️ Bạn đang chọn {item.quantity} sản phẩm nhưng kho chỉ còn {getItemAvailableStock(item)} sản phẩm. Vui lòng giảm số lượng.</span>
                               </div>
                             )}
 
                             {/* Gift Addon info if available */}
                             {item.giftInfo && (
-                              <div className="mt-2.5 flex items-center gap-2 text-xs text-[#5d371f] font-semibold bg-[#fff8f5] p-2 border border-[#fcc2a1]/60">
-                                <GiftOutlined className="text-[#5d371f]" />
-                                <span>{item.giftInfo}</span>
+                              <div className="mt-1 sm:mt-2 flex items-center gap-1 sm:gap-2 text-[10px] sm:text-xs text-[#5d371f] font-medium sm:font-semibold bg-[#fff8f5] px-2 py-0.5 sm:p-2 border border-[#fcc2a1]/60 truncate">
+                                <GiftOutlined className="text-[#5d371f] text-[10px] sm:text-xs shrink-0" />
+                                <span className="truncate">{item.giftInfo}</span>
                               </div>
                             )}
                           </div>
 
                           {/* Price & Quantity Controls */}
-                          <div className="mt-5 flex items-center justify-between pt-3 border-t border-[#eae1dd] bg-[#fbf2ee] px-4 py-2.5">
-                            <div className="flex flex-col">
-                              <div className="flex items-baseline gap-2">
-                                <span className="text-base sm:text-lg font-bold text-[#5d371f] font-data-mono">
+                          <div className="mt-2 sm:mt-5 flex items-center justify-between pt-1.5 sm:pt-3 border-t border-[#eae1dd] bg-[#fbf2ee] px-2.5 py-1 sm:px-4 sm:py-2.5">
+                            <div className="flex flex-col min-w-0">
+                              <div className="flex items-baseline gap-1.5 sm:gap-2 flex-wrap">
+                                <span className="text-sm sm:text-lg font-bold text-[#5d371f] font-data-mono truncate">
                                   {item.price.toLocaleString('vi-VN')}đ
                                 </span>
-                                {item.originalPrice && item.originalPrice > item.price && (
-                                  <span className="text-xs text-[#a89b93] line-through font-data-mono">
-                                    {item.originalPrice.toLocaleString('vi-VN')}đ
+                                {displayOriginalPrice && (
+                                  <span className="text-[10px] sm:text-xs text-[#a89b93] line-through font-data-mono">
+                                    {displayOriginalPrice.toLocaleString('vi-VN')}đ
                                   </span>
                                 )}
                               </div>
-                              {item.originalPrice && item.originalPrice > item.price && (
-                                <span className="text-[10px] font-bold text-red-600 mt-0.5">
-                                  -{Math.round(((item.originalPrice - item.price) / item.originalPrice) * 100)}%
+                              {displayOriginalPrice && (
+                                <span className="text-[9px] sm:text-[10px] font-bold text-red-600">
+                                  -{Math.round(((displayOriginalPrice - item.price) / displayOriginalPrice) * 100)}%
                                 </span>
                               )}
                             </div>
 
                             {/* Quantity Counter */}
-                            <div className="flex items-center gap-2">
-                              <div className="flex items-center bg-white border border-[#eae1dd] p-0.5 shadow-sm">
+                            <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+                              <div className="flex items-center bg-white border border-[#eae1dd] p-0.5 shadow-xs sm:shadow-sm">
                                 <button
                                   onClick={() => handleUpdateQuantity(item, -1)}
                                   disabled={item.quantity <= 1}
                                   type="button"
-                                  className="w-7 h-7 flex items-center justify-center text-[#51443d] hover:bg-[#f5ece8] disabled:opacity-40 cursor-pointer"
+                                  className="w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center text-[#51443d] hover:bg-[#f5ece8] disabled:opacity-40 cursor-pointer"
                                 >
-                                  <MinusOutlined className="text-xs" />
+                                  <MinusOutlined className="text-[10px] sm:text-xs" />
                                 </button>
-                                <span className="w-8 text-center font-data-mono text-xs font-bold text-[#1f1b19]">
+                                <span className="w-6 sm:w-8 text-center font-data-mono text-[11px] sm:text-xs font-bold text-[#1f1b19]">
                                   {item.quantity}
                                 </span>
                                 <button
                                   onClick={() => handleUpdateQuantity(item, 1)}
                                   type="button"
-                                  className="w-7 h-7 flex items-center justify-center text-[#51443d] hover:bg-[#f5ece8] cursor-pointer"
+                                  className="w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center text-[#51443d] hover:bg-[#f5ece8] cursor-pointer"
                                   title="Tăng số lượng"
                                 >
-                                  <PlusOutlined className="text-xs" />
+                                  <PlusOutlined className="text-[10px] sm:text-xs" />
                                 </button>
                               </div>
                             </div>
@@ -412,15 +430,20 @@ function CartContent() {
                 })}
 
                 {/* White-glove Logistics Notice */}
-                <div className="bg-[#fbf2ee] border border-[#eae1dd] p-5 flex items-start gap-4 shadow-sm">
-                  <div className="w-10 h-10 bg-white border border-[#eae1dd] text-[#5d371f] flex items-center justify-center shrink-0 shadow-sm">
-                    <CarOutlined className="text-xl" />
+                <div className="bg-[#fbf2ee] border border-[#eae1dd] p-3 sm:p-5 flex items-start gap-2.5 sm:gap-4 shadow-xs sm:shadow-sm">
+                  <div className="w-7 h-7 sm:w-10 sm:h-10 bg-white border border-[#eae1dd] text-[#5d371f] flex items-center justify-center shrink-0 shadow-xs sm:shadow-sm">
+                    <CarOutlined className="text-sm sm:text-xl" />
                   </div>
-                  <div className="flex flex-col gap-1">
-                    <h4 className="text-sm font-bold text-[#1f1b19]">
+                  <div className="flex flex-col gap-0.5 sm:gap-1 min-w-0">
+                    <h4 className="text-xs sm:text-sm font-bold text-[#1f1b19]">
                       Quy chuẩn Đóng kiện &amp; Vận chuyển Căn hộ Cao cấp
                     </h4>
-                    <p className="text-xs text-[#51443d] leading-relaxed">
+                    {/* Mobile: concise text */}
+                    <p className="text-[10px] text-[#51443d] leading-relaxed sm:hidden">
+                      Bọc 3 lớp màng khí chống sốc, khung pallet gỗ &amp; nghệ nhân D2 LUXURY trực tiếp khiêng lắp đặt, căn chỉnh thăng bằng tận phòng.
+                    </p>
+                    {/* Desktop: detailed description */}
+                    <p className="hidden sm:block text-xs text-[#51443d] leading-relaxed">
                       Mỗi tác phẩm được bọc 3 lớp màng khí chống sốc, lót đệm nỉ bảo hộ và cố định khung pallet gỗ thông
                       xẻ dày 20mm. Đội ngũ nghệ nhân D2 LUXURY trực tiếp khiêng vận chuyển tận phòng, căn chỉnh thăng
                       bằng theo cốt nền và thu dọn toàn bộ vật liệu bảo hộ sau khi lắp ráp hoàn thiện.
@@ -430,59 +453,59 @@ function CartContent() {
               </div>
 
               {/* RIGHT COLUMN: 4 Columns Summary Sticky Box */}
-              <div className="lg:col-span-4 flex flex-col gap-6 lg:sticky lg:top-24">
-                <div className="bg-[#ffffff] border border-[#eae1dd] shadow-md p-6 flex flex-col gap-6">
-                  <div className="flex items-center justify-between pb-3 border-b border-[#eae1dd]">
+              <div className="lg:col-span-4 flex flex-col gap-4 sm:gap-6 lg:sticky lg:top-24">
+                <div className="bg-[#ffffff] border border-[#eae1dd] shadow-md p-3.5 sm:p-6 flex flex-col gap-3 sm:gap-6">
+                  <div className="flex items-center justify-between pb-2.5 sm:pb-3 border-b border-[#eae1dd]">
                     <div>
-                      <span className="text-xs text-[#83746c] font-medium block">
+                      <span className="text-[10px] sm:text-xs text-[#83746c] font-medium block">
                         Phiếu đặt trước
                       </span>
-                      <h2 className="font-serif text-xl font-bold text-[#1f1b19]">Tóm Tắt Đơn Hàng</h2>
+                      <h2 className="font-serif text-base sm:text-xl font-bold text-[#1f1b19]">Tóm Tắt Đơn Hàng</h2>
                     </div>
-                    <span className="font-data-mono text-xs px-2.5 py-1 bg-[#f5ece8] border border-[#eae1dd] text-[#5d371f] font-bold">
+                    <span className="font-data-mono text-[10px] sm:text-xs px-2 py-0.5 sm:px-2.5 sm:py-1 bg-[#f5ece8] border border-[#eae1dd] text-[#5d371f] font-bold">
                       #D2-2025-89
                     </span>
                   </div>
 
                   {/* Price Calculation Lines */}
-                  <div className="flex flex-col gap-3 text-xs">
+                  <div className="flex flex-col gap-2 sm:gap-3 text-xs">
                     <div className="flex justify-between text-[#51443d]">
-                      <span>Tạm tính ({selectedItems.length} tác phẩm)</span>
-                      <span className="font-data-mono font-bold text-[#1f1b19]">
+                      <span className="text-[11px] sm:text-xs">Tạm tính ({selectedItems.length} tác phẩm)</span>
+                      <span className="font-data-mono font-bold text-[#1f1b19] text-xs sm:text-sm">
                         {subtotal.toLocaleString('vi-VN')}đ
                       </span>
                     </div>
 
                     <div className="flex justify-between text-[#51443d]">
-                      <span>Vận chuyển xe thùng &amp; Thang máy</span>
-                      <span className="text-xs font-semibold text-[#3f4332] bg-[#e1e5ce] px-2.5 py-0.5">
+                      <span className="text-[11px] sm:text-xs">Vận chuyển xe thùng &amp; Thang máy</span>
+                      <span className="text-[10px] sm:text-xs font-semibold text-[#3f4332] bg-[#e1e5ce] px-2 py-0.5">
                         Miễn phí
                       </span>
                     </div>
 
                     <div className="flex justify-between text-[#51443d]">
-                      <span>Cân chỉnh mộng &amp; Lau dầu dưỡng tận nhà</span>
-                      <span className="text-xs font-semibold text-[#3f4332] bg-[#e1e5ce] px-2.5 py-0.5">
+                      <span className="text-[11px] sm:text-xs">Cân chỉnh mộng &amp; Lau dầu dưỡng tận nhà</span>
+                      <span className="text-[10px] sm:text-xs font-semibold text-[#3f4332] bg-[#e1e5ce] px-2 py-0.5">
                         Miễn phí
                       </span>
                     </div>
                   </div>
 
                   {/* Grand Total */}
-                  <div className="bg-[#fbf2ee] border border-[#eae1dd] p-4 flex flex-col gap-1">
+                  <div className="bg-[#fbf2ee] border border-[#eae1dd] p-2.5 sm:p-4 flex flex-col gap-0.5 sm:gap-1">
                     <div className="flex items-baseline justify-between">
-                      <span className="text-sm font-bold text-[#1f1b19]">Tổng thanh toán</span>
-                      <span className="font-serif text-xl sm:text-2xl font-bold text-[#5d371f] font-data-mono">
+                      <span className="text-xs sm:text-sm font-bold text-[#1f1b19]">Tổng thanh toán</span>
+                      <span className="font-serif text-base sm:text-2xl font-bold text-[#5d371f] font-data-mono">
                         {finalTotal.toLocaleString('vi-VN')}đ
                       </span>
                     </div>
-                    <span className="text-[10px] text-[#83746c] mt-1">
+                    <span className="text-[9px] sm:text-[10px] text-[#83746c]">
                       Đã bao gồm 8% thuế GTGT và bảo hiểm trọn gói vận chuyển
                     </span>
                   </div>
 
                   {/* CTA Buttons */}
-                  <div className="flex flex-col gap-3">
+                  <div className="flex flex-col gap-2 sm:gap-3">
                     <Link
                       href={selectedItems.length === 0 ? '#' : '/checkout'}
                       style={
@@ -490,44 +513,61 @@ function CartContent() {
                           ? { backgroundColor: '#eae1dd', color: '#83746c' }
                           : { backgroundColor: '#5d371f', color: '#ffffff' }
                       }
-                      className={`w-full py-3.5 px-6 font-semibold text-sm transition-all flex items-center justify-center gap-2 shadow-md ${
+                      className={`w-full py-2.5 sm:py-3.5 px-4 sm:px-6 font-semibold text-xs sm:text-sm transition-all flex items-center justify-center gap-2 shadow-md ${
                         selectedItems.length === 0
                           ? 'cursor-not-allowed opacity-60 pointer-events-none'
                           : '!bg-[#5d371f] !text-white hover:!bg-[#784e34] cursor-pointer hover-lift'
                       }`}
                     >
                       <span className="font-bold">Tiến hành đặt hàng &amp; Giữ phôi gỗ</span>
-                      <ArrowRightOutlined className="text-sm" />
+                      <ArrowRightOutlined className="text-xs sm:text-sm" />
                     </Link>
 
                     <Link
                       href="/products"
-                      className="w-full py-2.5 text-center text-xs text-[#5d371f] hover:text-[#784e34] transition-colors font-medium"
+                      className="w-full py-1.5 sm:py-2.5 text-center text-[11px] sm:text-xs text-[#5d371f] hover:text-[#784e34] transition-colors font-medium"
                     >
                       Tiếp tục ngắm nhìn sản phẩm khác
                     </Link>
                   </div>
 
                   {/* 3 Reassurance Badges */}
-                  <div className="flex flex-col gap-3 pt-2 border-t border-[#eae1dd]">
-                    <div className="flex items-start gap-3">
-                      <SafetyCertificateOutlined className="text-[#5d371f] text-base shrink-0 mt-0.5" />
+                  {/* Mobile: compact list */}
+                  <div className="flex sm:hidden flex-col gap-1.5 pt-2 border-t border-[#eae1dd] text-[10px] text-[#51443d]">
+                    <div className="flex items-center gap-2">
+                      <SafetyCertificateOutlined className="text-[#5d371f] text-xs shrink-0" />
+                      <span>Bảo hành 5 năm kết cấu mộng tận nơi</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <FileProtectOutlined className="text-[#5d371f] text-xs shrink-0" />
+                      <span>Kiểm tra vân gỗ thực tế &amp; đối chiếu chứng thư</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <CreditCardOutlined className="text-[#5d371f] text-xs shrink-0" />
+                      <span>Bảo dưỡng đánh sáp tự nhiên định kỳ miễn phí</span>
+                    </div>
+                  </div>
+
+                  {/* Desktop: detailed paragraphs */}
+                  <div className="hidden sm:flex flex-col gap-2.5 sm:gap-3 pt-2 border-t border-[#eae1dd]">
+                    <div className="flex items-start gap-2.5 sm:gap-3">
+                      <SafetyCertificateOutlined className="text-[#5d371f] text-sm sm:text-base shrink-0 mt-0.5" />
                       <p className="text-xs text-[#51443d] leading-snug">
                         <strong>Bảo hành 5 năm kết cấu mộng</strong>, cong vênh nứt nẻ do thời tiết được nghệ nhân đổi
                         mới tận nơi.
                       </p>
                     </div>
 
-                    <div className="flex items-start gap-3">
-                      <FileProtectOutlined className="text-[#5d371f] text-base shrink-0 mt-0.5" />
+                    <div className="flex items-start gap-2.5 sm:gap-3">
+                      <FileProtectOutlined className="text-[#5d371f] text-sm sm:text-base shrink-0 mt-0.5" />
                       <p className="text-xs text-[#51443d] leading-snug">
                         <strong>Kiểm tra vân gỗ thực tế</strong> &amp; đối chiếu chứng thư xuất xưởng trước khi kích hoạt
                         thanh toán phần còn lại.
                       </p>
                     </div>
 
-                    <div className="flex items-start gap-3">
-                      <CreditCardOutlined className="text-[#5d371f] text-base shrink-0 mt-0.5" />
+                    <div className="flex items-start gap-2.5 sm:gap-3">
+                      <CreditCardOutlined className="text-[#5d371f] text-sm sm:text-base shrink-0 mt-0.5" />
                       <p className="text-xs text-[#51443d] leading-snug">
                         <strong>Bảo hành kết cấu 5 năm</strong> &amp; bảo dưỡng đánh sáp tự nhiên định kỳ miễn phí tại nhà.
                       </p>
@@ -535,18 +575,20 @@ function CartContent() {
                   </div>
 
                   {/* Direct Studio Architect Contact */}
-                  <div className="bg-[#f5ece8] border border-[#eae1dd] p-4 flex items-center gap-3">
-                    <CustomerServiceOutlined className="text-[#5d371f] text-2xl shrink-0" />
-                    <div className="min-w-0">
-                      <p className="text-xs text-[#1f1b19] font-bold">Cần tư vấn phối cảnh 3D?</p>
-                      <p className="text-[11px] text-[#83746c]">KTS D2 LUXURY hỗ trợ trực tiếp (08:00 - 22:00)</p>
-                      <a
-                        href="tel:0867612199"
-                        className="font-serif text-base font-bold text-[#5d371f] tracking-tight block mt-0.5"
-                      >
-                        0867 612 199
-                      </a>
+                  <div className="bg-[#f5ece8] border border-[#eae1dd] p-2.5 sm:p-4 flex items-center justify-between gap-2.5">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <CustomerServiceOutlined className="text-[#5d371f] text-base sm:text-2xl shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-[11px] sm:text-xs text-[#1f1b19] font-bold truncate">Tư vấn phối cảnh 3D</p>
+                        <p className="text-[9px] sm:text-[11px] text-[#83746c] truncate">KTS hỗ trợ (08:00 - 22:00)</p>
+                      </div>
                     </div>
+                    <a
+                      href="tel:0867612199"
+                      className="shrink-0 px-2.5 py-1 bg-[#5d371f] text-white text-[11px] sm:text-base font-bold hover:bg-[#784e34] transition-colors font-data-mono sm:font-serif sm:bg-transparent sm:text-[#5d371f] sm:p-0"
+                    >
+                      0867 612 199
+                    </a>
                   </div>
                 </div>
               </div>
@@ -554,15 +596,17 @@ function CartContent() {
           )}
         </section>
 
+
+
         {/* Cross-sell Gallery Section: Complete the Living Space */}
         {crossSellProducts.length > 0 && (
-          <section className="max-w-7xl mx-auto w-full px-4 sm:px-8 lg:px-12 pt-16 pb-12">
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
+          <section className="max-w-7xl mx-auto w-full px-4 sm:px-8 lg:px-12 pt-10 sm:pt-16 pb-10 sm:pb-12">
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-2 sm:gap-4 mb-6 sm:mb-8">
               <div>
-                <span className="text-xs text-[#5d371f] font-semibold block">
+                <span className="text-[11px] sm:text-xs text-[#5d371f] font-semibold block">
                   Bản Giao Hưởng Không Gian
                 </span>
-                <h2 className="font-serif text-2xl sm:text-3xl font-bold text-[#1f1b19] mt-1">
+                <h2 className="font-serif text-xl sm:text-2xl md:text-3xl font-bold text-[#1f1b19] mt-0.5 sm:mt-1">
                   Gợi Ý Tác Phẩm Phù Hợp Không Gian Của Bạn
                 </h2>
               </div>
@@ -575,13 +619,13 @@ function CartContent() {
               </Link>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5 sm:gap-6">
               {crossSellProducts.map((item) => {
                 const isCrossOut = false;
                 return (
                   <div
                     key={item.id}
-                    className="bg-[#ffffff] border border-[#eae1dd] overflow-hidden flex flex-col justify-between group hover:border-[#5d371f]/50 transition-all shadow-sm hover-lift"
+                    className="bg-[#ffffff] border border-[#eae1dd] overflow-hidden flex flex-col justify-between group hover:border-[#5d371f]/50 transition-all shadow-xs sm:shadow-sm hover-lift"
                   >
                     <Link href={`/products/${item.id}`} className="aspect-[4/3] bg-[#f5ece8] overflow-hidden relative block">
                       <img
@@ -589,32 +633,32 @@ function CartContent() {
                         alt={item.name}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                       />
-                      <div className="absolute top-3 right-3 bg-white/90 backdrop-blur px-2.5 py-1 text-[10px] font-bold text-[#1f1b19] border border-[#eae1dd]">
+                      <div className="absolute top-2 right-2 sm:top-3 sm:right-3 bg-white/90 backdrop-blur px-1.5 py-0.5 sm:px-2.5 sm:py-1 text-[9px] sm:text-[10px] font-bold text-[#1f1b19] border border-[#eae1dd]">
                         {item.categoryName || 'D2 LUXURY'}
                       </div>
                     </Link>
 
-                    <div className="p-5 flex flex-col gap-3">
+                    <div className="p-2.5 sm:p-5 flex flex-col gap-1.5 sm:gap-3 flex-1 justify-between">
                       <div>
-                        <Link href={`/products/${item.id}`} className="font-serif text-base font-bold text-[#1f1b19] hover:text-[#5d371f] transition-colors">
+                        <Link href={`/products/${item.id}`} className="font-serif text-xs sm:text-base font-bold text-[#1f1b19] hover:text-[#5d371f] transition-colors line-clamp-1 block">
                           {item.name}
                         </Link>
-                        <p className="text-xs text-[#83746c] mt-1 leading-relaxed line-clamp-2">
-                          {item.material || item.metaInfo} {item.dimensions ? `· ${item.dimensions}` : ''}
+                        <p className="text-[10px] sm:text-xs text-[#83746c] mt-0.5 leading-relaxed line-clamp-1">
+                          {item.material || item.metaInfo}
                         </p>
                       </div>
 
-                      <div className="flex items-center justify-between pt-2 border-t border-[#eae1dd]">
-                        <span className="font-data-mono text-sm font-bold text-[#5d371f]">
+                      <div className="flex items-center justify-between pt-2 border-t border-[#eae1dd] gap-1">
+                        <span className="font-data-mono text-[11.5px] sm:text-sm font-bold text-[#5d371f] truncate">
                           {item.price.toLocaleString('vi-VN')}đ
                         </span>
                         <button
                           onClick={() => handleAddCrossSell(item)}
                           type="button"
-                          className="flex items-center gap-1.5 px-3 py-1.5 border text-xs font-semibold transition-colors bg-[#f5ece8] border-[#eae1dd] text-[#1f1b19] hover:bg-[#5d371f] hover:text-white cursor-pointer"
+                          className="flex items-center gap-1 px-2 py-1 sm:px-3 sm:py-1.5 border text-[10px] sm:text-xs font-semibold transition-colors bg-[#f5ece8] border-[#eae1dd] text-[#1f1b19] hover:bg-[#5d371f] hover:text-white cursor-pointer shrink-0"
                         >
-                          <PlusOutlined className="text-[10px]" />
-                          <span>Thêm nhanh</span>
+                          <PlusOutlined className="text-[9px] sm:text-[10px]" />
+                          <span>Thêm</span>
                         </button>
                       </div>
                     </div>

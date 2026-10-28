@@ -11,7 +11,7 @@ export interface CartItemData {
   badge: string;
   image: string;
   price: number;
-  originalPrice: number;
+  originalPrice?: number;
   quantity: number;
   selected: boolean;
   isFavorite: boolean;
@@ -68,7 +68,17 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       if (storedCart) {
         const parsed = JSON.parse(storedCart);
         if (Array.isArray(parsed)) {
-          setCartItems(parsed);
+          const sanitized = parsed.map((item: any) => {
+            const isFakeDiscount = item.originalPrice && (
+              item.originalPrice === Math.round(item.price * 1.15) ||
+              item.originalPrice <= item.price
+            );
+            return {
+              ...item,
+              originalPrice: isFakeDiscount ? undefined : item.originalPrice,
+            };
+          });
+          setCartItems(sanitized);
         } else {
           setCartItems([]);
         }
@@ -164,7 +174,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         badge: item.badge || 'Tuyệt tác mộc',
         image: item.image,
         price: item.price,
-        originalPrice: item.originalPrice || Math.round(item.price * 1.15),
+        originalPrice: (item.originalPrice && item.originalPrice > item.price && item.originalPrice !== Math.round(item.price * 1.15))
+          ? item.originalPrice
+          : undefined,
         quantity: Math.max(1, quantity),
         selected: true,
         isFavorite: wishlistIds.includes(item.id),

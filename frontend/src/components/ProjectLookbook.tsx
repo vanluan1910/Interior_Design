@@ -3,17 +3,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { motion, useScroll, useTransform, useSpring } from 'framer-motion';
-import { Modal } from 'antd';
 import {
   ArrowRightOutlined,
   EnvironmentOutlined,
-  AppstoreOutlined,
-  CalendarOutlined,
-  EyeOutlined,
   CheckCircleOutlined,
-  PhoneOutlined,
 } from '@ant-design/icons';
-import { useCompanyInfo } from '@/hooks/useCompanyInfo';
 
 interface ProjectItem {
   id: string;
@@ -144,38 +138,20 @@ interface ProjectLookbookProps {
 }
 
 export default function ProjectLookbook({ onOpenBooking }: ProjectLookbookProps = {}) {
-  const { rawPhone, displayPhone, zaloUrl } = useCompanyInfo();
-  const [selectedProject, setSelectedProject] = useState<ProjectItem | null>(null);
-  const [activeModalImg, setActiveModalImg] = useState<number>(0);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setSelectedProject(null);
-      }
-      if (e.key === 'ArrowLeft' && selectedProject) {
-        setActiveModalImg((prev) => (prev > 0 ? prev - 1 : selectedProject.galleryImages.length - 1));
-      }
-      if (e.key === 'ArrowRight' && selectedProject) {
-        setActiveModalImg((prev) => (prev < selectedProject.galleryImages.length - 1 ? prev + 1 : 0));
-      }
-    };
-    if (selectedProject) {
-      document.body.style.overflow = 'hidden';
-      window.addEventListener('keydown', handleKeyDown);
-    } else {
-      document.body.style.overflow = '';
-    }
-    return () => {
-      document.body.style.overflow = '';
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [selectedProject]);
 
   const featuredHero = REAL_PROJECTS[0];
   const secondaryProjects = REAL_PROJECTS.slice(1);
 
   const sectionRef = useRef<HTMLElement>(null);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
   const { scrollYProgress } = useScroll({
     target: sectionRef,
     offset: ['start end', 'start 55%'],
@@ -199,17 +175,13 @@ export default function ProjectLookbook({ onOpenBooking }: ProjectLookbookProps 
         {/* SECTION HEADER (NỔI LÊN THEO ĐỘ LĂN CHUỘT) */}
         <motion.div
           style={{ y: headerY, opacity }}
-          className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-6 md:mb-7"
+          className="flex flex-col md:flex-row md:items-end justify-between gap-4 sm:gap-6 mb-5 md:mb-7"
         >
           <div>
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-none bg-[#5d371f] text-[#ffdbc8] text-[11px] uppercase tracking-widest font-semibold mb-2.5 border border-[#784e34] shadow-xs">
-              <span className="w-1.5 h-1.5 rounded-none bg-[#c5a880]" />
-              <span>Thực Tế Công Trình • 2,500+ Gia Chủ Tin Chọn</span>
-            </div>
-            <h2 className="font-sans text-3xl sm:text-4xl lg:text-[42px] text-[#1f1b19] font-bold tracking-tight">
+            <h2 className="font-sans text-2xl xs:text-3xl sm:text-4xl lg:text-[42px] text-[#1f1b19] font-bold tracking-tight">
               Dự Án Biệt Thự &amp; Penthouse Thực Tế
             </h2>
-            <p className="text-sm sm:text-base text-[#51443d] max-w-2xl mt-2 leading-relaxed">
+            <p className="text-xs sm:text-base text-[#51443d] max-w-2xl mt-1.5 sm:mt-2 leading-relaxed">
               Chiêm ngưỡng các không gian sống độc bản được kiến tạo từ gỗ tự nhiên nguyên khối. Mỗi công trình là một câu chuyện phong cách sống được may đo riêng biệt.
             </p>
           </div>
@@ -218,7 +190,7 @@ export default function ProjectLookbook({ onOpenBooking }: ProjectLookbookProps 
             <button
               type="button"
               onClick={onOpenBooking}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-none bg-[#5d371f] hover:bg-[#724528] text-white text-xs font-semibold shadow-sm hover:shadow-md transition-all cursor-pointer self-start md:self-end"
+              className="inline-flex items-center gap-2 px-4 py-2 sm:px-5 sm:py-2.5 rounded-none bg-[#5d371f] hover:bg-[#724528] text-white text-xs font-semibold shadow-sm hover:shadow-md transition-all cursor-pointer self-start md:self-end"
             >
               <span>Tư vấn thiết kế dự án</span>
               <ArrowRightOutlined className="text-[12px]" />
@@ -227,23 +199,19 @@ export default function ProjectLookbook({ onOpenBooking }: ProjectLookbookProps 
         </motion.div>
 
         {/* BENTO LOOKBOOK LAYOUT */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-stretch">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-8 items-stretch">
 
           {/* 1. HERO FEATURED PROJECT (Trượt từ bên trái vào theo độ lăn chuột) */}
           {featuredHero && (
             <motion.div
-              style={{ x: heroX, opacity }}
-              onClick={() => {
-                setSelectedProject(featuredHero);
-                setActiveModalImg(0);
-              }}
-              className="lg:col-span-7 group/card flex flex-col justify-between bg-white rounded-none overflow-hidden border border-[#d8c8bc] shadow-sm hover:border-[#5d371f] transition-all duration-300 cursor-pointer"
+              style={{ x: isMobile ? 0 : heroX, opacity }}
+              className="lg:col-span-7 group/card flex flex-col justify-between bg-white rounded-none overflow-hidden border border-[#d8c8bc] shadow-sm hover:border-[#5d371f] transition-all duration-300"
             >
               {/* Image Frame (Landscape 16:10) */}
               <div className="relative aspect-[16/10] sm:aspect-[16/9] w-full overflow-hidden bg-[#ede3db] rounded-none">
                 <img
                   alt={featuredHero.title}
-                  className="w-full h-full object-cover object-center transition-transform duration-700 ease-out group-hover/card:scale-108"
+                  className="w-full h-full object-cover object-center transition-transform duration-700 ease-out group-hover/card:scale-105"
                   src={featuredHero.mainImage}
                 />
 
@@ -255,14 +223,6 @@ export default function ProjectLookbook({ onOpenBooking }: ProjectLookbookProps 
                   <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-none bg-white/95 backdrop-blur-md text-[#5d371f] shadow-xs border border-[#d5c3ba]">
                     <CheckCircleOutlined className="text-emerald-600" />
                     <span>{featuredHero.year}</span>
-                  </span>
-                </div>
-
-                {/* Hover Quick View Pill */}
-                <div className="absolute inset-0 bg-black/25 opacity-0 group-hover/card:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-                  <span className="px-5 py-2.5 rounded-none bg-white text-[#5d371f] font-semibold text-xs shadow-xl flex items-center gap-2">
-                    <EyeOutlined />
-                    <span>Chiêm ngưỡng góc chụp thực tế</span>
                   </span>
                 </div>
               </div>
@@ -297,9 +257,9 @@ export default function ProjectLookbook({ onOpenBooking }: ProjectLookbookProps 
                     </span>
                   </div>
 
-                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#5d371f] group-hover/card:translate-x-1 transition-transform">
-                    <span>Xem ảnh căn hộ</span>
-                    <ArrowRightOutlined className="text-[11px]" />
+                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#5d371f]">
+                    <CheckCircleOutlined className="text-emerald-600 text-xs" />
+                    <span>Thực tế công trình</span>
                   </span>
                 </div>
               </div>
@@ -308,17 +268,13 @@ export default function ProjectLookbook({ onOpenBooking }: ProjectLookbookProps 
 
           {/* 2. SIDE PROJECTS LIST (Chiếm 5 cột bên phải, trượt từ bên phải vào theo độ lăn chuột) */}
           <motion.div
-            style={{ x: sideX, opacity }}
+            style={{ x: isMobile ? 0 : sideX, opacity }}
             className="lg:col-span-5 flex flex-col gap-5"
           >
             {secondaryProjects.map((item) => (
               <div
                 key={item.id}
-                onClick={() => {
-                  setSelectedProject(item);
-                  setActiveModalImg(0);
-                }}
-                className="group/side flex flex-col sm:flex-row items-stretch bg-white rounded-none overflow-hidden border border-[#d8c8bc] shadow-sm hover:border-[#5d371f] transition-all duration-300 cursor-pointer flex-1"
+                className="group/side flex flex-col sm:flex-row items-stretch bg-white rounded-none overflow-hidden border border-[#d8c8bc] shadow-sm hover:border-[#5d371f] transition-all duration-300 flex-1"
               >
                 {/* Thumbnail Image (Square / 4:3 on mobile) */}
                 <div className="sm:w-44 md:w-48 aspect-[16/10] sm:aspect-square shrink-0 overflow-hidden bg-[#ede3db] relative">
@@ -371,203 +327,7 @@ export default function ProjectLookbook({ onOpenBooking }: ProjectLookbookProps 
 
       </div>
 
-      {/* HORIZONTAL SPLIT POPUP: REAL VILLA & PENTHOUSE LOOKBOOK */}
-      <Modal
-        open={!!selectedProject}
-        onCancel={() => setSelectedProject(null)}
-        footer={null}
-        centered
-        width={1060}
-        destroyOnHidden
-        className="[&_.ant-modal-content]:!p-0 [&_.ant-modal-content]:!rounded-none [&_.ant-modal-content]:!overflow-hidden [&_.ant-modal-content]:!bg-[#fff8f5] [&_.ant-modal-content]:!border [&_.ant-modal-content]:!border-[#d5c3ba]"
-        closeIcon={
-          <span className="material-symbols-outlined text-[20px] text-[#51443d] hover:text-[#ba1a1a] transition-colors">
-            close
-          </span>
-        }
-        styles={{
-          mask: {
-            backgroundColor: 'rgba(20, 16, 14, 0.82)',
-            backdropFilter: 'blur(8px)',
-          },
-          body: {
-            padding: 0,
-            backgroundColor: '#fff8f5',
-          },
-        }}
-      >
-        {selectedProject && (
-          <div className="flex flex-col md:flex-row h-auto md:h-[600px] max-h-[82vh] overflow-hidden bg-[#fff8f5]">
-            {/* CỘT TRÁI (58%): HÌNH ẢNH TOÀN CẢNH NGANG & THUMBNAILS */}
-            <div className="md:w-[58%] lg:w-[60%] h-[320px] sm:h-[360px] md:h-full min-h-0 flex flex-col bg-[#14100e] relative select-none shrink-0 overflow-hidden">
-              {/* Ảnh chính lớn */}
-              <div className="flex-1 min-h-0 w-full relative overflow-hidden flex items-center justify-center bg-black/60 group/modalimg">
-                <img
-                  alt={`${selectedProject.title} - Góc chụp ${activeModalImg + 1}`}
-                  className="w-full h-full object-cover transition-all duration-300"
-                  src={selectedProject.galleryImages[activeModalImg] || selectedProject.mainImage}
-                />
 
-                {/* Badges trên ảnh */}
-                <div className="absolute top-3 left-3 flex items-center gap-2 z-10">
-                  <span className="font-mono text-[11px] px-2.5 py-1 rounded-none bg-black/70 backdrop-blur-md text-white border border-white/20">
-                    {selectedProject.code} • {selectedProject.area}
-                  </span>
-                  <span className="hidden sm:inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-none bg-white/95 backdrop-blur-md text-[#5d371f]">
-                    <CheckCircleOutlined className="text-emerald-600 text-[10px]" />
-                    <span>{selectedProject.year}</span>
-                  </span>
-                </div>
-
-                {/* Photo Counter Pill */}
-                <div className="absolute top-3 right-3 px-2.5 py-1 bg-black/70 backdrop-blur-md text-white font-mono text-[11px] rounded-none border border-white/15 z-10">
-                  {activeModalImg + 1} / {selectedProject.galleryImages.length} góc chụp
-                </div>
-
-                {/* Left Arrow Button */}
-                {selectedProject.galleryImages.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setActiveModalImg((prev) => (prev > 0 ? prev - 1 : selectedProject.galleryImages.length - 1));
-                    }}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-none bg-black/70 hover:bg-[#5d371f] text-white flex items-center justify-center transition-all cursor-pointer shadow-lg backdrop-blur-sm border border-white/20"
-                    aria-label="Ảnh trước"
-                  >
-                    <span className="material-symbols-outlined text-[22px]">chevron_left</span>
-                  </button>
-                )}
-
-                {/* Right Arrow Button */}
-                {selectedProject.galleryImages.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setActiveModalImg((prev) => (prev < selectedProject.galleryImages.length - 1 ? prev + 1 : 0));
-                    }}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-none bg-black/70 hover:bg-[#5d371f] text-white flex items-center justify-center transition-all cursor-pointer shadow-lg backdrop-blur-sm border border-white/20"
-                    aria-label="Ảnh tiếp theo"
-                  >
-                    <span className="material-symbols-outlined text-[22px]">chevron_right</span>
-                  </button>
-                )}
-              </div>
-
-              {/* Dải Thumbnails ngang căn giữa */}
-              {selectedProject.galleryImages.length > 1 && (
-                <div className="h-18 p-2 bg-[#0c0908] border-t border-white/10 flex items-center justify-center gap-2.5 shrink-0">
-                  {selectedProject.galleryImages.map((imgUrl, i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => setActiveModalImg(i)}
-                      className={`h-full aspect-[16/10] overflow-hidden rounded-none border transition-all cursor-pointer relative shrink-0 ${activeModalImg === i
-                          ? 'border-[#c5a880] ring-2 ring-[#c5a880]/80 opacity-100 scale-105'
-                          : 'border-white/20 opacity-55 hover:opacity-90 hover:border-white/50'
-                        }`}
-                    >
-                      <img alt={`Góc chụp ${i + 1}`} className="w-full h-full object-cover" src={imgUrl} />
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* CỘT PHẢI (42%): THÔNG TIN DỰ ÁN CHI TIẾT */}
-            <div className="md:w-[42%] lg:w-[40%] h-full min-h-0 flex flex-col bg-[#fff8f5] border-t md:border-t-0 md:border-l border-[#ebdcd2] overflow-hidden">
-              {/* Header Cột Phải */}
-              <div className="px-5 py-4 border-b border-[#ebdcd2] bg-white shrink-0 pr-12">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="font-mono text-[10px] px-2 py-0.5 rounded-none bg-[#5d371f]/10 text-[#5d371f] font-bold">
-                    {selectedProject.code}
-                  </span>
-                  <span className="text-[10px] font-semibold text-[#83746c] uppercase tracking-wider truncate">
-                    {selectedProject.style}
-                  </span>
-                </div>
-                <h3 className="font-sans text-lg sm:text-xl text-[#1f1b19] font-semibold leading-snug line-clamp-1">
-                  {selectedProject.title}
-                </h3>
-                <div className="flex items-center gap-1.5 text-xs text-[#83746c] mt-0.5">
-                  <EnvironmentOutlined className="text-[#5d371f]" />
-                  <span className="truncate">{selectedProject.location}</span>
-                </div>
-              </div>
-
-              {/* Thân Cột Phải - Cuộn nội dung thông số & mô tả */}
-              <div className="p-4 sm:p-5 overflow-y-auto flex-1 min-h-0 space-y-4">
-                {/* Grid 4 thông số cốt lõi */}
-                <div className="grid grid-cols-2 gap-2 p-3 bg-[#f5ece8] border border-[#d5c3ba]/60 rounded-none text-xs">
-                  <div>
-                    <span className="block text-[10px] text-[#83746c]">Diện tích:</span>
-                    <strong className="text-[#1f1b19] font-mono text-xs">{selectedProject.area}</strong>
-                  </div>
-                  <div>
-                    <span className="block text-[10px] text-[#83746c]">Bàn giao:</span>
-                    <strong className="text-[#1f1b19] text-xs">{selectedProject.year.replace('Bàn giao ', '')}</strong>
-                  </div>
-                  <div className="col-span-2 pt-1.5 border-t border-[#ebdcd2]">
-                    <span className="block text-[10px] text-[#83746c]">Chất liệu chủ đạo:</span>
-                    <strong className="text-[#5d371f] font-medium">{selectedProject.woodType}</strong>
-                  </div>
-                </div>
-
-                {/* Ý tưởng kiến trúc */}
-                <div>
-                  <h4 className="text-[11px] font-bold text-[#1f1b19] uppercase tracking-wider mb-1.5">
-                    Ý Tưởng Kiến Trúc &amp; Không Gian
-                  </h4>
-                  <p className="text-xs text-[#51443d] leading-relaxed">
-                    {selectedProject.description}
-                  </p>
-                </div>
-
-                {/* Hạng mục chế tác tiêu biểu */}
-                <div>
-                  <h4 className="text-[11px] font-bold text-[#1f1b19] uppercase tracking-wider mb-1.5">
-                    Hạng Mục Chế Tác Tiêu Biểu
-                  </h4>
-                  <ul className="space-y-1.5 text-xs text-[#51443d]">
-                    {selectedProject.highlights.map((hl, idx) => (
-                      <li key={idx} className="flex items-start gap-2">
-                        <span className="w-1.5 h-1.5 rounded-none bg-[#5d371f] mt-1.5 shrink-0" />
-                        <span>{hl}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                {/* Quy mô chế tác */}
-                <div className="p-2.5 bg-white border border-[#ebdcd2] rounded-none text-xs">
-                  <span className="text-[#83746c] block text-[10px]">Phạm vi thực hiện:</span>
-                  <strong className="text-[#1f1b19] font-medium mt-0.5 block">{selectedProject.scope}</strong>
-                </div>
-              </div>
-
-              {/* Footer Cột Phải - Các nút liên hệ & tư vấn */}
-              <div className="p-3.5 sm:p-4 bg-white border-t border-[#ebdcd2] flex flex-col gap-2 shrink-0">
-                <a
-                  href={`tel:${rawPhone}`}
-                  className="w-full py-2.5 bg-[#5d371f] hover:bg-[#784e34] text-white text-xs font-semibold text-center rounded-none shadow-sm transition-colors flex items-center justify-center gap-2 no-underline"
-                >
-                  <PhoneOutlined />
-                  <span suppressHydrationWarning>Tư vấn thi công: {displayPhone}</span>
-                </a>
-                <a
-                  href={zaloUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full py-2 bg-[#f5ece8] hover:bg-[#ede0d8] text-[#5d371f] text-xs font-semibold text-center rounded-none border border-[#d5c3ba] transition-colors flex items-center justify-center gap-2 no-underline"
-                >
-                  <span>Gửi bản vẽ nhận 3D &amp; Báo giá</span>
-                </a>
-              </div>
-            </div>
-          </div>
-        )}
-      </Modal>
     </section>
   );
 }

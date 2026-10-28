@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo, Suspense } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import {
   ADMIN_STORAGE_KEYS,
@@ -18,7 +18,6 @@ import {
   Badge,
   Dropdown,
   Space,
-  Avatar,
   Button,
 } from 'antd';
 import type { MenuProps } from 'antd';
@@ -29,6 +28,24 @@ import {
   EllipsisOutlined,
   PrinterOutlined,
   ShopOutlined,
+  MenuOutlined,
+  DownOutlined,
+  PieChartOutlined,
+  InboxOutlined,
+  TagsOutlined,
+  AppstoreOutlined,
+  ShoppingCartOutlined,
+  FolderOutlined,
+  TeamOutlined,
+  BankOutlined,
+  RightOutlined,
+  RollbackOutlined,
+  FileTextOutlined,
+  CreditCardOutlined,
+  SafetyCertificateOutlined,
+  EnvironmentOutlined,
+  IdcardOutlined,
+  LeftOutlined,
 } from '@ant-design/icons';
 const TabLoadingSkeleton = () => (
   <div className="w-full min-h-[420px] flex items-center justify-center bg-white/40 backdrop-blur-sm rounded-xl border border-[#eae1dd]/60 p-8 shadow-sm">
@@ -113,13 +130,42 @@ import {
 
 const { Header, Content } = Layout;
 
+export type AdminNavTabKey =
+  | 'overview'
+  | 'orders'
+  | 'inventory'
+  | 'categories'
+  | 'workshop'
+  | 'customers'
+  | 'suppliers'
+  | 'branches'
+  | 'settings'
+  | 'functions';
+
+export interface AdminFunctionItem {
+  key: string;
+  tab: AdminNavTabKey;
+  subTab?: string;
+  settingsTab?: 'company' | 'payment' | 'print-templates' | 'branches' | 'warehouses' | 'employees' | 'permissions';
+  label: string;
+  desc: string;
+  icon: React.ReactNode;
+  bg: string;
+  border: string;
+}
+
 function AdminPageContent({
   initialTab = 'overview',
+  initialSubTab,
+  initialSettingsTab,
 }: {
-  initialTab?: 'overview' | 'orders' | 'inventory' | 'categories' | 'workshop' | 'customers' | 'suppliers' | 'branches' | 'settings';
+  initialTab?: AdminNavTabKey;
+  initialSubTab?: string;
+  initialSettingsTab?: string;
 }) {
   const { message, notification } = App.useApp();
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const { user, isLoading, logout, hasPermission, hasAnyPermission } = useAuth();
 
@@ -172,24 +218,65 @@ function AdminPageContent({
   }, [hasAnyPermission]);
 
   const urlTab = searchParams.get('tab');
-  const validUrlTab = (urlTab && ['overview', 'orders', 'inventory', 'categories', 'workshop', 'customers', 'suppliers', 'branches', 'settings'].includes(urlTab))
-    ? (urlTab as 'overview' | 'orders' | 'inventory' | 'categories' | 'workshop' | 'customers' | 'suppliers' | 'branches' | 'settings')
+  const validUrlTab = (urlTab && ['overview', 'orders', 'inventory', 'categories', 'workshop', 'customers', 'suppliers', 'branches', 'settings', 'functions'].includes(urlTab))
+    ? (urlTab as AdminNavTabKey)
     : null;
 
-  const [activeNavState, setActiveNavState] = useState<'overview' | 'orders' | 'inventory' | 'categories' | 'workshop' | 'customers' | 'suppliers' | 'branches' | 'settings' | null>(validUrlTab);
+  const initialNavTab = useMemo<AdminNavTabKey>(() => {
+    if (typeof window !== 'undefined') {
+      const p = window.location.pathname;
+      const sp = new URLSearchParams(window.location.search);
+      const tabParam = sp.get('tab');
+      if (tabParam && ['overview', 'orders', 'inventory', 'categories', 'workshop', 'customers', 'suppliers', 'branches', 'settings', 'functions'].includes(tabParam)) {
+        return tabParam as AdminNavTabKey;
+      }
+      if (p.includes('/admin/orders')) return 'orders';
+      if (p.includes('/admin/inventory')) return 'inventory';
+      if (p.includes('/admin/categories')) return 'categories';
+      if (p.includes('/admin/imports') || p.includes('/admin/returns') || p.includes('/admin/stocktake') || p.includes('/admin/workshop')) return 'workshop';
+      if (p.includes('/admin/branches') || p.includes('/admin/settings') || p.includes('/admin/employees') || p.includes('/admin/warehouses')) return 'settings';
+      if (p.includes('/admin/customers')) return 'customers';
+      if (p.includes('/admin/suppliers')) return 'suppliers';
+      if (p === '/admin' || p === '/admin/') return 'overview';
+    }
+    return validUrlTab || initialTab;
+  }, [validUrlTab, initialTab]);
+
+  const [activeNavState, setActiveNavState] = useState<AdminNavTabKey | null>(initialNavTab);
+
+  const initialWorkshopSubTab = useMemo<string>(() => {
+    if (typeof window !== 'undefined') {
+      const p = window.location.pathname;
+      if (p.includes('/admin/imports')) return 'imports';
+      if (p.includes('/admin/returns')) return 'returns';
+      if (p.includes('/admin/stocktake')) return 'stocktake';
+    }
+    return initialSubTab || searchParams.get('subTab') || 'imports';
+  }, [initialSubTab, searchParams]);
+
+  const [workshopSubTabState, setWorkshopSubTabState] = useState<string | null>(initialWorkshopSubTab);
   const [targetProductSearch, setTargetProductSearch] = useState<string | null>(searchParams.get('search') || searchParams.get('productSearch') || null);
   const [targetCreateImportProduct, setTargetCreateImportProduct] = useState<FeaturedCatalogProduct | null>(null);
 
-  const activeNav = activeNavState || validUrlTab || initialTab;
+  const activeNav = activeNavState || initialNavTab;
 
   // Auto-switch to first accessible tab if current tab is forbidden for role
   useEffect(() => {
     if (!mounted || !user) return;
+    if (user.roleCode === 'SUPER_ADMIN' || user.permissions?.includes('*')) return;
+    if (activeNav === 'functions') return;
+    if (activeNav === 'suppliers') {
+      const canAccessSuppliers = hasAnyPermission(['suppliers.vendors.view', 'suppliers.debt.view', 'inventory.imports.view']);
+      if (!canAccessSuppliers && accessibleNavTabs.length > 0) {
+        setActiveNavState(accessibleNavTabs[0].key as any);
+      }
+      return;
+    }
     const isCurrentAllowed = accessibleNavTabs.some((t: AdminNavTab) => t.key === activeNav);
     if (!isCurrentAllowed && accessibleNavTabs.length > 0) {
       setActiveNavState(accessibleNavTabs[0].key as any);
     }
-  }, [activeNav, accessibleNavTabs, mounted, user]);
+  }, [activeNav, accessibleNavTabs, mounted, user, hasAnyPermission]);
 
   const handleNavigateToProduct = useCallback((productCodeOrNameOrId: string) => {
     const clean = productCodeOrNameOrId.replace(/^[#]/, '').trim();
@@ -305,7 +392,7 @@ function AdminPageContent({
         try {
           localStorage.setItem('d2_selected_branch', targetBranch);
           window.dispatchEvent(new CustomEvent('branch_changed', { detail: { branchName: targetBranch } }));
-        } catch {}
+        } catch { }
       }
     }
   }, [canSwitchBranch, user?.branch, selectedGlobalBranch, branchesList]);
@@ -333,6 +420,8 @@ function AdminPageContent({
 
   useEffect(() => {
     setOrdersList(getStoredAdminData(ADMIN_STORAGE_KEYS.ORDERS, []));
+    setCategoriesList(getStoredAdminData(ADMIN_STORAGE_KEYS.CATEGORIES, []));
+    setSpacesList(getStoredAdminData(ADMIN_STORAGE_KEYS.SPACES, []));
     setEmployeesList(getStoredAdminData(ADMIN_STORAGE_KEYS.EMPLOYEES, INITIAL_EMPLOYEES));
     setCustomersList(getStoredAdminData(ADMIN_STORAGE_KEYS.CUSTOMERS, []));
     setSuppliersList(getStoredAdminData(ADMIN_STORAGE_KEYS.SUPPLIERS, []));
@@ -349,7 +438,7 @@ function AdminPageContent({
         setCustomersList(res);
         setStoredAdminData(ADMIN_STORAGE_KEYS.CUSTOMERS, res);
       }
-    }).catch(() => {});
+    }).catch(() => { });
 
     const handleBranchSync = (e: any) => {
       const branch = e?.detail?.branchName;
@@ -440,29 +529,37 @@ function AdminPageContent({
     // Fetch categories directly from Backend API (Real Data)
     const loadCategories = async () => {
       try {
-        const categories = await categoryApi.getCategories({ forceRefresh: true });
-        if (categories && Array.isArray(categories)) {
+        const categories = await categoryApi.getCategories();
+        if (categories && Array.isArray(categories) && categories.length > 0) {
           setCategoriesList(categories);
+          setStoredAdminData(ADMIN_STORAGE_KEYS.CATEGORIES, categories);
           return;
         }
       } catch (err) {
-        console.warn('Could not fetch categories from API:', err);
+        console.warn('Could not fetch categories from API, using fallback:', err);
       }
-      setCategoriesList([]);
+      const stored = getStoredAdminData<AdminCategory[]>(ADMIN_STORAGE_KEYS.CATEGORIES, []);
+      if (stored && stored.length > 0) {
+        setCategoriesList(stored);
+      }
     };
 
     // Fetch spaces directly from Backend API (Real Data)
     const loadSpaces = async () => {
       try {
         const spaces = await spaceApi.getSpaces();
-        if (spaces && Array.isArray(spaces)) {
+        if (spaces && Array.isArray(spaces) && spaces.length > 0) {
           setSpacesList(spaces);
+          setStoredAdminData(ADMIN_STORAGE_KEYS.SPACES, spaces);
           return;
         }
       } catch (err) {
-        console.warn('Could not fetch spaces from API:', err);
+        console.warn('Could not fetch spaces from API, using fallback:', err);
       }
-      setSpacesList([]);
+      const stored = getStoredAdminData<AdminSpace[]>(ADMIN_STORAGE_KEYS.SPACES, []);
+      if (stored && stored.length > 0) {
+        setSpacesList(stored);
+      }
     };
 
     // Fetch suppliers directly from Backend API (Real Data)
@@ -653,8 +750,8 @@ function AdminPageContent({
           // Tải lại danh sách đơn hàng ngay lập tức
           orderApi.getOrders({ bypassCache: true }).then((fresh) => {
             if (Array.isArray(fresh)) setOrdersList(fresh.map(normalizeOrderRow));
-          }).catch(() => {});
-        } catch {}
+          }).catch(() => { });
+        } catch { }
       }
     };
     window.addEventListener('storage', handleStorageEvent);
@@ -664,7 +761,7 @@ function AdminPageContent({
         notifyNewOrderArrival(e.detail);
         orderApi.getOrders({ bypassCache: true }).then((fresh) => {
           if (Array.isArray(fresh)) setOrdersList(fresh.map(normalizeOrderRow));
-        }).catch(() => {});
+        }).catch(() => { });
       }
     };
     window.addEventListener('d2_new_order_placed', handleCustomOrderEvent);
@@ -725,16 +822,17 @@ function AdminPageContent({
   // Settings Sub-tab state
   const urlSettingsTab = searchParams.get('settingsTab');
   const validSettingsTab = (urlSettingsTab && ['store', 'company', 'payment', 'print-templates', 'branches', 'warehouses', 'roles', 'users', 'employees', 'permissions'].includes(urlSettingsTab))
-    ? (urlSettingsTab as any)
+    ? (urlSettingsTab === 'roles' ? 'permissions' : urlSettingsTab === 'users' ? 'employees' : urlSettingsTab === 'store' ? 'company' : urlSettingsTab as any)
     : null;
-  const [settingsActiveTabState, setSettingsActiveTabState] = useState<string | null>(validSettingsTab);
-  const settingsActiveTab = settingsActiveTabState || validSettingsTab || 'company';
+  const [settingsActiveTabState, setSettingsActiveTabState] = useState<string | null>(initialSettingsTab || validSettingsTab);
+  const settingsActiveTab = settingsActiveTabState || initialSettingsTab || validSettingsTab || 'company';
   const setSettingsActiveTab = (tab: string) => {
-    setSettingsActiveTabState(tab);
+    const normalized = tab === 'roles' ? 'permissions' : tab === 'users' ? 'employees' : tab === 'store' ? 'company' : tab;
+    setSettingsActiveTabState(normalized);
     if (typeof window !== 'undefined') {
-      localStorage.setItem('admin_settings_tab', tab);
+      localStorage.setItem('admin_settings_tab', normalized);
       const url = new URL(window.location.href);
-      url.searchParams.set('settingsTab', tab);
+      url.searchParams.set('settingsTab', normalized);
       window.history.replaceState({}, '', url.toString());
     }
   };
@@ -747,32 +845,91 @@ function AdminPageContent({
   }, [selectedGlobalBranch, mounted]);
 
   useEffect(() => {
-    if (validUrlTab) {
-      setActiveNavState(validUrlTab);
-    } else if (initialTab) {
-      setActiveNavState(initialTab);
+    if (initialSubTab) {
+      setWorkshopSubTabState(initialSubTab);
     }
-  }, [validUrlTab, initialTab]);
+  }, [initialSubTab]);
+
+  useEffect(() => {
+    if (initialSettingsTab) {
+      const normalized = initialSettingsTab === 'roles' ? 'permissions' : initialSettingsTab === 'users' ? 'employees' : initialSettingsTab === 'store' ? 'company' : initialSettingsTab;
+      setSettingsActiveTabState(normalized);
+    }
+  }, [initialSettingsTab]);
+
+  useEffect(() => {
+    const sTab = searchParams.get('settingsTab');
+    if (sTab) {
+      const normalized = sTab === 'roles' ? 'permissions' : sTab === 'users' ? 'employees' : sTab === 'store' ? 'company' : sTab;
+      if (['company', 'payment', 'print-templates', 'branches', 'warehouses', 'employees', 'permissions'].includes(normalized)) {
+        setSettingsActiveTabState(normalized);
+      }
+    }
+  }, [searchParams]);
 
   // Hỗ trợ nút Back/Forward trên trình duyệt để chuyển tab ngay lập tức mà không reload trang
   useEffect(() => {
     const handlePopState = () => {
       if (typeof window === 'undefined') return;
-      const pathname = window.location.pathname;
+      const p = window.location.pathname;
       const sp = new URLSearchParams(window.location.search);
       const tabParam = sp.get('tab');
-      if (tabParam && ['overview', 'orders', 'inventory', 'categories', 'workshop', 'customers', 'suppliers', 'branches', 'settings'].includes(tabParam)) {
+      if (tabParam && ['overview', 'orders', 'inventory', 'categories', 'workshop', 'customers', 'suppliers', 'branches', 'settings', 'functions'].includes(tabParam)) {
         setActiveNavState(tabParam as any);
+        const st = sp.get('settingsTab');
+        if (st) setSettingsActiveTabState(st === 'roles' ? 'permissions' : st === 'users' ? 'employees' : st === 'store' ? 'company' : st);
         return;
       }
-      if (pathname.includes('/admin/orders')) setActiveNavState('orders');
-      else if (pathname.includes('/admin/inventory')) setActiveNavState('inventory');
-      else if (pathname.includes('/admin/categories')) setActiveNavState('categories');
-      else if (pathname.includes('/admin/workshop')) setActiveNavState('workshop');
-      else if (pathname.includes('/admin/customers')) setActiveNavState('customers');
-      else if (pathname.includes('/admin/suppliers')) setActiveNavState('suppliers');
-      else if (pathname.includes('/admin/settings')) setActiveNavState('settings');
-      else if (pathname === '/admin' || pathname === '/admin/') setActiveNavState('overview');
+      if (p.includes('/admin/orders')) setActiveNavState('orders');
+      else if (p.includes('/admin/inventory')) setActiveNavState('inventory');
+      else if (p.includes('/admin/categories')) setActiveNavState('categories');
+      else if (p.includes('/admin/imports')) {
+        setActiveNavState('workshop');
+        setWorkshopSubTabState('imports');
+      }
+      else if (p.includes('/admin/returns')) {
+        setActiveNavState('workshop');
+        setWorkshopSubTabState('returns');
+      }
+      else if (p.includes('/admin/stocktake')) {
+        setActiveNavState('workshop');
+        setWorkshopSubTabState('stocktake');
+      }
+      else if (p.includes('/admin/workshop')) {
+        const sub = sp.get('subTab');
+        if (sub === 'suppliers') {
+          setActiveNavState('suppliers');
+        } else {
+          setActiveNavState('workshop');
+          if (sub) setWorkshopSubTabState(sub);
+        }
+      }
+      else if (p.includes('/admin/branches')) {
+        setActiveNavState('settings');
+        setSettingsActiveTabState('branches');
+      }
+      else if (p.includes('/admin/employees')) {
+        setActiveNavState('settings');
+        setSettingsActiveTabState('employees');
+      }
+      else if (p.includes('/admin/warehouses')) {
+        setActiveNavState('settings');
+        setSettingsActiveTabState('warehouses');
+      }
+      else if (p.includes('/admin/customers')) setActiveNavState('customers');
+      else if (p.includes('/admin/suppliers')) setActiveNavState('suppliers');
+      else if (p.includes('/admin/settings')) {
+        setActiveNavState('settings');
+        const st = sp.get('settingsTab');
+        if (st) setSettingsActiveTabState(st === 'roles' ? 'permissions' : st === 'users' ? 'employees' : st === 'store' ? 'company' : st);
+      }
+      else if (p === '/admin' || p === '/admin/') {
+        if (tabParam === 'functions') {
+          setActiveNavState('functions');
+        } else {
+          setActiveNavState('overview');
+        }
+      }
     };
 
     window.addEventListener('popstate', handlePopState);
@@ -780,29 +937,60 @@ function AdminPageContent({
   }, []);
 
   const handleNavChange = (
-    tab: 'overview' | 'orders' | 'inventory' | 'categories' | 'workshop' | 'customers' | 'suppliers' | 'branches' | 'settings'
+    tab: 'overview' | 'orders' | 'inventory' | 'categories' | 'workshop' | 'customers' | 'suppliers' | 'branches' | 'settings' | 'functions',
+    subTab?: string,
+    settingsTab?: 'company' | 'payment' | 'print-templates' | 'branches' | 'warehouses' | 'employees' | 'permissions' | string
   ) => {
     const targetTab = tab === 'branches' ? 'settings' : tab;
     setActiveNavState(targetTab);
+    if (tab === 'branches' || settingsTab === 'branches') {
+      setSettingsActiveTabState('branches');
+    } else if (settingsTab) {
+      const normalized = settingsTab === 'roles' ? 'permissions' : settingsTab === 'users' ? 'employees' : settingsTab === 'store' ? 'company' : settingsTab;
+      setSettingsActiveTabState(normalized);
+    }
+    if (subTab) {
+      setWorkshopSubTabState(subTab);
+    } else if (tab === 'workshop') {
+      setWorkshopSubTabState('imports');
+    }
 
     if (typeof window !== 'undefined') {
       localStorage.setItem('admin_last_tab', targetTab);
+      if (tab === 'branches' || settingsTab === 'branches') {
+        localStorage.setItem('admin_settings_tab', 'branches');
+      } else if (settingsTab) {
+        const normalized = settingsTab === 'roles' ? 'permissions' : settingsTab === 'users' ? 'employees' : settingsTab === 'store' ? 'company' : settingsTab;
+        localStorage.setItem('admin_settings_tab', normalized);
+      }
     }
 
-    const routeMap: Record<string, string> = {
-      overview: '/admin',
-      orders: '/admin/orders',
-      inventory: '/admin/inventory',
-      categories: '/admin/categories',
-      workshop: '/admin/workshop',
-      customers: '/admin/customers',
-      suppliers: '/admin/workshop?subTab=suppliers',
-      settings: tab === 'branches' ? '/admin/settings?settingsTab=branches' : '/admin/settings',
-    };
+    let targetUrl = '/admin';
+    if (tab === 'branches' || (targetTab === 'settings' && settingsTab === 'branches')) {
+      targetUrl = '/admin/branches';
+    } else if (targetTab === 'settings' && settingsTab === 'employees') {
+      targetUrl = '/admin/employees';
+    } else if (targetTab === 'settings' && settingsTab === 'warehouses') {
+      targetUrl = '/admin/warehouses';
+    } else if (targetTab === 'workshop') {
+      const activeSub = subTab || 'imports';
+      if (activeSub === 'imports') targetUrl = '/admin/imports';
+      else if (activeSub === 'returns') targetUrl = '/admin/returns';
+      else if (activeSub === 'stocktake') targetUrl = '/admin/stocktake';
+      else targetUrl = `/admin/workshop?subTab=${activeSub}`;
+    } else if (targetTab === 'overview') {
+      targetUrl = '/admin';
+    } else if (targetTab === 'functions') {
+      targetUrl = '/admin?tab=functions';
+    } else if (targetTab === 'settings') {
+      const activeSt = settingsTab || settingsActiveTab || 'company';
+      targetUrl = `/admin/settings?settingsTab=${activeSt}`;
+    } else {
+      targetUrl = `/admin/${targetTab}`;
+    }
 
-    const targetUrl = routeMap[targetTab] || `/admin?tab=${targetTab}`;
     if (typeof window !== 'undefined') {
-      window.history.pushState({ tab: targetTab }, '', targetUrl);
+      window.history.pushState({ tab: targetTab, subTab, settingsTab }, '', targetUrl);
     }
   };
 
@@ -834,6 +1022,203 @@ function AdminPageContent({
     },
   ];
 
+  const functionGroups: { title: string; items: AdminFunctionItem[] }[] = useMemo(() => [
+    {
+      title: 'Kinh doanh & Bán hàng',
+      items: [
+        {
+          key: 'overview',
+          tab: 'overview' as const,
+          label: 'Tổng quan',
+          desc: 'Báo cáo doanh thu',
+          icon: <PieChartOutlined className="text-xl" />,
+          bg: 'bg-[#f5ece8] text-[#784e34]',
+          border: '',
+        },
+        {
+          key: 'orders',
+          tab: 'orders' as const,
+          label: 'Đơn hàng',
+          desc: 'Quản lý đơn hàng',
+          icon: <ShoppingCartOutlined className="text-xl" />,
+          bg: 'bg-[#f5ece8] text-[#784e34]',
+          border: '',
+        },
+        {
+          key: 'inventory',
+          tab: 'inventory' as const,
+          label: 'Sản phẩm',
+          desc: 'Hàng hóa & bảng giá',
+          icon: <TagsOutlined className="text-xl" />,
+          bg: 'bg-[#f5ece8] text-[#784e34]',
+          border: '',
+        },
+        {
+          key: 'categories',
+          tab: 'categories' as const,
+          label: 'Danh mục',
+          desc: 'Phân loại sản phẩm',
+          icon: <FolderOutlined className="text-xl" />,
+          bg: 'bg-[#f5ece8] text-[#784e34]',
+          border: '',
+        },
+      ],
+    },
+    {
+      title: 'Kho vận & Đối tác',
+      items: [
+        {
+          key: 'imports',
+          tab: 'workshop' as const,
+          subTab: 'imports',
+          label: 'Nhập hàng',
+          desc: 'Phiếu nhập kho',
+          icon: <InboxOutlined className="text-xl" />,
+          bg: 'bg-[#f5ece8] text-[#784e34]',
+          border: '',
+        },
+        {
+          key: 'returns',
+          tab: 'workshop' as const,
+          subTab: 'returns',
+          label: 'Trả hàng',
+          desc: 'Xuất hoàn trả NCC',
+          icon: <RollbackOutlined className="text-xl" />,
+          bg: 'bg-[#f5ece8] text-[#784e34]',
+          border: '',
+        },
+        {
+          key: 'stocktake',
+          tab: 'workshop' as const,
+          subTab: 'stocktake',
+          label: 'Kiểm kho',
+          desc: 'Kiểm kê định kỳ',
+          icon: <FileTextOutlined className="text-xl" />,
+          bg: 'bg-[#f5ece8] text-[#784e34]',
+          border: '',
+        },
+        {
+          key: 'suppliers',
+          tab: 'suppliers' as const,
+          label: 'Nhà cung cấp',
+          desc: 'Hồ sơ đối tác & nợ',
+          icon: <ShopOutlined className="text-xl" />,
+          bg: 'bg-[#f5ece8] text-[#784e34]',
+          border: '',
+        },
+      ],
+    },
+    {
+      title: 'Khách hàng & Cơ cấu',
+      items: [
+        {
+          key: 'customers',
+          tab: 'customers' as const,
+          label: 'Khách hàng',
+          desc: 'Hồ sơ khách hàng',
+          icon: <TeamOutlined className="text-xl" />,
+          bg: 'bg-[#f5ece8] text-[#784e34]',
+          border: '',
+        },
+        {
+          key: 'branches',
+          tab: 'settings' as const,
+          settingsTab: 'branches',
+          label: 'Chi nhánh',
+          desc: 'Cơ sở & chi nhánh',
+          icon: <EnvironmentOutlined className="text-xl" />,
+          bg: 'bg-[#f5ece8] text-[#784e34]',
+          border: '',
+        },
+        {
+          key: 'warehouses',
+          tab: 'settings' as const,
+          settingsTab: 'warehouses',
+          label: 'Kho bãi',
+          desc: 'Điểm lưu kho',
+          icon: <BankOutlined className="text-xl" />,
+          bg: 'bg-[#f5ece8] text-[#784e34]',
+          border: '',
+        },
+      ],
+    },
+    {
+      title: 'Thiết lập & Cài đặt hệ thống',
+      items: [
+        {
+          key: 'company',
+          tab: 'settings' as const,
+          settingsTab: 'company',
+          label: 'Doanh nghiệp',
+          desc: 'Thông tin & thương hiệu',
+          icon: <IdcardOutlined className="text-xl" />,
+          bg: 'bg-[#f5ece8] text-[#784e34]',
+          border: '',
+        },
+        {
+          key: 'payment',
+          tab: 'settings' as const,
+          settingsTab: 'payment',
+          label: 'Thanh toán & QR',
+          desc: 'Tài khoản & VietQR',
+          icon: <CreditCardOutlined className="text-xl" />,
+          bg: 'bg-[#f5ece8] text-[#784e34]',
+          border: '',
+        },
+        {
+          key: 'print-templates',
+          tab: 'settings' as const,
+          settingsTab: 'print-templates',
+          label: 'Mẫu phiếu in',
+          desc: 'Khổ giấy & bill',
+          icon: <PrinterOutlined className="text-xl" />,
+          bg: 'bg-[#f5ece8] text-[#784e34]',
+          border: '',
+        },
+        {
+          key: 'employees',
+          tab: 'settings' as const,
+          settingsTab: 'employees',
+          label: 'Nhân viên',
+          desc: 'Tài khoản & nhân sự',
+          icon: <TeamOutlined className="text-xl" />,
+          bg: 'bg-[#f5ece8] text-[#784e34]',
+          border: '',
+        },
+        {
+          key: 'permissions',
+          tab: 'settings' as const,
+          settingsTab: 'permissions',
+          label: 'Phân quyền',
+          desc: 'Vai trò & quyền hạn',
+          icon: <SafetyCertificateOutlined className="text-xl" />,
+          bg: 'bg-[#f5ece8] text-[#784e34]',
+          border: '',
+        },
+      ],
+    },
+  ], []);
+
+  const filteredFunctionGroups = useMemo(() => {
+    return functionGroups.map((group) => ({
+      ...group,
+      items: group.items.filter((item) => {
+        if (item.key === 'suppliers') return hasPermission('suppliers.vendors.view') || hasPermission('inventory.imports.view');
+        if (item.key === 'branches') return hasAnyPermission(['settings.branches.view', 'inventory.warehouses.view']);
+        if (item.key === 'warehouses') return hasPermission('inventory.warehouses.view');
+        if (item.key === 'company') return hasPermission('settings.brand.view');
+        if (item.key === 'payment') return hasPermission('settings.payment.view');
+        if (item.key === 'print-templates') return hasPermission('settings.print.view');
+        if (item.key === 'employees') return hasPermission('settings.employees.view');
+        if (item.key === 'permissions') return hasPermission('settings.rbac.view');
+        if (item.key === 'returns') return hasPermission('inventory.returns.view');
+        if (item.key === 'stocktake') return hasPermission('inventory.stocktake.view');
+        if (item.key === 'imports') return hasPermission('inventory.imports.view');
+        return accessibleNavTabs.some((t) => t.key === item.tab);
+      }),
+    })).filter((group) => group.items.length > 0);
+  }, [functionGroups, hasPermission, hasAnyPermission, accessibleNavTabs]);
+
   if (!mounted || isLoading || !user || user.role !== 'admin') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#fff8f5] font-sans">
@@ -846,14 +1231,24 @@ function AdminPageContent({
   }
 
   return (
-    <Layout className="min-h-screen bg-[#fff8f5] flex flex-col font-sans admin-underline-mode">
+    <Layout className="min-h-screen bg-[#fff8f5] flex flex-col font-sans admin-underline-mode overflow-x-hidden">
       <Header
-        style={{ height: '80px', lineHeight: 'normal' }}
-        className="!bg-[#fff8f5]/95 backdrop-blur-xl border-b border-[#eae1dd]/60 !px-0 flex items-center sticky top-0 z-50 shadow-[0_1px_8px_rgba(0,0,0,0.04)] !leading-none w-full shrink-0"
+        style={{ lineHeight: 'normal' }}
+        className="!h-16 sm:!h-20 !bg-[#fff8f5]/95 backdrop-blur-xl border-b border-[#eae1dd]/60 !px-0 flex items-center sticky top-0 z-50 shadow-[0_1px_8px_rgba(0,0,0,0.04)] !leading-none w-full shrink-0"
       >
-        <div className="h-20 w-full px-3 sm:px-5 lg:px-6 xl:px-8 flex items-center justify-between flex-nowrap whitespace-nowrap gap-2 sm:gap-4">
-          {/* Left: Brand + Main Nav */}
-          <div className="flex items-center gap-3 xl:gap-5 2xl:gap-6 min-w-0">
+        <div className="h-16 sm:h-20 w-full px-3 sm:px-5 lg:px-6 xl:px-8 flex items-center justify-between flex-nowrap whitespace-nowrap gap-2 sm:gap-4">
+          {/* Left: Hamburger (mobile) + Brand Logo + Desktop Nav */}
+          <div className="flex items-center gap-2 sm:gap-3 xl:gap-5 2xl:gap-6 min-w-0">
+            {/* Hamburger button for mobile (< lg) */}
+            <Button
+              type="text"
+              icon={<MenuOutlined className="text-xl text-[#51443d]" />}
+              onClick={() => handleNavChange('functions')}
+              className="lg:hidden !p-1.5 flex items-center justify-center shrink-0"
+              aria-label="Mở danh sách chức năng"
+            />
+
+            {/* Brand Logo */}
             <Link
               href="/admin"
               onClick={(e) => {
@@ -864,7 +1259,7 @@ function AdminPageContent({
             >
               <img
                 alt={storeHeaderInfo.brandName || 'Logo'}
-                className="h-14 sm:h-16 lg:h-[66px] w-auto max-h-[72px] object-contain transition-transform group-hover:scale-105"
+                className="h-10 sm:h-14 lg:h-[66px] w-auto max-h-[72px] object-contain transition-transform group-hover:scale-105"
                 src={storeHeaderInfo.logoUrl || '/logo.png'}
               />
             </Link>
@@ -879,8 +1274,8 @@ function AdminPageContent({
                     handleNavChange(tab.key as any);
                   }}
                   className={`relative flex items-center h-20 text-[13px] 2xl:text-[13.5px] transition-all whitespace-nowrap px-1.5 2xl:px-2 cursor-pointer select-none bg-transparent border-0 outline-none ${activeNav === tab.key
-                      ? 'text-[#5d371f] font-medium after:content-[\'\'] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2.5px] after:bg-[#5d371f]'
-                      : 'text-[#51443d] hover:text-[#5d371f] font-normal after:content-[\'\'] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2.5px] after:bg-transparent hover:after:bg-[#5d371f]/30'
+                    ? 'text-[#5d371f] font-medium after:content-[\'\'] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2.5px] after:bg-[#5d371f]'
+                    : 'text-[#51443d] hover:text-[#5d371f] font-normal after:content-[\'\'] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2.5px] after:bg-transparent hover:after:bg-[#5d371f]/30'
                     }`}
                 >
                   <span>{tab.label}</span>
@@ -910,8 +1305,8 @@ function AdminPageContent({
                     handleNavChange(tab.key as any);
                   }}
                   className={`relative flex items-center h-20 text-[12.5px] transition-all whitespace-nowrap px-1.5 cursor-pointer select-none bg-transparent border-0 outline-none ${activeNav === tab.key
-                      ? 'text-[#5d371f] font-medium after:content-[\'\'] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2.5px] after:bg-[#5d371f]'
-                      : 'text-[#51443d] hover:text-[#5d371f] font-normal after:content-[\'\'] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2.5px] after:bg-transparent hover:after:bg-[#5d371f]/30'
+                    ? 'text-[#5d371f] font-medium after:content-[\'\'] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2.5px] after:bg-[#5d371f]'
+                    : 'text-[#51443d] hover:text-[#5d371f] font-normal after:content-[\'\'] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2.5px] after:bg-transparent hover:after:bg-[#5d371f]/30'
                     }`}
                 >
                   <span>{tab.label}</span>
@@ -937,11 +1332,10 @@ function AdminPageContent({
                 >
                   <button
                     type="button"
-                    className={`relative flex items-center gap-1 h-20 text-[12px] transition-all whitespace-nowrap px-1 cursor-pointer select-none bg-transparent border-0 outline-none ${
-                      accessibleNavTabs.slice(5).some((t) => t.key === activeNav)
+                    className={`relative flex items-center gap-1 h-20 text-[12px] transition-all whitespace-nowrap px-1 cursor-pointer select-none bg-transparent border-0 outline-none ${accessibleNavTabs.slice(5).some((t) => t.key === activeNav)
                         ? 'text-[#5d371f] font-medium after:content-[\'\'] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2.5px] after:bg-[#5d371f]'
                         : 'text-[#51443d] hover:text-[#5d371f] font-normal after:content-[\'\'] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2.5px] after:bg-transparent hover:after:bg-[#5d371f]/30'
-                    }`}
+                      }`}
                   >
                     <span>{accessibleNavTabs.slice(5).find((t) => t.key === activeNav)?.label || 'Thêm'}</span>
                     <EllipsisOutlined className="text-base" />
@@ -960,10 +1354,10 @@ function AdminPageContent({
             </nav>
           </div>
 
-          {/* Right: Branch Selector, Notifications & Profile */}
-          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
-            {/* Global Branch Selector Dropdown */}
-            <div className="flex items-center shrink-0">
+          {/* Right: Branch Selector (Desktop), Notifications & Profile */}
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            {/* Global Branch Selector Dropdown (Desktop only, mobile has dedicated full-width row below) */}
+            <div className="hidden lg:flex items-center shrink-0">
               <Select
                 value={selectedGlobalBranch || 'all'}
                 onChange={(val) => {
@@ -972,7 +1366,7 @@ function AdminPageContent({
                   try {
                     localStorage.setItem('d2_selected_branch', val);
                     window.dispatchEvent(new CustomEvent('branch_changed', { detail: { branchName: val } }));
-                  } catch {}
+                  } catch { }
                   message.success(`Đã chuyển cơ sở: ${val === 'all' ? 'Tất cả chi nhánh' : val}`);
                 }}
                 className="w-48 sm:w-60 xl:w-72 text-xs font-semibold"
@@ -1000,23 +1394,47 @@ function AdminPageContent({
             {/* User Profile */}
             <Dropdown menu={{ items: profileMenuItems }} placement="bottomRight" arrow trigger={['click']}>
               <div className="flex items-center gap-1.5 sm:gap-2 cursor-pointer p-1 sm:p-1.5 hover:bg-[#f5ece8] transition-colors border border-transparent hover:border-[#eae1dd] shrink-0 rounded-lg">
-                <Avatar
-                  src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80"
-                  size={32}
-                  className="border border-[#784e34] shrink-0"
-                />
                 <div className="flex flex-col justify-center text-left leading-none shrink-0">
-                  <div className="text-xs font-bold text-[#1f1b19] leading-tight max-w-[110px] truncate">{cleanAdminName}</div>
-                  <div className="text-[10px] text-[#83746c] leading-tight mt-0.5 truncate max-w-[110px]">{user?.roleName || user?.roleCode || (user?.role === 'admin' ? 'Quản trị viên' : 'Nhân viên')}</div>
+                  <div className="text-xs font-bold text-[#1f1b19] leading-tight max-w-[120px] truncate">{cleanAdminName}</div>
+                  <div className="text-[10px] text-[#83746c] leading-tight mt-0.5 truncate max-w-[120px]">{user?.roleName || user?.roleCode || (user?.role === 'admin' ? 'Quản trị viên tối cao' : 'Nhân viên')}</div>
                 </div>
+                <DownOutlined className="text-[9px] text-[#83746c] ml-0.5 shrink-0" />
               </div>
             </Dropdown>
           </div>
         </div>
       </Header>
 
+      {/* Mobile Full-Width Branch Selector Row (Matches mockup) */}
+      <div className="lg:hidden px-3.5 py-2 bg-[#fff8f5] border-b border-[#eae1dd]/60">
+        <Select
+          value={selectedGlobalBranch || 'all'}
+          onChange={(val) => {
+            setSelectedGlobalBranch(val);
+            setStoredAdminData(ADMIN_STORAGE_KEYS.SELECTED_BRANCH, val);
+            try {
+              localStorage.setItem('d2_selected_branch', val);
+              window.dispatchEvent(new CustomEvent('branch_changed', { detail: { branchName: val } }));
+            } catch { }
+            message.success(`Đã chuyển cơ sở: ${val === 'all' ? 'Tất cả chi nhánh' : val}`);
+          }}
+          className="w-full h-10 text-xs sm:text-sm font-semibold rounded-lg bg-white shadow-xs"
+          popupMatchSelectWidth={false}
+          placeholder="Chọn chi nhánh"
+          options={[
+            ...(canSwitchBranch ? [{ value: 'all', label: '🏢 Tất cả chi nhánh (Toàn bộ)' }] : []),
+            ...displayBranches.map((b) => ({
+              value: b.name,
+              label: b.name,
+            })),
+          ]}
+        />
+      </div>
+
+
+
       {/* 2. MAIN CONTENT */}
-      <Content className="p-4 sm:p-5 lg:p-6 w-full max-w-full flex-1 flex flex-col min-h-[calc(100vh-80px)]">
+      <Content className="p-3 sm:p-5 lg:p-6 w-full max-w-full overflow-x-hidden flex-1 flex flex-col min-h-[calc(100vh-80px)] pb-24 lg:pb-6">
         {activeNav === 'overview' && (
           <OverviewTab
             ordersList={ordersList}
@@ -1071,7 +1489,7 @@ function AdminPageContent({
             setSuppliersList={setSuppliersList}
             branchesList={branchesList}
             selectedGlobalBranch={selectedGlobalBranch}
-            initialSubTab={(searchParams.get('subTab') as any) || 'imports'}
+            initialSubTab={(workshopSubTabState as any) || (searchParams.get('subTab') as any) || 'imports'}
             initialImportProduct={targetCreateImportProduct}
             initialImportMode={searchParams.get('mode') === 'create' || Boolean(targetCreateImportProduct) ? 'create' : 'list'}
             onClearInitialImportProduct={() => setTargetCreateImportProduct(null)}
@@ -1108,9 +1526,190 @@ function AdminPageContent({
             selectedGlobalBranch={selectedGlobalBranch}
             activeSettingsTab={settingsActiveTab as any}
             onSettingsTabChange={(tab) => setSettingsActiveTab(tab as any)}
+            onBackToFunctions={() => handleNavChange('functions')}
           />
         )}
+
+        {/* 9. MÀN HÌNH TẤT CẢ CHỨC NĂNG (DÀNH CHO MOBILE / TABLET) */}
+        {activeNav === 'functions' && (
+          <div className="space-y-3.5 max-w-2xl mx-auto w-full animate-fadeIn pb-8">
+            {/* Header / Profile Card */}
+            <div className="bg-white rounded-2xl p-4 shadow-2xs">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-11 h-11 rounded-full bg-[#784e34] text-white flex items-center justify-center font-bold text-base shadow-xs shrink-0">
+                    {cleanAdminName.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-bold text-sm text-[#1f1b19] truncate">{cleanAdminName}</span>
+                      <span className="text-[10px] font-semibold text-[#784e34] bg-[#f5ece8] px-2 py-0.5 rounded-full">
+                        {user?.roleCode === 'SUPER_ADMIN' || user?.role === 'admin' ? 'Quản trị viên' : (user?.roleName || 'Nhân viên')}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-400 truncate mt-0.5">{user?.email || 'admin@d2luxury.vn'}</div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    logout();
+                    router.push('/login');
+                  }}
+                  className="text-rose-600 hover:text-rose-700 bg-rose-50/80 hover:bg-rose-100 border-0 px-2.5 py-1.5 rounded-xl font-medium flex items-center gap-1 cursor-pointer text-xs transition-colors shrink-0"
+                >
+                  <LogoutOutlined />
+                  <span>Đăng xuất</span>
+                </button>
+              </div>
+
+              {/* Branch indicator */}
+              <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-slate-400">Chi nhánh:</span>
+                  <span className="font-medium text-[#784e34]">
+                    {selectedGlobalBranch === 'all' ? 'Toàn bộ chi nhánh' : selectedGlobalBranch}
+                  </span>
+                </div>
+                <span className="text-[11px] text-slate-400">D2 LUXURY</span>
+              </div>
+            </div>
+
+            {/* Banner Bán hàng POS */}
+            {canAccessPOS && (
+              <Link
+                href="/"
+                style={{ backgroundColor: '#784e34', color: '#ffffff' }}
+                className="flex items-center justify-between px-4 py-3.5 rounded-2xl !bg-[#784e34] hover:!bg-[#5d371f] !text-white shadow-sm no-underline active:scale-[0.99] transition-all border-0"
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    style={{ backgroundColor: 'rgba(255, 255, 255, 0.2)' }}
+                    className="w-10 h-10 rounded-xl flex items-center justify-center text-xl !text-white shrink-0 shadow-inner"
+                  >
+                    <ShopOutlined style={{ color: '#ffffff', fontSize: '20px' }} />
+                  </div>
+                  <div>
+                    <div style={{ color: '#ffffff' }} className="font-bold text-sm !text-white">
+                      Chuyển sang Bán hàng (POS)
+                    </div>
+                    <div style={{ color: 'rgba(255, 255, 255, 0.85)' }} className="text-xs !text-white/85 mt-0.5">
+                      Tạo đơn nhanh, quét mã & thanh toán
+                    </div>
+                  </div>
+                </div>
+                <RightOutlined style={{ color: '#ffffff', fontSize: '13px' }} className="!text-white" />
+              </Link>
+            )}
+
+            {/* Categorized Function Sections - Simple & borderless */}
+            {filteredFunctionGroups.map((group) => (
+              <div key={group.title} className="bg-white rounded-2xl p-3.5 shadow-2xs space-y-2">
+                <div className="px-1 flex items-center justify-between">
+                  <span className="font-bold text-xs text-slate-500">
+                    {group.title}
+                  </span>
+                  <span className="text-[11px] text-slate-400">
+                    {group.items.length} mục
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
+                  {group.items.map((item) => {
+                    const isCurrent =
+                      activeNav === item.tab &&
+                      (item.subTab ? (workshopSubTabState || 'imports') === item.subTab : true) &&
+                      (item.settingsTab ? settingsActiveTab === item.settingsTab : true);
+
+                    return (
+                      <button
+                        key={item.key}
+                        type="button"
+                        onClick={() => handleNavChange(item.tab, item.subTab, item.settingsTab)}
+                        className={`flex flex-col items-center justify-center py-2.5 px-1 rounded-xl border-0 transition-all text-center cursor-pointer select-none active:scale-95 ${isCurrent
+                            ? 'bg-[#f5ece8]/90 text-[#784e34]'
+                            : 'bg-transparent hover:bg-[#fbf7f4] text-slate-700'
+                          }`}
+                      >
+                        <div className={`w-11 h-11 rounded-xl flex items-center justify-center mb-1.5 transition-transform ${isCurrent ? 'bg-[#ebd8ce] text-[#784e34]' : 'bg-[#f5ece8] text-[#784e34]'}`}>
+                          {item.icon}
+                        </div>
+                        <span className={`text-[11.5px] leading-tight line-clamp-1 ${isCurrent ? 'text-[#784e34] font-bold' : 'text-slate-800 font-medium'}`}>
+                          {item.label}
+                        </span>
+                        <span className="text-[10px] text-slate-400 mt-0.5 line-clamp-1">
+                          {item.desc}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </Content>
+
+      {/* Mobile Bottom Navigation Bar (Chỉ hiển thị trên Mobile < lg) */}
+      <nav
+        className="block lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/90 shadow-[0_-4px_16px_rgba(0,0,0,0.06)]"
+        style={{ paddingBottom: 'max(0.25rem, env(safe-area-inset-bottom, 0px))' }}
+      >
+        <div className="grid grid-cols-4 h-16">
+          {/* 1. Tổng quan */}
+          <button
+            type="button"
+            onClick={() => handleNavChange('overview')}
+            className={`flex flex-col items-center justify-center gap-1 select-none transition-all border-0 bg-transparent cursor-pointer active:scale-95 ${activeNav === 'overview'
+                ? 'text-[#784e34] font-bold'
+                : 'text-slate-500 hover:text-slate-800 font-medium'
+              }`}
+          >
+            <PieChartOutlined className={`text-xl transition-transform ${activeNav === 'overview' ? 'scale-110' : ''}`} />
+            <span className="text-[11px] leading-tight">Tổng quan</span>
+          </button>
+
+          {/* 2. Nhập hàng */}
+          <button
+            type="button"
+            onClick={() => handleNavChange('workshop', 'imports')}
+            className={`flex flex-col items-center justify-center gap-1 select-none transition-all border-0 bg-transparent cursor-pointer active:scale-95 ${activeNav === 'workshop' && (workshopSubTabState === 'imports' || !workshopSubTabState)
+                ? 'text-[#784e34] font-bold'
+                : 'text-slate-500 hover:text-slate-800 font-medium'
+              }`}
+          >
+            <InboxOutlined className={`text-xl transition-transform ${activeNav === 'workshop' && (workshopSubTabState === 'imports' || !workshopSubTabState) ? 'scale-110' : ''}`} />
+            <span className="text-[11px] leading-tight">Nhập hàng</span>
+          </button>
+
+          {/* 3. Sản phẩm */}
+          <button
+            type="button"
+            onClick={() => handleNavChange('inventory')}
+            className={`flex flex-col items-center justify-center gap-1 select-none transition-all border-0 bg-transparent cursor-pointer active:scale-95 ${activeNav === 'inventory'
+                ? 'text-[#784e34] font-bold'
+                : 'text-slate-500 hover:text-slate-800 font-medium'
+              }`}
+          >
+            <TagsOutlined className={`text-xl transition-transform ${activeNav === 'inventory' ? 'scale-110' : ''}`} />
+            <span className="text-[11px] leading-tight">Sản phẩm</span>
+          </button>
+
+          {/* 4. Chức năng */}
+          <button
+            type="button"
+            onClick={() => handleNavChange('functions')}
+            className={`flex flex-col items-center justify-center gap-1 select-none transition-all border-0 bg-transparent cursor-pointer active:scale-95 ${activeNav === 'functions' || (!['overview', 'inventory'].includes(activeNav || '') && !(activeNav === 'workshop' && (workshopSubTabState === 'imports' || !workshopSubTabState)))
+                ? 'text-[#784e34] font-bold'
+                : 'text-slate-500 hover:text-slate-800 font-medium'
+              }`}
+          >
+            <AppstoreOutlined className={`text-xl transition-transform ${activeNav === 'functions' || (!['overview', 'inventory'].includes(activeNav || '') && !(activeNav === 'workshop' && (workshopSubTabState === 'imports' || !workshopSubTabState))) ? 'scale-110' : ''}`} />
+            <span className="text-[11px] leading-tight">Chức năng</span>
+          </button>
+        </div>
+      </nav>
     </Layout>
   );
 }
@@ -1128,7 +1727,9 @@ const DynamicAdminPageContent = dynamic(() => Promise.resolve(AdminPageContent),
 });
 
 export default function AdminPage(props: {
-  initialTab?: 'overview' | 'orders' | 'inventory' | 'categories' | 'workshop' | 'customers' | 'suppliers' | 'branches' | 'settings';
+  initialTab?: AdminNavTabKey;
+  initialSubTab?: string;
+  initialSettingsTab?: string;
 }) {
   return (
     <Suspense

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { motion, useScroll, useTransform, useSpring } from 'framer-motion';
 import { HomeShowroom, HomeCompanyInfo } from '@/api/homeApi';
 
@@ -24,6 +24,14 @@ const DEFAULT_SHOWROOMS: HomeShowroom[] = [
 export default function ShowroomSection({ onOpenBooking, showrooms, companyInfo }: ShowroomSectionProps) {
   const displayShowrooms = showrooms && showrooms.length > 0 ? showrooms : DEFAULT_SHOWROOMS;
   const sectionRef = useRef<HTMLElement>(null);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Gắn chuyển động trực tiếp theo độ cuộn chuột (scroll-driven smooth animation)
   const { scrollYProgress } = useScroll({
@@ -45,16 +53,16 @@ export default function ShowroomSection({ onOpenBooking, showrooms, companyInfo 
   return (
     <section ref={sectionRef} id="showrooms" className="w-full py-7 md:py-9 bg-[#fbf2ee] border-b border-[#ebdcd2] overflow-hidden">
       <div className="w-full max-w-[1720px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-16">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-14 items-center">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-14 items-center">
           {/* Showroom Information (Trượt từ bên trái vào theo độ lăn chuột) */}
           <motion.div
-            style={{ x: leftX, opacity }}
-            className="lg:col-span-5 flex flex-col gap-5"
+            style={{ x: isMobile ? 0 : leftX, opacity }}
+            className="lg:col-span-5 flex flex-col gap-4 sm:gap-5"
           >
-            <span className="font-label-sm text-xs uppercase tracking-widest text-[#5d371f] font-semibold">
+            <span className="font-label-sm text-[11px] sm:text-xs uppercase tracking-widest text-[#5d371f] font-semibold">
               Không Gian Trải Nghiệm Thực Tế
             </span>
-            <h2 className="font-headline-lg text-2xl sm:text-3xl md:text-4xl text-[#1f1b19] font-normal leading-tight">
+            <h2 className="font-headline-lg text-2xl xs:text-3xl md:text-4xl text-[#1f1b19] font-normal leading-tight">
               Đến Chạm Vào Gỗ Tại {companyInfo?.brandName || 'D2 LUXURY'}
             </h2>
             <p className="font-body-md text-sm sm:text-base text-[#51443d] leading-relaxed">
@@ -116,11 +124,11 @@ export default function ShowroomSection({ onOpenBooking, showrooms, companyInfo 
 
           {/* Showroom Map & Interior Views (Trượt từ bên phải vào theo độ lăn chuột) */}
           <motion.div
-            style={{ x: rightX, opacity }}
-            className="lg:col-span-7 flex flex-col gap-4"
+            style={{ x: isMobile ? 0 : rightX, opacity }}
+            className="lg:col-span-7 flex flex-col gap-3 sm:gap-4"
           >
             <div
-              className="w-full h-72 md:h-80 rounded-none overflow-hidden shadow-md bg-cover bg-center border border-[#d5c3ba]/60 relative"
+              className="w-full h-56 sm:h-72 md:h-80 rounded-none overflow-hidden shadow-md bg-cover bg-center border border-[#d5c3ba]/60 relative"
               style={{
                 backgroundImage: `url('https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?w=800&auto=format&fit=crop&q=80')`,
               }}
@@ -131,8 +139,8 @@ export default function ShowroomSection({ onOpenBooking, showrooms, companyInfo 
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="relative h-44 rounded-none overflow-hidden shadow-sm border border-[#eae1dd]">
+            <div className="grid grid-cols-2 gap-3 sm:gap-4">
+              <div className="relative h-32 sm:h-44 rounded-none overflow-hidden shadow-sm border border-[#eae1dd]">
                 <img
                   alt="Không gian trưng bày nội thất D2 LUXURY"
                   className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
@@ -140,7 +148,7 @@ export default function ShowroomSection({ onOpenBooking, showrooms, companyInfo 
                 />
               </div>
 
-              <div className="relative h-44 rounded-none overflow-hidden shadow-sm border border-[#eae1dd]">
+              <div className="relative h-32 sm:h-44 rounded-none overflow-hidden shadow-sm border border-[#eae1dd]">
                 <img
                   alt="Không gian trưng bày nội thất D2 LUXURY"
                   className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"

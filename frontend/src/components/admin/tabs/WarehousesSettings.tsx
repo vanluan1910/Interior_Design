@@ -24,15 +24,16 @@ import {
   DeleteOutlined,
   CopyOutlined,
   EnvironmentOutlined,
-  ReloadOutlined,
   ShopOutlined,
   CrownOutlined,
   CheckCircleOutlined,
   StarFilled,
+  FilterOutlined,
 } from '@ant-design/icons';
 import {
   AdminDataTable,
   AdminFilterSidebar,
+  AdminFilterDrawer,
   AdminSidebarSummary,
   AdminFormDrawer,
   AutoCodeButton,
@@ -450,18 +451,22 @@ export function WarehousesSettings({
   const branchesWithWarehousesCount = useMemo(() => Object.keys(branchCounts).length, [branchCounts]);
   const defaultWarehouse = useMemo(() => warehousesList.find((w) => w.isDefault), [warehousesList]);
 
+  const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
+  const hasActiveWarehouseFilters = Boolean(
+    warehouseBranchFilter !== 'all' ||
+    warehouseStatusFilter !== 'all' ||
+    warehouseSearchQuery
+  );
+
   return (
     <div className="space-y-4">
       {/* 2-Column Layout: Filter Sidebar + Warehouses Table */}
       <div className="flex flex-col lg:flex-row gap-4 items-start">
         {/* Filter Sidebar */}
         <AdminFilterSidebar
+          className="hidden lg:block"
           title="Bộ lọc kho hàng"
-          hasActiveFilters={Boolean(
-            warehouseBranchFilter !== 'all' ||
-            warehouseStatusFilter !== 'all' ||
-            warehouseSearchQuery
-          )}
+          hasActiveFilters={hasActiveWarehouseFilters}
           onResetFilters={() => {
             setWarehouseSearchQuery('');
             setWarehouseBranchFilter('all');
@@ -536,24 +541,27 @@ export function WarehousesSettings({
             onSearchChange={(val) => setWarehouseSearchQuery(val)}
             searchPlaceholder="Tìm theo mã, tên, chi nhánh, địa chỉ..."
             extraHeaderActions={
-              <Space size={8}>
+              <div className="flex items-center gap-1.5">
                 <Button
-                  icon={<ReloadOutlined spin={loading} />}
-                  onClick={loadWarehousesFromApi}
-                  className="!h-8 px-2.5 rounded-lg border-slate-300 bg-white text-slate-700 text-xs shadow-xs inline-flex items-center justify-center hover:text-[#784e34]"
-                  title="Tải lại danh sách"
+                  icon={<FilterOutlined className={hasActiveWarehouseFilters ? 'text-[#784e34]' : 'text-slate-600'} />}
+                  onClick={() => setIsMobileFilterOpen(true)}
+                  className="lg:hidden !h-8 px-2 sm:px-2.5 rounded-lg border-slate-300 bg-white text-slate-700 text-xs shadow-xs inline-flex items-center justify-center gap-1 hover:text-[#784e34]"
+                  title="Mở bộ lọc"
                 >
-                  Làm mới
+                  <span>Bộ lọc</span>
+                  {hasActiveWarehouseFilters && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#784e34]" />
+                  )}
                 </Button>
                 <Button
                   icon={<DownloadOutlined />}
                   onClick={handleExportWarehousesExcel}
-                  className="!h-8 px-2.5 rounded-lg border-slate-300 bg-white text-slate-700 text-xs shadow-xs inline-flex items-center justify-center hover:text-[#784e34]"
+                  className="!h-8 px-2 sm:px-2.5 rounded-lg border-slate-300 bg-white text-slate-700 text-xs shadow-xs inline-flex items-center justify-center gap-1 hover:text-[#784e34]"
                   title="Xuất Excel danh sách kho"
                 >
-                  Xuất Excel
+                  <span className="hidden sm:inline">Xuất Excel</span>
                 </Button>
-              </Space>
+              </div>
             }
             dataSource={filteredWarehouses}
             rowKey="id"
@@ -963,6 +971,80 @@ export function WarehousesSettings({
           </div>
         </Form>
       </AdminFormDrawer>
+
+      {/* Mobile Filter Drawer */}
+      <AdminFilterDrawer
+        open={isMobileFilterOpen}
+        onClose={() => setIsMobileFilterOpen(false)}
+        title="Bộ lọc kho hàng"
+        hasActiveFilters={hasActiveWarehouseFilters}
+        onResetFilters={() => {
+          setWarehouseSearchQuery('');
+          setWarehouseBranchFilter('all');
+          setWarehouseStatusFilter('all');
+          setSelectedWarehouseKeys([]);
+        }}
+      >
+        <div className="space-y-4">
+          {/* Lọc theo Chi nhánh */}
+          <div className="space-y-1.5">
+            <label className="font-semibold text-slate-800 text-xs block">Chi nhánh trực thuộc</label>
+            <Select
+              value={warehouseBranchFilter}
+              onChange={(v) => setWarehouseBranchFilter(v)}
+              className="w-full text-xs"
+              size="middle"
+              options={[
+                { value: 'all', label: `Tất cả chi nhánh (${warehousesList.length})` },
+                ...branchesList.map((b) => ({
+                  value: b.name,
+                  label: `${b.name} (${branchCounts[b.name] || 0})`,
+                })),
+              ]}
+            />
+          </div>
+
+          {/* Trạng thái hoạt động */}
+          <div className="space-y-1.5">
+            <label className="font-semibold text-slate-800 text-xs block">Trạng thái hoạt động</label>
+            <Select
+              value={warehouseStatusFilter}
+              onChange={(v) => setWarehouseStatusFilter(v)}
+              className="w-full text-xs"
+              size="middle"
+              options={[
+                { value: 'all', label: `Tất cả trạng thái (${warehousesList.length})` },
+                { value: 'active', label: `Đang sử dụng (${activeCount})` },
+                { value: 'inactive', label: `Tạm dừng (${inactiveCount})` },
+              ]}
+            />
+          </div>
+
+          {/* Summary Card */}
+          <AdminSidebarSummary
+            title="Thống kê kho bãi"
+            className="mt-4"
+            items={[
+              { label: 'Tổng số kho (toàn hệ thống)', value: `${warehousesList.length} kho` },
+              { label: 'Đang hoạt động', value: `${activeCount} kho`, color: 'success' },
+              { label: 'Tạm dừng', value: `${inactiveCount} kho`, color: 'default' },
+              { label: 'Chi nhánh có kho', value: `${branchesWithWarehousesCount} chi nhánh`, color: 'primary' },
+              { label: 'Kho trừ tồn mặc định', value: defaultWarehouse?.name || 'Chưa thiết lập', color: defaultWarehouse ? 'warning' : 'default' },
+            ]}
+          />
+
+          <div className="pt-2">
+            <Button
+              type="primary"
+              block
+              onClick={() => setIsMobileFilterOpen(false)}
+              className="bg-[#784e34] hover:!bg-[#5d371f] font-bold h-10 rounded-lg text-sm"
+            >
+              Áp dụng bộ lọc
+            </Button>
+          </div>
+        </div>
+      </AdminFilterDrawer>
     </div>
   );
 }

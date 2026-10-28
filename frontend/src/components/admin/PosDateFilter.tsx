@@ -1,11 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DatePicker, Select } from 'antd';
-import { CalendarOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
-
-const { RangePicker } = DatePicker;
 
 export type DateRangeValue = [Dayjs | null, Dayjs | null] | null;
 
@@ -50,7 +47,7 @@ export const calculatePresetRange = (preset: string): DateRangeValue => {
  * Supports "DD/MM/YYYY HH:mm", "DD/MM/YYYY", "YYYY-MM-DD", etc.
  */
 export const checkDateInRange = (dateStr?: string, dateRange?: DateRangeValue): boolean => {
-  if (!dateRange || !dateRange[0] || !dateRange[1]) return true;
+  if (!dateRange || (!dateRange[0] && !dateRange[1])) return true;
   if (!dateStr) return false;
 
   let target: Dayjs | null = null;
@@ -71,12 +68,22 @@ export const checkDateInRange = (dateStr?: string, dateRange?: DateRangeValue): 
 
   if (!target || !target.isValid()) return true;
 
-  const start = dateRange[0].startOf('day');
-  const end = dateRange[1].endOf('day');
-  return (
-    (target.isAfter(start) || target.isSame(start, 'day')) &&
-    (target.isBefore(end) || target.isSame(end, 'day'))
-  );
+  const start = dateRange[0] ? dateRange[0].startOf('day') : null;
+  const end = dateRange[1] ? dateRange[1].endOf('day') : null;
+
+  if (start && end) {
+    return (
+      (target.isAfter(start) || target.isSame(start, 'day')) &&
+      (target.isBefore(end) || target.isSame(end, 'day'))
+    );
+  }
+  if (start) {
+    return target.isAfter(start) || target.isSame(start, 'day');
+  }
+  if (end) {
+    return target.isBefore(end) || target.isSame(end, 'day');
+  }
+  return true;
 };
 
 interface PosDateFilterProps {
@@ -88,6 +95,7 @@ interface PosDateFilterProps {
   fullWidth?: boolean;
 }
 
+
 export const PosDateFilter: React.FC<PosDateFilterProps> = ({
   value = null,
   onChange,
@@ -98,6 +106,38 @@ export const PosDateFilter: React.FC<PosDateFilterProps> = ({
 }) => {
   const [activePreset, setActivePreset] = useState<string>('all');
 
+  const startDate = value && value[0] ? value[0] : null;
+  const endDate = value && value[1] ? value[1] : null;
+
+  // Đồng bộ activePreset khi value từ ngoài truyền vào thay đổi
+  useEffect(() => {
+    if (!value || (!value[0] && !value[1])) {
+      setActivePreset('all');
+      return;
+    }
+    const [s, e] = value;
+    if (s && e) {
+      const now = dayjs();
+      if (s.isSame(now, 'day') && e.isSame(now, 'day')) {
+        setActivePreset('today');
+      } else if (
+        s.isSame(now.subtract(6, 'day'), 'day') &&
+        e.isSame(now, 'day')
+      ) {
+        setActivePreset('last7days');
+      } else if (
+        s.isSame(now.startOf('month'), 'day') &&
+        e.isSame(now.endOf('month'), 'day')
+      ) {
+        setActivePreset('thisMonth');
+      } else {
+        setActivePreset('custom');
+      }
+    } else {
+      setActivePreset('custom');
+    }
+  }, [value]);
+
   const handlePresetChange = (preset: string) => {
     setActivePreset(preset);
     if (preset === 'custom') {
@@ -107,13 +147,23 @@ export const PosDateFilter: React.FC<PosDateFilterProps> = ({
     onChange?.(calculated);
   };
 
-  const handleRangeChange = (dates: DateRangeValue) => {
-    if (!dates || (!dates[0] && !dates[1])) {
+  const handleStartDateChange = (date: Dayjs | null) => {
+    setActivePreset('custom');
+    if (!date && !endDate) {
       setActivePreset('all');
       onChange?.(null);
     } else {
-      setActivePreset('custom');
-      onChange?.(dates);
+      onChange?.([date ? date.startOf('day') : null, endDate ? endDate.endOf('day') : null]);
+    }
+  };
+
+  const handleEndDateChange = (date: Dayjs | null) => {
+    setActivePreset('custom');
+    if (!startDate && !date) {
+      setActivePreset('all');
+      onChange?.(null);
+    } else {
+      onChange?.([startDate ? startDate.startOf('day') : null, date ? date.endOf('day') : null]);
     }
   };
 
@@ -126,25 +176,38 @@ export const PosDateFilter: React.FC<PosDateFilterProps> = ({
             onChange={handlePresetChange}
             options={QUICK_DATE_PRESETS}
             size={size}
-            className="w-44 text-xs font-normal"
+            className="w-40 text-xs font-normal [&_.ant-select-selector]:!rounded-lg"
           />
         )}
-        <RangePicker
-          value={value}
-          onChange={handleRangeChange}
-          format="DD/MM/YYYY"
-          placeholder={['Từ ngày', 'Đến ngày']}
-          suffixIcon={<CalendarOutlined className="text-slate-400 text-xs" />}
-          size={size}
-          className="w-64 text-xs rounded-lg border-slate-200 hover:border-slate-300 font-normal [&_.ant-picker-input>input]:text-xs"
-          allowClear
-        />
+        <div className="flex items-center gap-1.5">
+          <DatePicker
+            value={startDate}
+            onChange={handleStartDateChange}
+            format="DD/MM/YYYY"
+            placeholder="Từ ngày"
+            size={size}
+            className="w-32 text-xs rounded-lg border-slate-200 hover:border-slate-300 font-normal [&_.ant-picker-input>input]:text-xs"
+            allowClear
+            maxDate={endDate || undefined}
+          />
+          <span className="text-slate-400 text-xs font-medium">→</span>
+          <DatePicker
+            value={endDate}
+            onChange={handleEndDateChange}
+            format="DD/MM/YYYY"
+            placeholder="Đến ngày"
+            size={size}
+            className="w-32 text-xs rounded-lg border-slate-200 hover:border-slate-300 font-normal [&_.ant-picker-input>input]:text-xs"
+            allowClear
+            minDate={startDate || undefined}
+          />
+        </div>
       </div>
     );
   }
 
   return (
-    <div className={`flex flex-col gap-1.5 w-full ${className}`}>
+    <div className={`flex flex-col gap-2.5 w-full ${className}`}>
       {showPresets && (
         <Select
           value={activePreset}
@@ -154,16 +217,36 @@ export const PosDateFilter: React.FC<PosDateFilterProps> = ({
           className="w-full text-xs font-normal [&_.ant-select-selector]:!rounded-lg"
         />
       )}
-      <RangePicker
-        value={value}
-        onChange={handleRangeChange}
-        format="DD/MM/YYYY"
-        placeholder={['Từ ngày', 'Đến ngày']}
-        suffixIcon={<CalendarOutlined className="text-slate-400 text-xs" />}
-        size={size}
-        className="w-full text-xs rounded-lg border-slate-200 hover:border-slate-300 font-normal [&_.ant-picker-input>input]:text-xs"
-        allowClear
-      />
+
+      {/* 2 ô chọn ngày riêng biệt với popup 1 tháng gọn gàng, không bị tràn màn hình */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1">
+          <span className="text-[11px] font-medium text-slate-500 block">Từ ngày:</span>
+          <DatePicker
+            value={startDate}
+            onChange={handleStartDateChange}
+            format="DD/MM/YYYY"
+            placeholder="Từ ngày"
+            size={size}
+            className="w-full text-xs rounded-lg border-slate-200 hover:border-slate-300 font-normal [&_.ant-picker-input>input]:text-xs"
+            allowClear
+            maxDate={endDate || undefined}
+          />
+        </div>
+        <div className="space-y-1">
+          <span className="text-[11px] font-medium text-slate-500 block">Đến ngày:</span>
+          <DatePicker
+            value={endDate}
+            onChange={handleEndDateChange}
+            format="DD/MM/YYYY"
+            placeholder="Đến ngày"
+            size={size}
+            className="w-full text-xs rounded-lg border-slate-200 hover:border-slate-300 font-normal [&_.ant-picker-input>input]:text-xs"
+            allowClear
+            minDate={startDate || undefined}
+          />
+        </div>
+      </div>
     </div>
   );
 };

@@ -40,4 +40,7 @@ export type { PosEntrySidebarProps } from './PosEntrySidebar';
 export { AutoCodeButton, getNextCode } from './AutoCodeButton';
 export type { AutoCodeButtonProps } from './AutoCodeButton';
 
+export { AdminFilterDrawer } from './AdminFilterDrawer';
+export type { AdminFilterDrawerProps } from './AdminFilterDrawer';
+
 

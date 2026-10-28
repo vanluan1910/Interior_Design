@@ -138,6 +138,8 @@ export interface FeaturedCatalogProduct {
   inStockQty?: number;
   location?: string;
   description?: string;
+  createdAt?: string;
+  updatedAt?: string;
   dimensions?: string;
   material?: string;
   color?: string;

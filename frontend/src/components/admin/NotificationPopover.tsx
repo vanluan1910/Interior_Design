@@ -82,7 +82,7 @@ export function NotificationPopover({
   onNavigateToOrder,
 }: NotificationPopoverProps) {
   const [open, setOpen] = useState(false);
-  const [activeFilter, setActiveFilter] = useState<'all' | 'order' | 'inventory' | 'workshop'>('all');
+  const [activeFilter, setActiveFilter] = useState<'all' | 'order' | 'inventory'>('all');
   const [permission, setPermission] = useState<NotificationPermission>('default');
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
     if (typeof window === 'undefined') return true;
@@ -262,7 +262,6 @@ export function NotificationPopover({
     if (activeFilter === 'all') return allNotifications;
     if (activeFilter === 'order') return allNotifications.filter((n) => n.type === 'order' || n.type === 'deposit');
     if (activeFilter === 'inventory') return allNotifications.filter((n) => n.type === 'inventory');
-    if (activeFilter === 'workshop') return allNotifications.filter((n) => n.type === 'workshop');
     return allNotifications;
   }, [allNotifications, activeFilter]);
 
@@ -349,7 +348,7 @@ export function NotificationPopover({
   };
 
   const popoverContent = (
-    <div className="w-[360px] sm:w-[420px] max-w-[95vw] -mx-4 -my-3 bg-[#fff8f5] text-slate-800 rounded-xl overflow-hidden font-sans">
+    <div className="w-full sm:w-[420px] max-w-full sm:-mx-4 sm:-my-3 bg-[#fff8f5] text-slate-800 rounded-xl sm:rounded-none overflow-hidden font-sans">
       {/* Header */}
       <div className="px-4 py-3 bg-[#fdf5f0] border-b border-[#eae1dd] flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -478,17 +477,6 @@ export function NotificationPopover({
             }`}
           >
             Kho ({allNotifications.filter((n) => n.type === 'inventory').length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveFilter('workshop')}
-            className={`px-2.5 py-1 rounded-full text-xs transition-all border ${
-              activeFilter === 'workshop'
-                ? 'bg-[#5d371f] text-white border-[#5d371f] font-medium shadow-sm'
-                : 'bg-white/80 text-slate-600 border-[#eae1dd] hover:border-[#5d371f]/50'
-            }`}
-          >
-            Xưởng ({allNotifications.filter((n) => n.type === 'workshop').length})
           </button>
         </div>
       </div>

@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams, usePathname, useRouter } from 'next/navigation';
-import { Slider, Select, Pagination, Tag, Button, Checkbox, Tooltip, App } from 'antd';
+import { Slider, Select, Pagination, Tag, Button, Checkbox, Tooltip, App, Drawer } from 'antd';
 import {
   EyeOutlined,
   ShoppingCartOutlined,
@@ -25,6 +25,13 @@ import { spaceApi } from '@/api/spaceApi';
 import { AdminCategory, AdminSpace } from '@/types/admin';
 import { WoodMaterialItem, groupDbMaterials, extractPrimaryWood, getMaterialQueryKey } from '@/data/woodMaterials';
 import { getProductStockForBranch } from '@/utils/branchHelper';
+
+function toTitleCase(str?: string | null): string {
+  if (!str) return '';
+  return str
+    .toLowerCase()
+    .replace(/(^|[\s/(+]+)(\p{L})/gu, (_, prefix, char) => prefix + char.toUpperCase());
+}
 
 function mapCatalogToCategoryProduct(item: FeaturedCatalogProduct, currentBranch?: string): CategoryProduct {
   const rawSpace = (item.space || '').toLowerCase();
@@ -78,7 +85,7 @@ function mapCatalogToCategoryProduct(item: FeaturedCatalogProduct, currentBranch
     inStock: true,
     inStockQty: branchStock,
     image: item.image || '/logo.png',
-    macroImage: item.images?.[1] || item.image || '/logo.png',
+    macroImage: (item.images && item.images.length > 1 && item.images[1] !== item.image) ? item.images[1] : '',
     tag: item.collection || 'Tuyệt tác mộc',
     description: item.description || item.collection || `Sản phẩm ${item.name} chế tác tinh xảo từ gỗ tự nhiên`,
     dimensions: item.dimensions || 'Theo thiết kế',
@@ -556,13 +563,34 @@ function ProductsContent() {
   // Modals & Cart State
   const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null);
   const [sampleModalOpen, setSampleModalOpen] = useState<boolean>(false);
+  const [isMobileFilterOpen, setIsMobileFilterOpen] = useState<boolean>(false);
 
   // Dynamic Products State loaded from API
   const [catalogProducts, setCatalogProducts] = useState<CategoryProduct[]>([]);
   const [totalItems, setTotalItems] = useState<number>(0);
-  const [pageSize, setPageSize] = useState<number>(9);
+  const [pageSize, setPageSize] = useState<number>(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+      return 10;
+    }
+    return 9;
+  });
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [selectedBranch, setSelectedBranch] = useState<string>('');
+
+  // Auto-switch pageSize: 10 on mobile (5 full rows of 2 columns), 9 on desktop (3x3 grid)
+  useEffect(() => {
+    const handleResize = () => {
+      const isMobile = window.innerWidth < 1024;
+      setPageSize((prev) => {
+        if (isMobile && prev === 9) return 10;
+        if (!isMobile && prev === 10) return 9;
+        return prev;
+      });
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     const saved = typeof window !== 'undefined'
@@ -598,7 +626,7 @@ function ProductsContent() {
           const grouped = groupDbMaterials(data);
           setRealDbMaterials(grouped);
           if (!materialParam) {
-            setSelectedMaterials((prev) => (prev.length === 0 ? grouped.map((m) => m.id) : prev));
+            setSelectedMaterials(grouped.map((m) => m.id));
           }
         }
       } catch (err) {
@@ -868,6 +896,199 @@ function ProductsContent() {
     return new Intl.NumberFormat('vi-VN').format(val) + ' ₫';
   };
 
+  // Count active filters for badge notification
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (selectedCategory || categoryParam) count += 1;
+    if (
+      availableMaterials.length > 0 &&
+      selectedMaterials.length > 0 &&
+      selectedMaterials.length < availableMaterials.length
+    ) {
+      count += selectedMaterials.length;
+    }
+    if (maxPrice < 100) count += 1;
+    return count;
+  }, [selectedCategory, categoryParam, selectedMaterials, availableMaterials.length, maxPrice]);
+
+  // Reusable Filter Sections (used by both Desktop Sidebar and Mobile Drawer)
+  const renderFilterSections = (options?: { isSidebar?: boolean }) => {
+    const isSidebar = options?.isSidebar ?? false;
+    return (
+      <>
+        {/* Sắp xếp (Sort by) */}
+        <div className="flex flex-col gap-2 pb-3.5 border-b border-[#eae1dd]">
+          <label className="font-label-md text-xs text-[#1f1b19] uppercase tracking-wider font-bold">
+            Sắp Xếp Theo
+          </label>
+          <Select
+            value={sortBy}
+            onChange={(val) => {
+              setSortBy(val);
+              setCurrentPage(1);
+            }}
+            size="middle"
+            className="w-full font-label-md text-xs [&_.ant-select-selector]:!rounded-none [&_.ant-select-selector]:!border-[#eae1dd] [&_.ant-select-selector]:!bg-white hover:[&_.ant-select-selector]:!border-[#5d371f]"
+            options={[
+              { value: 'best-selling', label: 'Bán chạy nhất' },
+              { value: 'price-asc', label: 'Giá: Thấp đến cao' },
+              { value: 'price-desc', label: 'Giá: Cao đến thấp' },
+            ]}
+          />
+        </div>
+
+        {/* Filter 1: Categories (Ẩn hoàn toàn ở Sidebar trái vì đã có hàng Category Pills ngang) */}
+        {!isSidebar && activeSpaceCategories.length > 0 && (
+        <div className="flex flex-col gap-2.5 pb-3 border-b border-[#eae1dd]">
+          <div className="flex items-center justify-between">
+            <span className="font-label-md text-xs text-[#1f1b19] uppercase tracking-wider font-bold">
+              Danh Mục Sản Phẩm
+            </span>
+            {(selectedCategory || categoryParam) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedCategory(null);
+                  const params = new URLSearchParams(searchParams.toString());
+                  params.delete('category');
+                  router.push(`${pathname}?${params.toString()}`);
+                }}
+                className="text-[11px] text-[#83746c] hover:text-[#5d371f] cursor-pointer bg-transparent border-0 p-0 underline"
+              >
+                Bỏ chọn
+              </button>
+            )}
+          </div>
+          <div className="flex flex-col gap-2 max-h-64 overflow-y-auto pr-1">
+            {activeSpaceCategories.map((cat) => {
+              const isChecked = Boolean(
+                (selectedCategory && (selectedCategory === cat.slug || selectedCategory === cat.id || selectedCategory === cat.name)) ||
+                (categoryParam && (categoryParam === cat.slug || categoryParam === cat.id || categoryParam === cat.name))
+              );
+              return (
+                <Checkbox
+                  key={cat.id}
+                  checked={isChecked}
+                  onChange={() => {
+                    const nextVal = isChecked ? null : (cat.slug || cat.id);
+                    setSelectedCategory(nextVal);
+                    const params = new URLSearchParams(searchParams.toString());
+                    if (nextVal) {
+                      params.set('category', nextVal);
+                    } else {
+                      params.delete('category');
+                    }
+                    router.push(`${pathname}?${params.toString()}`);
+                  }}
+                  className="text-xs font-medium text-[#51443d]"
+                >
+                  <span>{cat.name}</span>
+                  {typeof cat.productCount === 'number' && cat.productCount > 0 && (
+                    <span className="text-[11px] text-[#83746c] ml-1 font-normal font-mono">
+                      ({cat.productCount})
+                    </span>
+                  )}
+                </Checkbox>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Filter 2: Materials */}
+      {availableMaterials.length > 0 && (
+        <div className="flex flex-col gap-2.5">
+          <div className="flex items-center justify-between">
+            <span className="font-label-md text-xs text-[#1f1b19] uppercase tracking-wider font-bold">
+              Chất Liệu Tuyển Chọn
+            </span>
+            {selectedMaterials.length < availableMaterials.length && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedMaterials(availableMaterials.map((m) => m.id));
+                  setCurrentPage(1);
+                }}
+                className="text-[11px] text-[#83746c] hover:text-[#5d371f] cursor-pointer bg-transparent border-0 p-0 underline"
+              >
+                Chọn tất cả
+              </button>
+            )}
+          </div>
+          <div className="flex flex-col gap-2">
+            {availableMaterials.map((item) => (
+              <Checkbox
+                key={item.id}
+                checked={selectedMaterials.includes(item.id)}
+                onChange={() => toggleMaterial(item.id)}
+                className="text-xs font-medium text-[#51443d]"
+              >
+                <span>{item.label}</span>
+                <span className="text-[11px] text-[#83746c] ml-1 font-normal">
+                  ({item.count})
+                </span>
+              </Checkbox>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Filter 3: Budget Range */}
+      <div className="flex flex-col gap-2.5 pt-2 border-t border-[#eae1dd]">
+        <div className="flex items-center justify-between">
+          <span className="font-label-md text-xs text-[#1f1b19] uppercase tracking-wider font-bold">
+            Mức Ngân Sách
+          </span>
+          <Tag color="#5d371f" className="font-data-mono text-xs font-bold rounded-none">
+            Dưới {maxPrice}tr
+          </Tag>
+        </div>
+
+        <div className="py-1">
+          <Slider
+            min={1}
+            max={100}
+            step={1}
+            value={maxPrice}
+            onChange={(val) => setMaxPrice(val)}
+            tooltip={{ formatter: (val) => `${val} triệu VNĐ` }}
+          />
+          <div className="flex justify-between font-data-mono text-[10px] text-[#83746c]">
+            <span>1.000.000₫</span>
+            <span>100.000.000₫</span>
+          </div>
+        </div>
+
+        {/* Quick Price Pills */}
+        <div className="flex flex-wrap gap-1.5 pt-1">
+          {[
+            { label: 'Dưới 5tr', val: 5 },
+            { label: 'Dưới 10tr', val: 10 },
+            { label: 'Dưới 15tr', val: 15 },
+            { label: 'Dưới 25tr', val: 25 },
+            { label: 'Dưới 50tr', val: 50 },
+            { label: 'Tất cả (100tr)', val: 100 },
+          ].map((pill) => (
+            <Button
+              key={pill.label}
+              size="small"
+              type={maxPrice === pill.val ? 'primary' : 'default'}
+              onClick={() => setMaxPrice(pill.val)}
+              className={`text-[11px] rounded-none font-medium ${
+                maxPrice === pill.val
+                  ? 'bg-[#5d371f]'
+                  : 'bg-white hover:!border-[#5d371f] hover:!text-[#5d371f]'
+              }`}
+            >
+              {pill.label}
+            </Button>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+};
+
   // Dynamic breadcrumb space label
   const breadcrumbSpaceLabel = useMemo(() => {
     if (activeSpecificRoom === 'living') return 'Phòng khách';
@@ -890,11 +1111,11 @@ function ProductsContent() {
       <main className="w-full pt-20 overflow-hidden">
         <div className="w-full">
           {/* Breadcrumb Bar */}
-          <section className="w-full bg-[#fbf2ee] py-3 sm:py-4 border-b border-[#eae1dd]">
+          <section className="w-full bg-[#fbf2ee] py-2.5 sm:py-3.5 border-b border-[#eae1dd]">
           <div className="w-full max-w-[1720px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-16">
             <nav
               aria-label="Breadcrumb"
-              className="flex items-center gap-2 font-medium text-[13px] text-[#83746c] flex-wrap"
+              className="flex items-center gap-1.5 sm:gap-2 font-medium text-xs sm:text-[13px] text-[#83746c] flex-wrap"
             >
               <Link href="/" className="hover:text-[#5d371f] transition-colors">
                 Trang chủ
@@ -956,8 +1177,8 @@ function ProductsContent() {
           className="w-full max-w-[1720px] mx-auto px-4 sm:px-8 lg:px-12 xl:px-16 py-8 md:py-12 animate-slide-in-bottom"
         >
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-            {/* Left Filter Sidebar (3 cols) */}
-            <aside className="lg:col-span-3 flex flex-col gap-6 bg-[#fbf2ee] p-5 sm:p-6 rounded-none border border-[#eae1dd] animate-slide-in-left">
+            {/* Left Filter Sidebar (Desktop only - Hidden on Mobile) */}
+            <aside className="hidden lg:flex lg:col-span-3 flex-col gap-6 bg-[#fbf2ee] p-5 sm:p-6 rounded-none border border-[#eae1dd] animate-slide-in-left sticky top-24 self-start">
               <div className="flex items-center justify-between pb-2 border-b border-[#eae1dd]">
                 <span className="font-title-lg text-base text-[#5d371f] font-bold flex items-center gap-2">
                   <FilterOutlined className="text-[15px]" />
@@ -973,40 +1194,43 @@ function ProductsContent() {
                 </Button>
               </div>
 
-              {/* Filter 1: Categories (Danh mục thuộc không gian) */}
-              {activeSpaceCategories.length > 0 && (
-                <div className="flex flex-col gap-2.5 pb-3 border-b border-[#eae1dd]">
-                  <div className="flex items-center justify-between">
-                    <span className="font-label-md text-xs text-[#1f1b19] uppercase tracking-wider font-bold">
-                      Danh Mục Sản Phẩm
+              {renderFilterSections({ isSidebar: true })}
+            </aside>
+
+            {/* Right Products Grid Container (9 cols) */}
+            <div className="lg:col-span-9 flex flex-col gap-4 sm:gap-6 animate-slide-in-right">
+              {/* Category Pills (Desktop) & Mobile Filter Button (Left) */}
+              <div className="flex items-center justify-start lg:justify-between gap-2 pb-0.5">
+                {/* Mobile Filter Icon Button (Left side on mobile) */}
+                <button
+                  type="button"
+                  onClick={() => setIsMobileFilterOpen(true)}
+                  className="lg:hidden shrink-0 inline-flex items-center justify-center w-9 h-9 rounded-none bg-[#5d371f] hover:bg-[#784e34] text-white shadow-xs transition-all cursor-pointer relative active:scale-95"
+                  title="Mở bộ lọc"
+                  aria-label="Bộ lọc"
+                >
+                  <FilterOutlined className="text-sm" />
+                  {activeFilterCount > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-[#ba1a1a] text-white font-mono text-[9px] font-bold flex items-center justify-center ring-2 ring-white">
+                      {activeFilterCount}
                     </span>
-                    {(selectedCategory || categoryParam) && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedCategory(null);
-                          const params = new URLSearchParams(searchParams.toString());
-                          params.delete('category');
-                          router.push(`${pathname}?${params.toString()}`);
-                        }}
-                        className="text-[11px] text-[#83746c] hover:text-[#5d371f] cursor-pointer bg-transparent border-0 p-0 underline"
-                      >
-                        Bỏ chọn
-                      </button>
-                    )}
-                  </div>
-                  <div className="flex flex-col gap-2 max-h-64 overflow-y-auto pr-1">
+                  )}
+                </button>
+
+                {/* Desktop: Horizontal Category Pills */}
+                {activeSpaceCategories.length > 0 && (
+                  <div className="hidden lg:flex items-center gap-2 overflow-x-auto scrollbar-none flex-1 py-0.5">
                     {activeSpaceCategories.map((cat) => {
-                      const isChecked = Boolean(
+                      const isSelected = Boolean(
                         (selectedCategory && (selectedCategory === cat.slug || selectedCategory === cat.id || selectedCategory === cat.name)) ||
                         (categoryParam && (categoryParam === cat.slug || categoryParam === cat.id || categoryParam === cat.name))
                       );
                       return (
-                        <Checkbox
+                        <button
                           key={cat.id}
-                          checked={isChecked}
-                          onChange={() => {
-                            const nextVal = isChecked ? null : (cat.slug || cat.id);
+                          type="button"
+                          onClick={() => {
+                            const nextVal = isSelected ? null : (cat.slug || cat.id);
                             setSelectedCategory(nextVal);
                             const params = new URLSearchParams(searchParams.toString());
                             if (nextVal) {
@@ -1016,177 +1240,46 @@ function ProductsContent() {
                             }
                             router.push(`${pathname}?${params.toString()}`);
                           }}
-                          className="text-xs font-medium text-[#51443d]"
+                          className={`px-3.5 py-1.5 text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                            isSelected
+                              ? 'bg-[#5d371f] text-white shadow-xs font-bold'
+                              : 'bg-white text-slate-700 hover:bg-[#fbf2ee] hover:text-[#5d371f] border border-[#eae1dd]'
+                          }`}
                         >
                           <span>{cat.name}</span>
                           {typeof cat.productCount === 'number' && cat.productCount > 0 && (
-                            <span className="text-[11px] text-[#83746c] ml-1 font-normal font-mono">
-                              ({cat.productCount})
+                            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                              {cat.productCount}
                             </span>
                           )}
-                        </Checkbox>
+                        </button>
                       );
                     })}
                   </div>
-                </div>
-              )}
-
-              {/* Filter: Materials */}
-              {availableMaterials.length > 0 && (
-                <div className="flex flex-col gap-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="font-label-md text-xs text-[#1f1b19] uppercase tracking-wider font-bold">
-                      Chất Liệu Tuyển Chọn
-                    </span>
-                    {selectedMaterials.length < availableMaterials.length && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedMaterials(availableMaterials.map((m) => m.id));
-                          setCurrentPage(1);
-                        }}
-                        className="text-[11px] text-[#83746c] hover:text-[#5d371f] cursor-pointer bg-transparent border-0 p-0 underline"
-                      >
-                        Chọn tất cả
-                      </button>
-                    )}
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    {availableMaterials.map((item) => (
-                      <Checkbox
-                        key={item.id}
-                        checked={selectedMaterials.includes(item.id)}
-                        onChange={() => toggleMaterial(item.id)}
-                        className="text-xs font-medium text-[#51443d]"
-                      >
-                        <span>{item.label}</span>
-                        <span className="text-[11px] text-[#83746c] ml-1 font-normal">
-                          ({item.count})
-                        </span>
-                      </Checkbox>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Filter 3: Budget Range */}
-              <div className="flex flex-col gap-2.5 pt-2 border-t border-[#eae1dd]">
-                <div className="flex items-center justify-between">
-                  <span className="font-label-md text-xs text-[#1f1b19] uppercase tracking-wider font-bold">
-                    Mức Ngân Sách
-                  </span>
-                  <Tag color="#5d371f" className="font-data-mono text-xs font-bold rounded-none">
-                    Dưới {maxPrice}tr
-                  </Tag>
-                </div>
-
-                <div className="py-1">
-                  <Slider
-                    min={1}
-                    max={100}
-                    step={1}
-                    value={maxPrice}
-                    onChange={(val) => setMaxPrice(val)}
-                    tooltip={{ formatter: (val) => `${val} triệu VNĐ` }}
-                  />
-                  <div className="flex justify-between font-data-mono text-[10px] text-[#83746c]">
-                    <span>1.000.000₫</span>
-                    <span>100.000.000₫</span>
-                  </div>
-                </div>
-
-                {/* Quick Price Pills */}
-                <div className="flex flex-wrap gap-1.5 pt-1">
-                  {[
-                    { label: 'Dưới 5tr', val: 5 },
-                    { label: 'Dưới 10tr', val: 10 },
-                    { label: 'Dưới 15tr', val: 15 },
-                    { label: 'Dưới 25tr', val: 25 },
-                    { label: 'Dưới 50tr', val: 50 },
-                    { label: 'Tất cả (100tr)', val: 100 },
-                  ].map((pill) => (
-                    <Button
-                      key={pill.label}
-                      size="small"
-                      type={maxPrice === pill.val ? 'primary' : 'default'}
-                      onClick={() => setMaxPrice(pill.val)}
-                      className={`text-[11px] rounded-none font-medium ${
-                        maxPrice === pill.val
-                          ? 'bg-[#5d371f]'
-                          : 'bg-white hover:!border-[#5d371f] hover:!text-[#5d371f]'
-                      }`}
-                    >
-                      {pill.label}
-                    </Button>
-                  ))}
-                </div>
+                )}
               </div>
-            </aside>
 
-            {/* Right Products Grid Container (9 cols) */}
-            <div className="lg:col-span-9 flex flex-col gap-6 animate-slide-in-right">
-              {/* Category Pills Bar for Current Space */}
-              {activeSpaceCategories.length > 0 && (
-                <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-                  {activeSpaceCategories.map((cat) => {
-                    const isSelected = Boolean(
-                      (selectedCategory && (selectedCategory === cat.slug || selectedCategory === cat.id || selectedCategory === cat.name)) ||
-                      (categoryParam && (categoryParam === cat.slug || categoryParam === cat.id || categoryParam === cat.name))
-                    );
-                    return (
-                      <button
-                        key={cat.id}
-                        type="button"
-                        onClick={() => {
-                          const nextVal = isSelected ? null : (cat.slug || cat.id);
-                          setSelectedCategory(nextVal);
-                          const params = new URLSearchParams(searchParams.toString());
-                          if (nextVal) {
-                            params.set('category', nextVal);
-                          } else {
-                            params.delete('category');
-                          }
-                          router.push(`${pathname}?${params.toString()}`);
-                        }}
-                        className={`px-3.5 py-1.5 text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
-                          isSelected
-                            ? 'bg-[#5d371f] text-white shadow-xs font-bold'
-                            : 'bg-white text-slate-700 hover:bg-[#fbf2ee] hover:text-[#5d371f] border border-[#eae1dd]'
-                        }`}
-                      >
-                        <span>{cat.name}</span>
-                        {typeof cat.productCount === 'number' && cat.productCount > 0 && (
-                          <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>
-                            {cat.productCount}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Controls & Sorters Bar */}
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white p-3.5 px-5 rounded-none shadow-sm border border-[#eae1dd]">
-                <div className="flex items-center gap-2 font-body-sm text-xs sm:text-sm text-[#51443d]">
+              {/* Desktop-only Controls & Sorters Bar */}
+              <div className="hidden lg:flex items-center justify-between gap-3 bg-white p-3.5 px-5 rounded-none shadow-sm border border-[#eae1dd]">
+                <div className="flex items-center gap-2 font-body-sm text-sm text-[#51443d]">
                   <span className="font-bold text-[#1f1b19]">{totalItems || filteredProducts.length}</span> mẫu thiết kế nội thất
                   <span className="text-[#83746c]">|</span>
-                  <span className="hidden md:inline text-[#3f4332]">
+                  <span className="text-[#3f4332]">
                     Chế tác thủ công từ D2 LUXURY
                   </span>
                 </div>
 
-                <div className="flex items-center gap-3 self-end sm:self-auto">
+                <div className="flex items-center gap-2">
                   <span className="font-label-md text-xs text-[#83746c]">Sắp xếp:</span>
                   <Select
                     value={sortBy}
                     onChange={(val) => setSortBy(val)}
                     size="middle"
-                    className="w-48"
+                    className="w-48 font-label-md text-xs [&_.ant-select-selector]:!rounded-none [&_.ant-select-selector]:!border-[#eae1dd]"
                     options={[
-                      { value: 'best-selling', label: 'Bán chạy nhất tuần' },
-                      { value: 'price-asc', label: 'Giá: Từ thấp đến cao' },
-                      { value: 'price-desc', label: 'Giá: Từ cao đến thấp' },
+                      { value: 'best-selling', label: 'Bán chạy nhất' },
+                      { value: 'price-asc', label: 'Giá: Thấp đến cao' },
+                      { value: 'price-desc', label: 'Giá: Cao đến thấp' },
                     ]}
                   />
                 </div>
@@ -1194,16 +1287,16 @@ function ProductsContent() {
 
               {/* Products Grid */}
               {isLoading ? (
-                <div className="grid gap-6 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
+                <div className="grid gap-2.5 sm:gap-6 grid-cols-2 lg:grid-cols-2 xl:grid-cols-3">
                   {[1, 2, 3, 4, 5, 6].map((idx) => (
                     <div
                       key={idx}
-                      className="bg-white p-4 border border-[#eae1dd] flex flex-col gap-3 animate-pulse"
+                      className="bg-white p-2.5 sm:p-4 border border-[#eae1dd] flex flex-col gap-2 sm:gap-3 animate-pulse"
                     >
                       <div className="aspect-[4/3] bg-[#eae1dd]/60 w-full" />
-                      <div className="h-4 bg-[#eae1dd]/80 w-1/3" />
-                      <div className="h-5 bg-[#eae1dd] w-3/4" />
-                      <div className="h-4 bg-[#eae1dd]/50 w-1/2 mt-2" />
+                      <div className="h-3 sm:h-4 bg-[#eae1dd]/80 w-1/3" />
+                      <div className="h-4 sm:h-5 bg-[#eae1dd] w-3/4" />
+                      <div className="h-3 sm:h-4 bg-[#eae1dd]/50 w-1/2 mt-1 sm:mt-2" />
                     </div>
                   ))}
                 </div>
@@ -1225,7 +1318,7 @@ function ProductsContent() {
                   </Button>
                 </div>
               ) : (
-                <div className="grid gap-6 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
+                <div className="grid gap-2.5 sm:gap-6 grid-cols-2 lg:grid-cols-2 xl:grid-cols-3">
                   {pagedProducts.map((p) => {
                     const isWishlisted = wishlistIds.includes(p.id);
                     const isOutOfStock = p.stockStatus === 'out_of_stock' || p.inStock === false;
@@ -1250,32 +1343,34 @@ function ProductsContent() {
                             }}
                           />
 
-                          {/* Detail thumbnail cutout */}
-                          <div className="absolute bottom-2.5 left-2.5 w-12 h-12 rounded-none overflow-hidden shadow-md ring-2 ring-white/90 bg-white group-hover:scale-110 transition-transform">
-                            <img
-                              alt="Texture macro"
-                              className="w-full h-full object-cover"
-                              src={p.macroImage || p.image || '/logo.png'}
-                              onError={(e) => {
-                                const target = e.currentTarget as HTMLImageElement;
-                                if (!target.src.includes('logo.png')) {
-                                  target.src = '/logo.png';
-                                }
-                              }}
-                            />
-                          </div>
+                          {/* Detail thumbnail cutout (chỉ hiển thị khi quản trị viên thực sự đã set ảnh phụ thứ 2) */}
+                          {Boolean(p.macroImage && p.macroImage !== p.image) && (
+                            <div className="hidden xs:block absolute bottom-1.5 left-1.5 sm:bottom-2.5 sm:left-2.5 w-7 h-7 sm:w-12 sm:h-12 rounded-none overflow-hidden shadow-md ring-1 sm:ring-2 ring-white/90 bg-white group-hover:scale-110 transition-transform">
+                              <img
+                                alt="Texture macro"
+                                className="w-full h-full object-cover"
+                                src={p.macroImage}
+                                onError={(e) => {
+                                  const target = e.currentTarget as HTMLImageElement;
+                                  if (!target.src.includes('logo.png')) {
+                                    target.src = '/logo.png';
+                                  }
+                                }}
+                              />
+                            </div>
+                          )}
 
                           {/* Badges */}
-                          <div className="absolute top-3 left-3 flex flex-col gap-1 items-start z-10 pointer-events-none">
+                          <div className="absolute top-1.5 left-1.5 sm:top-3 sm:left-3 flex flex-col gap-1 items-start z-10 pointer-events-none">
                             {p.originalPrice && p.originalPrice > p.price && (
-                              <span className="px-2.5 py-0.5 bg-[#ba1a1a] text-white text-[11px] font-bold shadow-md">
+                              <span className="px-1.5 py-0.5 sm:px-2.5 bg-[#ba1a1a] text-white text-[9px] sm:text-[11px] font-bold shadow-md">
                                 -{Math.round(((p.originalPrice - p.price) / p.originalPrice) * 100)}%
                               </span>
                             )}
                             {Boolean(p.stockLabel) && (
                               <Tag
                                 color="rgba(255,255,255,0.9)"
-                                className="!text-[#5d371f] !border-[#d5c3ba]/60 font-bold text-xs rounded-none px-2.5 py-0.5 backdrop-blur-sm shadow-sm m-0"
+                                className="!text-[#5d371f] !border-[#d5c3ba]/60 font-bold text-[9px] sm:text-xs rounded-none px-1.5 py-0 sm:px-2.5 sm:py-0.5 backdrop-blur-sm shadow-sm m-0"
                               >
                                 {p.stockLabel}
                               </Tag>
@@ -1284,46 +1379,50 @@ function ProductsContent() {
                         </div>
 
                         {/* Card Info */}
-                        <div className="p-4 sm:p-5 flex flex-col flex-grow justify-between gap-3">
+                        <div className="p-2.5 sm:p-5 flex flex-col flex-grow justify-between gap-1.5 sm:gap-3">
                           <div>
-                            <div className="text-[#83746c] text-[11px] font-semibold mb-1 uppercase tracking-wider">
-                              {p.woodMaterialName}
+                            {/* Wood Material Name: Mixed-case on mobile, Uppercase on desktop */}
+                            <div className="text-[#83746c] text-[10px] sm:text-[11px] font-medium sm:font-semibold mb-0.5 sm:mb-1 tracking-normal sm:tracking-wider sm:uppercase line-clamp-1">
+                              <span className="sm:hidden">
+                                {toTitleCase(p.woodMaterialName)}
+                              </span>
+                              <span className="hidden sm:inline">
+                                {p.woodMaterialName}
+                              </span>
                             </div>
 
-                            <h2 className="font-headline-sm text-base sm:text-lg text-[#1f1b19] group-hover:text-[#5d371f] transition-colors line-clamp-1 font-bold">
+                            {/* Product Name: Smaller on mobile (!text-[12px]), 18px on desktop */}
+                            <h2 className="!text-[12px] sm:!text-[18px] text-[#1f1b19] group-hover:text-[#5d371f] transition-colors line-clamp-2 sm:line-clamp-1 font-bold leading-snug sm:leading-normal">
                               {p.name}
                             </h2>
                           </div>
 
                           {/* Pricing and CTA */}
-                          <div className="pt-3 border-t border-[#eae1dd]/60 flex items-end justify-between">
-                            <div className="flex flex-col">
-                              <span className="font-headline-sm text-base sm:text-lg text-[#5d371f] font-bold">
+                          <div className="pt-2 sm:pt-3 border-t border-[#eae1dd]/60 flex items-end justify-between gap-1">
+                            <div className="flex flex-col min-w-0">
+                              <span className="!text-[11.5px] sm:!text-[18px] text-[#5d371f] font-bold truncate">
                                 {formatPrice(p.price)}
                               </span>
                               {p.originalPrice && p.originalPrice > p.price && (
-                                <div className="flex items-center gap-1.5 mt-0.5">
-                                  <span className="text-xs text-[#a89b93] line-through font-mono">
+                                <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                                  <span className="text-[9.5px] sm:text-xs text-[#a89b93] line-through font-mono">
                                     {formatPrice(p.originalPrice)}
-                                  </span>
-                                  <span className="text-[10px] font-bold text-red-600 bg-red-100/80 px-1 py-0.5 rounded">
-                                    -{Math.round(((p.originalPrice - p.price) / p.originalPrice) * 100)}%
                                   </span>
                                 </div>
                               )}
                             </div>
 
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1 shrink-0">
                               <Button
                                 type="primary"
-                                size="middle"
+                                size="small"
                                 onClick={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
                                   handleAddCategoryProductToCart(p);
                                 }}
-                                className="bg-[#5d371f] hover:!bg-[#784e34] shadow-md rounded-none flex items-center justify-center"
-                                icon={<ShoppingCartOutlined className="text-[16px]" />}
+                                className="bg-[#5d371f] hover:!bg-[#784e34] shadow-xs sm:shadow-md rounded-none flex items-center justify-center w-7 h-7 sm:w-9 sm:h-9 p-0"
+                                icon={<ShoppingCartOutlined className="text-xs sm:text-[16px]" />}
                                 title="Thêm vào giỏ hàng"
                               />
                             </div>
@@ -1350,7 +1449,7 @@ function ProductsContent() {
                     total={totalItems}
                     pageSize={pageSize}
                     showSizeChanger={true}
-                    pageSizeOptions={['6', '9', '12', '24', '36', '48']}
+                    pageSizeOptions={['6', '9', '10', '12', '20', '24', '36', '48']}
                     onShowSizeChange={(current, size) => {
                       setPageSize(size);
                       setCurrentPage(1);
@@ -1374,6 +1473,78 @@ function ProductsContent() {
 
       {/* Footer */}
       <Footer />
+
+      {/* Mobile Filter Drawer */}
+      <Drawer
+        open={isMobileFilterOpen}
+        onClose={() => setIsMobileFilterOpen(false)}
+        placement="right"
+        destroyOnHidden={false}
+        closable={false}
+        styles={{
+          wrapper: {
+            width: '100%',
+            maxWidth: '100vw',
+          },
+          body: {
+            padding: 0,
+            backgroundColor: '#fff8f5',
+            display: 'flex',
+            flexDirection: 'column',
+            height: '100%',
+          },
+        }}
+      >
+        {/* Drawer Header */}
+        <div className="p-4 bg-white border-b border-[#eae1dd] flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 bg-[#5d371f] text-white flex items-center justify-center text-xs">
+              <FilterOutlined />
+            </div>
+            <span className="font-sans font-bold text-sm text-[#1f1b19]">
+              Bộ Lọc Chọn Lọc
+            </span>
+            {activeFilterCount > 0 && (
+              <Tag color="#5d371f" className="font-mono text-[10px] rounded-none ml-1">
+                {activeFilterCount}
+              </Tag>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsMobileFilterOpen(false)}
+            className="w-8 h-8 rounded-none border border-[#eae1dd] text-[#83746c] hover:text-[#ba1a1a] flex items-center justify-center transition-colors cursor-pointer bg-white"
+            aria-label="Đóng bộ lọc"
+          >
+            <span className="material-symbols-outlined text-[18px]">close</span>
+          </button>
+        </div>
+
+        {/* Drawer Scrollable Content */}
+        <div className="p-4 sm:p-5 overflow-y-auto flex-1 flex flex-col gap-6">
+          {renderFilterSections()}
+        </div>
+
+        {/* Drawer Sticky Footer Actions */}
+        <div className="p-3 bg-white border-t border-[#eae1dd] flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              handleResetFilters();
+            }}
+            className="flex-1 py-2.5 px-3 border border-[#d5c3ba] text-[#51443d] hover:bg-[#fbf2ee] text-xs font-semibold rounded-none transition-colors cursor-pointer text-center"
+          >
+            Đặt lại
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsMobileFilterOpen(false)}
+            className="flex-1 py-2.5 px-3 bg-[#5d371f] hover:bg-[#784e34] text-white text-xs font-bold rounded-none shadow-sm transition-colors cursor-pointer text-center"
+          >
+            Áp dụng ({totalItems || filteredProducts.length})
+          </button>
+        </div>
+      </Drawer>
 
       {/* Modals & Slide-out Drawers */}
       <QuickViewModal

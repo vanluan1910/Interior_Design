@@ -16,6 +16,8 @@ import {
   InputNumber,
   Switch,
   Tooltip,
+  Checkbox,
+  Dropdown,
 } from 'antd';
 import {
   DownloadOutlined,
@@ -27,10 +29,11 @@ import {
   AppstoreOutlined,
   HomeOutlined,
   FileExcelOutlined,
-  ReloadOutlined,
   UploadOutlined,
   CloseCircleFilled,
   GlobalOutlined,
+  SearchOutlined,
+  RightOutlined,
 } from '@ant-design/icons';
 import {
   Upload,
@@ -38,6 +41,7 @@ import {
 import {
   AdminDataTable,
   AdminFormDrawer,
+  AdminFilterDrawer,
   AutoCodeButton,
   getNextCode,
 } from '@/components/admin';
@@ -150,6 +154,10 @@ export function CategoriesTab({
   const [categorySearchQuery, setCategorySearchQuery] = useState('');
   const [categoryStatusFilter, setCategoryStatusFilter] = useState('all');
   const [categorySpaceFilter, setCategorySpaceFilter] = useState('all');
+  const [isMobileCategoryFilterOpen, setIsMobileCategoryFilterOpen] = useState(false);
+  const [categorySortOrder, setCategorySortOrder] = useState<'order_asc' | 'name_asc' | 'products_desc' | 'products_asc'>('order_asc');
+  const [categoryCurrentPage, setCategoryCurrentPage] = useState(1);
+  const categoryPageSize = 10;
   const [showCategoryDrawer, setShowCategoryDrawer] = useState(false);
   const [editingCategory, setEditingCategory] = useState<AdminCategory | null>(null);
   const [categoryForm] = Form.useForm();
@@ -175,6 +183,10 @@ export function CategoriesTab({
   const [selectedSpaceKeys, setSelectedSpaceKeys] = useState<React.Key[]>([]);
   const [spaceSearchQuery, setSpaceSearchQuery] = useState('');
   const [spaceStatusFilter, setSpaceStatusFilter] = useState('all');
+  const [isMobileSpaceFilterOpen, setIsMobileSpaceFilterOpen] = useState(false);
+  const [spaceSortOrder, setSpaceSortOrder] = useState<'order_asc' | 'name_asc' | 'products_desc'>('order_asc');
+  const [spaceCurrentPage, setSpaceCurrentPage] = useState(1);
+  const spacePageSize = 10;
   const [showSpaceDrawer, setShowSpaceDrawer] = useState(false);
   const [editingSpace, setEditingSpace] = useState<AdminSpace | null>(null);
   const [spaceForm] = Form.useForm();
@@ -973,6 +985,25 @@ export function CategoriesTab({
       .sort((a, b) => a.displayOrder - b.displayOrder);
   }, [categoriesList, categorySearchQuery, categoryStatusFilter, categorySpaceFilter]);
 
+  const sortedCategories = useMemo(() => {
+    const list = [...filteredCategories];
+    if (categorySortOrder === 'name_asc') {
+      return list.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'vi'));
+    }
+    if (categorySortOrder === 'products_desc') {
+      return list.sort((a, b) => (b.productCount || 0) - (a.productCount || 0));
+    }
+    if (categorySortOrder === 'products_asc') {
+      return list.sort((a, b) => (a.productCount || 0) - (b.productCount || 0));
+    }
+    return list.sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
+  }, [filteredCategories, categorySortOrder]);
+
+  const paginatedCategories = useMemo(() => {
+    const start = (categoryCurrentPage - 1) * categoryPageSize;
+    return sortedCategories.slice(start, start + categoryPageSize);
+  }, [sortedCategories, categoryCurrentPage, categoryPageSize]);
+
   const filteredSpaces = useMemo(() => {
     return currentSpacesList
       .filter((space) => {
@@ -989,27 +1020,50 @@ export function CategoriesTab({
       .sort((a, b) => a.displayOrder - b.displayOrder);
   }, [currentSpacesList, spaceSearchQuery, spaceStatusFilter]);
 
+  const sortedSpaces = useMemo(() => {
+    const list = [...filteredSpaces];
+    if (spaceSortOrder === 'name_asc') {
+      return list.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'vi'));
+    }
+    if (spaceSortOrder === 'products_desc') {
+      return list.sort((a, b) => {
+        const aCount = getSpaceProductCount(a).totalProducts;
+        const bCount = getSpaceProductCount(b).totalProducts;
+        return bCount - aCount;
+      });
+    }
+    return list.sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
+  }, [filteredSpaces, spaceSortOrder, categoriesList]);
+
+  const paginatedSpaces = useMemo(() => {
+    const start = (spaceCurrentPage - 1) * spacePageSize;
+    return sortedSpaces.slice(start, start + spacePageSize);
+  }, [sortedSpaces, spaceCurrentPage, spacePageSize]);
+
   return (
     <div className="flex-1 flex flex-col h-full">
       {/* SUB-HEADER: TABS SWITCHER (DANH MỤC NHÓM HÀNG vs KHÔNG GIAN NỘI THẤT - Flush with Main Header) */}
       <div className="-mx-4 sm:-mx-5 lg:-mx-6 -mt-4 sm:-mt-5 lg:-mt-6 px-4 sm:px-6 lg:px-8 py-2.5 bg-white border-b border-[#eae1dd] flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs mb-4">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
           <Segmented
             value={activeSubTab}
             onChange={(val: any) => {
               setActiveSubTab(val);
               setSelectedCategoryKeys([]);
               setSelectedSpaceKeys([]);
+              setCategoryCurrentPage(1);
+              setSpaceCurrentPage(1);
             }}
             options={[
               {
                 value: 'categories',
                 label: (
-                  <div className="flex items-center gap-2 py-1 px-1.5 font-bold text-xs sm:text-sm">
+                  <div className="flex items-center justify-center gap-1.5 sm:gap-2 py-1 px-1 sm:px-1.5 font-bold text-xs sm:text-sm">
                     <AppstoreOutlined className={activeSubTab === 'categories' ? 'text-[#784e34]' : 'text-slate-400'} />
-                    <span>Danh mục nhóm hàng</span>
+                    <span>Danh mục</span>
+                    <span className="hidden sm:inline">nhóm hàng</span>
                     <span
-                      className={`px-2 py-0.5 rounded-full text-[11px] font-mono ${
+                      className={`px-1.5 sm:px-2 py-0.5 rounded-full text-[11px] font-mono ${
                         activeSubTab === 'categories' ? 'bg-[#784e34]/15 text-[#784e34]' : 'bg-slate-200 text-slate-600'
                       }`}
                     >
@@ -1021,11 +1075,12 @@ export function CategoriesTab({
               {
                 value: 'spaces',
                 label: (
-                  <div className="flex items-center gap-2 py-1 px-1.5 font-bold text-xs sm:text-sm">
+                  <div className="flex items-center justify-center gap-1.5 sm:gap-2 py-1 px-1 sm:px-1.5 font-bold text-xs sm:text-sm">
                     <HomeOutlined className={activeSubTab === 'spaces' ? 'text-[#784e34]' : 'text-slate-400'} />
-                    <span>Không gian nội thất</span>
+                    <span>Không gian</span>
+                    <span className="hidden sm:inline">nội thất</span>
                     <span
-                      className={`px-2 py-0.5 rounded-full text-[11px] font-mono ${
+                      className={`px-1.5 sm:px-2 py-0.5 rounded-full text-[11px] font-mono ${
                         activeSubTab === 'spaces' ? 'bg-[#784e34]/15 text-[#784e34]' : 'bg-slate-200 text-slate-600'
                       }`}
                     >
@@ -1035,11 +1090,12 @@ export function CategoriesTab({
                 ),
               },
             ]}
-            className="!bg-slate-100 p-1 rounded-lg"
+            block
+            className="!bg-slate-100 p-1 rounded-lg w-full sm:w-auto"
           />
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="hidden sm:flex items-center gap-2">
           <Tag color="blue" className="font-normal text-xs rounded-full px-3 py-1 border-blue-200 bg-blue-50 text-blue-700 flex items-center gap-1.5 select-none m-0">
             <GlobalOutlined />
             <span>Danh mục & Không gian dùng chung toàn hệ thống (không phân biệt chi nhánh)</span>
@@ -1051,236 +1107,772 @@ export function CategoriesTab({
       {/* VIEW 1: QUẢN LÝ DANH MỤC NHÓM HÀNG */}
       {/* ========================================================================= */}
       {activeSubTab === 'categories' && (
-        <div className="flex flex-col lg:flex-row gap-4 items-start flex-1">
-          {/* DESKTOP FILTER SIDEBAR */}
-          <aside className="hidden lg:block w-64 shrink-0">
-            <div className="bg-white rounded-xl shadow-xs p-4 sticky top-[96px] max-h-[calc(100vh-112px)] overflow-y-auto [scrollbar-width:thin] space-y-4 text-xs text-slate-700">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                <span className="font-bold text-xs text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                  <FilterOutlined className="text-[#784e34]" /> Bộ lọc danh mục
-                </span>
-                {(categoryStatusFilter !== 'all' || categorySpaceFilter !== 'all' || categorySearchQuery) && (
-                  <button
-                    type="button"
-                    onClick={handleResetCategoryFilters}
-                    className="text-[11px] text-[#784e34] hover:underline font-semibold bg-transparent border-none cursor-pointer p-0"
-                  >
-                    Xóa lọc
-                  </button>
-                )}
-              </div>
-
-              {/* Lọc theo không gian */}
-              <div>
-                <span className="font-semibold text-slate-800 block mb-1.5">Theo không gian</span>
-                <div className="space-y-1">
-                  <div
-                    onClick={() => setCategorySpaceFilter('all')}
-                    className={`flex items-center justify-between px-3 py-1.5 rounded-lg text-xs cursor-pointer transition-colors ${
-                      categorySpaceFilter === 'all'
-                        ? 'bg-[#784e34]/10 text-[#784e34] font-semibold'
-                        : 'hover:bg-slate-50 text-slate-600'
-                    }`}
-                  >
-                    <span>Tất cả không gian</span>
-                    <span className="text-xs px-2 py-0.2 bg-slate-100 text-slate-500 rounded-full font-mono">
-                      {categoriesList.length}
-                    </span>
-                  </div>
-                  {currentSpacesList.map((sp) => {
-                    const count = categoriesList.filter((c) => (c.space || '').toLowerCase().includes(sp.name.toLowerCase())).length;
-                    return (
-                      <div
-                        key={sp.id}
-                        onClick={() => setCategorySpaceFilter(sp.name)}
-                        className={`flex items-center justify-between px-3 py-1.5 rounded-lg text-xs cursor-pointer transition-colors ${
-                          categorySpaceFilter.toLowerCase() === sp.name.toLowerCase()
-                            ? 'bg-[#784e34]/10 text-[#784e34] font-semibold'
-                            : 'hover:bg-slate-50 text-slate-600'
-                        }`}
-                      >
-                        <span className="truncate">{sp.name}</span>
-                        <span className="text-xs px-2 py-0.2 bg-slate-100 text-slate-500 rounded-full font-mono">
-                          {count}
-                        </span>
-                      </div>
-                    );
-                  })}
+        <>
+          {/* DESKTOP VIEW */}
+          <div className="hidden lg:flex gap-4 items-start flex-1">
+            {/* DESKTOP FILTER SIDEBAR */}
+            <aside className="w-64 shrink-0">
+              <div className="bg-white rounded-xl shadow-xs p-4 sticky top-[96px] max-h-[calc(100vh-112px)] overflow-y-auto [scrollbar-width:thin] space-y-4 text-xs text-slate-700">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                  <span className="font-bold text-xs text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <FilterOutlined className="text-[#784e34]" /> Bộ lọc danh mục
+                  </span>
+                  {(categoryStatusFilter !== 'all' || categorySpaceFilter !== 'all' || categorySearchQuery) && (
+                    <button
+                      type="button"
+                      onClick={handleResetCategoryFilters}
+                      className="text-[11px] text-[#784e34] hover:underline font-semibold bg-transparent border-none cursor-pointer p-0"
+                    >
+                      Xóa lọc
+                    </button>
+                  )}
                 </div>
-              </div>
 
-              {/* Trạng thái hoạt động */}
-              <div>
-                <span className="font-semibold text-slate-800 block mb-1.5">Trạng thái</span>
-                <div className="space-y-1">
-                  {[
-                    { key: 'all', label: 'Tất cả trạng thái', count: categoriesList.length },
-                    { key: 'active', label: 'Đang hiển thị', count: categoriesList.filter((c) => c.status === 'active').length },
-                    { key: 'hidden', label: 'Tạm ẩn / Lưu trữ', count: categoriesList.filter((c) => c.status === 'hidden').length },
-                  ].map((item) => (
+                {/* Lọc theo không gian */}
+                <div>
+                  <span className="font-semibold text-slate-800 block mb-1.5">Theo không gian</span>
+                  <div className="space-y-1">
                     <div
-                      key={item.key}
-                      onClick={() => setCategoryStatusFilter(item.key)}
+                      onClick={() => setCategorySpaceFilter('all')}
                       className={`flex items-center justify-between px-3 py-1.5 rounded-lg text-xs cursor-pointer transition-colors ${
-                        categoryStatusFilter === item.key
+                        categorySpaceFilter === 'all'
                           ? 'bg-[#784e34]/10 text-[#784e34] font-semibold'
                           : 'hover:bg-slate-50 text-slate-600'
                       }`}
                     >
-                      <span>{item.label}</span>
+                      <span>Tất cả không gian</span>
                       <span className="text-xs px-2 py-0.2 bg-slate-100 text-slate-500 rounded-full font-mono">
-                        {item.count}
+                        {categoriesList.length}
                       </span>
                     </div>
-                  ))}
+                    {currentSpacesList.map((sp) => {
+                      const count = categoriesList.filter((c) => (c.space || '').toLowerCase().includes(sp.name.toLowerCase())).length;
+                      return (
+                        <div
+                          key={sp.id}
+                          onClick={() => setCategorySpaceFilter(sp.name)}
+                          className={`flex items-center justify-between px-3 py-1.5 rounded-lg text-xs cursor-pointer transition-colors ${
+                            categorySpaceFilter.toLowerCase() === sp.name.toLowerCase()
+                              ? 'bg-[#784e34]/10 text-[#784e34] font-semibold'
+                              : 'hover:bg-slate-50 text-slate-600'
+                          }`}
+                        >
+                          <span className="truncate">{sp.name}</span>
+                          <span className="text-xs px-2 py-0.2 bg-slate-100 text-slate-500 rounded-full font-mono">
+                            {count}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Trạng thái hoạt động */}
+                <div>
+                  <span className="font-semibold text-slate-800 block mb-1.5">Trạng thái</span>
+                  <div className="space-y-1">
+                    {[
+                      { key: 'all', label: 'Tất cả trạng thái', count: categoriesList.length },
+                      { key: 'active', label: 'Đang hiển thị', count: categoriesList.filter((c) => c.status === 'active').length },
+                      { key: 'hidden', label: 'Tạm ẩn / Lưu trữ', count: categoriesList.filter((c) => c.status === 'hidden').length },
+                    ].map((item) => (
+                      <div
+                        key={item.key}
+                        onClick={() => setCategoryStatusFilter(item.key)}
+                        className={`flex items-center justify-between px-3 py-1.5 rounded-lg text-xs cursor-pointer transition-colors ${
+                          categoryStatusFilter === item.key
+                            ? 'bg-[#784e34]/10 text-[#784e34] font-semibold'
+                            : 'hover:bg-slate-50 text-slate-600'
+                        }`}
+                      >
+                        <span>{item.label}</span>
+                        <span className="text-xs px-2 py-0.2 bg-slate-100 text-slate-500 rounded-full font-mono">
+                          {item.count}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Quick stats */}
+                <div className="pt-2 border-t border-slate-100 space-y-2 text-xs">
+                  <span className="font-semibold text-slate-600 uppercase tracking-wider block text-[11px]">Thống kê nhanh</span>
+                  <div className="flex justify-between text-slate-600">
+                    <span>Tổng danh mục:</span>
+                    <span className="font-semibold text-slate-900 font-mono">{categoriesList.length}</span>
+                  </div>
+                  <div className="flex justify-between text-slate-600">
+                    <span>Hiện trang chủ:</span>
+                    <span className="font-semibold text-emerald-700 font-mono">{categoriesList.filter((c) => c.showOnHome).length}</span>
+                  </div>
+                  <div className="flex justify-between text-slate-600">
+                    <span>Hiện trên Menu:</span>
+                    <span className="font-semibold text-[#784e34] font-mono">{categoriesList.filter((c) => c.showOnMenu).length}</span>
+                  </div>
                 </div>
               </div>
+            </aside>
 
-              {/* Quick stats */}
-              <div className="pt-2 border-t border-slate-100 space-y-2 text-xs">
-                <span className="font-semibold text-slate-600 uppercase tracking-wider block text-[11px]">Thống kê nhanh</span>
-                <div className="flex justify-between text-slate-600">
-                  <span>Tổng danh mục:</span>
-                  <span className="font-semibold text-slate-900 font-mono">{categoriesList.length}</span>
+            {/* MAIN CONTENT: CATEGORIES TABLE */}
+            <div className="min-w-0 flex-1 w-full">
+              <AdminDataTable
+                enableSelectionToolbar
+                selectedRowKeys={selectedCategoryKeys}
+                onSelectionChange={(keys) => setSelectedCategoryKeys(keys)}
+                titleText="Danh mục nhóm hàng"
+                totalCount={filteredCategories.length}
+                countUnit="danh mục"
+                onCopySelected={() => selectedCategoryRecord && handleCopyCategory(selectedCategoryRecord)}
+                onEditSelected={() => selectedCategoryRecord && handleOpenEditCategory(selectedCategoryRecord)}
+                onDeleteSelected={handleDeleteSelectedCategories}
+                deleteConfirmTitle={`Xóa ${selectedCategoryKeys.length} danh mục đã chọn?`}
+                onCreateNew={handleOpenCreateCategory}
+                createButtonText="Tạo mới"
+                searchValue={categorySearchQuery}
+                onSearchChange={(val) => setCategorySearchQuery(val)}
+                searchPlaceholder="Theo mã, tên danh mục, đường dẫn slug..."
+                extraHeaderActions={
+                  <>
+                    <Upload
+                      accept=".xlsx,.xls"
+                      showUploadList={false}
+                      beforeUpload={handleImportCategoryExcel}
+                      disabled={importingCategoryExcel}
+                    >
+                      <Button
+                        icon={<FileExcelOutlined />}
+                        loading={importingCategoryExcel}
+                        className="!h-8 px-2.5 rounded-lg border-emerald-600/30 bg-emerald-50 text-emerald-700 text-xs shadow-xs inline-flex items-center justify-center hover:!bg-emerald-100 hover:!border-emerald-600 hover:!text-emerald-800"
+                        title="Nhập dữ liệu danh mục từ file Excel"
+                      >
+                        Nhập Excel
+                      </Button>
+                    </Upload>
+                    <Button
+                      icon={<DownloadOutlined />}
+                      onClick={handleExportCategoriesExcel}
+                      className="!h-8 px-2.5 rounded-lg border-slate-300 bg-white text-slate-700 text-xs shadow-xs inline-flex items-center justify-center hover:text-[#784e34]"
+                      title="Xuất Excel"
+                    >
+                      Xuất Excel
+                    </Button>
+                  </>
+                }
+                dataSource={filteredCategories}
+                rowKey="id"
+                columns={[
+                  {
+                    title: 'STT',
+                    key: 'stt',
+                    width: 60,
+                    align: 'center',
+                    render: (_, __, index) => (
+                      <span className="font-mono text-xs text-slate-500 font-semibold">{index + 1}</span>
+                    ),
+                  },
+                  {
+                    title: 'Danh mục & Mã nhóm',
+                    dataIndex: 'name',
+                    key: 'name',
+                    render: (_, record) => {
+                      const cleanName = (record.name || '').replace(/\s*\([^)]*\)/g, '').trim();
+                      return (
+                        <div className="min-w-0">
+                          <div
+                            onClick={() => handleOpenEditCategory(record)}
+                            className="font-semibold text-sm text-slate-900 hover:text-[#784e34] cursor-pointer line-clamp-1 transition-colors"
+                          >
+                            {cleanName}
+                          </div>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="font-mono text-xs font-semibold text-[#784e34]">{record.code}</span>
+                          </div>
+                        </div>
+                      );
+                    },
+                  },
+                  {
+                    title: 'Không gian',
+                    dataIndex: 'space',
+                    key: 'space',
+                    width: 160,
+                    render: (space) => (
+                      <Tag className="text-xs font-medium border-0 bg-slate-100 text-slate-700 px-2 py-0.5">
+                        {space}
+                      </Tag>
+                    ),
+                  },
+                  {
+                    title: 'Số lượng SP',
+                    dataIndex: 'productCount',
+                    key: 'productCount',
+                    align: 'center',
+                    width: 120,
+                    render: (count) => (
+                      <span className="font-mono font-semibold text-sm text-slate-800">{count} SP</span>
+                    ),
+                  },
+                  {
+                    title: 'Trạng thái',
+                    dataIndex: 'status',
+                    key: 'status',
+                    width: 140,
+                    render: (status) => <CategoryStatusBadge status={status} />,
+                  },
+                  {
+                    title: 'Thao tác',
+                    key: 'action',
+                    align: 'center',
+                    width: 110,
+                    render: (_, record) => (
+                      <Space size={2} onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          size="small"
+                          type="text"
+                          icon={<EditOutlined className="text-sm" />}
+                          onClick={() => handleOpenEditCategory(record)}
+                          className="text-slate-600 hover:text-[#784e34] hover:bg-slate-100"
+                          title="Chỉnh sửa"
+                        />
+                        <Button
+                          size="small"
+                          type="text"
+                          icon={<CopyOutlined className="text-sm" />}
+                          onClick={() => handleCopyCategory(record)}
+                          className="text-slate-600 hover:text-[#784e34] hover:bg-slate-100"
+                          title="Sao chép"
+                        />
+                        <Button
+                          size="small"
+                          type="text"
+                          icon={<DeleteOutlined className="text-sm" />}
+                          onClick={() => handleRequestDeleteCategory(record)}
+                          className="text-slate-400 hover:text-red-600 hover:bg-red-50"
+                          title="Xóa danh mục"
+                        />
+                      </Space>
+                    ),
+                  },
+                ]}
+              />
+            </div>
+          </div>
+
+          {/* MOBILE VIEW (< 1024px) */}
+          <div className="block lg:hidden space-y-3.5 w-full min-w-0 max-w-full flex-1">
+            {/* 1. Search Bar */}
+            <Input
+              prefix={<SearchOutlined className="text-slate-400 mr-1.5 text-base" />}
+              placeholder="Tìm mã, tên danh mục, slug..."
+              value={categorySearchQuery}
+              onChange={(e) => {
+                setCategorySearchQuery(e.target.value);
+                setCategoryCurrentPage(1);
+              }}
+              allowClear
+              className="w-full h-11 rounded-xl border-slate-200 bg-white text-sm shadow-2xs hover:border-[#784e34] focus:border-[#784e34]"
+            />
+
+            {/* 2. Action Buttons Row: Xuất Excel & + Tạo mới */}
+            <div className="grid grid-cols-2 gap-3">
+              <Button
+                icon={<DownloadOutlined />}
+                onClick={handleExportCategoriesExcel}
+                className="h-11 rounded-xl text-sm font-medium text-slate-700 bg-white border-slate-200 hover:text-[#784e34] hover:border-[#784e34] shadow-2xs flex items-center justify-center"
+              >
+                Xuất Excel
+              </Button>
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={handleOpenCreateCategory}
+                className="h-11 rounded-xl !bg-[#5c3826] hover:!bg-[#472a1c] font-semibold text-white border-none shadow-2xs flex items-center justify-center text-sm"
+              >
+                Tạo mới
+              </Button>
+            </div>
+
+            {/* 3. Filter Trigger Card: Bộ lọc danh mục > */}
+            <div
+              onClick={() => setIsMobileCategoryFilterOpen(true)}
+              className="w-full bg-white border border-slate-200/90 rounded-xl px-4 py-3 flex items-center justify-between cursor-pointer hover:border-slate-300 transition-colors shadow-2xs"
+            >
+              <div className="flex items-center gap-2.5 font-bold text-slate-900 text-sm">
+                <FilterOutlined className="text-[#784e34] text-base" />
+                <span>Bộ lọc danh mục</span>
+                {Boolean(categorySearchQuery || categorySpaceFilter !== 'all' || categoryStatusFilter !== 'all') && (
+                  <span className="w-2 h-2 rounded-full bg-[#784e34]" />
+                )}
+              </div>
+              <RightOutlined className="text-slate-400 text-xs" />
+            </div>
+
+            {/* Batch Selection Banner */}
+            {selectedCategoryKeys.length > 0 && (
+              <div className="bg-[#fbf2ee] border border-[#d8c3af] px-3.5 py-2 rounded-xl flex items-center justify-between gap-2 text-xs shadow-xs">
+                <div className="flex items-center gap-1.5 text-[#5d371f]">
+                  <span className="font-bold text-xs">Đã chọn {selectedCategoryKeys.length} danh mục</span>
+                  <span className="text-slate-400">|</span>
+                  <Button
+                    type="link"
+                    size="small"
+                    onClick={() => setSelectedCategoryKeys([])}
+                    className="text-[#784e34] p-0 font-medium hover:underline text-xs"
+                  >
+                    Bỏ chọn
+                  </Button>
                 </div>
-                <div className="flex justify-between text-slate-600">
-                  <span>Hiện trang chủ:</span>
-                  <span className="font-semibold text-emerald-700 font-mono">{categoriesList.filter((c) => c.showOnHome).length}</span>
+                <div className="flex items-center gap-1.5">
+                  <Popconfirm
+                    title={`Xóa ${selectedCategoryKeys.length} danh mục đã chọn?`}
+                    onConfirm={handleDeleteSelectedCategories}
+                    okText="Xóa"
+                    cancelText="Hủy"
+                    okButtonProps={{ danger: true }}
+                  >
+                    <Button size="small" danger icon={<DeleteOutlined />} className="text-xs px-2" />
+                  </Popconfirm>
                 </div>
-                <div className="flex justify-between text-slate-600">
-                  <span>Hiện trên Menu:</span>
-                  <span className="font-semibold text-[#784e34] font-mono">{categoriesList.filter((c) => c.showOnMenu).length}</span>
+              </div>
+            )}
+
+            {/* 4. Summary & Sort Bar */}
+            <div className="flex items-center justify-between pt-1 pb-0.5 text-sm">
+              <span className="font-bold text-slate-900 text-sm">
+                Tất cả danh mục ({filteredCategories.length})
+              </span>
+              <Dropdown
+                menu={{
+                  items: [
+                    { key: 'order_asc', label: 'Thứ tự hiển thị' },
+                    { key: 'name_asc', label: 'Tên A - Z' },
+                    { key: 'products_desc', label: 'Nhiều SP nhất' },
+                    { key: 'products_asc', label: 'Ít SP nhất' },
+                  ],
+                  selectedKeys: [categorySortOrder],
+                  onClick: ({ key }) => setCategorySortOrder(key as any),
+                }}
+                trigger={['click']}
+              >
+                <div className="flex items-center gap-1.5 text-slate-700 hover:text-[#784e34] cursor-pointer font-medium text-xs select-none">
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 6h18M6 12h12m-9 6h6" />
+                  </svg>
+                  <span>
+                    Sắp xếp:{' '}
+                    {categorySortOrder === 'order_asc'
+                      ? 'Thứ tự hiển thị'
+                      : categorySortOrder === 'name_asc'
+                      ? 'Tên A - Z'
+                      : categorySortOrder === 'products_desc'
+                      ? 'Nhiều SP nhất'
+                      : 'Ít SP nhất'}
+                  </span>
                 </div>
+              </Dropdown>
+            </div>
+
+            {/* 5. List of Category Cards */}
+            <div className="space-y-3">
+              {paginatedCategories.length === 0 ? (
+                <div className="bg-white rounded-xl border border-slate-200/80 p-8 text-center text-slate-500">
+                  <p className="font-medium text-slate-700 mb-1">Không tìm thấy danh mục nào</p>
+                  <p className="text-xs text-slate-400">Vui lòng điều chỉnh lại bộ lọc hoặc từ khóa tìm kiếm</p>
+                </div>
+              ) : (
+                paginatedCategories.map((cat) => {
+                  const isSelected = selectedCategoryKeys.includes(cat.id);
+                  const cleanName = (cat.name || '').replace(/\s*\([^)]*\)/g, '').trim();
+
+                  return (
+                    <div
+                      key={cat.id}
+                      className="bg-white rounded-xl border border-slate-200/90 p-3.5 shadow-2xs space-y-2.5"
+                    >
+                      <div className="flex items-start gap-3">
+                        <Checkbox
+                          checked={isSelected}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setSelectedCategoryKeys((prev) =>
+                              checked ? [...prev, cat.id] : prev.filter((k) => k !== cat.id)
+                            );
+                          }}
+                          className="mt-0.5"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-mono text-xs font-semibold text-[#784e34] bg-[#f4efe9] px-2 py-0.5 rounded-md shrink-0">
+                              {cat.code}
+                            </span>
+                            {cat.space && (
+                              <Tag className="text-[11px] font-medium border-0 bg-slate-100 text-slate-700 px-2 py-0.5 m-0 shrink-0">
+                                {cat.space}
+                              </Tag>
+                            )}
+                            <span className="font-mono text-[11px] font-semibold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded shrink-0">
+                              {cat.productCount || 0} SP
+                            </span>
+                          </div>
+                          <h4
+                            onClick={() => handleOpenEditCategory(cat)}
+                            className="font-bold text-slate-900 text-sm mt-1 hover:text-[#784e34] cursor-pointer transition-colors line-clamp-1"
+                          >
+                            {cleanName}
+                          </h4>
+                          {cat.description && (
+                            <p className="text-xs text-slate-500 line-clamp-1 mt-0.5">
+                              {cat.description}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Bottom Row: Status + Action Buttons */}
+                      <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
+                        <CategoryStatusBadge status={cat.status} />
+
+                        <div className="flex items-center gap-3 text-slate-500">
+                          <button
+                            type="button"
+                            title="Chỉnh sửa danh mục"
+                            onClick={() => handleOpenEditCategory(cat)}
+                            className="p-1 hover:text-[#784e34] transition-colors cursor-pointer bg-transparent border-none text-base text-slate-500"
+                          >
+                            <EditOutlined />
+                          </button>
+
+                          <button
+                            type="button"
+                            title="Xóa danh mục"
+                            onClick={() => handleRequestDeleteCategory(cat)}
+                            className="p-1 hover:text-rose-700 transition-colors cursor-pointer bg-transparent border-none text-base text-rose-500"
+                          >
+                            <DeleteOutlined />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* 6. Mobile Pagination Footer */}
+            {filteredCategories.length > 0 && (
+              <div className="pt-2 pb-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600">
+                <div className="font-medium text-slate-600">
+                  Hiển thị {(categoryCurrentPage - 1) * categoryPageSize + 1} -{' '}
+                  {Math.min(categoryCurrentPage * categoryPageSize, filteredCategories.length)} trong tổng số{' '}
+                  {filteredCategories.length} danh mục
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="middle"
+                    disabled={categoryCurrentPage <= 1}
+                    onClick={() => setCategoryCurrentPage((p) => Math.max(1, p - 1))}
+                    className="rounded-lg text-xs"
+                  >
+                    Trang trước
+                  </Button>
+                  <span className="px-2 text-xs font-semibold text-slate-700">
+                    {categoryCurrentPage} / {Math.max(1, Math.ceil(filteredCategories.length / categoryPageSize))}
+                  </span>
+                  <Button
+                    size="middle"
+                    disabled={categoryCurrentPage >= Math.ceil(filteredCategories.length / categoryPageSize)}
+                    onClick={() => setCategoryCurrentPage((p) => p + 1)}
+                    className="rounded-lg text-xs"
+                  >
+                    Trang sau
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* MOBILE FILTER DRAWER FOR CATEGORIES */}
+          <AdminFilterDrawer
+            open={isMobileCategoryFilterOpen}
+            onClose={() => setIsMobileCategoryFilterOpen(false)}
+            title="Bộ lọc danh mục"
+            hasActiveFilters={Boolean(categorySearchQuery || categorySpaceFilter !== 'all' || categoryStatusFilter !== 'all')}
+            onResetFilters={() => {
+              handleResetCategoryFilters();
+              setCategoryCurrentPage(1);
+            }}
+          >
+            <div>
+              <div className="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">
+                Theo không gian
+              </div>
+              <Select
+                value={categorySpaceFilter}
+                onChange={(v) => {
+                  setCategorySpaceFilter(v);
+                  setCategoryCurrentPage(1);
+                }}
+                className="w-full text-xs font-medium"
+                options={[
+                  { value: 'all', label: `Tất cả không gian (${categoriesList.length})` },
+                  ...currentSpacesList.map((sp) => {
+                    const count = categoriesList.filter((c) => (c.space || '').toLowerCase().includes(sp.name.toLowerCase())).length;
+                    return {
+                      value: sp.name,
+                      label: `${sp.name} (${count})`,
+                    };
+                  }),
+                ]}
+              />
+            </div>
+
+            <div>
+              <div className="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">
+                Trạng thái hoạt động
+              </div>
+              <Select
+                value={categoryStatusFilter}
+                onChange={(v) => {
+                  setCategoryStatusFilter(v);
+                  setCategoryCurrentPage(1);
+                }}
+                className="w-full text-xs font-medium"
+                options={[
+                  { value: 'all', label: `Tất cả trạng thái (${categoriesList.length})` },
+                  { value: 'active', label: `Đang hiển thị (${categoriesList.filter((c) => c.status === 'active').length})` },
+                  { value: 'hidden', label: `Tạm ẩn / Lưu trữ (${categoriesList.filter((c) => c.status === 'hidden').length})` },
+                ]}
+              />
+            </div>
+
+            <div className="bg-slate-50 p-3 rounded-lg border border-slate-200/80 space-y-1.5 text-xs">
+              <div className="flex justify-between text-slate-600">
+                <span>Tổng danh mục:</span>
+                <span className="font-mono font-semibold text-slate-900">{categoriesList.length}</span>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>Hiện trang chủ:</span>
+                <span className="font-mono font-semibold text-emerald-700">{categoriesList.filter((c) => c.showOnHome).length}</span>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>Hiện trên Menu:</span>
+                <span className="font-mono font-semibold text-[#784e34]">{categoriesList.filter((c) => c.showOnMenu).length}</span>
               </div>
             </div>
-          </aside>
+          </AdminFilterDrawer>
+        </>
+      )}
 
-          {/* MAIN CONTENT: CATEGORIES TABLE */}
-          <div className="min-w-0 flex-1 w-full">
-            <AdminDataTable
-                  enableSelectionToolbar
-                  selectedRowKeys={selectedCategoryKeys}
-                  onSelectionChange={(keys) => setSelectedCategoryKeys(keys)}
-                  titleText="Danh mục nhóm hàng"
-                  totalCount={filteredCategories.length}
-                  countUnit="danh mục"
-                  onCopySelected={() => selectedCategoryRecord && handleCopyCategory(selectedCategoryRecord)}
-                  onEditSelected={() => selectedCategoryRecord && handleOpenEditCategory(selectedCategoryRecord)}
-                  onDeleteSelected={handleDeleteSelectedCategories}
-                  deleteConfirmTitle={`Xóa ${selectedCategoryKeys.length} danh mục đã chọn?`}
-                  onCreateNew={handleOpenCreateCategory}
-                  createButtonText="Tạo mới"
-                  searchValue={categorySearchQuery}
-                  onSearchChange={(val) => setCategorySearchQuery(val)}
-                  searchPlaceholder="Theo mã, tên danh mục, đường dẫn slug..."
-                  extraHeaderActions={
-                    <>
-                      <Button
-                        icon={<ReloadOutlined />}
-                        onClick={handleRefreshCategories}
-                        className="!h-8 px-2.5 rounded-lg border-slate-300 bg-white text-slate-700 text-xs shadow-xs inline-flex items-center justify-center hover:text-[#784e34]"
-                        title="Làm mới"
+      {/* ========================================================================= */}
+      {/* VIEW 2: QUẢN LÝ KHÔNG GIAN NỘI THẤT (LIVING SPACES) */}
+      {/* ========================================================================= */}
+      {activeSubTab === 'spaces' && (
+        <>
+          {/* DESKTOP VIEW */}
+          <div className="hidden lg:flex gap-4 items-start flex-1">
+            {/* DESKTOP SPACES FILTER SIDEBAR */}
+            <aside className="w-64 shrink-0">
+              <div className="bg-white rounded-xl shadow-xs p-4 sticky top-[96px] max-h-[calc(100vh-112px)] overflow-y-auto [scrollbar-width:thin] space-y-4 text-xs text-slate-700">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                  <span className="font-bold text-xs text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <FilterOutlined className="text-[#784e34]" /> Bộ lọc không gian
+                  </span>
+                  {(spaceStatusFilter !== 'all' || spaceSearchQuery) && (
+                    <button
+                      type="button"
+                      onClick={handleResetSpaceFilters}
+                      className="text-[11px] text-[#784e34] hover:underline font-semibold bg-transparent border-none cursor-pointer p-0"
+                    >
+                      Xóa lọc
+                    </button>
+                  )}
+                </div>
+
+                {/* Trạng thái hoạt động */}
+                <div>
+                  <span className="font-semibold text-slate-800 block mb-1.5">Trạng thái</span>
+                  <div className="space-y-1">
+                    {[
+                      { key: 'all', label: 'Tất cả không gian', count: currentSpacesList.length },
+                      { key: 'active', label: 'Đang hiển thị', count: currentSpacesList.filter((s) => s.status === 'active').length },
+                      { key: 'hidden', label: 'Tạm ẩn / Đang sửa', count: currentSpacesList.filter((s) => s.status === 'hidden').length },
+                    ].map((item) => (
+                      <div
+                        key={item.key}
+                        onClick={() => setSpaceStatusFilter(item.key)}
+                        className={`flex items-center justify-between px-3 py-1.5 rounded-lg text-xs cursor-pointer transition-colors ${
+                          spaceStatusFilter === item.key
+                            ? 'bg-[#784e34]/10 text-[#784e34] font-semibold'
+                            : 'hover:bg-slate-50 text-slate-600'
+                        }`}
                       >
-                        Làm mới
-                      </Button>
-                      <Upload
-                        accept=".xlsx,.xls"
-                        showUploadList={false}
-                        beforeUpload={handleImportCategoryExcel}
-                        disabled={importingCategoryExcel}
-                      >
-                        <Button
-                          icon={<FileExcelOutlined />}
-                          loading={importingCategoryExcel}
-                          className="!h-8 px-2.5 rounded-lg border-emerald-600/30 bg-emerald-50 text-emerald-700 text-xs shadow-xs inline-flex items-center justify-center hover:!bg-emerald-100 hover:!border-emerald-600 hover:!text-emerald-800"
-                          title="Nhập dữ liệu danh mục từ file Excel"
-                        >
-                          Nhập Excel
-                        </Button>
-                      </Upload>
-                      <Button
-                        icon={<DownloadOutlined />}
-                        onClick={handleExportCategoriesExcel}
-                        className="!h-8 px-2.5 rounded-lg border-slate-300 bg-white text-slate-700 text-xs shadow-xs inline-flex items-center justify-center hover:text-[#784e34]"
-                        title="Xuất Excel"
-                      >
-                        Xuất Excel
-                      </Button>
-                    </>
-                  }
-                  dataSource={filteredCategories}
-                  rowKey="id"
-                  columns={[
-                    {
-                      title: 'STT',
-                      key: 'stt',
-                      width: 60,
-                      align: 'center',
-                      render: (_, __, index) => (
-                        <span className="font-mono text-xs text-slate-500 font-semibold">{index + 1}</span>
-                      ),
-                    },
-                    {
-                      title: 'Danh mục & Mã nhóm',
-                      dataIndex: 'name',
-                      key: 'name',
-                      render: (_, record) => {
-                        const cleanName = (record.name || '').replace(/\s*\([^)]*\)/g, '').trim();
-                        return (
-                          <div className="min-w-0">
-                            <div
-                              onClick={() => handleOpenEditCategory(record)}
-                              className="font-semibold text-sm text-slate-900 hover:text-[#784e34] cursor-pointer line-clamp-1 transition-colors"
-                            >
-                              {cleanName}
-                            </div>
-                            <div className="flex items-center gap-2 mt-0.5">
-                              <span className="font-mono text-xs font-semibold text-[#784e34]">{record.code}</span>
-                            </div>
+                        <span>{item.label}</span>
+                        <span className="text-xs px-2 py-0.2 bg-slate-100 text-slate-500 rounded-full font-mono">
+                          {item.count}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Quick stats */}
+                <div className="pt-2 border-t border-slate-100 space-y-2 text-xs">
+                  <span className="font-semibold text-slate-600 uppercase tracking-wider block text-[11px]">Thống kê không gian</span>
+                  <div className="flex justify-between text-slate-600">
+                    <span>Tổng không gian:</span>
+                    <span className="font-semibold text-slate-900 font-mono">{currentSpacesList.length}</span>
+                  </div>
+                  <div className="flex justify-between text-slate-600">
+                    <span>Hiện trên Header:</span>
+                    <span className="font-semibold text-[#784e34] font-mono">{currentSpacesList.filter((s) => s.showOnHeader).length}</span>
+                  </div>
+                  <div className="flex justify-between text-slate-600">
+                    <span>Hiện trên Trang chủ:</span>
+                    <span className="font-semibold text-emerald-700 font-mono">{currentSpacesList.filter((s) => s.showOnHome).length}</span>
+                  </div>
+                </div>
+              </div>
+            </aside>
+
+            {/* MAIN SPACES CONTENT: TABLE */}
+            <div className="min-w-0 flex-1 w-full">
+              <AdminDataTable
+                enableSelectionToolbar
+                selectedRowKeys={selectedSpaceKeys}
+                onSelectionChange={(keys) => setSelectedSpaceKeys(keys)}
+                titleText="Không gian nội thất"
+                totalCount={filteredSpaces.length}
+                countUnit="không gian"
+                onCopySelected={() => selectedSpaceRecord && handleCopySpace(selectedSpaceRecord)}
+                onEditSelected={() => selectedSpaceRecord && handleOpenEditSpace(selectedSpaceRecord)}
+                onDeleteSelected={handleDeleteSelectedSpaces}
+                deleteConfirmTitle={`Xóa ${selectedSpaceKeys.length} không gian đã chọn?`}
+                onCreateNew={handleOpenCreateSpace}
+                createButtonText="Tạo mới"
+                searchValue={spaceSearchQuery}
+                onSearchChange={(val) => setSpaceSearchQuery(val)}
+                searchPlaceholder="Theo mã, tên không gian, đường dẫn slug, tiêu đề..."
+                extraHeaderActions={
+                  <>
+                    <Button
+                      icon={<DownloadOutlined />}
+                      onClick={handleExportSpacesExcel}
+                      className="!h-8 px-2.5 rounded-lg border-slate-300 bg-white text-slate-700 text-xs shadow-xs inline-flex items-center justify-center hover:text-[#784e34]"
+                      title="Xuất Excel"
+                    >
+                      Xuất Excel
+                    </Button>
+                  </>
+                }
+                dataSource={filteredSpaces}
+                rowKey="id"
+                columns={[
+                  {
+                    title: 'STT',
+                    key: 'stt',
+                    width: 60,
+                    align: 'center',
+                    render: (_, __, index) => (
+                      <span className="font-mono text-xs text-slate-500 font-semibold">{index + 1}</span>
+                    ),
+                  },
+                  {
+                    title: 'Ảnh',
+                    dataIndex: 'image',
+                    key: 'image',
+                    width: 75,
+                    align: 'center',
+                    render: (image, record) => (
+                      <SpaceImageCell
+                        image={image}
+                        code={record.code}
+                        name={record.name}
+                        onEdit={() => handleOpenEditSpace(record)}
+                      />
+                    ),
+                  },
+                  {
+                    title: 'Không gian & Mã',
+                    dataIndex: 'name',
+                    key: 'name',
+                    render: (_, record) => {
+                      return (
+                        <div className="min-w-0">
+                          <div
+                            onClick={() => handleOpenEditSpace(record)}
+                            className="font-semibold text-sm text-slate-900 hover:text-[#784e34] cursor-pointer line-clamp-1 transition-colors"
+                          >
+                            {record.name}
                           </div>
-                        );
-                      },
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="font-mono text-xs font-semibold text-[#784e34]">{record.code}</span>
+                            <span className="text-slate-300">•</span>
+                            <span className="font-mono text-[11px] text-slate-500">/{record.slug}</span>
+                          </div>
+                        </div>
+                      );
                     },
-                    {
-                      title: 'Không gian',
-                      dataIndex: 'space',
-                      key: 'space',
-                      width: 160,
-                      render: (space) => (
-                        <Tag className="text-xs font-medium border-0 bg-slate-100 text-slate-700 px-2 py-0.5">
-                          {space}
-                        </Tag>
-                      ),
+                  },
+                  {
+                    title: 'Hiển thị trên',
+                    key: 'displayPlaces',
+                    width: 170,
+                    render: (_, record) => (
+                      <div className="flex flex-wrap gap-1">
+                        {record.showOnHeader && (
+                          <Tag className="text-[10px] font-semibold border-0 bg-blue-50 text-blue-700 m-0">
+                            Header Menu
+                          </Tag>
+                        )}
+                        {record.showOnHome && (
+                          <Tag className="text-[10px] font-semibold border-0 bg-emerald-50 text-emerald-700 m-0">
+                            Trang Chủ
+                          </Tag>
+                        )}
+                      </div>
+                    ),
+                  },
+                  {
+                    title: 'Danh mục / SP',
+                    key: 'categoryCount',
+                    align: 'center',
+                    width: 130,
+                    render: (_, record) => {
+                      const { totalProducts, categoryCount } = getSpaceProductCount(record);
+                      return (
+                        <div className="flex flex-col items-center gap-0.5">
+                          <span className="font-mono font-semibold text-xs text-slate-800">
+                            {categoryCount} DM
+                          </span>
+                          <span className={`text-[11px] font-mono font-medium ${totalProducts > 0 ? 'text-[#784e34]' : 'text-slate-400'}`}>
+                            {totalProducts} SP
+                          </span>
+                        </div>
+                      );
                     },
-                    {
-                      title: 'Số lượng SP',
-                      dataIndex: 'productCount',
-                      key: 'productCount',
-                      align: 'center',
-                      width: 120,
-                      render: (count) => (
-                        <span className="font-mono font-semibold text-sm text-slate-800">{count} SP</span>
-                      ),
-                    },
-                    {
-                      title: 'Trạng thái',
-                      dataIndex: 'status',
-                      key: 'status',
-                      width: 140,
-                      render: (status) => <CategoryStatusBadge status={status} />,
-                    },
-                    {
-                      title: 'Thao tác',
-                      key: 'action',
-                      align: 'center',
-                      width: 110,
-                      render: (_, record) => (
+                  },
+                  {
+                    title: 'Trạng thái',
+                    dataIndex: 'status',
+                    key: 'status',
+                    width: 130,
+                    render: (status) => <CategoryStatusBadge status={status} />,
+                  },
+                  {
+                    title: 'Thao tác',
+                    key: 'action',
+                    align: 'center',
+                    width: 110,
+                    render: (_, record) => {
+                      const { totalProducts, categoryCount } = getSpaceProductCount(record);
+                      const hasProducts = totalProducts > 0;
+                      return (
                         <Space size={2} onClick={(e) => e.stopPropagation()}>
                           <Button
                             size="small"
                             type="text"
                             icon={<EditOutlined className="text-sm" />}
-                            onClick={() => handleOpenEditCategory(record)}
+                            onClick={() => handleOpenEditSpace(record)}
                             className="text-slate-600 hover:text-[#784e34] hover:bg-slate-100"
                             title="Chỉnh sửa"
                           />
@@ -1288,7 +1880,7 @@ export function CategoriesTab({
                             size="small"
                             type="text"
                             icon={<CopyOutlined className="text-sm" />}
-                            onClick={() => handleCopyCategory(record)}
+                            onClick={() => handleCopySpace(record)}
                             className="text-slate-600 hover:text-[#784e34] hover:bg-slate-100"
                             title="Sao chép"
                           />
@@ -1296,262 +1888,324 @@ export function CategoriesTab({
                             size="small"
                             type="text"
                             icon={<DeleteOutlined className="text-sm" />}
-                            onClick={() => handleRequestDeleteCategory(record)}
+                            onClick={() => handleRequestDeleteSpace(record)}
                             className="text-slate-400 hover:text-red-600 hover:bg-red-50"
-                            title="Xóa danh mục"
+                            title="Xóa không gian"
                           />
                         </Space>
-                      ),
+                      );
                     },
-                  ]}
-                />
+                  },
+                ]}
+              />
+            </div>
           </div>
-        </div>
-      )}
 
-      {/* ========================================================================= */}
-      {/* VIEW 2: QUẢN LÝ KHÔNG GIAN NỘI THẤT (LIVING SPACES) */}
-      {/* ========================================================================= */}
-      {activeSubTab === 'spaces' && (
-        <div className="flex flex-col lg:flex-row gap-4 items-start flex-1">
-          {/* DESKTOP SPACES FILTER SIDEBAR */}
-          <aside className="hidden lg:block w-64 shrink-0">
-            <div className="bg-white rounded-xl shadow-xs p-4 sticky top-[96px] max-h-[calc(100vh-112px)] overflow-y-auto [scrollbar-width:thin] space-y-4 text-xs text-slate-700">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                <span className="font-bold text-xs text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                  <FilterOutlined className="text-[#784e34]" /> Bộ lọc không gian
-                </span>
-                {(spaceStatusFilter !== 'all' || spaceSearchQuery) && (
-                  <button
-                    type="button"
-                    onClick={handleResetSpaceFilters}
-                    className="text-[11px] text-[#784e34] hover:underline font-semibold bg-transparent border-none cursor-pointer p-0"
-                  >
-                    Xóa lọc
-                  </button>
+          {/* MOBILE VIEW (< 1024px) */}
+          <div className="block lg:hidden space-y-3.5 w-full min-w-0 max-w-full flex-1">
+            {/* 1. Search Bar */}
+            <Input
+              prefix={<SearchOutlined className="text-slate-400 mr-1.5 text-base" />}
+              placeholder="Tìm mã, tên không gian, slug..."
+              value={spaceSearchQuery}
+              onChange={(e) => {
+                setSpaceSearchQuery(e.target.value);
+                setSpaceCurrentPage(1);
+              }}
+              allowClear
+              className="w-full h-11 rounded-xl border-slate-200 bg-white text-sm shadow-2xs hover:border-[#784e34] focus:border-[#784e34]"
+            />
+
+            {/* 2. Action Buttons Row: Xuất Excel & + Tạo mới */}
+            <div className="grid grid-cols-2 gap-3">
+              <Button
+                icon={<DownloadOutlined />}
+                onClick={handleExportSpacesExcel}
+                className="h-11 rounded-xl text-sm font-medium text-slate-700 bg-white border-slate-200 hover:text-[#784e34] hover:border-[#784e34] shadow-2xs flex items-center justify-center"
+              >
+                Xuất Excel
+              </Button>
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={handleOpenCreateSpace}
+                className="h-11 rounded-xl !bg-[#5c3826] hover:!bg-[#472a1c] font-semibold text-white border-none shadow-2xs flex items-center justify-center text-sm"
+              >
+                Tạo mới
+              </Button>
+            </div>
+
+            {/* 3. Filter Trigger Card: Bộ lọc không gian > */}
+            <div
+              onClick={() => setIsMobileSpaceFilterOpen(true)}
+              className="w-full bg-white border border-slate-200/90 rounded-xl px-4 py-3 flex items-center justify-between cursor-pointer hover:border-slate-300 transition-colors shadow-2xs"
+            >
+              <div className="flex items-center gap-2.5 font-bold text-slate-900 text-sm">
+                <FilterOutlined className="text-[#784e34] text-base" />
+                <span>Bộ lọc không gian</span>
+                {Boolean(spaceSearchQuery || spaceStatusFilter !== 'all') && (
+                  <span className="w-2 h-2 rounded-full bg-[#784e34]" />
                 )}
               </div>
-
-              {/* Trạng thái hoạt động */}
-              <div>
-                <span className="font-semibold text-slate-800 block mb-1.5">Trạng thái</span>
-                <div className="space-y-1">
-                  {[
-                    { key: 'all', label: 'Tất cả không gian', count: currentSpacesList.length },
-                    { key: 'active', label: 'Đang hiển thị', count: currentSpacesList.filter((s) => s.status === 'active').length },
-                    { key: 'hidden', label: 'Tạm ẩn / Đang sửa', count: currentSpacesList.filter((s) => s.status === 'hidden').length },
-                  ].map((item) => (
-                    <div
-                      key={item.key}
-                      onClick={() => setSpaceStatusFilter(item.key)}
-                      className={`flex items-center justify-between px-3 py-1.5 rounded-lg text-xs cursor-pointer transition-colors ${
-                        spaceStatusFilter === item.key
-                          ? 'bg-[#784e34]/10 text-[#784e34] font-semibold'
-                          : 'hover:bg-slate-50 text-slate-600'
-                      }`}
-                    >
-                      <span>{item.label}</span>
-                      <span className="text-xs px-2 py-0.2 bg-slate-100 text-slate-500 rounded-full font-mono">
-                        {item.count}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Quick stats */}
-              <div className="pt-2 border-t border-slate-100 space-y-2 text-xs">
-                <span className="font-semibold text-slate-600 uppercase tracking-wider block text-[11px]">Thống kê không gian</span>
-                <div className="flex justify-between text-slate-600">
-                  <span>Tổng không gian:</span>
-                  <span className="font-semibold text-slate-900 font-mono">{currentSpacesList.length}</span>
-                </div>
-                <div className="flex justify-between text-slate-600">
-                  <span>Hiện trên Header:</span>
-                  <span className="font-semibold text-[#784e34] font-mono">{currentSpacesList.filter((s) => s.showOnHeader).length}</span>
-                </div>
-                <div className="flex justify-between text-slate-600">
-                  <span>Hiện trên Trang chủ:</span>
-                  <span className="font-semibold text-emerald-700 font-mono">{currentSpacesList.filter((s) => s.showOnHome).length}</span>
-                </div>
-              </div>
+              <RightOutlined className="text-slate-400 text-xs" />
             </div>
-          </aside>
 
-          {/* MAIN SPACES CONTENT: TABLE */}
-          <div className="min-w-0 flex-1 w-full">
-            <AdminDataTable
-                  enableSelectionToolbar
-                  selectedRowKeys={selectedSpaceKeys}
-                  onSelectionChange={(keys) => setSelectedSpaceKeys(keys)}
-                  titleText="Không gian nội thất"
-                  totalCount={filteredSpaces.length}
-                  countUnit="không gian"
-                  onCopySelected={() => selectedSpaceRecord && handleCopySpace(selectedSpaceRecord)}
-                  onEditSelected={() => selectedSpaceRecord && handleOpenEditSpace(selectedSpaceRecord)}
-                  onDeleteSelected={handleDeleteSelectedSpaces}
-                  deleteConfirmTitle={`Xóa ${selectedSpaceKeys.length} không gian đã chọn?`}
-                  onCreateNew={handleOpenCreateSpace}
-                  createButtonText="Tạo mới"
-                  searchValue={spaceSearchQuery}
-                  onSearchChange={(val) => setSpaceSearchQuery(val)}
-                  searchPlaceholder="Theo mã, tên không gian, đường dẫn slug, tiêu đề..."
-                  extraHeaderActions={
-                    <>
-                      <Button
-                        icon={<ReloadOutlined />}
-                        onClick={handleRefreshSpaces}
-                        className="!h-8 px-2.5 rounded-lg border-slate-300 bg-white text-slate-700 text-xs shadow-xs inline-flex items-center justify-center hover:text-[#784e34]"
-                        title="Làm mới"
-                      >
-                        Làm mới
-                      </Button>
-                      <Button
-                        icon={<DownloadOutlined />}
-                        onClick={handleExportSpacesExcel}
-                        className="!h-8 px-2.5 rounded-lg border-slate-300 bg-white text-slate-700 text-xs shadow-xs inline-flex items-center justify-center hover:text-[#784e34]"
-                        title="Xuất Excel"
-                      >
-                        Xuất Excel
-                      </Button>
-                    </>
-                  }
-                  dataSource={filteredSpaces}
-                  rowKey="id"
-                  columns={[
-                    {
-                      title: 'STT',
-                      key: 'stt',
-                      width: 60,
-                      align: 'center',
-                      render: (_, __, index) => (
-                        <span className="font-mono text-xs text-slate-500 font-semibold">{index + 1}</span>
-                      ),
-                    },
-                    {
-                      title: 'Ảnh',
-                      dataIndex: 'image',
-                      key: 'image',
-                      width: 75,
-                      align: 'center',
-                      render: (image, record) => (
-                        <SpaceImageCell
-                          image={image}
-                          code={record.code}
-                          name={record.name}
-                          onEdit={() => handleOpenEditSpace(record)}
+            {/* Batch Selection Banner */}
+            {selectedSpaceKeys.length > 0 && (
+              <div className="bg-[#fbf2ee] border border-[#d8c3af] px-3.5 py-2 rounded-xl flex items-center justify-between gap-2 text-xs shadow-xs">
+                <div className="flex items-center gap-1.5 text-[#5d371f]">
+                  <span className="font-bold text-xs">Đã chọn {selectedSpaceKeys.length} không gian</span>
+                  <span className="text-slate-400">|</span>
+                  <Button
+                    type="link"
+                    size="small"
+                    onClick={() => setSelectedSpaceKeys([])}
+                    className="text-[#784e34] p-0 font-medium hover:underline text-xs"
+                  >
+                    Bỏ chọn
+                  </Button>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Popconfirm
+                    title={`Xóa ${selectedSpaceKeys.length} không gian đã chọn?`}
+                    onConfirm={handleDeleteSelectedSpaces}
+                    okText="Xóa"
+                    cancelText="Hủy"
+                    okButtonProps={{ danger: true }}
+                  >
+                    <Button size="small" danger icon={<DeleteOutlined />} className="text-xs px-2" />
+                  </Popconfirm>
+                </div>
+              </div>
+            )}
+
+            {/* 4. Summary & Sort Bar */}
+            <div className="flex items-center justify-between pt-1 pb-0.5 text-sm">
+              <span className="font-bold text-slate-900 text-sm">
+                Tất cả không gian ({filteredSpaces.length})
+              </span>
+              <Dropdown
+                menu={{
+                  items: [
+                    { key: 'order_asc', label: 'Thứ tự hiển thị' },
+                    { key: 'name_asc', label: 'Tên A - Z' },
+                    { key: 'products_desc', label: 'Nhiều SP nhất' },
+                  ],
+                  selectedKeys: [spaceSortOrder],
+                  onClick: ({ key }) => setSpaceSortOrder(key as any),
+                }}
+                trigger={['click']}
+              >
+                <div className="flex items-center gap-1.5 text-slate-700 hover:text-[#784e34] cursor-pointer font-medium text-xs select-none">
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 6h18M6 12h12m-9 6h6" />
+                  </svg>
+                  <span>
+                    Sắp xếp:{' '}
+                    {spaceSortOrder === 'order_asc'
+                      ? 'Thứ tự hiển thị'
+                      : spaceSortOrder === 'name_asc'
+                      ? 'Tên A - Z'
+                      : 'Nhiều SP nhất'}
+                  </span>
+                </div>
+              </Dropdown>
+            </div>
+
+            {/* 5. List of Space Cards */}
+            <div className="space-y-3">
+              {paginatedSpaces.length === 0 ? (
+                <div className="bg-white rounded-xl border border-slate-200/80 p-8 text-center text-slate-500">
+                  <p className="font-medium text-slate-700 mb-1">Không tìm thấy không gian nào</p>
+                  <p className="text-xs text-slate-400">Vui lòng điều chỉnh lại bộ lọc hoặc từ khóa tìm kiếm</p>
+                </div>
+              ) : (
+                paginatedSpaces.map((space) => {
+                  const isSelected = selectedSpaceKeys.includes(space.id);
+                  const { totalProducts, categoryCount } = getSpaceProductCount(space);
+
+                  return (
+                    <div
+                      key={space.id}
+                      className="bg-white rounded-xl border border-slate-200/90 p-3.5 shadow-2xs space-y-2.5"
+                    >
+                      <div className="flex items-start gap-3">
+                        <Checkbox
+                          checked={isSelected}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setSelectedSpaceKeys((prev) =>
+                              checked ? [...prev, space.id] : prev.filter((k) => k !== space.id)
+                            );
+                          }}
+                          className="mt-1"
                         />
-                      ),
-                    },
-                    {
-                      title: 'Không gian & Mã',
-                      dataIndex: 'name',
-                      key: 'name',
-                      render: (_, record) => {
-                        return (
-                          <div className="min-w-0">
-                            <div
-                              onClick={() => handleOpenEditSpace(record)}
-                              className="font-semibold text-sm text-slate-900 hover:text-[#784e34] cursor-pointer line-clamp-1 transition-colors"
-                            >
-                              {record.name}
+                        {/* Thumbnail */}
+                        <div
+                          onClick={() => handleOpenEditSpace(space)}
+                          className="w-16 h-16 rounded-xl overflow-hidden bg-slate-100 border border-slate-200/90 shrink-0 flex items-center justify-center cursor-pointer group"
+                        >
+                          {space.image && space.image.trim() ? (
+                            <img
+                              src={space.image}
+                              alt={space.name}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                              onError={(e) => {
+                                (e.target as HTMLElement).style.display = 'none';
+                              }}
+                            />
+                          ) : (
+                            <div className="w-full h-full bg-amber-50/90 flex items-center justify-center text-[#784e34] font-bold text-xs font-mono">
+                              {space.code || 'KG'}
                             </div>
-                            <div className="flex items-center gap-2 mt-0.5">
-                              <span className="font-mono text-xs font-semibold text-[#784e34]">{record.code}</span>
-                              <span className="text-slate-300">•</span>
-                              <span className="font-mono text-[11px] text-slate-500">/{record.slug}</span>
-                            </div>
-                          </div>
-                        );
-                      },
-                    },
-                    {
-                      title: 'Hiển thị trên',
-                      key: 'displayPlaces',
-                      width: 170,
-                      render: (_, record) => (
-                        <div className="flex flex-wrap gap-1">
-                          {record.showOnHeader && (
-                            <Tag className="text-[10px] font-semibold border-0 bg-blue-50 text-blue-700 m-0">
-                              Header Menu
-                            </Tag>
-                          )}
-                          {record.showOnHome && (
-                            <Tag className="text-[10px] font-semibold border-0 bg-emerald-50 text-emerald-700 m-0">
-                              Trang Chủ
-                            </Tag>
                           )}
                         </div>
-                      ),
-                    },
-                    {
-                      title: 'Danh mục / SP',
-                      key: 'categoryCount',
-                      align: 'center',
-                      width: 130,
-                      render: (_, record) => {
-                        const { totalProducts, categoryCount } = getSpaceProductCount(record);
-                        return (
-                          <div className="flex flex-col items-center gap-0.5">
-                            <span className="font-mono font-semibold text-xs text-slate-800">
-                              {categoryCount} DM
+
+                        {/* Details */}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-mono text-xs font-semibold text-[#784e34] bg-[#f4efe9] px-2 py-0.5 rounded-md shrink-0">
+                              {space.code}
                             </span>
-                            <span className={`text-[11px] font-mono font-medium ${totalProducts > 0 ? 'text-[#784e34]' : 'text-slate-400'}`}>
-                              {totalProducts} SP
+                            <span className="font-mono text-[11px] font-semibold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded shrink-0">
+                              {categoryCount} DM • {totalProducts} SP
                             </span>
                           </div>
-                        );
-                      },
-                    },
-                    {
-                      title: 'Trạng thái',
-                      dataIndex: 'status',
-                      key: 'status',
-                      width: 130,
-                      render: (status) => <CategoryStatusBadge status={status} />,
-                    },
-                    {
-                      title: 'Thao tác',
-                      key: 'action',
-                      align: 'center',
-                      width: 110,
-                      render: (_, record) => {
-                        const { totalProducts, categoryCount } = getSpaceProductCount(record);
-                        const hasProducts = totalProducts > 0;
-                        return (
-                          <Space size={2} onClick={(e) => e.stopPropagation()}>
-                            <Button
-                              size="small"
-                              type="text"
-                              icon={<EditOutlined className="text-sm" />}
-                              onClick={() => handleOpenEditSpace(record)}
-                              className="text-slate-600 hover:text-[#784e34] hover:bg-slate-100"
-                              title="Chỉnh sửa"
-                            />
-                            <Button
-                              size="small"
-                              type="text"
-                              icon={<CopyOutlined className="text-sm" />}
-                              onClick={() => handleCopySpace(record)}
-                              className="text-slate-600 hover:text-[#784e34] hover:bg-slate-100"
-                              title="Sao chép"
-                            />
-                            <Button
-                              size="small"
-                              type="text"
-                              icon={<DeleteOutlined className="text-sm" />}
-                              onClick={() => handleRequestDeleteSpace(record)}
-                              className="text-slate-400 hover:text-red-600 hover:bg-red-50"
-                              title="Xóa không gian"
-                            />
-                          </Space>
-                        );
-                      },
-                    },
-                  ]}
-                />
+                          <h4
+                            onClick={() => handleOpenEditSpace(space)}
+                            className="font-bold text-slate-900 text-sm mt-1 hover:text-[#784e34] cursor-pointer transition-colors line-clamp-1"
+                          >
+                            {space.name}
+                          </h4>
+                          {space.tagline && (
+                            <p className="text-xs text-slate-500 line-clamp-1 mt-0.5">
+                              {space.tagline}
+                            </p>
+                          )}
+                          <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                            {space.showOnHeader && (
+                              <Tag className="text-[10px] font-semibold border-0 bg-blue-50 text-blue-700 m-0 px-1.5 py-0.2 rounded">
+                                Header Menu
+                              </Tag>
+                            )}
+                            {space.showOnHome && (
+                              <Tag className="text-[10px] font-semibold border-0 bg-emerald-50 text-emerald-700 m-0 px-1.5 py-0.2 rounded">
+                                Trang Chủ
+                              </Tag>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Bottom Row: Status + Action Buttons */}
+                      <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
+                        <CategoryStatusBadge status={space.status} />
+
+                        <div className="flex items-center gap-3 text-slate-500">
+                          <button
+                            type="button"
+                            title="Chỉnh sửa không gian"
+                            onClick={() => handleOpenEditSpace(space)}
+                            className="p-1 hover:text-[#784e34] transition-colors cursor-pointer bg-transparent border-none text-base text-slate-500"
+                          >
+                            <EditOutlined />
+                          </button>
+
+                          <button
+                            type="button"
+                            title="Xóa không gian"
+                            onClick={() => handleRequestDeleteSpace(space)}
+                            className="p-1 hover:text-rose-700 transition-colors cursor-pointer bg-transparent border-none text-base text-rose-500"
+                          >
+                            <DeleteOutlined />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* 6. Mobile Pagination Footer */}
+            {filteredSpaces.length > 0 && (
+              <div className="pt-2 pb-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600">
+                <div className="font-medium text-slate-600">
+                  Hiển thị {(spaceCurrentPage - 1) * spacePageSize + 1} -{' '}
+                  {Math.min(spaceCurrentPage * spacePageSize, filteredSpaces.length)} trong tổng số{' '}
+                  {filteredSpaces.length} không gian
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="middle"
+                    disabled={spaceCurrentPage <= 1}
+                    onClick={() => setSpaceCurrentPage((p) => Math.max(1, p - 1))}
+                    className="rounded-lg text-xs"
+                  >
+                    Trang trước
+                  </Button>
+                  <span className="px-2 text-xs font-semibold text-slate-700">
+                    {spaceCurrentPage} / {Math.max(1, Math.ceil(filteredSpaces.length / spacePageSize))}
+                  </span>
+                  <Button
+                    size="middle"
+                    disabled={spaceCurrentPage >= Math.ceil(filteredSpaces.length / spacePageSize)}
+                    onClick={() => setSpaceCurrentPage((p) => p + 1)}
+                    className="rounded-lg text-xs"
+                  >
+                    Trang sau
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
-        </div>
+
+          {/* MOBILE FILTER DRAWER FOR SPACES */}
+          <AdminFilterDrawer
+            open={isMobileSpaceFilterOpen}
+            onClose={() => setIsMobileSpaceFilterOpen(false)}
+            title="Bộ lọc không gian"
+            hasActiveFilters={Boolean(spaceSearchQuery || spaceStatusFilter !== 'all')}
+            onResetFilters={() => {
+              handleResetSpaceFilters();
+              setSpaceCurrentPage(1);
+            }}
+          >
+            <div>
+              <div className="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">
+                Trạng thái hoạt động
+              </div>
+              <Select
+                value={spaceStatusFilter}
+                onChange={(v) => {
+                  setSpaceStatusFilter(v);
+                  setSpaceCurrentPage(1);
+                }}
+                className="w-full text-xs font-medium"
+                options={[
+                  { value: 'all', label: `Tất cả không gian (${currentSpacesList.length})` },
+                  { value: 'active', label: `Đang hiển thị (${currentSpacesList.filter((s) => s.status === 'active').length})` },
+                  { value: 'hidden', label: `Tạm ẩn / Đang sửa (${currentSpacesList.filter((s) => s.status === 'hidden').length})` },
+                ]}
+              />
+            </div>
+
+            <div className="bg-slate-50 p-3 rounded-lg border border-slate-200/80 space-y-1.5 text-xs">
+              <div className="flex justify-between text-slate-600">
+                <span>Tổng không gian:</span>
+                <span className="font-mono font-semibold text-slate-900">{currentSpacesList.length}</span>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>Hiện trên Header:</span>
+                <span className="font-mono font-semibold text-[#784e34]">{currentSpacesList.filter((s) => s.showOnHeader).length}</span>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>Hiện trên Trang chủ:</span>
+                <span className="font-mono font-semibold text-emerald-700">{currentSpacesList.filter((s) => s.showOnHome).length}</span>
+              </div>
+            </div>
+          </AdminFilterDrawer>
+        </>
       )}
 
       {/* ========================================================================= */}
@@ -1583,7 +2237,7 @@ export function CategoriesTab({
           </Form.Item>
 
           <Row gutter={16}>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item
                 label={<span className="text-xs font-semibold text-slate-700">Mã danh mục</span>}
                 name="code"
@@ -1600,7 +2254,7 @@ export function CategoriesTab({
                 />
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item
                 label={<span className="text-xs font-semibold text-slate-700">Thuộc không gian nội thất <span className="text-red-500">*</span></span>}
                 name="space"
@@ -1680,7 +2334,7 @@ export function CategoriesTab({
           </div>
 
           <Row gutter={16}>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item
                 label={<span className="text-xs font-semibold text-slate-700">Thứ tự hiển thị</span>}
                 name="displayOrder"
@@ -1689,7 +2343,7 @@ export function CategoriesTab({
                 <InputNumber min={1} className="w-full !h-10 rounded-lg text-sm" placeholder="1, 2, 3..." />
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item
                 label={<span className="text-xs font-semibold text-slate-700">Trạng thái hoạt động</span>}
                 name="status"
@@ -1730,7 +2384,7 @@ export function CategoriesTab({
           className="space-y-4"
         >
           <Row gutter={16}>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item
                 label={<span className="text-xs font-semibold text-slate-700">Mã không gian <span className="text-red-500">*</span></span>}
                 name="code"
@@ -1748,7 +2402,7 @@ export function CategoriesTab({
                 />
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item
                 label={<span className="text-xs font-semibold text-slate-700">Tên không gian nội thất <span className="text-red-500">*</span></span>}
                 name="name"
@@ -1826,7 +2480,7 @@ export function CategoriesTab({
           </Form.Item>
 
           <Row gutter={16}>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item
                 label={<span className="text-xs font-semibold text-slate-700">Thứ tự hiển thị</span>}
                 name="displayOrder"
@@ -1835,7 +2489,7 @@ export function CategoriesTab({
                 <InputNumber min={1} className="w-full !h-10 rounded-lg text-sm" placeholder="1, 2, 3..." />
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item
                 label={<span className="text-xs font-semibold text-slate-700">Trạng thái hoạt động</span>}
                 name="status"
@@ -1854,7 +2508,7 @@ export function CategoriesTab({
           </Row>
 
           <Row gutter={16} className="bg-slate-50 p-3 rounded-lg border border-slate-200">
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item
                 label={<span className="text-xs font-semibold text-slate-700">Hiện trên Menu Header</span>}
                 name="showOnHeader"
@@ -1864,7 +2518,7 @@ export function CategoriesTab({
                 <Switch checkedChildren="Bật" unCheckedChildren="Tắt" />
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item
                 label={<span className="text-xs font-semibold text-slate-700">Hiện trên Trang chủ</span>}
                 name="showOnHome"

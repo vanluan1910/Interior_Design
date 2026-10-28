@@ -8,6 +8,7 @@ import {
   EditOutlined,
   DeleteOutlined,
   PlusOutlined,
+  InboxOutlined,
 } from '@ant-design/icons';
 import { AdminSearchInput } from './AdminSearchInput';
 
@@ -35,6 +36,7 @@ export interface AdminDataTableProps<T = any> extends TableProps<T> {
   totalCount?: number;
   countUnit?: string;
   selectOnRowClick?: boolean;
+  renderMobileCard?: (record: T, index: number) => React.ReactNode;
 }
 
 export function AdminDataTable<T extends object = any>({
@@ -59,6 +61,7 @@ export function AdminDataTable<T extends object = any>({
   totalCount,
   countUnit = 'bản ghi',
   selectOnRowClick = false,
+  renderMobileCard,
   pagination,
   columns,
   dataSource,
@@ -101,9 +104,9 @@ export function AdminDataTable<T extends object = any>({
 
   const computedRowSelection = rowSelection || (isSelectionToolbarActive && onSelectionChange
     ? {
-        selectedRowKeys: selectedRowKeys || [],
-        onChange: (keys: React.Key[], selectedRows: T[]) => onSelectionChange(keys, selectedRows),
-      }
+      selectedRowKeys: selectedRowKeys || [],
+      onChange: (keys: React.Key[], selectedRows: T[]) => onSelectionChange(keys, selectedRows),
+    }
     : undefined);
 
   const computedOnRow = (record: T, index?: number) => {
@@ -131,22 +134,24 @@ export function AdminDataTable<T extends object = any>({
   };
 
   return (
-    <div className={`w-full min-w-0 max-w-full bg-white rounded-xl shadow-xs border border-slate-200 flex flex-col ${className}`}>
+    <div className={`w-full min-w-0 max-w-full overflow-x-hidden bg-white rounded-xl shadow-xs border border-slate-200 flex flex-col ${className}`}>
       {/* 1. Branch-style Standard Selection & Action Toolbar */}
       {isSelectionToolbarActive && (
-        <div className="shrink-0 flex flex-col gap-3 border-b border-slate-200 bg-white p-3.5 sm:p-4 rounded-t-xl">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-slate-900">
+        <div className="shrink-0 flex flex-col gap-2.5 sm:gap-3 border-b border-slate-200 bg-white p-3 sm:p-4 rounded-t-xl">
+          {/* Top Row: Title + Count + (Mobile: Create Button | Desktop: Actions Cluster) */}
+          <div className="flex items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2 text-slate-900 min-w-0">
               {titleIcon && <span className="text-base shrink-0">{titleIcon}</span>}
-              <h3 className="m-0 text-base sm:text-lg font-semibold text-slate-900">
+              <h3 className="m-0 text-base sm:text-lg font-semibold text-slate-900 truncate">
                 {titleText || 'Danh sách'}
               </h3>
-              <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">
+              <span className="rounded-full bg-slate-100 px-2 sm:px-2.5 py-0.5 text-xs font-semibold text-slate-600 shrink-0">
                 {currentTotal} {countUnit}
               </span>
             </div>
 
-            <div className="flex flex-wrap items-center justify-start sm:justify-end gap-1.5 sm:gap-2 w-full sm:w-auto">
+            {/* Desktop Action Buttons Cluster (hidden on mobile, visible on sm+) */}
+            <div className="hidden sm:flex items-center gap-1.5 sm:gap-2">
               {onCopySelected && (
                 <Button
                   htmlType="button"
@@ -196,25 +201,95 @@ export function AdminDataTable<T extends object = any>({
                   type="primary"
                   icon={<PlusOutlined />}
                   onClick={onCreateNew}
-                  className="!h-8 px-3 sm:px-4 !bg-[#784e34] hover:!bg-[#5d371f] text-white border-none font-bold text-xs rounded-lg shadow-xs inline-flex items-center justify-center gap-1.5 ml-auto sm:ml-0"
+                  className="!h-8 px-3.5 !bg-[#784e34] hover:!bg-[#5d371f] text-white border-none font-bold text-xs rounded-lg shadow-xs inline-flex items-center justify-center gap-1.5"
                 >
                   {createButtonText}
                 </Button>
               )}
             </div>
+
+            {/* Mobile Create Button (visible on mobile only, placed neatly beside title) */}
+            {onCreateNew && (
+              <Button
+                htmlType="button"
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={onCreateNew}
+                className="sm:hidden !h-8 px-2.5 !bg-[#784e34] hover:!bg-[#5d371f] text-white border-none font-bold text-xs rounded-lg shadow-xs inline-flex items-center justify-center gap-1 shrink-0"
+              >
+                {createButtonText}
+              </Button>
+            )}
           </div>
 
-          {/* Quick Search Bar */}
-          {onSearchChange && (
-            <div className="w-full sm:w-80">
-              <AdminSearchInput
-                placeholder={searchPlaceholder}
-                value={searchValue || ''}
-                onChange={onSearchChange}
-                sizeVariant="sm"
-              />
+          {/* Mobile Selection Action Bar (appears smoothly only when items are selected on mobile) */}
+          {selectedCount > 0 && (
+            <div className="sm:hidden flex items-center justify-between bg-[#fbf2ee] border border-[#d8c3af] px-3 py-1.5 rounded-lg text-xs">
+              <span className="font-bold text-[#5d371f]">
+                Đã chọn {selectedCount}
+              </span>
+              <div className="flex items-center gap-1.5">
+                {onCopySelected && selectedCount === 1 && (
+                  <Button
+                    size="small"
+                    icon={<CopyOutlined />}
+                    onClick={onCopySelected}
+                    className="!h-7 px-2 rounded-md bg-white border-slate-300 text-slate-700 text-xs shadow-2xs inline-flex items-center gap-1"
+                  >
+                    Sao chép
+                  </Button>
+                )}
+                {onEditSelected && selectedCount === 1 && (
+                  <Button
+                    size="small"
+                    icon={<EditOutlined />}
+                    onClick={onEditSelected}
+                    className="!h-7 px-2 rounded-md bg-white border-slate-300 text-slate-700 text-xs shadow-2xs inline-flex items-center gap-1"
+                  >
+                    Sửa
+                  </Button>
+                )}
+                {onDeleteSelected && (
+                  <Popconfirm
+                    title={deleteConfirmTitle}
+                    onConfirm={onDeleteSelected}
+                    okText="Xóa"
+                    cancelText="Hủy"
+                    okButtonProps={{ danger: true }}
+                  >
+                    <Button
+                      size="small"
+                      danger
+                      icon={<DeleteOutlined />}
+                      className="!h-7 px-2 rounded-md bg-white text-xs shadow-2xs inline-flex items-center gap-1"
+                    >
+                      Xóa
+                    </Button>
+                  </Popconfirm>
+                )}
+              </div>
             </div>
           )}
+
+          {/* Bottom Row: Search Bar (+ Mobile Extra Actions like Filter & Export) */}
+          <div className="flex items-center gap-2 w-full">
+            {onSearchChange && (
+              <div className="flex-1 min-w-0 sm:w-80 sm:flex-none">
+                <AdminSearchInput
+                  placeholder={searchPlaceholder}
+                  value={searchValue || ''}
+                  onChange={onSearchChange}
+                  sizeVariant="sm"
+                />
+              </div>
+            )}
+            {/* On mobile, render extraHeaderActions (Filter & Export) inline with search */}
+            {extraHeaderActions && (
+              <div className="sm:hidden flex items-center gap-1.5 shrink-0">
+                {extraHeaderActions}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -246,22 +321,137 @@ export function AdminDataTable<T extends object = any>({
         </div>
       )}
 
-      {/* 3. Table Body */}
-      <div className="w-full max-w-full flex-1 min-h-0">
-        <Table<T>
-          dataSource={paginatedData}
-          columns={columns}
-          rowKey={rowKey}
-          pagination={false}
-          rowSelection={computedRowSelection}
-          onRow={computedOnRow}
-          scroll={scroll}
-          sticky={sticky}
-          size="small"
-          className="w-full [&_.ant-table-thead>tr>th]:!bg-white [&_.ant-table-thead>tr>th]:!font-semibold [&_.ant-table-thead>tr>th]:!text-slate-800 [&_.ant-table-thead>tr>th]:!py-2.5 [&_.ant-table-tbody>tr>td]:!py-2.5 [&_.ant-table-row-selected>td]:!bg-amber-50/40"
-          {...restProps}
-        />
-      </div>
+      {/* 3. Table / Mobile Cards Body */}
+      {paginatedData && paginatedData.length === 0 ? (
+        <div className="py-10 px-4 text-center bg-white">
+          <div className="w-12 h-12 mx-auto rounded-full bg-slate-100 flex items-center justify-center text-xl text-slate-400 mb-2">
+            {titleIcon || <InboxOutlined />}
+          </div>
+          <div className="font-bold text-sm text-slate-700">Chưa có dữ liệu</div>
+          <div className="text-xs text-slate-400 mt-0.5">Không tìm thấy bản ghi phù hợp</div>
+          {onCreateNew && (
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={onCreateNew}
+              className="mt-3 !bg-[#784e34] hover:!bg-[#5d371f] font-bold text-xs rounded-lg shadow-xs"
+            >
+              {createButtonText}
+            </Button>
+          )}
+        </div>
+      ) : (
+        <>
+          {/* Mobile Card List (< md) - ZERO Horizontal Scroll */}
+          <div className="block md:hidden divide-y divide-slate-100 p-3 space-y-3">
+            {paginatedData?.map((record: any, idx: number) => {
+              if (renderMobileCard) {
+                return <React.Fragment key={idx}>{renderMobileCard(record, idx)}</React.Fragment>;
+              }
+
+              const key = typeof rowKey === 'function' ? rowKey(record) : (record[rowKey as string] || record.id || idx);
+              const isSelected = selectedRowKeys?.includes(key);
+
+              // Extract columns excluding selection or empty
+              const visibleCols = (columns || []).filter(
+                (col: any) => col.key !== 'selection' && col.dataIndex !== 'selection'
+              );
+              const primaryCol = visibleCols[0];
+              const secondaryCol = visibleCols[1];
+              const remainingCols = visibleCols.slice(2);
+
+              return (
+                <div
+                  key={key}
+                  onClick={(e) => {
+                    if (selectOnRowClick && onSelectionChange && selectedRowKeys) {
+                      const next = isSelected ? selectedRowKeys.filter((k) => k !== key) : [...selectedRowKeys, key];
+                      onSelectionChange(next);
+                    }
+                    if (onRow) {
+                      const rowProps = onRow(record, idx);
+                      if (rowProps?.onClick) rowProps.onClick(e);
+                    }
+                  }}
+                  className={`p-3.5 bg-white border rounded-xl space-y-2 transition-all cursor-pointer ${isSelected ? 'border-[#784e34] bg-[#784e34]/5 shadow-xs' : 'border-slate-200 shadow-2xs'
+                    }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      {computedRowSelection && (
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            if (onSelectionChange && selectedRowKeys) {
+                              const next = e.target.checked
+                                ? [...selectedRowKeys, key]
+                                : selectedRowKeys.filter((k) => k !== key);
+                              onSelectionChange(next);
+                            }
+                          }}
+                          className="rounded text-[#784e34] focus:ring-[#784e34] shrink-0"
+                        />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        {primaryCol && (
+                          <div className="font-bold text-xs sm:text-sm text-slate-900 truncate">
+                            {(primaryCol as any).render
+                              ? (primaryCol as any).render(record[(primaryCol as any).dataIndex], record, idx)
+                              : record[(primaryCol as any).dataIndex]}
+                          </div>
+                        )}
+                        {secondaryCol && (
+                          <div className="text-xs text-slate-600 truncate mt-0.5">
+                            {(secondaryCol as any).render
+                              ? (secondaryCol as any).render(record[(secondaryCol as any).dataIndex], record, idx)
+                              : record[(secondaryCol as any).dataIndex]}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {remainingCols.length > 0 && (
+                    <div className="pt-2 border-t border-slate-100 space-y-1.5 text-xs">
+                      {remainingCols.map((col: any, cIdx: number) => {
+                        const colTitle = typeof col.title === 'string' ? col.title : (col.key || col.dataIndex || '');
+                        const colVal = col.render ? col.render(record[col.dataIndex], record, idx) : record[col.dataIndex];
+                        if (colVal === undefined || colVal === null || colVal === '') return null;
+
+                        return (
+                          <div key={cIdx} className="flex items-center justify-between gap-2">
+                            <span className="text-slate-400 text-[11px] shrink-0">{colTitle}:</span>
+                            <span className="text-slate-700 font-medium text-right truncate">{colVal}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Desktop Table Body (>= md) */}
+          <div className="hidden md:block w-full max-w-full flex-1 min-h-0">
+            <Table<T>
+              dataSource={paginatedData}
+              columns={columns}
+              rowKey={rowKey}
+              pagination={false}
+              rowSelection={computedRowSelection}
+              onRow={computedOnRow}
+              scroll={scroll}
+              sticky={sticky}
+              size="small"
+              className="w-full [&_.ant-table-thead>tr>th]:!bg-white [&_.ant-table-thead>tr>th]:!font-semibold [&_.ant-table-thead>tr>th]:!text-slate-800 [&_.ant-table-thead>tr>th]:!py-2.5 [&_.ant-table-tbody>tr>td]:!py-2.5 [&_.ant-table-row-selected>td]:!bg-amber-50/40"
+              {...restProps}
+            />
+          </div>
+        </>
+      )}
 
       {/* 4. Domaco POS Standard ERP High-Density Pagination Footer */}
       {pagination !== false && (

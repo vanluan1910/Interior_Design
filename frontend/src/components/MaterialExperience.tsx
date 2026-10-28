@@ -128,6 +128,15 @@ export default function MaterialExperience({ onOpenSampleModal, products = [] }:
   const displayImage = randomImage || current.defaultImage;
 
   const sectionRef = useRef<HTMLElement>(null);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
   const { scrollYProgress } = useScroll({
     target: sectionRef,
     offset: ['start end', 'start 55%'],
@@ -152,21 +161,15 @@ export default function MaterialExperience({ onOpenSampleModal, products = [] }:
           style={{ y: headerY, opacity }}
           className="max-w-2xl mx-auto text-center mb-5 md:mb-6"
         >
-          <span className="font-label-sm text-xs uppercase tracking-widest text-[#5d371f] font-semibold">
-            Tự Do Tuỳ Biến
-          </span>
-          <h2 className="font-headline-lg text-2xl sm:text-3xl md:text-4xl text-[#1f1b19] mt-1 font-normal">
+          <h2 className="font-headline-lg text-2xl xs:text-3xl md:text-4xl text-[#1f1b19] font-normal">
             Chất Liệu &amp; Sắc Thái Gỗ Tự Nhiên
           </h2>
-          <p className="font-body-md text-sm sm:text-base text-[#51443d] mt-2">
-            Chọn loại gỗ và chất liệu bề mặt để cảm nhận cách nội thất D2 LUXURY hòa nhịp vào phong cách ngôi nhà bạn.
-          </p>
         </motion.div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-center bg-white rounded-none p-6 sm:p-8 shadow-sm border border-[#eae1dd] overflow-hidden">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-8 items-center bg-white rounded-none p-4 sm:p-6 lg:p-8 shadow-sm border border-[#eae1dd] overflow-hidden">
           {/* Visual Showcase: Clean Image Only (Trượt từ bên trái vào theo độ lăn chuột) */}
           <motion.div
-            style={{ x: leftX, opacity }}
+            style={{ x: isMobile ? 0 : leftX, opacity }}
             className="lg:col-span-7 aspect-[16/10] rounded-none overflow-hidden bg-[#eae1dd] relative shadow-inner"
           >
             <img
@@ -176,11 +179,11 @@ export default function MaterialExperience({ onOpenSampleModal, products = [] }:
             />
 
             {/* Subtle info label overlay */}
-            <div className="absolute bottom-4 left-4 right-4 sm:right-auto bg-white/95 backdrop-blur-md px-4 py-2.5 rounded-none shadow-md border border-[#d5c3ba]/40 max-w-md">
-              <span className="font-title-md text-sm sm:text-base text-[#5d371f] font-semibold">
+            <div className="absolute bottom-3 left-3 right-3 sm:bottom-4 sm:left-4 sm:right-auto bg-white/95 backdrop-blur-md px-3 py-2 sm:px-4 sm:py-2.5 rounded-none shadow-md border border-[#d5c3ba]/40 max-w-md">
+              <span className="font-title-md text-xs sm:text-base text-[#5d371f] font-semibold">
                 {current.title}
               </span>
-              <span className="block font-body-sm text-xs text-[#51443d] mt-0.5">
+              <span className="block font-body-sm text-[11px] sm:text-xs text-[#51443d] mt-0.5 line-clamp-2 sm:line-clamp-none">
                 {current.desc}
               </span>
             </div>
@@ -188,10 +191,10 @@ export default function MaterialExperience({ onOpenSampleModal, products = [] }:
 
           {/* Options & Controls (Trượt từ bên phải vào theo độ lăn chuột) */}
           <motion.div
-            style={{ x: rightX, opacity }}
-            className="lg:col-span-5 flex flex-col gap-4"
+            style={{ x: isMobile ? 0 : rightX, opacity }}
+            className="lg:col-span-5 flex flex-col gap-3 sm:gap-4"
           >
-            <h3 className="font-headline-sm text-lg sm:text-xl text-[#1f1b19]">
+            <h3 className="font-headline-sm text-base sm:text-xl text-[#1f1b19]">
               Chọn mẫu vật liệu gửi tận nhà:
             </h3>
 

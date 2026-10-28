@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Header from '@/components/Header';
 import Hero from '@/components/Hero';
 import LivingSpaces from '@/components/LivingSpaces';
@@ -123,6 +124,7 @@ function mapCatalogProductToProduct(item: FeaturedCatalogProduct): Product {
 }
 
 export default function HomePage() {
+  const router = useRouter();
   const { message } = App.useApp();
 
   // Home API Data state
@@ -235,15 +237,11 @@ export default function HomePage() {
   };
 
   const handleCategorySelect = (category: string) => {
-    setActiveCategory(category);
-    const element = document.getElementById('featured-products');
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth' });
-    }
+    router.push(`/products?space=${encodeURIComponent(category)}`);
   };
 
   return (
-    <div className="min-h-screen bg-[#fff8f5] text-[#1f1b19] selection:bg-[#ffdbc8] selection:text-[#311301]">
+    <div className="min-h-screen bg-[#fff8f5] text-[#1f1b19] selection:bg-[#ffdbc8] selection:text-[#311301] overflow-x-hidden">
       {/* Header */}
       <Header
         cartCount={cartCount}
@@ -252,7 +250,7 @@ export default function HomePage() {
       />
 
       {/* Main Content Sections */}
-      <main className="w-full">
+      <main className="w-full overflow-x-hidden">
         {/* Hero Banner with Integrated Service Guarantees */}
         <Hero onOpenBooking={() => {}} hero={homeData?.hero} />
 
