@@ -69,3 +69,6 @@ image/
 *.xls
 *.csv
 
+# Scratch & temporary scripts
+scratch/
+
