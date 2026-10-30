@@ -1009,9 +1009,11 @@ export function InventoryTab({
                   <div className="text-slate-500 mb-1">Giá bán niêm yết</div>
                   <div className="text-sm text-[#784e34]">{(salePrice || 0).toLocaleString('vi-VN')} đ</div>
                 </div>
-                <div>
+                <div className="sm:col-span-2">
                   <div className="text-slate-500 mb-1">Kích thước (D x R x C)</div>
-                  <div className="text-slate-900 text-sm">{prod.dimensions || 'Chưa có'}</div>
+                  <div className="text-slate-900 text-sm whitespace-pre-line break-words leading-relaxed font-mono">
+                    {prod.dimensions || 'Chưa có'}
+                  </div>
                 </div>
                 <div>
                   <div className="text-slate-500 mb-1">Chất liệu gỗ / đệm</div>
