@@ -527,7 +527,7 @@ export default function ProductDetailPage({
                   {/* 1. Kích thước */}
                   <div className="flex items-start justify-between gap-2 pb-2 border-b border-[#eae1dd]/60">
                     <span className="font-bold text-slate-700 shrink-0 w-24 sm:w-28 text-[11px] sm:text-xs">Kích thước:</span>
-                    <span className="font-mono font-bold text-[#5d371f] text-right text-[11px] sm:text-xs flex-1 break-words">
+                    <span className="font-mono font-bold text-[#5d371f] text-right text-[11px] sm:text-xs flex-1 break-words whitespace-pre-line">
                       {currentProduct.dimensions || 'Theo thiết kế tiêu chuẩn'}
                     </span>
                   </div>
@@ -705,7 +705,7 @@ export default function ProductDetailPage({
                         </tr>
                         <tr className="bg-[#fbf2ee]/60 border-b border-[#eae1dd]">
                           <td className="p-3 font-bold text-[#1f1b19]">Kích thước tiêu chuẩn</td>
-                          <td className="p-3 text-[#51443d]">{currentProduct.dimensions || 'Theo thiết kế tiêu chuẩn (Nhận may đo theo yêu cầu)'}</td>
+                          <td className="p-3 text-[#51443d] whitespace-pre-line leading-relaxed">{currentProduct.dimensions || 'Theo thiết kế tiêu chuẩn (Nhận may đo theo yêu cầu)'}</td>
                         </tr>
                         <tr className="border-b border-[#eae1dd]">
                           <td className="p-3 font-bold text-[#1f1b19]">Vật liệu chế tác</td>
