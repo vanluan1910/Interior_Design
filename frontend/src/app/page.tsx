@@ -6,7 +6,7 @@ import Header from '@/components/Header';
 import Hero from '@/components/Hero';
 import LivingSpaces from '@/components/LivingSpaces';
 import FeaturedProducts from '@/components/FeaturedProducts';
-import ProjectLookbook from '@/components/ProjectLookbook';
+import CustomerFeedback from '@/components/CustomerFeedback';
 import MaterialExperience from '@/components/MaterialExperience';
 import ShowroomSection from '@/components/ShowroomSection';
 import Footer from '@/components/Footer';
@@ -270,8 +270,11 @@ export default function HomePage() {
           <LivingSpaces onSelectCategory={handleCategorySelect} spaces={homeData.livingSpaces} />
         )}
 
-        {/* Featured Villa & Penthouse Real Projects Lookbook */}
-        <ProjectLookbook onOpenBooking={() => {}} />
+        {/* Customer Feedback & Real Reviews */}
+        <CustomerFeedback
+          onOpenBooking={() => {}}
+          testimonials={homeData?.testimonials}
+        />
 
         {/* Interactive Material Experience */}
         <MaterialExperience products={products} />

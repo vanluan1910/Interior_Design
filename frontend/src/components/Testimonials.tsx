@@ -11,7 +11,7 @@ export default function Testimonials() {
         'Là một KTS theo đuổi trường phái tối giản tự nhiên, tôi rất kỹ tính trong việc hoàn thiện bề mặt gỗ. D2 LUXURY xử lý dầu Rubio mượt vô cùng, vân óc chó lên đều màu mà không bị bóng giả như sơn PU thông thường.',
     },
     {
-      name: 'Anh Vũ Đăng Khoa',
+      name: 'Anh Lê Quang Huy',
       role: 'Gia chủ Penthouse Metropolis Liễu Giai',
       avatar:
         'https://images.unsplash.com/photo-1533090161767-e6ffed986b88?w=800&auto=format&fit=crop&q=80',
